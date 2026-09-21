@@ -24,6 +24,7 @@ from `contracts/agents-api/upstream.json` (commit
 | `python3 scripts/verify-source-copy.py` | Passed: all 1,287 imported paths present, 1,282 byte-identical; only the five documented packaging adaptations differ |
 | `make check` | Passed, exit 0: sqlc regeneration, daemon/shared/API/client Go tests, real PostgreSQL tests, standalone API build, Claude SDK tests/package, MiniMax companion checks, Rust format/tests/Clippy and Codex Harness packaging checks |
 | `make build-daemon` | Passed using a task-local absolute output directory |
+| `make build-agents-api-release` | Passed from a clean committed standalone checkout (`3ba5c435b5ac9f9cece9bc9c21d979a1741796b5`); archive checksum, every member checksum and new-repository source links verified |
 | `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12` | Passed, exit 0 |
 | `AGENTS_API_SERVER_BIN=.../agents-api python services/agents-api/tests/official_client.py` | Passed, exit 0, using the pinned SDK and dedicated database |
 | `AGENTS_API_IMAGE=parsar-core-import:72ab4d37 PARSAR_OFFICIAL_SDK_PYTHON=.../sdk/bin/python make check-agents-api-container` | Passed, exit 0: build standalone image and repeat the official-client suite inside read-only containers |
