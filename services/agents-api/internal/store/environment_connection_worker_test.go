@@ -13,7 +13,7 @@ import (
 )
 
 func TestEnvironmentConnectionWorkerReconcilesAndClosesBeforeLease(t *testing.T) {
-	s, _ := store.NewTestStore(t)
+	s, pool := store.NewTestStore(t)
 	tenant := uuid.NewString()
 	session, err := s.CreateSession(t.Context(), tenant, store.CreateSessionInput{Creator: store.FixtureCreator(), Engine: "codex", IdempotencyKey: "connection-worker", Configuration: []byte(`{"environment":{"type":"self_hosted","workspace_directory":"/workspace"}}`)})
 	if err != nil {
@@ -34,9 +34,11 @@ func TestEnvironmentConnectionWorkerReconcilesAndClosesBeforeLease(t *testing.T)
 	if err := lease.Store().ObserveEnvironmentConnection(t.Context(), tenant, environment.ID, generation, 1, true); err != nil {
 		t.Fatal(err)
 	}
+	awaitRelease := observeExecutionLeaseRelease(t, pool)
 	if err := lease.Close(t.Context()); err != nil {
 		t.Fatal(err)
 	}
+	awaitRelease()
 	var worker *execution.Worker
 	closed := false
 	next := uuid.NewString()

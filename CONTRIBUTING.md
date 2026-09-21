@@ -52,6 +52,14 @@ Changes to native Harness sources require `make check-agents-harness-native`,
 checks require real models; do not count omitted prerequisites or mocked responses
 as live acceptance. Never expand this extraction into unrelated behavioral fixes.
 
+Native Harness CI runs checks and the release build on separate disposable runners
+so debug and release artifacts do not compete for disk. It disables incremental
+compilation and caches downloaded Cargo dependencies, not target directories.
+The Rust-only jobs remove unused preinstalled Android/.NET SDKs and report disk
+usage. Both matrix targets must pass; release optimization settings and native
+test/Clippy coverage remain unchanged. These resource settings apply to CI, not
+operator build defaults.
+
 ## Architecture boundaries
 
 The following execution rules are retained from the source contributor guide.
@@ -1954,6 +1962,10 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   Lease Close invalidates its writer and waits for pgx connection cleanup within
   the caller deadline. A later Close can resume that wait after a timeout. This
   drains client resources; it does not acknowledge remote advisory-lock release.
+  Tests that immediately transfer ownership must observe the previous owner's
+  exact database advisory lock disappearing before starting its successor. Bound
+  that wait and fail on query errors; do not retry Worker startup to mask competing
+  owners or change production lease behavior for a test's timing assumption.
   Worker shutdown retains its existing bounded best-effort close policy.
   This fences database writes, not already queued daemon commands or native effects.
   Native quiescence/reconnect and recovery of unreported outcomes remain separate
