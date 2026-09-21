@@ -58,7 +58,9 @@ compilation and caches downloaded Cargo dependencies, not target directories.
 The Rust-only jobs remove unused preinstalled Android/.NET SDKs and report disk
 usage. Both matrix targets must pass; release optimization settings and native
 test/Clippy coverage remain unchanged. These resource settings apply to CI, not
-operator build defaults.
+operator build defaults. Checks retain a 60-minute limit; cold optimized release
+builds receive 120 minutes after the standard runner exceeded one hour with disk
+space remaining. A timeout is still a failed build, not a skipped gate.
 
 ## Architecture boundaries
 
