@@ -1,0 +1,147 @@
+package claudesdk
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
+)
+
+type Config struct {
+	Node       string
+	Entrypoint string
+	StateDir   string
+	Env        []string
+	Workspace  *WorkspaceConfig
+}
+
+type startRequest struct {
+	Type             string               `json:"type"`
+	Prompt           string               `json:"prompt,omitempty"`
+	Model            string               `json:"model"`
+	SystemPrompt     string               `json:"system_prompt"`
+	Cwd              string               `json:"cwd"`
+	Resume           string               `json:"resume,omitempty"`
+	ObserveMessages  bool                 `json:"observe_messages,omitempty"`
+	Functions        []proto.FunctionTool `json:"functions,omitempty"`
+	MCPHTTPServers   *[]mcpHTTPServer     `json:"mcp_http_servers,omitempty"`
+	Workspace        *workspaceProfile    `json:"workspace,omitempty"`
+	RequireHistory   bool                 `json:"require_history,omitempty"`
+	observeFunctions bool
+}
+
+func prepare(config Config, req proto.PromptRequestPayload) (startRequest, []string, error) {
+	if req.RunID == "" || strings.TrimSpace(req.Prompt) == "" {
+		return startRequest{}, nil, fmt.Errorf("claudesdk: run id and prompt are required")
+	}
+	start, env, err := prepareConfiguration(config, req)
+	if err != nil {
+		return startRequest{}, nil, err
+	}
+	start.Prompt = req.Prompt
+	return start, env, nil
+}
+
+func prepareConfiguration(config Config, req proto.PromptRequestPayload) (startRequest, []string, error) {
+	start := startRequest{Type: "start", Resume: req.AgentSessionID, RequireHistory: req.RequireExistingNativeSession, ObserveMessages: req.ObserveMessages, Functions: req.FunctionTools, observeFunctions: req.ObserveToolObservations}
+	fail := func(reason string) (startRequest, []string, error) {
+		return startRequest{}, nil, fmt.Errorf("claudesdk: %s", reason)
+	}
+	if len(req.Attachments) > 0 || req.WorkspaceAuthoring || req.ObserveTools {
+		return fail("requested capability is not available in the private SDK adapter")
+	}
+	if err := validateMCP(req); err != nil {
+		return startRequest{}, nil, err
+	}
+	// Search is disabled by the fixed native tool profile. Medium selects the
+	// SDK's default text generation; it has no native verbosity-level option.
+	if controls := req.ExecutionControls; controls != nil && (controls.WebSearch != "disabled" || controls.TextVerbosity != "medium") {
+		return fail("execution controls require disabled web search and medium text verbosity")
+	}
+	// The fixed SDK profile already excludes all built-in tools and subagents.
+	// Both restriction flags are supported; omitting them does not widen the profile.
+	if err := validateFunctions(req.FunctionTools); err != nil {
+		return startRequest{}, nil, err
+	}
+	var provider []string
+	for name, raw := range req.AgentOptions {
+		if name == "claude_provider" {
+			var err error
+			provider, err = providerEnvironment(raw)
+			if err != nil {
+				return startRequest{}, nil, err
+			}
+			continue
+		}
+		if name == "system_prompt" && raw == nil {
+			continue
+		}
+		value, ok := raw.(string)
+		if !ok {
+			return fail("model and system_prompt options must be strings")
+		}
+		switch name {
+		case "model":
+			start.Model = value
+		case "system_prompt":
+			start.SystemPrompt = value
+		default:
+			return fail("unsupported option: " + name)
+		}
+	}
+	if strings.TrimSpace(start.Model) == "" {
+		return fail("model is required")
+	}
+	if !filepath.IsAbs(config.Entrypoint) {
+		return fail("SDK entrypoint must be absolute")
+	}
+	config.Env = withProvider(config.Env, provider)
+	if config.Workspace != nil {
+		profile, env, err := prepareWorkspace(config, req)
+		if err != nil {
+			return startRequest{}, nil, err
+		}
+		start.Workspace = profile
+		start.Cwd = workspaceCwd(config.Workspace)
+		return start, env, nil
+	}
+	if req.LocalEnvironment != nil || req.RequireExistingNativeSession {
+		return fail("local execution and history recovery require a dedicated workspace")
+	}
+	root, err := paths.Root()
+	if err != nil {
+		return startRequest{}, nil, err
+	}
+	relative, err := filepath.Rel(root, config.StateDir)
+	if err != nil || !filepath.IsAbs(root) || !filepath.IsAbs(config.StateDir) || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return fail("SDK state must be in a managed runtime subdirectory")
+	}
+	start.Cwd = req.WorkDir
+	if start.Cwd == "" {
+		start.Cwd = filepath.Join(config.StateDir, "work")
+	}
+	if strings.HasPrefix(start.Cwd, "~/") {
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return startRequest{}, nil, err
+		}
+		start.Cwd = filepath.Join(homeDir, strings.TrimPrefix(start.Cwd, "~/"))
+	}
+	if !filepath.IsAbs(start.Cwd) {
+		return fail("work_dir must be absolute or start with ~/")
+	}
+	for _, dir := range []string{config.StateDir, filepath.Join(config.StateDir, "tmp"), start.Cwd} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return startRequest{}, nil, err
+		}
+	}
+	env := withProvider(append(append([]string{}, os.Environ()...), config.Env...), provider)
+	env = append(env, "CLAUDE_CONFIG_DIR="+config.StateDir, "TMPDIR="+filepath.Join(config.StateDir, "tmp"), "DISABLE_TELEMETRY=1", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1")
+	var mcpEnv []string
+	start.MCPHTTPServers, mcpEnv = prepareMCPHTTP(req.MCPHTTPServers)
+	env = append(env, mcpEnv...)
+	return start, env, nil
+}
