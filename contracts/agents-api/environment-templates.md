@@ -83,8 +83,11 @@ idle Session and wait for connected status before submitting input.
 Uncertain writes and Core restart during initialization fail the new Environment and
 reclaim it; they do not replay partial installation. After completion, reconnect and
 native-history recovery preserve user modifications instead of reinstalling files.
-Docker/E2B and all three harnesses use this same lifecycle. The Provider API remains
-five operations; public Templates are never E2B image templates.
+Current Core-hosted Docker and all three harnesses use this lifecycle. The Provider
+API remains five operations; public Templates are never E2B image templates and
+remain hosted-only. E2B now uses user-managed Runtime enrollment through the official
+SDK. Historical Core-managed E2B evidence below retains its original scope and does
+not qualify that new chain.
 
 ## Skills and versioned references
 
@@ -557,6 +560,11 @@ E2B probes remain mechanism evidence only; this batch does not qualify official
 E2B self-hosted onboarding or complete upstream network semantics.
 
 ### Resource and initialization checks
+
+The E2B fixture and opt-in flags described below are historical evidence for the
+retired Core-managed deployment, retained in Git history at `d03e1d25`. Current
+user-managed E2B uses the shared daemon enrollment path and does not resolve hosted
+Templates. These historical tests do not qualify the replacement deployment.
 
 `official_environment_templates.py` checks all five fixed-SDK operations plus raw
 HTTP, exact safe response shapes, field replacement/defaults, pagination, tenant

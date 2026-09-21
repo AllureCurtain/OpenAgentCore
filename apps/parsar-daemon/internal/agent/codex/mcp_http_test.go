@@ -84,7 +84,6 @@ func TestPublicMCPHTTPRejectsInvalidProfileAndStoredCredentials(t *testing.T) {
 	valid := []proto.MCPHTTPServer{{ServerLabel: "docs", ServerURL: "https://docs.example/mcp"}}
 	for _, req := range []proto.PromptRequestPayload{
 		{MCPHTTPServers: &valid},
-		{MCPHTTPServers: &valid, DisableExecutionEnvironment: true, RemoteEnvironment: &proto.RemoteEnvironment{ID: "remote"}},
 	} {
 		if _, err := publicMCPHTTPServers(req); err == nil {
 			t.Fatal("non-service profile accepted")
@@ -147,8 +146,8 @@ func writeMCPHTTPConfigResponse(t *testing.T, path string, response any) {
 	}
 }
 
-func TestRemoteMCPBearerRequiresHTTPS(t *testing.T) {
-	req := remoteEnvironmentRequest()
+func TestPublicMCPBearerRequiresHTTPS(t *testing.T) {
+	req := proto.PromptRequestPayload{DisableExecutionEnvironment: true}
 	token := "synthetic-private-token"
 	servers := []proto.MCPHTTPServer{{ServerLabel: "tools", ServerURL: "http://tools.example/mcp", BearerToken: &token}}
 	req.MCPHTTPServers = &servers
@@ -157,6 +156,6 @@ func TestRemoteMCPBearerRequiresHTTPS(t *testing.T) {
 	}
 	servers[0].ServerURL = "https://tools.example/mcp"
 	if _, err := publicMCPHTTPServers(req); err != nil {
-		t.Fatal("remote HTTPS bearer declaration rejected", err)
+		t.Fatal("HTTPS bearer declaration rejected", err)
 	}
 }

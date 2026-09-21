@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sync"
@@ -21,16 +22,17 @@ import (
 )
 
 type dispatchHarness struct {
-	t          *testing.T
-	s          *store.Store
-	d          *execution.Dispatcher
-	tenant     string
-	session    store.Session
-	device     store.ExecutionDevice
-	conn       *websocket.Conn
-	registry   *gateway.Registry
-	url        string
-	credential string
+	t            *testing.T
+	s            *store.Store
+	d            *execution.Dispatcher
+	tenant       string
+	session      store.Session
+	device       store.ExecutionDevice
+	conn         *websocket.Conn
+	registry     *gateway.Registry
+	url          string
+	credential   string
+	environments map[string]*dispatchHarness
 }
 
 func newDispatchHarness(t *testing.T) *dispatchHarness {
@@ -41,7 +43,7 @@ func newDispatchHarness(t *testing.T) *dispatchHarness {
 func newDispatchHarnessForSession(t *testing.T, configuration []byte, local bool) *dispatchHarness {
 	t.Helper()
 	s, _ := store.NewTestStore(t)
-	h := &dispatchHarness{t: t, s: s, tenant: uuid.NewString()}
+	h := &dispatchHarness{t: t, s: s, tenant: uuid.NewString(), environments: map[string]*dispatchHarness{}}
 	ctx := context.Background()
 	var err error
 	h.session, err = s.CreateSession(ctx, h.tenant, store.CreateSessionInput{Creator: store.FixtureCreator(), Engine: "codex", IdempotencyKey: "session", Configuration: configuration})
@@ -50,7 +52,16 @@ func newDispatchHarnessForSession(t *testing.T, configuration []byte, local bool
 	}
 	secret := uuid.NewString()
 	h.credential = secret
-	if local {
+	var snapshot struct {
+		Environment struct {
+			Type string `json:"type"`
+		} `json:"environment"`
+	}
+	_ = json.Unmarshal(configuration, &snapshot)
+	if snapshot.Environment.Type == "self_hosted" {
+		h.device, h.credential = enrollFixtureSession(t, s, h.tenant, h.session)
+		secret = h.credential
+	} else if local {
 		environment, getErr := s.GetSessionEnvironment(ctx, h.tenant, h.session.ID)
 		if getErr != nil {
 			t.Fatal(getErr)
@@ -75,8 +86,8 @@ func newDispatchHarnessForSession(t *testing.T, configuration []byte, local bool
 	h.url = server.URL
 	t.Cleanup(func() { server.Close(); runtime.CloseConnections(h.registry) })
 	u, _ := url.Parse(wsURL)
-	u.RawQuery = url.Values{"device_id": {h.device.ID}, "token": {secret}, "version": {proto.Version}}.Encode()
-	h.conn, _, err = websocket.DefaultDialer.Dial(u.String(), nil)
+	u.RawQuery = url.Values{"device_id": {h.device.ID}, "version": {proto.Version}}.Encode()
+	h.conn, _, err = websocket.DefaultDialer.Dial(u.String(), http.Header{"Authorization": {"Bearer " + secret}})
 	if err != nil {
 		t.Fatal("device connection failed")
 	}
