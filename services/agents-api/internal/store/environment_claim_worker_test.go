@@ -36,18 +36,22 @@ func TestWorkerReconcilesEnvironmentPromotionBeforeStart(t *testing.T) {
 				t.Fatal("promotion did not retain the active claim", turn, err)
 			}
 			// Simulate owner loss after commit, without sending any daemon Start.
+			awaitRelease := observeExecutionLeaseRelease(t, pool)
 			if err := lease.Close(t.Context()); err != nil {
 				t.Fatal(err)
 			}
+			awaitRelease()
 			restarted, err := execution.StartWorker(t.Context(), &execution.Dispatcher{Store: s, Registry: gateway.NewRegistry()})
 			if err != nil {
 				t.Fatal(err)
 			}
 			stopped, cancel := context.WithCancel(t.Context())
 			cancel()
+			awaitRelease = observeExecutionLeaseRelease(t, pool)
 			if err := restarted.Run(stopped); !errors.Is(err, context.Canceled) {
 				t.Fatal(err)
 			}
+			awaitRelease()
 			turn, err = s.GetTurn(t.Context(), tenant, pending.SessionID, turnID)
 			var outcome struct {
 				ErrorCode string `json:"error_code"`
