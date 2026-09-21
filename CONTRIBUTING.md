@@ -160,9 +160,9 @@ bounded task from the complete board; nonblocking local improvements stay queued
 Authentication, tenant/credential isolation, state consistency and data loss remain
 material acceptance requirements. Optional feature equality is not required. After
 the three profiles pass merged-main validation, publish the results, limitations
-and backlog, then stop development until new user direction. Additional harness
-implementations and protocol Subagent execution remain queued without changing the
-complete pinned protocol target.
+and backlog, then stop development until new user direction. Additional harness implementations remain queued. The separately authorized
+Subagent batch targets the six read operations across these three harnesses and
+does not change the complete pinned protocol target.
 
 The current hosted architecture is V1: Core runs independently; each Environment
 sandbox contains its daemon, selected native harness, local tools and workspace.
@@ -923,8 +923,11 @@ publication permanently transfers resource tracking to the Run; subsequent relea
 does not restore preparation ownership or make its old handle cancel that Run.
 Forwarded permission and user-choice observations from that cancelled handoff do
 not register actionable interactions. Codex prepared cancellation also waits for
-the transferred Session's local cleanup, which can finish after output closes;
-ordinary Session cancellation retains its existing behavior.
+the transferred Session's local cleanup, which can finish after output closes.
+Codex cancellation has one continuing native owner: caller deadlines bound only
+their wait, leaving child observation and cleanup alive for an explicit retry.
+Only observed child terminal facts can settle the child; actual observation
+failures remain failures. Native process-exit confirmation remains retryable.
 One prepared-output consumer starts before `Prepared.Start`, so native output beyond
 the 64-frame channel capacity cannot deadlock Start. It retains the first terminal
 frame, drains later output, and forwards accepted frames before the observed cancellation
@@ -1521,29 +1524,25 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   `disable_subagents` policy on both new and resumed Turns. Native translation
   stays in the adapter: Codex disables both multi-agent feature generations,
   overriding operator feature preferences. Product prompts that omit the policy
-  retain their defaults. Enabled multi-agent execution and public Subagent
-  resources remain separate implementation gaps; the Agent tools list is not
+  retain their defaults. Enabled multi-agent observations require separate operation qualification; the Agent tools list is not
   proven to enumerate every harness-internal utility.
-- Private `observe_subagent_identities` requests discover direct root children
-  from completed native spawn/resume Items. The Codex adapter verifies exact child
-  identity, persisted parent and original spawn-source parent against its RPC-bound
-  root. Use parent-filtered persisted `thread/list`; `thread/read` can synthesize
-  creation time before persistence. Native fields stay in the adapter. One worker
-  allows 64 candidates and 64 metadata RPCs per dispatch, four 100-row pages per
-  lookup pass, and three seconds per lookup. Root terminal content and Usage freeze
-  before a separate, three-second settlement wait; keep the reader free for RPC
-  replies and deliver successful observations before Done. Owner cancellation,
-  missing persistence, overflow, failed spawn and late discovery remain explicit
-  gaps, never invented identities or public closure. Child lifetime is unchanged.
-  The leased execution journal projects neutral identity facts in its existing
-  Session transaction; unrequested observations are rejected. Device and engine
-  come from the authorized Session binding, not daemon-supplied project ownership.
-  The service assigns a stable ID unique within device/engine/native identity and
-  freezes Session, parent, native creation and first-event provenance. Conflicts
-  roll back the whole event batch; identical or later continuation observations
-  preserve the original binding. Internal reads enforce project and visible Session
-  scope. This is a private consumer prerequisite, not public Subagent admission,
-  lifecycle, child output reconstruction or complete discovery/recovery.
+- Subagent resources use the common observations in
+  `internal/agentdaemon/proto/subagents.go`: verified identity, successful lifecycle
+  effects, native-owned Turns/Items and neutral coordination operations. Core
+  assigns public IDs and projects them under the existing Session lock and leased
+  execution journal. Native names, history parsing and outcome proof stay in
+  adapters. Public GETs read persisted resources without starting native work.
+  Child Turns have a native writer and a separate table from the Core queue;
+  `public_execution_turns` provides the shared Session read/pagination view.
+  Session Items stay root-owned; copied parent transcripts never become child work.
+  Repeated effects are idempotent. Active includes idle; task completion, process
+  release and cancellation cannot fabricate public closure. Native timestamps
+  retain their actual precision and unknown Usage stays null.
+  Reuse the existing native owner for child settlement and cancellation, freeze
+  root output first, and deliver child Items before their terminal Turn snapshot.
+  Do not add another scheduler or a broad recovery framework. Capability
+  advertisements do not qualify unsupported native facts. The exact read contract,
+  admission limits and remaining evidence are in [Subagents](contracts/agents-api/subagents.md).
 - `function_tools` advertises the optional native function-call bridge. Explicit
   prompt definitions become Codex dynamic tools; unchanged prompts carry none.
   Requests and ordered text/image results are scoped by Run and native call ID.
@@ -1820,7 +1819,8 @@ for implementation and registration steps.
 
 MiniMax Code's opt-in Agents API profile qualifies native ACP 0.4.12 for
 `environment:none` text execution. It reuses the shared lifecycle without public
-workspace, functions, MCP or native Subagents. Native configuration disables
+workspace, functions or MCP. Enabled Subagents use the separately qualified
+common observation path below. Native configuration disables
 file/shell authority and external
 capability discovery; the child receives a private Session home and a restricted
 environment. Active-input application requires a native ACP receipt, cancellation
@@ -1828,7 +1828,8 @@ settles the process and output, and continuation requires the exact owned native
 history. Do not infer history IDs or qualify hosted execution from this text
 profile. See [deployment and acceptance](services/agents-api/deploy/mcode/README.md).
 
-The MiniMax workspace profile retains the published CLI and isolates native
+The MiniMax workspace profile builds one CLI from the fixed upstream source and
+lockfile through the existing companion packaging path, and isolates native
 workspace tools behind its standard MCP client. The process and native Session
 share one private control directory; public workspace files cannot configure that
 process or become privileged project instructions. A trusted adapter-owned bridge
@@ -1836,7 +1837,19 @@ runs the original six tool implementations in the upstream Linux sandbox, with n
 unsandboxed fallback. Keep native history bound to the control directory and Files/
 Artifacts bound to the public workspace. Core and shared file helpers remain engine
 neutral. This internal MCP transport does not admit public MCP configuration.
-Record published CLI and worker-source provenance separately; complete
+Record the upstream revision, native admission patch hashes and worker-source
+provenance. The bounded patch checks the shared descendant-task limit inside the
+existing native SQLite admission transaction before start, without another
+scheduler. ACP initialization must acknowledge the applied limit before input.
+The native tool catalog applies the protected workspace policy to every child,
+not only the root's configured profile. Only the Session's authorized internal
+workspace MCP entry crosses the native child selector; this does not grant
+external MCP access or bypass the native profile's read/write restrictions.
+Initialization must acknowledge that protected tool policy before input as well.
+Subagent reads use the Session-private protected native database. Multi-agent
+workspace execution installs only the existing authorized workspace MCP entry in
+that private native configuration so children inherit the same tools; public MCP
+and Environment-origin MCP combinations remain separately qualified. Complete
 [workspace acceptance](contracts/agents-api/mcode-workspace-v1.md) before enabling
 hosted execution. The standalone companion uses its own npm lock; `make check`
 runs its lifecycle tests and script checks, while its exact-source Linux build and
@@ -2156,8 +2169,11 @@ declared functions with ordered text results, and the HTTP MCP subset
 described above. It rejects unsupported request
 options and disables built-in tools and undeclared MCP discovery.
 `DisableExecutionEnvironment` and `DisableSubagents` are accepted assertions about
-this fixed restrictive profile. Omission does not enable built-in tools. New and
-resumed queries use the SDK's empty built-in tool set, explicit function MCP
+the single-Agent restrictive profile. Omission does not enable built-in tools.
+Explicit Subagent observation enables only its qualified native delegation tools,
+with admission before start and verified child identity before workspace authority.
+Public function/MCP combinations remain unqualified with Subagents. Single-Agent
+new and resumed queries use the SDK's empty built-in tool set, explicit function MCP
 configuration and allowlist, strict MCP configuration and empty user/project/local
 setting sources. Without HTTP MCP declarations, native initialization and real
 provider request inventories must contain only the declared host functions. Managed operator policy may further

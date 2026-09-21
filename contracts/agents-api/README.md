@@ -64,8 +64,8 @@ business Team orchestration are separate from protocol coverage.
 
 This inventory is based on the pinned Python source, not our generated OpenAPI.
 It contains 42 distinct HTTP operations in 15 resource classes, excluding async
-duplicates, overloads and client-side helpers. There are 36 handler entries; the six
-Subagent read operations remain missing. The separate
+duplicates, overloads and client-side helpers. There are 42 handler entries; the six
+[Subagent reads](subagents.md) have three-harness Docker workflow qualification. The separate
 general `/v1/files` source-file API and `/v1/skills` resource/version operations
 are outside this 42-operation count.
 
@@ -88,10 +88,10 @@ paths start at `/vaults`, not `/agents/vaults`.
 | sessions.turns | retrieve, list | Implemented reads; lifecycle conformance still partial |
 | sessions.items | list | Partial Item variants |
 | sessions.artifacts | retrieve, list, delete, content | Shared output capture and immutable stored reads/deletion on accepted Docker profiles and [qualified user-managed workflows](user-managed-runtime-v1.md) (prior Core-managed E2B evidence remains historical), including retained downloads after Runtime loss; exact upstream defaults/errors, unchanged-file republishing and cancellation-edge parity remain unverified |
-| sessions.subagents | retrieve, list | Missing |
-| sessions.subagents.items | list | Missing |
-| sessions.subagents.turns | retrieve, list | Missing |
-| sessions.subagents.turns.items | list | Missing |
+| sessions.subagents | retrieve, list | [Three-harness Docker reads, native lifecycle limits and real evidence](subagents.md); full multi-agent semantics remain partial |
+| sessions.subagents.items | list | Qualified own-child history reads; full Item variants and live child streaming remain partial |
+| sessions.subagents.turns | retrieve, list | Implemented; shared Session/child IDs |
+| sessions.subagents.turns.items | list | Implemented; scoped persisted reads |
 | environments | retrieve | Three-harness colocated self-hosted implementation and qualified Docker hosted profiles: durable status and safe initial-file metadata; other installation inventory and full lifecycle parity remain gaps |
 | environments.files | create, list | [Bounded live listing and inline/source-file creation](environment-files.md) on qualified Docker workspaces; [user-managed enrollment](user-managed-runtime-v1.md) reuses the local implementation with separate real public acceptance. Full listing, overwrite and error semantics remain partial |
 | environments.templates | create, retrieve, update, list, delete | [Reusable network, files, env/setup/packages, inline/referenced Skills and Session snapshots](environment-templates.md); other initialization and full semantics remain gaps |
@@ -162,7 +162,7 @@ user-managed enrollment remain outside this qualification.
 
 | Area | Missing or unverified scope |
 | --- | --- |
-| Subagents / multi_agent | Six public child read operations, enabled execution, child lifecycle/interactions and full recovery; deferred outside the MVP |
+| Subagents / multi_agent | Six reads and same-child recovery have three-harness Docker evidence; optional native operations, live child progress, full lifecycle/interactions and tool combinations remain explicit gaps |
 | Environment Templates | Unsupported restricted hostname forms, unqualified installation overrides/null network and exact hosted errors remain gaps. CRUD/list, files, env/setup/system/npm/Python, inline/referenced Skills, Plugins, workspace capability directories and Session references have recorded coverage. Environment Plugin MCP transport and placement limits are [listed separately](environment-templates.md#environment-origin-mcp-plugins) |
 | Input and configuration | Non-text initial input, broader content/configuration unions, structured output and reasoning/verbosity combinations |
 | Tools and interactions | Deferred functions, other tool types, effective tool-set enforcement and result/cancel publication ordering; MiniMax public functions and service-origin MCP remain unsupported |
@@ -315,8 +315,9 @@ including further deployment qualification; this inventory describes merged beha
   replace the entire field ([configuration guide](https://developers.openai.com/api/docs/guides/agents-api/configuration)).
   Tools null clears the list as specified by pinned `session_create_params.py`.
   Saved metadata never becomes Session metadata. A model name is not a daemon engine name.
-  Current admission requires disabled multi-agent, implicit reasoning, tier `auto`,
-  ordinary text and non-deferred functions. Unsupported saved settings fail before
+  Current admission uses the qualified harness profile for multi-agent execution,
+  implicit reasoning, tier `auto`, ordinary text and non-deferred functions.
+  Enabled multi-agent/function combinations remain unsupported. Unsupported saved settings fail before
   Session persistence, unless replaced by supported overrides. Other native options
   remain implementation gaps, not excluded protocol variants.
   Fixed SDK/raw HTTP checks cover inherited/overridden configuration, tenant ownership,
@@ -395,8 +396,9 @@ and cancellation. This does not close the remaining protocol/transport gaps.
 existing Sessions retain their immutable choice. `AGENTS_API_HARNESSES` explicitly
 adds installed deployment profiles without requiring a managed Provider. Model
 identity is independent.
-All three profiles require disabled `multi_agent`, implicit reasoning, service tier
-`auto` and ordinary text output. Optional tools/configuration are qualified per
+All three profiles require implicit reasoning, service tier `auto` and ordinary
+text output. Enabled `multi_agent` qualification is tracked separately in
+[Subagents](subagents.md); other profiles continue to reject unsupported execution. Optional tools/configuration are qualified per
 operation and placement; native support is not public admission by itself.
 
 | Engine | Qualified placements and limits |
@@ -464,18 +466,12 @@ on fresh and resumed Turns. Operator feature preferences cannot re-enable them.
 Controlled model-boundary tests check absence of direct/deferred subagent tools
 while the official function workflow continues to run.
 
-Disabled `multi_agent` input is admitted. Enabled multi-agent execution and public
-Subagent resources are still unsupported. Do not infer that `Agent.tools` is the
-complete native tool registry: environment and subagent tools have separate
-configuration. The upstream behavior of internal Goal, Skills and user-input
-utilities needs further evidence; their presence alone is not proof of a mismatch.
-
-A private typed discovery path projects verified native child identities through
-the leased execution journal. It freezes service identity, Session ownership,
-native parent/creation and first-observation provenance for internal scoped reads.
-It does not enable the public resources above or infer lifecycle from idle/unload.
-Bounded discovery and delivery rules are documented in
-[the contributor guide](../../CONTRIBUTING.md#current-implementation).
+Disabled `multi_agent` continues to remove native child tools. The six public reads
+and their neutral identity/lifecycle/Turn/Item observations are described in
+[Subagents](subagents.md); native qualification is tracked there. The service does
+not infer closure from idle/unload, and public capability declarations alone do
+not qualify an adapter. Environment and child tools have separate configuration;
+`Agent.tools` is not assumed to enumerate every native utility.
 
 ### Turn recovery reads
 
@@ -510,8 +506,9 @@ prepared by release `906069e` before upgrade; see the
 [upgrade procedure](../../services/agents-api/README.md#upgrading-archived-item-history).
 The retired archive format could not recover unrecorded message boundaries or
 outcomes; those limitations remain in already indexed historical Items.
-Unsupported native variants, reasoning, subagent Items and Items mutation
-are not covered. Public submission supports text messages, cancellation and function results.
+Other native variants, full reasoning coverage and Items mutation remain gaps.
+Qualified child Items are described in [Subagents](subagents.md). Public submission
+supports text messages, cancellation and function results.
 
 Legacy Done frames alone do not complete assistant Items. Aggregate answer text
 is confirmed by successful Turn termination; failed Turns retain observed deltas
