@@ -1,0 +1,42 @@
+allow_managed_hooks_only = true
+default_permissions = "managed-workspace"
+allowed_approval_policies = ["never"]
+[allowed_permission_profiles]
+managed-workspace = true
+managed-workspace-enabled = true
+[permissions.managed-workspace.filesystem]
+":minimal" = "read"
+"/environment/workspace" = "write"
+"/workspace" = "write"
+"/environment/initialization" = "read"
+"/environment/packages" = "write"
+"/environment/packages/system" = "read"
+"/tmp/parsar-tool-root" = "read"
+[permissions.managed-workspace.network]
+enabled = false
+[permissions.managed-workspace-enabled]
+extends = "managed-workspace"
+[permissions.managed-workspace-enabled.network]
+enabled = true
+[permissions.filesystem]
+deny_read = [
+  "/environment/staging",
+  "/home/*/.parsar/parsar-daemon/*/auth.json",
+  "/home/*/.parsar/parsar-daemon/agent-sessions/*/config.toml",
+  "/home/*/.parsar/parsar-daemon/agent-sessions/*/sessions",
+  "/home/*/.parsar/parsar-daemon/agent-sessions/*/archived_sessions",
+]
+
+[features]
+hooks = true
+
+[hooks]
+managed_dir = "/etc/codex/runtime-hooks"
+
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "/usr/bin/python3 -I -S /etc/codex/tool-env.py"
+timeout = 5
