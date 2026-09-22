@@ -4,10 +4,11 @@
 
 This repository is the standalone execution substrate copied from Parsar at the
 revision in `provenance/source.json`. Keep the API, its migrations, protocol,
-execution daemon, runtime adapters, shared execution packages and build/test tools
-here. Product users, workspaces, model catalogs, business assets, web UI, product
-API and product migrations remain in Parsar. Do not import `server/`, `apps/web/`,
-`apps/parsar/`, product CLI/plugin packages or their deployment stack.
+execution daemon, runtime adapters, shared execution packages, the standalone Core
+Web console and build/test tools here. Product users, workspaces, model catalogs,
+business assets, the Parsar product Web, product API and product migrations remain
+in Parsar. Do not import `server/`, `apps/parsar/`, product CLI/plugin packages or
+their deployment stack.
 
 Preserve copied runtime and protocol behavior. Existing Go import paths, binary
 names and runtime environment variables remain unchanged for this copy; they do
@@ -33,7 +34,8 @@ split oversized components before extending them. Use `internal/obs/log` for log
 ## Required checks
 
 Run `make check` before completion. The standalone gate includes all daemon/shared
-Go tests, Core contract/client/service tests, a real dedicated PostgreSQL test
+Go tests, Core contract/client/service tests, Core Web and TypeScript client
+checks (including fixture-only Playwright acceptance), a real dedicated PostgreSQL test
 database, byte-for-byte sqlc regeneration checks, standalone API builds, Claude SDK
 tests and packaging, MiniMax companion checks, and Rust filesystem-helper
 tests/format/Clippy. It intentionally has no product Web/server/installer gates. The full gate fails when the database variable is missing.

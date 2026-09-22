@@ -7,9 +7,10 @@ The source repository retains both its product and its existing Core copy.
 
 This repository contains the API service, PostgreSQL migrations, pinned public
 protocol, execution daemon, the Docker provider, native Harness adapters,
-runtime image builders, client library, tests and operator documentation.
-It does not contain the Parsar web application, product backend, product database,
-business CLI or product deployment stack.
+runtime image builders, Go and TypeScript client libraries, the standalone Core
+Web console, tests and operator documentation. It does not contain the Parsar
+product application, product backend, product database, business CLI or product
+deployment stack.
 
 V1 user-managed deployments colocate our daemon, selected harness, tools and
 `/workspace`. Core manages Docker only; users provision, renew and destroy E2B
@@ -26,12 +27,16 @@ for tested deployments and remaining limits.
 - [Docker Runtime](services/agents-api/deploy/codex/README.md)
 - [Protocol coverage and known gaps](contracts/agents-api/README.md)
 - [Harness selection](contracts/agents-api/harness-selection.md)
+- [Core Web overview](docs/web/README.md)
+- [Core Web 中文说明](docs/web/README.zh-CN.md)
+- [Connect Core Web to Core](docs/web/core-connection.md)
 - [Contributor rules](CONTRIBUTING.md)
 - [Copy provenance and validation](provenance/README.md)
 
 ```sh
 make build-agents-api
 make build-daemon
+pnpm dev:web
 ```
 
 These builds require the Go version pinned in `go.mod`. Output goes under
@@ -39,6 +44,12 @@ These builds require the Go version pinned in `go.mod`. Output goes under
 Provision a dedicated Core PostgreSQL database and caller credentials using the
 operator guide before starting the service. Native execution also needs the
 appropriate Runtime image and provider configuration.
+
+Core Web lives in `apps/web` and talks only to the public `/v1/agents/**`
+HTTP/SSE contract through the TypeScript implementation in
+`packages/agents-client`. The Go client remains in
+`packages/agents-client/v1`; both clients live next to the contract they consume
+without coupling browser state to Core execution internals.
 
 The copied Go module/import paths, executable names and `PARSAR_*` environment
 variables intentionally retain their existing names. They resolve to source in
@@ -49,12 +60,18 @@ sources and packages remain pinned dependencies, not vendored binaries.
 ## Validate
 
 On Linux with Go, Node 22, pnpm 10.30.3, Python 3.9+, Rust 1.95.0 (including
-rustfmt/Clippy), OpenSSL development libraries and a dedicated test PostgreSQL:
+rustfmt/Clippy), OpenSSL development libraries, Chrome for Playwright, and a
+dedicated test PostgreSQL:
 
 ```sh
 export PARSAR_AGENTS_API_TEST_DATABASE_URL='postgres://.../parsar_agents_api_core_tests?sslmode=disable'
 make check
 ```
+
+Install the pinned Playwright browser on a fresh validation host with
+`pnpm exec playwright install --with-deps chrome`. Fixture acceptance uses
+loopback ports `18092` and `4174`; set `AGENTS_FIXTURE_PORT` and
+`AGENTS_WEB_PORT` to unused ports when either default is occupied.
 
 The full gate requires the test database rather than silently skipping persistence
 tests. Native model/provider fixtures remain explicit, credential-dependent

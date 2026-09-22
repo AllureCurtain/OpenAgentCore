@@ -3,10 +3,16 @@
   "private": true,
   "packageManager": "pnpm@10.30.3",
   "scripts": {
-    "typecheck": "pnpm --filter @parsar/claude-sdk-adapter typecheck",
-    "test": "pnpm --filter @parsar/claude-sdk-adapter test"
+    "dev:web": "pnpm --filter @agents-core-web/web dev",
+    "build:web": "pnpm --filter @agents-core-web/web build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm --filter @parsar/claude-sdk-adapter test && pnpm test:core-doctor && pnpm test:web",
+    "test:core-doctor": "node --test scripts/core-doctor.test.mjs",
+    "test:web": "pnpm --filter @agents-core-web/agents-client test && pnpm --filter @agents-core-web/web test",
+    "test:web:acceptance": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/node": "^26.1.0",
     "typescript": "^5.8.3"
   }
