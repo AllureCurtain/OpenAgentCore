@@ -97,6 +97,7 @@ func discoverClaudeSDK(rc *runContext, profile string, check func(context.Contex
 		caps.WorkspaceReadPreparation, caps.NativeSessionRecovery = true, true
 	}
 	out.Info.Available, out.Info.Version = true, info.SDK
+	out.Info.Capabilities.MessageImages = info.SupportsMessageImages()
 	out.Info.Capabilities.StructuredOutput = out.Config.Workspace == nil && info.SupportsStructuredOutput()
 	out.Info.Capabilities.SubagentObservations = info.SupportsSubagents()
 	out.Info.Capabilities.MCPHTTPTools = info.SupportsHTTPMCP()

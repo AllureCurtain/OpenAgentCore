@@ -15,7 +15,7 @@ function fixture(t) {
   }));
   const config = { home: dirs.home, state: dirs.state, scratch: dirs.scratch, protected_dirs: [dirs.protected],
     dependency_path: dirs.deps, env_names: ["ANTHROPIC_API_KEY", "HTTP_PROXY"] };
-  const request = { type: "start", prompt: "fixture", model: "fixture", system_prompt: "", cwd: dirs.workspace, workspace: config };
+  const request = { type: "start", input: [{ content: [{ type: "input_text", text: "fixture" }] }], model: "fixture", system_prompt: "", cwd: dirs.workspace, workspace: config };
   const previous = process.env;
   process.env = { HOME: dirs.home, CLAUDE_CONFIG_DIR: dirs.state, ANTHROPIC_API_KEY: "fixture-secret",
     HTTP_PROXY: "http://fixture-proxy", UNSELECTED_CANARY: "must-not-inherit", NODE_OPTIONS: "unsafe",

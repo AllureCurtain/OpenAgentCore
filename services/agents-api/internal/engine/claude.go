@@ -11,11 +11,12 @@ import (
 
 func claudeProfile() Profile {
 	return Profile{
-		StructuredOutput: true,
-		Placements:       []string{"none", "openai_hosted", "self_hosted"}, MCPBearer: true,
+		StructuredOutput:       true,
+		MessageImagePlacements: []string{"none"},
+		Placements:             []string{"none", "openai_hosted", "self_hosted"}, MCPBearer: true,
 		ValidateConfiguration: validateClaudeConfiguration,
 		ValidateTools:         validateClaudeTools,
-		ValidateFunctionResult: func(content []proto.FunctionResultContent) error {
+		ValidateFunctionResult: func(content []proto.InputContent) error {
 			for _, part := range content {
 				if part.Type != "input_text" {
 					return ErrInvalidInput

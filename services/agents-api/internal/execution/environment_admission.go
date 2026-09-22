@@ -43,6 +43,9 @@ func (w *Worker) validateEnvironmentAdmission(engine string, configuration json.
 }
 
 func (w *Worker) validateCreation(ctx context.Context, input store.CreateSessionInput) error {
+	if err := w.dispatcher.validateEngineInputs(input.Engine, input.Configuration, input.InitialInputs); err != nil {
+		return err
+	}
 	if preparedEnvironmentConfiguration(input.Configuration) {
 		if err := w.validateEnvironmentAdmission(input.Engine, input.Configuration); err != nil {
 			return err

@@ -4,12 +4,35 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 )
 
 func (w *Worker) bind(ctx context.Context, item store.ExecutionWork) (bool, error) {
-	ready, err := w.bindDevice(ctx, item.TenantID, item.SessionID)
+	input, _, inputErr := w.dispatcher.initialInput(ctx, item.TenantID, item.SessionID, item.TurnID)
+	if inputErr != nil && !errors.Is(inputErr, store.ErrInvalidInput) && !errors.Is(inputErr, store.ErrNotFound) {
+		return false, inputErr
+	}
+	// Candidate selection is a snapshot. Cancellation can append a control input
+	// before this read, so recheck eligibility after reading the input history.
+	turn, err := w.dispatcher.Store.GetTurn(ctx, item.TenantID, item.SessionID, item.TurnID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if turn.Status != store.TurnQueued || !turn.CancelRequestedAt.IsZero() {
+		return false, nil
+	}
+	if inputErr != nil {
+		return false, inputErr
+	}
+	ready, err := w.bindDevice(ctx, item.TenantID, item.SessionID, input)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
 	if !errors.Is(err, store.ErrDeviceBindingConflict) {
 		return ready, err
 	}
@@ -20,7 +43,7 @@ func (w *Worker) bind(ctx context.Context, item store.ExecutionWork) (bool, erro
 	return false, err
 }
 
-func (w *Worker) bindDevice(ctx context.Context, tenantID, sessionID string) (bool, error) {
+func (w *Worker) bindDevice(ctx context.Context, tenantID, sessionID string, input proto.MessageInput) (bool, error) {
 	session, err := w.dispatcher.Store.GetSession(ctx, tenantID, sessionID)
 	if errors.Is(err, store.ErrNotFound) {
 		return false, nil
@@ -32,7 +55,16 @@ func (w *Worker) bindDevice(ctx context.Context, tenantID, sessionID string) (bo
 	if err := json.Unmarshal(session.Configuration, &snapshot); err != nil {
 		return false, err
 	}
-	return w.bindSessionDevice(ctx, session, func(id string) bool { return w.ready(ctx, id, session.Engine, snapshot) })
+	return w.bindSessionDevice(ctx, session, func(id string) bool {
+		if !w.ready(ctx, id, session.Engine, snapshot) {
+			return false
+		}
+		if !input.HasImages() {
+			return true
+		}
+		peer, err := w.dispatcher.authorizedPeer(ctx, id)
+		return err == nil && w.dispatcher.messageInputSupport(peer, session.Engine, snapshot, input) == nil
+	})
 }
 
 func (w *Worker) bindSessionDevice(ctx context.Context, session store.Session, ready func(string) bool) (bool, error) {

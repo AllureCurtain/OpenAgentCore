@@ -160,7 +160,7 @@ func functionResult(call store.FunctionCall) (proto.FunctionResultPayload, error
 	if value.Success == nil {
 		return proto.FunctionResultPayload{}, errors.New("function result requires success")
 	}
-	result := proto.FunctionResultPayload{DeliveryID: "function:" + call.CallID, CallID: call.ExecutorCallID, Success: *value.Success, Content: []proto.FunctionResultContent{}}
+	result := proto.FunctionResultPayload{DeliveryID: "function:" + call.CallID, CallID: call.ExecutorCallID, Success: *value.Success, Content: []proto.InputContent{}}
 	output := bytes.TrimSpace(value.Output)
 	if len(output) > 0 && !bytes.Equal(output, []byte("null")) {
 		if output[0] == '"' {
@@ -168,13 +168,13 @@ func functionResult(call store.FunctionCall) (proto.FunctionResultPayload, error
 			if err := json.Unmarshal(output, &text); err != nil {
 				return result, err
 			}
-			result.Content = append(result.Content, proto.FunctionResultContent{Type: "input_text", Text: &text})
+			result.Content = append(result.Content, proto.InputContent{Type: "input_text", Text: &text})
 		} else if err := json.Unmarshal(output, &result.Content); err != nil {
 			return result, err
 		}
 	}
 	if value.Error != nil {
-		result.Content = append(result.Content, proto.FunctionResultContent{Type: "input_text", Text: value.Error})
+		result.Content = append(result.Content, proto.InputContent{Type: "input_text", Text: value.Error})
 	}
 	return result, result.ValidateContent()
 }

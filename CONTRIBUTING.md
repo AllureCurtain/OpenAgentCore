@@ -102,6 +102,11 @@ databases, credentials and migrations. The product uses Core exclusively; it has
   merely for new names or directories. Replacements may retire obsolete private
   interfaces and history backfills in bounded PRs; this does not authorize deleting
   product data or changing unrelated product behavior.
+- Every concrete harness interaction goes through the common Runtime contract
+  and its adapter. Extend that contract minimally when a current operation cannot
+  be expressed; never put native capability logic or transport conversion into
+  Core handlers, storage or scheduling. Qualify public workflows through the same
+  shared chain; direct native probes establish feasibility only.
 - Keep engine-specific types, process management and protocol translation inside
   execution adapters. The public API and persistence/application core must not
   interpret Parsar product payloads or depend on one engine's native item types.
@@ -114,10 +119,14 @@ databases, credentials and migrations. The product uses Core exclusively; it has
 - Maintain tasks, priorities and evidence in the Feishu board. Register issues
   discovered during a task without switching work or automatically selecting them
   next. Only a direct acceptance blocker justifies a minimal in-scope fix. After
-  each bounded task passes checks/review and merges, mark it done, reread the full
-  board and choose the next task by value, dependencies, risk and effort. Agent API
-  protocol and atomic execution work takes priority over product integration, UI
-  work and business Team orchestration. Prioritize a sound architecture skeleton
+  each bounded task passes checks/review and merges, mark its child entry done.
+  Select large Core tasks in order from the concise TODO, then use the full board
+  to choose bounded children by value, dependencies, risk and effort. Finish the
+  selected large task before switching to the next one. The main agent selects
+  tasks; subagents are for technical design, scoped collaboration and review,
+  not prioritization. Completing a child or milestone does not stop an explicitly
+  active long-term goal. Product integration, UI and business Team work remain
+  outside Core delivery. Prioritize a sound architecture skeleton
   and correct principal workflows with real API validation. Record and defer
   low-frequency corner cases when risk and ROI permit; do not let minor details
   delay the main work. Required checks and material correctness guarantees apply.
@@ -158,11 +167,14 @@ The current MVP covers Codex, Claude Code and MiniMax Code through the shared
 single-Agent path: Session
 creation, environment preparation, native execution, files/artifacts, cancellation,
 reconnection/recovery queries, and standalone deployment acceptance. Select each
-bounded task from the complete board; nonblocking local improvements stay queued.
+bounded child from the complete board within the selected concise-TODO task;
+nonblocking local improvements stay queued.
 Authentication, tenant/credential isolation, state consistency and data loss remain
 material acceptance requirements. Optional feature equality is not required. After
 the three profiles pass merged-main validation, publish the results, limitations
-and backlog, then stop development until new user direction. Additional harness implementations remain queued. The separately authorized
+and backlog. The user has since renewed continuous Core delivery: select and
+finish large tasks from the concise TODO, retaining bounded child acceptance.
+Additional harness implementations remain queued. The separately authorized
 Subagent batch targets the six read operations across these three harnesses and
 does not change the complete pinned protocol target.
 
@@ -204,9 +216,24 @@ forwarding. The explicit daemon-executor decision supersedes the previous native
 executor interoperability requirement. The superseded execution route is removed;
 retain reusable filesystem helpers,
 necessary regressions and historical evidence without a compatibility layer.
-The private daemon wire protocol is 0.3.0 after removal of remote execution fields.
+The private daemon wire protocol is 0.4.0. Initial, prepared and active input use
+the same ordered MessageInput contract, replacing scalar prompts and attachments.
+User-message boundaries and text/image order remain intact through Core and the
+Runtime wire; adapters own native conversion and receipt aggregation. Text-only
+transports reject image content rather than dropping it. Codex has a flat native
+input list and uses blank-line separators between messages; this does not preserve
+independent native user-message boundaries. No old wire fallback is maintained.
 Deploy Core and daemon together; the existing major/minor WebSocket check rejects
-0.2 peers before dispatch rather than ignoring their removed configuration.
+older major/minor peers before dispatch rather than ignoring removed fields.
+The independently packaged Claude bridge uses protocol 2 for ordered input;
+readiness rejects packages reporting the old string-input protocol.
+Image-bearing messages require a qualified profile/placement before persistence
+and image support from the selected Runtime before native delivery. These checks
+apply to that operation only; ordinary text retains offline queueing. Initial,
+prepared and active paths use the same content and preserve receipt ownership.
+The qualified public profile is inline PNG/JPEG on Codex/Claude `none`; workspace
+images, MiniMax images and remote URLs remain explicit implementation gaps. Core
+does not fetch or transform media. See [message input coverage](contracts/agents-api/message-input.md).
 
 User-managed onboarding creates a `self_hosted` Session first, then passes its
 Environment ID and unchanged `remote_url` to our Runtime with connect-only

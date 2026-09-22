@@ -452,8 +452,8 @@ errors, not successful placeholder resources. Add any provider or engine-specifi
 extension separately from upstream fields and document it here when implemented.
 
 `openapi.yaml` is our generated supported surface; it is not the full upstream
-specification. The shared Go wire types are in `v1`. Physical Session cleanup, non-text
-message input, broader structured-output combinations, broader options/tools, remaining Vault lifecycle,
+specification. The shared Go wire types are in `v1`. Physical Session cleanup, broader image
+message profiles, broader structured-output combinations, broader options/tools, remaining Vault lifecycle,
 Subagents and environment/provider resources remain incomplete. Reject unsupported
 requests explicitly; persisted saved configuration is not execution admission.
 
@@ -539,7 +539,7 @@ historical native transport evidence.
 ### Public execution admission
 
 `POST /v1/agents/sessions/{session_id}/events` accepts `agent.session.input.message`
-with user `input_text` content, `agent.session.input.cancel` and
+with ordered user `input_text` content and [qualified image content](message-input.md), `agent.session.input.cancel` and
 `agent.session.input.tool_result`. Successful atomic
 admission returns 204, as consumed by the official `events.create` method. A retry
 key identifies the entire ordered request; conflict does not partially admit it.
@@ -695,10 +695,11 @@ tool invocation. Omitted, null and explicit medium reused the same creation
 identity. The tool data was synthetic; model responses were live. This does not
 establish non-default verbosity, tool-set enforcement or full protocol conformance.
 
-### Initial text at Session creation
+### Initial input at Session creation
 
 Session creation accepts the pinned string and user-message-array input
-forms. It shares text validation and admission with the events endpoint. The
+forms. It shares message validation and admission with the events endpoint,
+including the [qualified image profile](message-input.md). The
 Session and its initial work commit atomically; an identical
 creation retry never re-admits the input, including after later or terminal Turns.
 With `none`, this includes the first Turn and input Items. With `self_hosted`, it
@@ -710,7 +711,7 @@ configured engine must support admission before any initial work is persisted.
 
 Fixed SDK/raw HTTP and PostgreSQL tests cover the accepted forms, saved and inline
 configuration, ordering, tenant isolation, retries, rollback and persistence.
-Non-text input remains a gap. Empty arrays and blank text
+Image support is bounded as documented above. Empty arrays and blank text
 currently fail the shared message validator; exact upstream handling of these
 cases, local size limits and error details remains unverified. Swagger 2 cannot
 express the string/array union, so input is unconstrained with a type description.

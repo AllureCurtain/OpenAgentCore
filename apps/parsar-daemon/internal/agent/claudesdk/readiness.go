@@ -25,6 +25,10 @@ type RuntimeInfo struct {
 	Features []string `json:"features"`
 }
 
+func (info RuntimeInfo) SupportsMessageImages() bool {
+	return slices.Contains(info.Features, "message_images")
+}
+
 func (info RuntimeInfo) SupportsStructuredOutput() bool {
 	return slices.Contains(info.Features, "structured_output")
 }
@@ -116,7 +120,7 @@ func CheckRuntime(ctx context.Context, config Config) (RuntimeInfo, error) {
 		return RuntimeInfo{}, fmt.Errorf("claudesdk: runtime check failed")
 	}
 	var info RuntimeInfo
-	if json.Unmarshal(raw, &info) != nil || info.Type != "runtime_ready" || info.Protocol != 1 ||
+	if json.Unmarshal(raw, &info) != nil || info.Type != "runtime_ready" || info.Protocol != 2 ||
 		info.Node == "" || info.SDK == "" || info.MCP == "" || info.Native == "" {
 		return RuntimeInfo{}, fmt.Errorf("claudesdk: invalid runtime readiness report")
 	}

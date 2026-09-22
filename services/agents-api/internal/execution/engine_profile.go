@@ -37,12 +37,19 @@ func validateProfileConfiguration(profile engine.Profile, snapshot Snapshot) err
 	return err
 }
 
-func validateProfileInputs(profile engine.Profile, inputs []store.Input) error {
-	if profile.ValidateFunctionResult == nil {
-		return nil
-	}
+func validateProfileInputs(profile engine.Profile, placement string, inputs []store.Input) error {
 	for _, input := range inputs {
-		if input.Kind != "tool_result" {
+		if input.Kind == "message" {
+			messages, err := messageInput(input.Payload)
+			if err != nil {
+				return err
+			}
+			if err := validateMessageImageProfile(profile, placement, messages); err != nil {
+				return err
+			}
+			continue
+		}
+		if input.Kind != "tool_result" || profile.ValidateFunctionResult == nil {
 			continue
 		}
 		var value store.FunctionResultInput

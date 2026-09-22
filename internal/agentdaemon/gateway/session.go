@@ -561,6 +561,7 @@ func deviceKindsFromHeartbeat(p proto.HeartbeatPayload) []device.SupportedAgentK
 				WebSearchControl:              info.Capabilities.WebSearchControl,
 				TextVerbosity:                 info.Capabilities.TextVerbosity,
 				StructuredOutput:              info.Capabilities.StructuredOutput,
+				MessageImages:                 info.Capabilities.MessageImages,
 				ExecutionControls:             info.Capabilities.ExecutionControls,
 				SubagentControl:               info.Capabilities.SubagentControl,
 				SubagentObservations:          info.Capabilities.SubagentObservations,
