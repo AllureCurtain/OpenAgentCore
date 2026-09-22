@@ -10,11 +10,29 @@ import (
 )
 
 func (w *Worker) bind(ctx context.Context, item store.ExecutionWork) (bool, error) {
-	input, _, err := w.dispatcher.initialInput(ctx, item.TenantID, item.SessionID, item.TurnID)
+	input, _, inputErr := w.dispatcher.initialInput(ctx, item.TenantID, item.SessionID, item.TurnID)
+	if inputErr != nil && !errors.Is(inputErr, store.ErrInvalidInput) && !errors.Is(inputErr, store.ErrNotFound) {
+		return false, inputErr
+	}
+	// Candidate selection is a snapshot. Cancellation can append a control input
+	// before this read, so recheck eligibility after reading the input history.
+	turn, err := w.dispatcher.Store.GetTurn(ctx, item.TenantID, item.SessionID, item.TurnID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
+	if turn.Status != store.TurnQueued || !turn.CancelRequestedAt.IsZero() {
+		return false, nil
+	}
+	if inputErr != nil {
+		return false, inputErr
+	}
 	ready, err := w.bindDevice(ctx, item.TenantID, item.SessionID, input)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
 	if !errors.Is(err, store.ErrDeviceBindingConflict) {
 		return ready, err
 	}

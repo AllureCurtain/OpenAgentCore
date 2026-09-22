@@ -225,6 +225,8 @@ input list and uses blank-line separators between messages; this does not preser
 independent native user-message boundaries. No old wire fallback is maintained.
 Deploy Core and daemon together; the existing major/minor WebSocket check rejects
 older major/minor peers before dispatch rather than ignoring removed fields.
+The independently packaged Claude bridge uses protocol 2 for ordered input;
+readiness rejects packages reporting the old string-input protocol.
 Image-bearing messages require a qualified profile/placement before persistence
 and image support from the selected Runtime before native delivery. These checks
 apply to that operation only; ordinary text retains offline queueing. Initial,

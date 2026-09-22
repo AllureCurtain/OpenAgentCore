@@ -39,6 +39,7 @@ image `detail` or file-ID extension.
 Private wire 0.4.0 uses `MessageInput` for initial requests, prepared start and
 active steering. Each message contains ordered `InputContent` parts, also reused
 by function-result content. Core does not download, transcode or repair media.
+The separate Claude bridge reports protocol 2; daemon readiness rejects protocol 1.
 Adapters own native encoding and native application-receipt mapping. Existing
 text-only adapters reject image parts instead of dropping them.
 
@@ -72,6 +73,21 @@ ordinary text continuation, malformed-batch atomic rejection and tenant isolatio
 Evidence is under `zju_a100_2:~/.parsar/remediation/20260922/message-image-input/`:
 `public-codex-final.log` / `message-image-public-2718944397/public.json` and
 `public-claude_sdk-final.log` / `message-image-public-700202073/public.json`.
+After final lifecycle and bridge-version changes, both complete public chains
+passed again: `public-codex-reviewed.log` (59.416s) and
+`public-claude-reviewed.log` (79.525s). MiniMax ordinary text, active steering,
+receipt, cancellation and cold continuation passed in
+`public-mcode-network-fixed.log` (48.963s). The first MiniMax attempt hit a stale
+hosted-fixture assertion; a subsequent attempt failed because its test network
+relay was absent. Both failures are retained, and no production model behavior
+was changed to obtain the passing result.
+
+The final required gate was split by host: server `make -o check-web check`
+passed, and local Node22/pnpm10.30.3 `make check-web` passed all 73 browser tests.
+An earlier complete server `make check` stopped at its missing Chrome executable.
+The dedicated PostgreSQL cancellation/deletion interleaving regression passed
+five repetitions, and shared input/dispatch race checks passed. These checks do
+not qualify workspace images or additional native/provider combinations.
 Native-only probes are feasibility evidence, not public qualification.
 
 Workspace image workflows, MiniMax Code image input, remote HTTP(S) image URLs,

@@ -44,7 +44,7 @@ func runPreparationHelper() {
 		} else if mode == "old-command-runtime" {
 			features = []string{"workspace_tools", "workspace_prepare"}
 		}
-		_ = json.NewEncoder(os.Stdout).Encode(RuntimeInfo{Type: "runtime_ready", Protocol: 1, Node: "fixture", SDK: "fixture", MCP: "fixture", Native: "fixture", Features: features})
+		_ = json.NewEncoder(os.Stdout).Encode(RuntimeInfo{Type: "runtime_ready", Protocol: 2, Node: "fixture", SDK: "fixture", MCP: "fixture", Native: "fixture", Features: features})
 		return
 	}
 	state := os.Getenv("CLAUDE_CONFIG_DIR")
