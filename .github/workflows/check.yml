@@ -54,6 +54,10 @@ jobs:
             ~/.parsar/cache/executor-cargo
             ~/.parsar/cache/executor-target
           key: core-executor-${{ runner.os }}-${{ hashFiles('packages/codex-executor/Cargo.lock') }}
+      - name: Install Web acceptance browser
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec playwright install --with-deps chrome
       - name: Check standalone repository
         env:
           PARSAR_AGENTS_API_TEST_DATABASE_URL: postgres://agents_api:core_test_only@127.0.0.1:${{ job.services.postgres.ports['5432'] }}/parsar_agents_api_core_ci_tests?sslmode=disable
