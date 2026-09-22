@@ -104,6 +104,9 @@ type Session struct {
 }
 
 type SessionList struct {
+	Object  string    `json:"object" enums:"list" binding:"required"`
+	FirstID *string   `json:"first_id" extensions:"x-nullable"`
+	LastID  *string   `json:"last_id" extensions:"x-nullable"`
 	Data    []Session `json:"data" binding:"required"`
 	HasMore bool      `json:"has_more" binding:"required"`
 }
@@ -115,6 +118,6 @@ type ErrorResponse struct {
 type APIError struct {
 	Message string  `json:"message" binding:"required"`
 	Type    string  `json:"type" binding:"required"`
-	Code    string  `json:"code" binding:"required"`
+	Code    *string `json:"code" extensions:"x-nullable"`
 	Param   *string `json:"param" extensions:"x-nullable"`
 }

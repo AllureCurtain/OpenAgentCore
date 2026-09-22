@@ -65,7 +65,7 @@ func TestHTTPConfigurationAndTenantIdentity(t *testing.T) {
 	request.Header.Set("X-Tenant-ID", "untrusted-tenant")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, request)
-	if w.Code != http.StatusOK || s.tenant != tenant || s.input.Engine != "codex" || s.input.IdempotencyKey != "retry-key" {
+	if w.Code != http.StatusCreated || s.tenant != tenant || s.input.Engine != "codex" || s.input.IdempotencyKey != "retry-key" {
 		t.Fatalf("request = %d %s; tenant=%s, engine=%s", w.Code, w.Body, s.tenant, s.input.Engine)
 	}
 	var response v1.Session
@@ -106,7 +106,7 @@ func TestHTTPRejectsUntrustedOrUnsupportedRequests(t *testing.T) {
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
 			var response v1.ErrorResponse
-			if w.Code != test.status || json.Unmarshal(w.Body.Bytes(), &response) != nil || response.Error.Code == "" || s.tenant != "" {
+			if w.Code != test.status || json.Unmarshal(w.Body.Bytes(), &response) != nil || response.Error.Code == nil || *response.Error.Code == "" || s.tenant != "" {
 				t.Fatalf("response = %d %s, stored tenant = %s", w.Code, w.Body, s.tenant)
 			}
 		})
