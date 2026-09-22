@@ -157,6 +157,7 @@ export function AgentsView({
   const [createSetupRevision, setCreateSetupRevision] = useState(0);
   const requestGate = useRef(createRequestGate());
   const returnFocusRef = useRef<ReturnFocusTarget | null>(null);
+  const failedOpenFocusRef = useRef<ReturnFocusTarget | null>(null);
   const lastCreateRequestRef = useRef(0);
   const knownModels = agents.map((agent) => agent.model);
   const normalizedQuery = query.trim().toLowerCase();
@@ -225,6 +226,13 @@ export function AgentsView({
     requestGate.current.invalidate();
   }, []);
 
+  useEffect(() => {
+    if (openingAgentId !== null || !failedOpenFocusRef.current) return;
+    const target = failedOpenFocusRef.current;
+    failedOpenFocusRef.current = null;
+    restoreCatalogFocus(target);
+  }, [openingAgentId]);
+
   const retrieveForEdit = async (agent: SavedAgent) => {
     const request = requestGate.current.begin();
     returnFocusRef.current = { kind: "agent", id: agent.id };
@@ -242,7 +250,7 @@ export function AgentsView({
     } catch (error) {
       if (requestGate.current.isCurrent(request)) {
         setActionError(errorMessage(error));
-        restoreCatalogFocus({ kind: "agent", id: agent.id });
+        failedOpenFocusRef.current = { kind: "agent", id: agent.id };
       }
     } finally {
       if (requestGate.current.isCurrent(request)) setOpeningAgentId(null);
