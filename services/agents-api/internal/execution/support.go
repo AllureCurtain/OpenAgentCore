@@ -3,7 +3,6 @@ package execution
 import (
 	"encoding/json"
 	"errors"
-	"path"
 	"strings"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/device"
@@ -26,7 +25,7 @@ func (p Policy) ValidateSessionConfiguration(engine string, configuration json.R
 		return err
 	}
 	if snapshot.Environment != nil && snapshot.Environment.Type == "self_hosted" {
-		if snapshot.Daemon != nil || strings.TrimSpace(snapshot.Agent.Model) == "" || !path.IsAbs(snapshot.Environment.WorkspaceDirectory) || strings.ContainsAny(snapshot.Environment.WorkspaceDirectory, "\x00\r\n\\") || len(snapshot.Environment.CapabilityDirectories) != 0 {
+		if snapshot.Daemon != nil || strings.TrimSpace(snapshot.Agent.Model) == "" || snapshot.Environment.WorkspaceDirectory != "/workspace" || len(snapshot.Environment.CapabilityDirectories) != 0 {
 			return store.ErrInvalidInput
 		}
 	}
@@ -92,6 +91,9 @@ func (p Policy) engineCapabilities(peer *gateway.Session, engine string, snapsho
 	if !caps.ToolObservations {
 		return fail("device must advertise tool_observations")
 	}
+	if snapshot.Agent.MultiAgent.Enabled && !caps.SubagentObservations {
+		return fail("device must support durable subagent observations")
+	}
 	if !snapshot.Agent.MultiAgent.Enabled && !caps.SubagentControl {
 		return fail("device must advertise subagent_control")
 	}
@@ -105,10 +107,7 @@ func (p Policy) engineCapabilities(peer *gateway.Session, engine string, snapsho
 	if _, err := p.mcpExecutionCredentials(engine, snapshot, mcp, caps); err != nil {
 		return device.KindCapabilities{}, err
 	}
-	if snapshot.Environment != nil && snapshot.Environment.Type == "self_hosted" && (!caps.Preparation || !caps.RemoteEnvironment) {
-		return fail("device must advertise preparation and remote_environment")
-	}
-	if snapshot.Environment != nil && snapshot.Environment.Type == "openai_hosted" {
+	if snapshot.Environment != nil && (snapshot.Environment.Type == "openai_hosted" || snapshot.Environment.Type == "self_hosted") {
 		if !caps.Preparation || !caps.LocalEnvironment || !caps.WorkspaceReadPreparation || !caps.WorkspaceOutputExport {
 			return fail("device must advertise local preparation, workspace reads and output export")
 		}

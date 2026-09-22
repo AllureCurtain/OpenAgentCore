@@ -11,7 +11,7 @@ import (
 
 func claudeProfile() Profile {
 	return Profile{
-		Placements: []string{"none", "openai_hosted"}, MCPBearer: true,
+		Placements: []string{"none", "openai_hosted", "self_hosted"}, MCPBearer: true,
 		ValidateConfiguration: validateClaudeConfiguration,
 		ValidateTools:         validateClaudeTools,
 		ValidateFunctionResult: func(content []proto.FunctionResultContent) error {
@@ -26,20 +26,20 @@ func claudeProfile() Profile {
 }
 
 func validateClaudeConfiguration(agent v1.Agent, environment *v1.Environment, hasDaemon bool) error {
-	if environment == nil || (environment.Type != "none" && environment.Type != "openai_hosted") || hasDaemon || strings.TrimSpace(agent.Model) == "" {
+	if environment == nil || (environment.Type != "none" && environment.Type != "openai_hosted" && environment.Type != "self_hosted") || hasDaemon || strings.TrimSpace(agent.Model) == "" {
 		return ErrInvalidInput
 	}
 	if agent.Text.Verbosity != "" && agent.Text.Verbosity != "medium" {
 		return errors.New("The configured engine currently supports medium text verbosity only.")
 	}
-	if agent.MultiAgent.Enabled || agent.MultiAgent.MaxConcurrentSubagents != nil || agent.Reasoning.Effort != nil || agent.Reasoning.Summary != nil || (agent.ServiceTier != "" && agent.ServiceTier != "auto") || (agent.Text.Format.Type != "" && agent.Text.Format.Type != "text") {
+	if agent.Reasoning.Effort != nil || agent.Reasoning.Summary != nil || (agent.ServiceTier != "" && agent.ServiceTier != "auto") || (agent.Text.Format.Type != "" && agent.Text.Format.Type != "text") {
 		return ErrInvalidInput
 	}
-	return nil
+	return rejectSubagentTools(agent, "function", "mcp")
 }
 
 func validateClaudeTools(environment *v1.Environment, _ bool, tools []proto.FunctionTool, mcp []proto.MCPHTTPServer) error {
-	if environment.Type == "openai_hosted" && len(mcp) != 0 {
+	if environment.Type != "none" && len(mcp) != 0 {
 		return errors.New("The configured workspace profile does not support HTTP MCP tools.")
 	}
 	if err := validateClaudeMCP(mcp); err != nil {

@@ -21,11 +21,12 @@ type Device struct {
 	ID             pgtype.UUID        `json:"id"`
 	TenantID       pgtype.UUID        `json:"tenant_id"`
 	Name           string             `json:"name"`
-	CredentialHash string             `json:"credential_hash"`
+	CredentialHash pgtype.Text        `json:"credential_hash"`
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	LastSeenAt     pgtype.Timestamptz `json:"last_seen_at"`
 	RevokedAt      pgtype.Timestamptz `json:"revoked_at"`
 	EnvironmentID  pgtype.UUID        `json:"environment_id"`
+	ExecutorKeyID  pgtype.UUID        `json:"executor_key_id"`
 }
 
 type Environment struct {
@@ -127,6 +128,20 @@ type InitialEnvironmentFile struct {
 	Contents  []byte      `json:"contents"`
 }
 
+type PublicExecutionTurn struct {
+	ID                     pgtype.UUID        `json:"id"`
+	SessionID              pgtype.UUID        `json:"session_id"`
+	Status                 string             `json:"status"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	StartedAt              pgtype.Timestamptz `json:"started_at"`
+	CompletedAt            pgtype.Timestamptz `json:"completed_at"`
+	CancelRequestedAt      pgtype.Timestamptz `json:"cancel_requested_at"`
+	Outcome                []byte             `json:"outcome"`
+	TokenUsage             []byte             `json:"token_usage"`
+	ArtifactCaptureStarted bool               `json:"artifact_capture_started"`
+	SubagentID             pgtype.UUID        `json:"subagent_id"`
+}
+
 type RuntimeAllocation struct {
 	ID             pgtype.UUID        `json:"id"`
 	EnvironmentID  pgtype.UUID        `json:"environment_id"`
@@ -138,6 +153,14 @@ type RuntimeAllocation struct {
 	KeptAt         pgtype.Timestamptz `json:"kept_at"`
 	ReleasedAt     pgtype.Timestamptz `json:"released_at"`
 	Initialization string             `json:"initialization"`
+}
+
+type RuntimeDeviceAuthority struct {
+	ID             pgtype.UUID `json:"id"`
+	TenantID       pgtype.UUID `json:"tenant_id"`
+	Name           string      `json:"name"`
+	EnvironmentID  pgtype.UUID `json:"environment_id"`
+	CredentialHash string      `json:"credential_hash"`
 }
 
 type Session struct {
@@ -229,6 +252,12 @@ type SourceFile struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
+type SubagentEffect struct {
+	SessionID pgtype.UUID `json:"session_id"`
+	EffectID  string      `json:"effect_id"`
+	Payload   []byte      `json:"payload"`
+}
+
 type SubagentIdentity struct {
 	ID                pgtype.UUID `json:"id"`
 	SessionID         pgtype.UUID `json:"session_id"`
@@ -239,6 +268,34 @@ type SubagentIdentity struct {
 	NativeCreatedAt   int64       `json:"native_created_at"`
 	FirstTurnID       pgtype.UUID `json:"first_turn_id"`
 	FirstEventOrdinal int32       `json:"first_event_ordinal"`
+	Name              pgtype.Text `json:"name"`
+	Instructions      pgtype.Text `json:"instructions"`
+	PublicVisible     bool        `json:"public_visible"`
+	Status            string      `json:"status"`
+	ClosedAtMs        pgtype.Int8 `json:"closed_at_ms"`
+	LifecycleAtMs     int64       `json:"lifecycle_at_ms"`
+}
+
+type SubagentItem struct {
+	ID          pgtype.UUID `json:"id"`
+	SessionID   pgtype.UUID `json:"session_id"`
+	SubagentID  pgtype.UUID `json:"subagent_id"`
+	TurnID      pgtype.UUID `json:"turn_id"`
+	Position    int32       `json:"position"`
+	OutputIndex pgtype.Int4 `json:"output_index"`
+	Payload     []byte      `json:"payload"`
+}
+
+type SubagentTurn struct {
+	ID          pgtype.UUID        `json:"id"`
+	SessionID   pgtype.UUID        `json:"session_id"`
+	SubagentID  pgtype.UUID        `json:"subagent_id"`
+	NativeID    string             `json:"native_id"`
+	Status      string             `json:"status"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	StartedAt   pgtype.Timestamptz `json:"started_at"`
+	CompletedAt pgtype.Timestamptz `json:"completed_at"`
+	TokenUsage  []byte             `json:"token_usage"`
 }
 
 type Turn struct {

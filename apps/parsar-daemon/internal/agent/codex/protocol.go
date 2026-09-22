@@ -158,11 +158,11 @@ type SandboxPolicy struct {
 // ---------------------------------------------------------------------------
 
 type ThreadStartParams struct {
-	Environments   []EnvironmentSelection `json:"environments,omitempty"`
-	Cwd            string                 `json:"cwd"`
-	Model          string                 `json:"model,omitempty"`
-	ModelProvider  string                 `json:"modelProvider,omitempty"`
-	ApprovalPolicy AskForApproval         `json:"approvalPolicy"`
+	HistoryMode    string         `json:"historyMode,omitempty"`
+	Cwd            string         `json:"cwd"`
+	Model          string         `json:"model,omitempty"`
+	ModelProvider  string         `json:"modelProvider,omitempty"`
+	ApprovalPolicy AskForApproval `json:"approvalPolicy"`
 	// Sandbox is the v0.141+ field name; previously called sandboxPolicy
 	// and took a tagged-enum object. Wire format now is a kebab-case
 	// string: "read-only" / "workspace-write" / "danger-full-access".
@@ -231,10 +231,9 @@ type UserInput struct {
 }
 
 type TurnStartParams struct {
-	Environments      []EnvironmentSelection `json:"environments,omitempty"`
-	ThreadID          string                 `json:"threadId"`
-	Input             []UserInput            `json:"input"`
-	CollaborationMode *CollaborationMode     `json:"collaborationMode,omitempty"`
+	ThreadID          string             `json:"threadId"`
+	Input             []UserInput        `json:"input"`
+	CollaborationMode *CollaborationMode `json:"collaborationMode,omitempty"`
 }
 
 type CollaborationModeKind string
@@ -271,9 +270,10 @@ type TurnUsage struct {
 }
 
 type Turn struct {
-	ID     string     `json:"id"`
-	Usage  *TurnUsage `json:"usage,omitempty"`
-	Status string     `json:"status,omitempty"`
+	CompletedAt *int64     `json:"completedAt,omitempty"`
+	ID          string     `json:"id"`
+	Usage       *TurnUsage `json:"usage,omitempty"`
+	Status      string     `json:"status,omitempty"`
 	// Failed Turns carry the native provider error here.
 	Error *TurnError `json:"error,omitempty"`
 }

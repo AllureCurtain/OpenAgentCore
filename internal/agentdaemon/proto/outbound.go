@@ -35,6 +35,7 @@ const (
 // PromptInput so future agent implementations can evolve the wire shape
 // without touching the connector surface.
 type PromptRequestPayload struct {
+	MaxConcurrentSubagents *int `json:"max_concurrent_subagents,omitempty"`
 	// AgentKind selects which agent implementation the daemon
 	// dispatches to.
 	AgentKind string `json:"agent_kind"`
@@ -76,9 +77,7 @@ type PromptRequestPayload struct {
 	// Nil preserves existing behavior; an empty list explicitly declares no servers.
 	MCPHTTPServers *[]MCPHTTPServer `json:"mcp_http_servers,omitempty"`
 
-	// RemoteEnvironment selects independently placed execution through the native adapter.
-	RemoteEnvironment *RemoteEnvironment `json:"remote_environment,omitempty"`
-	LocalEnvironment  *LocalEnvironment  `json:"local_environment,omitempty"`
+	LocalEnvironment *LocalEnvironment `json:"local_environment,omitempty"`
 
 	// AgentSessionID is the upstream engine session id to resume.
 	AgentSessionID string `json:"agent_session_id,omitempty"`

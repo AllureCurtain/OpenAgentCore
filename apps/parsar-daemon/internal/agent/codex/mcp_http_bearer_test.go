@@ -12,51 +12,43 @@ import (
 )
 
 func TestMCPHTTPBearerPlanSeparatesServersAndProcesses(t *testing.T) {
-	for _, remote := range []bool{false, true} {
-		t.Run(map[bool]string{false: "none", true: "remote"}[remote], func(t *testing.T) {
-			t.Setenv("PARSAR_HOME", t.TempDir())
-			tokens := []string{"first-synthetic.token+/==", "second-synthetic_token~"}
-			servers := []proto.MCPHTTPServer{
-				{ServerLabel: "first", ServerURL: "https://first.example/mcp", BearerToken: &tokens[0]},
-				{ServerLabel: "second", ServerURL: "https://second.example/mcp", BearerToken: &tokens[1]},
-				{ServerLabel: "public", ServerURL: "http://public.example/mcp"},
+	t.Setenv("PARSAR_HOME", t.TempDir())
+	tokens := []string{"first-synthetic.token+/==", "second-synthetic_token~"}
+	servers := []proto.MCPHTTPServer{
+		{ServerLabel: "first", ServerURL: "https://first.example/mcp", BearerToken: &tokens[0]},
+		{ServerLabel: "second", ServerURL: "https://second.example/mcp", BearerToken: &tokens[1]},
+		{ServerLabel: "public", ServerURL: "http://public.example/mcp"},
+	}
+	req := proto.PromptRequestPayload{AgentStateKey: "retained-mcp", DisableExecutionEnvironment: true, MCPHTTPServers: &servers}
+	seen := map[string]bool{}
+	for range 2 {
+		plan, _, err := prepareSessionPlan(t.Context(), req, defaultSessionConfig())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer plan.Cleanup()
+		config, err := os.ReadFile(filepath.Join(plan.Cwd, "config.toml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		args, _ := json.Marshal(plan.ExtraConfig)
+		for i, server := range servers[:2] {
+			ref := plan.mcpServers[server.ServerLabel].BearerTokenEnvVar
+			if !strings.HasPrefix(ref, "PARSAR_MCP_BEARER_") || seen[ref] || !slices.Contains(plan.Env, ref+"="+tokens[i]) {
+				t.Fatal("missing exact per-server secret or reused native reference")
 			}
-			req := proto.PromptRequestPayload{AgentStateKey: "retained-mcp", DisableExecutionEnvironment: true, MCPHTTPServers: &servers}
-			if remote {
-				req = remoteEnvironmentRequest()
-				req.MCPHTTPServers = &servers
+			seen[ref] = true
+			if _, present := os.LookupEnv(ref); present {
+				t.Fatal("secret entered parent environment")
 			}
-			seen := map[string]bool{}
-			for range 2 {
-				plan, _, err := prepareSessionPlan(t.Context(), req, defaultSessionConfig())
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer plan.Cleanup()
-				config, err := os.ReadFile(filepath.Join(plan.Cwd, "config.toml"))
-				if err != nil {
-					t.Fatal(err)
-				}
-				args, _ := json.Marshal(plan.ExtraConfig)
-				for i, server := range servers[:2] {
-					ref := plan.mcpHTTPServers[server.ServerLabel].BearerTokenEnvVar
-					if !strings.HasPrefix(ref, "PARSAR_MCP_BEARER_") || seen[ref] || !slices.Contains(plan.Env, ref+"="+tokens[i]) {
-						t.Fatal("missing exact per-server secret or reused native reference")
-					}
-					seen[ref] = true
-					if _, present := os.LookupEnv(ref); present {
-						t.Fatal("secret entered parent environment")
-					}
-					if !strings.Contains(string(config), `bearer_token_env_var = "`+ref+`"`) || strings.Contains(string(config), tokens[i]) || strings.Contains(string(args), tokens[i]) {
-						t.Fatal("secret reached configuration/arguments or reference was omitted")
-					}
-				}
-				if plan.mcpHTTPServers["public"].BearerTokenEnvVar != "" || strings.Count(string(config), "bearer_token_env_var") != 2 {
-					t.Fatal("credential-free server received authentication")
-				}
-				plan.Cleanup()
+			if !strings.Contains(string(config), `bearer_token_env_var = "`+ref+`"`) || strings.Contains(string(config), tokens[i]) || strings.Contains(string(args), tokens[i]) {
+				t.Fatal("secret reached configuration/arguments or reference was omitted")
 			}
-		})
+		}
+		if plan.mcpServers["public"].BearerTokenEnvVar != "" || strings.Count(string(config), "bearer_token_env_var") != 2 {
+			t.Fatal("credential-free server received authentication")
+		}
+		plan.Cleanup()
 	}
 }
 
@@ -97,7 +89,7 @@ func TestMCPHTTPBearerDoesNotReachModelCatalogProbe(t *testing.T) {
 		t.Fatal("catalog probe inherited bearer or failed", err)
 	}
 	defer plan.Cleanup()
-	if !slices.Contains(plan.Env, plan.mcpHTTPServers["tools"].BearerTokenEnvVar+"="+token) {
+	if !slices.Contains(plan.Env, plan.mcpServers["tools"].BearerTokenEnvVar+"="+token) {
 		t.Fatal("app-server did not receive bearer after catalog probe")
 	}
 }
@@ -128,7 +120,7 @@ func TestMCPHTTPBearerPreflightMatchesOnlyItsServerReference(t *testing.T) {
 				first["http_headers_helper"] = "operator-helper"
 			}
 			raw, err := json.Marshal(response)
-			if err != nil || matchesMCPHTTPConfig(raw, servers) != (mutation == "none") {
+			if err != nil || matchesMCPConfig(raw, servers) != (mutation == "none") {
 				t.Fatal("incorrect authenticated configuration decision", err)
 			}
 		})

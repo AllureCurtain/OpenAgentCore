@@ -29,10 +29,10 @@ registration, qualification and shared acceptance.
 Verify configuration against actual execution: response defaults must not merely
 describe values the adapter never applied.
 
-The private native registry persists fenced connection observations and pinned
+The Worker persists fenced authenticated daemon connection observations and pinned
 Environment-event snapshots through the existing execution owner. Session reads
 and live SSE also expose safe `self_hosted` output and reservation-owned connection
-actions. Public self-hosted creation accepts initial text or empty Codex Sessions;
+actions. Public self-hosted creation accepts initial text or empty Sessions on the three enabled harness profiles;
 initial input reserves work while returning the connection target promptly.
 Later idle text submissions wait for preparation/admission. Cancellation-only events
 reuse durable admission without creating work or retargeting retries; pending
@@ -53,8 +53,10 @@ The three-harness Docker V1 MVP is accepted: Codex, Claude Code and MiniMax Code
 share the execution/workspace contract, with independent Core/database deployment,
 Files/Artifacts, cancellation and owned-history continuation. Optional features
 still differ. See the [accepted scope and evidence](#accepted-milestone-and-evidence).
-The same three harnesses also passed separate real E2B V1 qualification in PR #705;
-see the [E2B operator guide](../../services/agents-api/deploy/e2b/README.md).
+The same three harnesses passed historical Core-managed E2B V1 qualification in
+PR #705. That route is retired; it does not qualify the new user-managed daemon
+enrollment chain. The [user-managed V1 qualification](user-managed-runtime-v1.md)
+records separate real deployment acceptance and its exact scope.
 Select further work only within current user authorization. Parsar cutover and
 business Team orchestration are separate from protocol coverage.
 
@@ -62,8 +64,8 @@ business Team orchestration are separate from protocol coverage.
 
 This inventory is based on the pinned Python source, not our generated OpenAPI.
 It contains 42 distinct HTTP operations in 15 resource classes, excluding async
-duplicates, overloads and client-side helpers. There are 36 handler entries; the six
-Subagent read operations remain missing. The separate
+duplicates, overloads and client-side helpers. There are 42 handler entries; the six
+[Subagent reads](subagents.md) have three-harness Docker workflow qualification. The separate
 general `/v1/files` source-file API and `/v1/skills` resource/version operations
 are outside this 42-operation count.
 
@@ -81,17 +83,17 @@ paths start at `/vaults`, not `/agents/vaults`.
 | --- | --- | --- |
 | Root reusable Agents | create, retrieve, update, list, delete | Partial create/retrieve/update/list/delete and Session references; configuration/error gaps remain |
 | Skills and Versions | create, retrieve, update default, list, delete, content | [Tenant-owned encrypted bundles and hosted references](environment-templates.md); qualified upload limits and unresolved hosted semantics are recorded explicitly |
-| sessions | create, retrieve, update, list, delete | Create (ordinary/live), retrieve, list with root-Agent filter, metadata-only update, public deletion with owned Docker/E2B cleanup; general physical cleanup and exact hosted semantics remain open |
+| sessions | create, retrieve, update, list, delete | Create (ordinary/live), retrieve, list with root-Agent filter, metadata-only update, public deletion with owned Docker cleanup; user-managed compute stays caller-owned; general physical cleanup and exact hosted semantics remain open |
 | sessions.events | create, stream | Text/cancel/function-result admission and live events; function-action state snapshots supported |
 | sessions.turns | retrieve, list | Implemented reads; lifecycle conformance still partial |
 | sessions.items | list | Partial Item variants |
-| sessions.artifacts | retrieve, list, delete, content | Shared output capture and immutable stored reads/deletion on the accepted three-harness Docker/E2B profiles, including retained downloads after Runtime loss; exact upstream defaults/errors, unchanged-file republishing and cancellation-edge parity remain unverified |
-| sessions.subagents | retrieve, list | Missing |
-| sessions.subagents.items | list | Missing |
-| sessions.subagents.turns | retrieve, list | Missing |
-| sessions.subagents.turns.items | list | Missing |
-| environments | retrieve | Supported Codex self-hosted and three-harness Docker/E2B hosted profiles: durable status and safe initial-file metadata; other installation inventory and full lifecycle parity remain gaps |
-| environments.files | create, list | [Bounded live listing and inline/source-file creation](environment-files.md) on qualified Docker/E2B workspaces; Codex self-hosted listing is a separate supported path. Full listing, overwrite and error semantics remain partial |
+| sessions.artifacts | retrieve, list, delete, content | Shared output capture and immutable stored reads/deletion on accepted Docker profiles and [qualified user-managed workflows](user-managed-runtime-v1.md) (prior Core-managed E2B evidence remains historical), including retained downloads after Runtime loss; exact upstream defaults/errors, unchanged-file republishing and cancellation-edge parity remain unverified |
+| sessions.subagents | retrieve, list | [Three-harness Docker reads, native lifecycle limits and real evidence](subagents.md); full multi-agent semantics remain partial |
+| sessions.subagents.items | list | Qualified own-child history reads; full Item variants and live child streaming remain partial |
+| sessions.subagents.turns | retrieve, list | Implemented; shared Session/child IDs |
+| sessions.subagents.turns.items | list | Implemented; scoped persisted reads |
+| environments | retrieve | Three-harness colocated self-hosted implementation and qualified Docker hosted profiles: durable status and safe initial-file metadata; other installation inventory and full lifecycle parity remain gaps |
+| environments.files | create, list | [Bounded live listing and inline/source-file creation](environment-files.md) on qualified Docker workspaces; [user-managed enrollment](user-managed-runtime-v1.md) reuses the local implementation with separate real public acceptance. Full listing, overwrite and error semantics remain partial |
 | environments.templates | create, retrieve, update, list, delete | [Reusable network, files, env/setup/packages, inline/referenced Skills and Session snapshots](environment-templates.md); other initialization and full semantics remain gaps |
 | vaults | create, retrieve, list, delete | Create/retrieve/list/delete with independent tenant persistence, stored status filtering, atomic Credential cascade and frozen Session attachments; archive semantics and full hosted lifecycle parity remain missing |
 | vaults.credentials | create, retrieve, update, list, delete | Static-bearer create/retrieve/list/token replacement/deletion with scoped encrypted storage; Session attachment and exact-URL HTTPS MCP binding; OAuth, archive semantics and full hosted lifecycle parity remain missing |
@@ -135,6 +137,9 @@ new model-issued command after a recovery prompt, not automatic API replay.
 
 ### E2B V1 qualification
 
+This is historical evidence for the retired Core-managed E2B route. It does not
+qualify current user-managed E2B enrollment or transfer compute ownership to Core.
+
 PR #705 (`9cd1c46c7fab6eeef8cb35ce71f1ea0ca2cf8bc1`) separately qualified
 Codex, Claude Code and MiniMax Code with actual E2B and real Kimi/MiniMax APIs.
 Fixed SDK/raw HTTP acceptance covered independent Core/database deployment,
@@ -157,10 +162,10 @@ user-managed enrollment remain outside this qualification.
 
 | Area | Missing or unverified scope |
 | --- | --- |
-| Subagents / multi_agent | Six public child read operations, enabled execution, child lifecycle/interactions and full recovery; deferred outside the MVP |
-| Environment Templates | Plugin MCP, unsupported restricted hostname forms, unqualified installation overrides/null network and exact hosted errors remain gaps. CRUD/list, files, env/setup/system/npm/Python, inline/referenced Skills, skill-only Plugins, workspace capability directories and Session references have accepted coverage |
+| Subagents / multi_agent | Six reads and same-child recovery have three-harness Docker evidence; optional native operations, live child progress, full lifecycle/interactions and tool combinations remain explicit gaps |
+| Environment Templates | Unsupported restricted hostname forms, unqualified installation overrides/null network and exact hosted errors remain gaps. CRUD/list, files, env/setup/system/npm/Python, inline/referenced Skills, Plugins, workspace capability directories and Session references have recorded coverage. Environment Plugin MCP transport and placement limits are [listed separately](environment-templates.md#environment-origin-mcp-plugins) |
 | Input and configuration | Non-text initial input, broader content/configuration unions, structured output and reasoning/verbosity combinations |
-| Tools and interactions | Deferred functions, other tool types, effective tool-set enforcement and result/cancel publication ordering; MiniMax public functions/MCP remain unsupported |
+| Tools and interactions | Deferred functions, other tool types, effective tool-set enforcement and result/cancel publication ordering; MiniMax public functions and service-origin MCP remain unsupported |
 | Vault and Credentials | OAuth/refresh, archive semantics, revocation/concurrent mutation and exact hosted selection/error behavior; static bearer CRUD/token replacement is already present |
 | Existing resources | Full Item/SSE/Usage variants, omitted/null/default/error semantics, pagination and overlapping lifecycle behavior beyond recorded cases |
 
@@ -259,7 +264,7 @@ including further deployment qualification; this inventory describes merged beha
   asynchronous cancellation request while internal finalization remains available.
   Existing streams close on observing removal without an invented deletion event.
   Creation keys remain reserved (local 409); missing/repeated deletion locally
-  returns 404. Qualified managed Docker/E2B deletion also reclaims its owned Runtime;
+  returns 404. Qualified managed Docker deletion also reclaims its owned Runtime;
   broader physical SQL/native history cleanup, immediate native quiescence and
   exact hosted error/retry/overlapping-stream semantics remain unverified or
   unimplemented. Shared devices, saved Agents and other Sessions are independent.
@@ -282,9 +287,9 @@ including further deployment qualification; this inventory describes merged beha
   the service's `auto` policy; complete upstream-default/error/retry conformance is
   unverified. HTTP MCP with explicit `service` origin and
   boolean `required` (default false) supports saved configuration and Codex `none` execution,
-  plus `self_hosted` execution behind explicit combination capabilities. Remote
-  static Bearer authentication additionally requires `mcp_http_remote_bearer_auth`;
-  it keeps the secret in the trusted service native process. Required initialization
+  with Claude SDK
+  also supporting its qualified `none` subset. V1 `self_hosted` explicitly rejects
+  service-origin MCP; the old remote combination is retired. Required initialization
   additionally needs `mcp_http_required` on the pinned native profile. Native root
   thread creation/cold resume must initialize required servers before a native
   Turn starts; failure cannot silently replace retained history. Public acceptance
@@ -310,8 +315,9 @@ including further deployment qualification; this inventory describes merged beha
   replace the entire field ([configuration guide](https://developers.openai.com/api/docs/guides/agents-api/configuration)).
   Tools null clears the list as specified by pinned `session_create_params.py`.
   Saved metadata never becomes Session metadata. A model name is not a daemon engine name.
-  Current admission requires disabled multi-agent, implicit reasoning, tier `auto`,
-  ordinary text and non-deferred functions. Unsupported saved settings fail before
+  Current admission uses the qualified harness profile for multi-agent execution,
+  implicit reasoning, tier `auto`, ordinary text and non-deferred functions.
+  Enabled multi-agent/function combinations remain unsupported. Unsupported saved settings fail before
   Session persistence, unless replaced by supported overrides. Other native options
   remain implementation gaps, not excluded protocol variants.
   Fixed SDK/raw HTTP checks cover inherited/overridden configuration, tenant ownership,
@@ -350,8 +356,9 @@ including further deployment qualification; this inventory describes merged beha
 - List operations use the upstream `after`, `limit`, `order` and resource-specific
   filters. Stream events preserve the upstream discriminators and payload shapes.
 - The upstream self-hosted environment includes an exec-server `remote_url`.
-  A Parsar daemon socket is not automatically compatible with that transport.
-  Provider adaptation must be explicit and verified before advertising support.
+  V1 retains that public resource field while explicitly selecting our private
+  daemon transport. It does not claim stock `exec-server` wire interoperability;
+  public resource semantics require independent acceptance.
 - Environment retrieval returns `object: agent.environment`, its ID/type, durable
   resource status and required non-null `files`, `plugins` and `skills` arrays.
   Hosted initial files report safe frozen metadata; empty arrays do not
@@ -364,12 +371,15 @@ including further deployment qualification; this inventory describes merged beha
 [Environment Templates](environment-templates.md) provide tenant-owned CRUD/list
 and immutable Session resolution through the same hosted initialization. They do not
 select an E2B image or make unsupported initialization executable.
+The supported Docker configuration has [composed real acceptance](environment-templates.md#composed-initialization-acceptance)
+across the three harnesses, including frozen source deletion, cold continuation
+and cancellation. This does not close the remaining protocol/transport gaps.
 
 ## Delivery and verification
 
 | Capability | Current state |
 | --- | --- |
-| Independent deployment | Source-free Core package and separate execution PostgreSQL ownership; managed Docker/E2B Runtime co-locates daemon, selected harness and workspace; no Parsar dependency |
+| Independent deployment | Source-free Core package and separate execution PostgreSQL ownership; Docker-hosted and user-managed Runtime colocate daemon, selected harness and workspace; Core owns Docker only; no Parsar dependency |
 | Saved Agents and Sessions | Saved Agent routes, immutable inline/referenced Session configuration, metadata updates, root-Agent filtering and scoped cursor pagination |
 | Public execution | Initial/later text, active input and cancellation through Codex, Claude Code or MiniMax Code; Codex/Claude additionally support qualified public functions; see profile limits below |
 | Pending function actions | Persisted calls/results/application receipts, `required_actions`, Session `requires_action`, Turn `waiting`, and live state snapshots; other interactions remain incomplete |
@@ -377,40 +387,50 @@ select an E2B image or make unsupported initialization executable.
 | Execution ownership | Immutable Session engine/device, durable input receipts and database writer fencing; uncertain claimed work fails on restart, without blind replay |
 | Files and Artifacts | Bounded Environment listing and inline/file_id copies into qualified V1 workspaces; source-file lifecycle and immutable output capture/download/deletion; [Files limits](environment-files.md), [source limits](source-files.md) |
 | Clients | Fixed Python SDK 3.13.0 and official Go SDK v3.61.0; raw HTTP and real provider acceptance supplement controlled tests |
-| Release and product | Registry publication and Parsar cutover remain open; basic Docker/E2B provisioning is operator opt-in; business Team orchestration is deferred |
+| Release and product | Registry publication and Parsar cutover remain open; Docker hosting and user-side E2B provisioning are explicit opt-ins; business Team orchestration is deferred |
 
 ### Public engine profiles
 
 `AGENTS_API_ENGINE` supplies the default for new Sessions. The optional
 [Core harness extension](harness-selection.md) explicitly selects an enabled engine;
-existing Sessions retain their immutable choice. Model identity is independent.
-All three profiles require disabled `multi_agent`, implicit reasoning, service tier
-`auto` and ordinary text output. Optional tools/configuration are qualified per
+existing Sessions retain their immutable choice. `AGENTS_API_HARNESSES` explicitly
+adds installed deployment profiles without requiring a managed Provider. Model
+identity is independent.
+All three profiles require implicit reasoning, service tier `auto` and ordinary
+text output. Enabled `multi_agent` qualification is tracked separately in
+[Subagents](subagents.md); other profiles continue to reject unsupported execution. Optional tools/configuration are qualified per
 operation and placement; native support is not public admission by itself.
 
 | Engine | Qualified placements and limits |
 | --- | --- |
-| `codex` (default) | `none`, the bounded official `self_hosted` path and Docker/E2B `openai_hosted`; public functions with ordered text/image results; service-origin HTTP MCP on `none`/`self_hosted`, not hosted; supported verbosity follows the native policy below |
-| `claude_sdk` | `none` and Docker/E2B `openai_hosted`; medium verbosity, object-root function schemas and text-only function results; anonymous/static-bearer HTTP MCP with either required value on `none`; hosted HTTP MCP remains unsupported |
-| `mcode` | `none` text and Docker/E2B `openai_hosted` workspace execution; medium verbosity; public functions/MCP, image input and complete public usage breakdown remain unsupported |
+| `codex` (default) | Qualified `none` and Docker `openai_hosted`; public functions with ordered text/image results; service-origin HTTP MCP on `none` only; verbosity follows native policy |
+| `claude_sdk` | Qualified `none` and Docker `openai_hosted`; medium verbosity, object-root function schemas and text-only results; qualified anonymous/static-bearer service-origin HTTP MCP on `none` |
+| `mcode` | Qualified `none` text and Docker `openai_hosted`; medium verbosity; public functions/service-origin MCP, image input and complete public usage breakdown remain unsupported |
 
-All three hosted profiles reuse the [Docker](environments.md#basic-public-docker-hosted-profile)
-or [E2B](environments.md#basic-public-e2b-hosted-profile) provider lifecycle,
-workspace Files/Artifacts, cancellation and recovery queries, with engine-specific
-native isolation. Configuration and immutable Runtime images/templates require explicit
-operator setup: [Codex](../../services/agents-api/deploy/codex/README.md),
-[Claude Code](../../services/agents-api/deploy/claude/README.md), and
-[MiniMax Code](../../services/agents-api/deploy/mcode/README.md). The
-[E2B guide](../../services/agents-api/deploy/e2b/README.md) packages those qualified
-images as pinned templates.
+All three profiles implement user-managed `self_hosted` enrollment at `/workspace`
+through our private daemon transport; [separate real acceptance](user-managed-runtime-v1.md)
+records qualified deployments and limits. Service-origin HTTP MCP is rejected on `self_hosted` and hosted local
+placements. This does not remove separately qualified Environment Plugin MCP.
+The [Docker lifecycle](environments.md#basic-public-docker-hosted-profile) retains
+workspace Files/Artifacts, cancellation and recovery with native isolation.
+Configure immutable Runtime images explicitly: [Codex](../../services/agents-api/deploy/codex/README.md),
+[Claude](../../services/agents-api/deploy/claude/README.md),
+[MiniMax](../../services/agents-api/deploy/mcode/README.md).
+[E2B packaging](../../services/agents-api/deploy/e2b/README.md) reuses the Runtime
+with the official SDK; the user owns provisioning, renewal and destruction.
+
 The shared initialization path supports env/setup and system/npm/Python packages;
 see the [evidence and limits](environment-templates.md#verification). Remaining
-unsupported startup installations, unqualified restricted hostname forms and hosted public HTTP MCP
-remain outside these accepted profiles. MiniMax's private MCP tool bridge
-is internal transport, not public MCP support.
+unsupported startup installations, unqualified restricted hostname forms and hosted
+service-origin HTTP MCP remain outside these accepted profiles. Environment-origin
+MCP Plugins have a separate [Docker qualification and transport matrix](environment-templates.md#environment-origin-mcp-plugins):
+stdio on all three harnesses, Codex HTTP with literal headers or HTTPS bearer,
+and Claude anonymous HTTP or HTTPS bearer without literal headers. This batch
+does not qualify those new Plugin paths on E2B. MiniMax's private workspace MCP
+bridge remains internal transport, distinct from installed Environment MCP servers.
 
-The [Codex self-hosted profile](environments.md) remains distinct from managed
-Docker/E2B and from future user-managed Runtime enrollment. Product `claude_code`
+The [self-hosted profile](environments.md#initial-public-self-hosted-profile) uses
+user-managed Runtime enrollment and remains distinct from Core-managed Docker. Product `claude_code`
 is likewise a separate integration from the API's `claude_sdk` engine key.
 Unsupported configurations fail before Session creation; unsupported results fail
 before a batch write. Native capability claims cannot replace service profile
@@ -446,18 +466,12 @@ on fresh and resumed Turns. Operator feature preferences cannot re-enable them.
 Controlled model-boundary tests check absence of direct/deferred subagent tools
 while the official function workflow continues to run.
 
-Disabled `multi_agent` input is admitted. Enabled multi-agent execution and public
-Subagent resources are still unsupported. Do not infer that `Agent.tools` is the
-complete native tool registry: environment and subagent tools have separate
-configuration. The upstream behavior of internal Goal, Skills and user-input
-utilities needs further evidence; their presence alone is not proof of a mismatch.
-
-A private typed discovery path projects verified native child identities through
-the leased execution journal. It freezes service identity, Session ownership,
-native parent/creation and first-observation provenance for internal scoped reads.
-It does not enable the public resources above or infer lifecycle from idle/unload.
-Bounded discovery and delivery rules are documented in
-[the contributor guide](../../CONTRIBUTING.md#current-implementation).
+Disabled `multi_agent` continues to remove native child tools. The six public reads
+and their neutral identity/lifecycle/Turn/Item observations are described in
+[Subagents](subagents.md); native qualification is tracked there. The service does
+not infer closure from idle/unload, and public capability declarations alone do
+not qualify an adapter. Environment and child tools have separate configuration;
+`Agent.tools` is not assumed to enumerate every native utility.
 
 ### Turn recovery reads
 
@@ -492,8 +506,9 @@ prepared by release `906069e` before upgrade; see the
 [upgrade procedure](../../services/agents-api/README.md#upgrading-archived-item-history).
 The retired archive format could not recover unrecorded message boundaries or
 outcomes; those limitations remain in already indexed historical Items.
-Unsupported native variants, reasoning, subagent Items and Items mutation
-are not covered. Public submission supports text messages, cancellation and function results.
+Other native variants, full reasoning coverage and Items mutation remain gaps.
+Qualified child Items are described in [Subagents](subagents.md). Public submission
+supports text messages, cancellation and function results.
 
 Legacy Done frames alone do not complete assistant Items. Aggregate answer text
 is confirmed by successful Turn termination; failed Turns retain observed deltas
@@ -515,16 +530,11 @@ its restrictive profile with no built-in tools and only declared function callba
 A missing capability or unsupported native method fails rather than silently
 allocating a local execution environment. Native state still lives on the host;
 function callbacks may access their own resources. This is not filesystem isolation.
-Private `daemon` snapshots and the self-hosted registry/Noise transport are
-distinct from this mode.
-
-The native reference is Codex `rust-v0.153.4`, commit
-`3d2ee51ca2d5db578f328aa75e20aa22c0197c9a`, especially
-`codex-rs/exec-server/src/environment_provider.rs`. The self-hosted registry
-requires executor registration, harness authorization and encrypted relay;
-a daemon WebSocket URL is not that protocol.
-The [Environment assessment](environments.md) records all environment/template/file
-operations, ownership, native authentication gaps and the implementation sequence.
+User-managed `self_hosted` uses an exact enrolled local Runtime instead. The
+former native registry/Noise transport is retired. The pinned native source remains
+a dependency reference, not a requirement to expose its executor protocol.
+The [Environment assessment](environments.md) separates current boundaries from
+historical native transport evidence.
 
 ### Public execution admission
 
@@ -769,7 +779,7 @@ Creator fields remain internal and do not extend the public Session schema.
 Executor keys now require the target Session's verified project and typed creator,
 with optional exact-Environment restriction. Key issuance can precede Session
 creation; rotation/revocation and current authorization reuse the durable ledger
-and existing native registry. Historical keys remain revoked and unclaimed. This
+and exact Runtime enrollment/gateway binding. Historical keys remain revoked and unclaimed. This
 executor-specific prerequisite does not open public Environment admission or
 establish complete ownership, hosted key lifecycle or error compatibility. See the
 [standalone configuration](../../services/agents-api/README.md#standalone-http-service).

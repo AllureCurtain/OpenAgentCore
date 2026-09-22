@@ -8,6 +8,7 @@ import (
 
 type subagentMetadata struct {
 	ID             string          `json:"id"`
+	Nickname       *string         `json:"agentNickname"`
 	ParentThreadID string          `json:"parentThreadId"`
 	CreatedAt      int64           `json:"createdAt"`
 	Source         json.RawMessage `json:"source"`
@@ -16,6 +17,8 @@ type subagentMetadata struct {
 // Parent-filtered listing reads persisted metadata. thread/read may instead
 // synthesize createdAt from a live snapshot before the first persistence flush.
 func (s *Session) persistedSubagent(ctx context.Context, child, parent string, budget *int) (subagentMetadata, bool, error) {
+	ctx, cancel := context.WithTimeout(ctx, subagentLookupTimeout)
+	defer cancel()
 	var cursor *string
 	for range 4 {
 		if *budget == 0 {

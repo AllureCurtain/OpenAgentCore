@@ -8,13 +8,15 @@ import (
 func (s *Session) startThread(plan SessionPlan) error {
 	params := ThreadStartParams{
 		Cwd:                   plan.Cwd,
-		Environments:          plan.Environments,
 		Model:                 plan.Model,
 		ModelProvider:         plan.ModelProvider,
 		ApprovalPolicy:        plan.ApprovalPolicy,
 		Sandbox:               plan.Sandbox,
 		Permissions:           plan.Permissions,
 		DeveloperInstructions: plan.SystemPrompt,
+	}
+	if s.observeSubagentIdentities {
+		params.HistoryMode = "paginated"
 	}
 	if s.functions != nil {
 		params.DynamicTools = s.functions.definitions
@@ -39,7 +41,7 @@ func (s *Session) resumeThread(threadID string, plan SessionPlan) error {
 		Permissions:           plan.Permissions,
 		DeveloperInstructions: plan.SystemPrompt,
 	}
-	if plan.mcpHTTPServers != nil {
+	if plan.mcpServers != nil {
 		// Resolve the same project configuration checked before native startup.
 		params.Cwd = plan.Cwd
 	}

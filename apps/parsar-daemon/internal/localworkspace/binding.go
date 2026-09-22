@@ -89,7 +89,7 @@ func (b *Binding) Configure(r proto.PromptRequestPayload) (proto.PromptRequestPa
 		return r, nil
 	}
 	if b == nil || r.LocalEnvironment == nil || r.LocalEnvironment.ID != b.environment || r.AgentStateKey != b.stateKey ||
-		r.RemoteEnvironment != nil || r.DisableExecutionEnvironment || r.WorkDir != "" ||
+		r.DisableExecutionEnvironment || r.WorkDir != "" ||
 		r.ConversationID != "" || r.WorkspaceAuthoring || len(r.Attachments) != 0 || !r.StrictResume || !r.ReleaseOnCompletion {
 		return r, errors.New("request does not match the dedicated local Environment")
 	}
@@ -110,11 +110,25 @@ func (b *Binding) Configure(r proto.PromptRequestPayload) (proto.PromptRequestPa
 		}
 		local := *r.LocalEnvironment
 		local.Skills = nil
+		local.MCP = nil
 		if local.Capabilities {
-			var err error
-			local.Skills, err = LoadSkills()
+			manifest, err := LoadCapabilities()
 			if err != nil {
 				return r, err
+			}
+			local.Skills = manifest.Skills
+			if len(manifest.MCP) != 0 {
+				if b.NetworkPolicy().Access != "enabled" {
+					return r, errors.New("environment MCP requires qualified enabled-network execution")
+				}
+				values, err := ReadToolEnvironment()
+				if err != nil {
+					return r, err
+				}
+				local.MCP, err = resolveEnvironmentMCP(manifest.MCP, values)
+				if err != nil {
+					return r, err
+				}
 			}
 		}
 		r.LocalEnvironment = &local

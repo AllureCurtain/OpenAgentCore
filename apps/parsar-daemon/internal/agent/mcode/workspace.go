@@ -51,8 +51,12 @@ func ConfigureLocal(binary, node, bridge, root, workspace string, network agentn
 }
 
 func prepareWorkspaceOptions(ctx context.Context, c WorkspaceConfig, req proto.PromptRequestPayload) (launchOptions, error) {
-	if !req.StrictResume || req.LocalEnvironment == nil || req.WorkDir != c.Directory || req.DisableExecutionEnvironment || !(agentnetwork.Policy{Access: c.Network, AllowedDomains: c.AllowedDomains}).Equal(agentnetwork.Policy{Access: req.LocalEnvironment.NetworkAccess, AllowedDomains: req.LocalEnvironment.AllowedDomains}) || req.RemoteEnvironment != nil || req.WorkspaceReadOnly {
+	if !req.StrictResume || req.LocalEnvironment == nil || req.WorkDir != c.Directory || req.DisableExecutionEnvironment || !(agentnetwork.Policy{Access: c.Network, AllowedDomains: c.AllowedDomains}).Equal(agentnetwork.Policy{Access: req.LocalEnvironment.NetworkAccess, AllowedDomains: req.LocalEnvironment.AllowedDomains}) || req.WorkspaceReadOnly {
 		return launchOptions{}, fmt.Errorf("mcode: execution does not match the dedicated workspace")
+	}
+	servers, err := environmentMCP(req.LocalEnvironment)
+	if err != nil {
+		return launchOptions{}, err
 	}
 	// Reuse public option validation and private Session state provisioning. Native
 	// cwd remains private; only the internal MCP worker receives the public workspace.
@@ -120,5 +124,22 @@ func prepareWorkspaceOptions(ctx context.Context, c WorkspaceConfig, req proto.P
 		return opts, err
 	}
 	opts.MCP = []map[string]any{{"name": "parsar_workspace", "command": c.Node, "args": []string{c.Bridge, path}, "env": []map[string]string{}}}
+	opts.MCP = append(opts.MCP, servers...)
+	if !req.DisableSubagents {
+		// This native data directory belongs to one public Session and its
+		// descendants. ACP's ephemeral server map otherwise covers only root.
+		configured := map[string]any{}
+		for _, server := range opts.MCP[:1] {
+			name, _ := server["name"].(string)
+			configured[name] = map[string]any{"type": "stdio", "command": server["command"], "args": server["args"], "env": map[string]string{}, "enabled": true}
+		}
+		raw, err := json.Marshal(map[string]any{"mcpServers": configured})
+		if err != nil {
+			return opts, err
+		}
+		if err := os.WriteFile(filepath.Join(opts.DataDir, "mcp.json"), raw, 0o600); err != nil {
+			return opts, err
+		}
+	}
 	return opts, nil
 }

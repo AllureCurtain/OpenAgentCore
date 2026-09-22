@@ -9,13 +9,12 @@ import (
 )
 
 func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg sessionConfig) (SessionPlan, []string, error) {
+	if err := validateNativeTransportEnvironment(req); err != nil {
+		return SessionPlan{}, nil, err
+	}
 	profile, err := managedPermissionProfile(req, cfg)
 	if err != nil {
 		return SessionPlan{}, nil, err
-	}
-	if req.WorkspaceReadOnly {
-		plan, err := workspaceReadPlan(req)
-		return plan, nil, err
 	}
 	mcpServers, err := publicMCPHTTPServers(req)
 	if err != nil {
@@ -24,6 +23,10 @@ func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg
 	plan, err := BuildSessionPlan(req.RunID, req.AgentStateKey, req.WorkDir, req.AgentOptions)
 	if err != nil {
 		return SessionPlan{}, nil, fmt.Errorf("codex: build session plan: %w", err)
+	}
+	if err := configureSubagentObservations(&plan, req); err != nil {
+		plan.Cleanup()
+		return SessionPlan{}, nil, err
 	}
 	if profile != "" {
 		plan.Sandbox = ""
@@ -54,8 +57,13 @@ func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg
 		disableSubagents(&plan)
 	}
 	mcpBearerEnv := prepareMCPHTTPBearer(mcpServers, req.MCPHTTPServers)
+	mcpServers, environmentMCPEnv, err := mergeEnvironmentMCP(mcpServers, req.LocalEnvironment)
+	if err != nil {
+		plan.Cleanup()
+		return SessionPlan{}, nil, err
+	}
 	if mcpServers != nil {
-		if err := configureMCPHTTP(&plan, mcpServers); err != nil {
+		if err := configureMCP(&plan, mcpServers); err != nil {
 			plan.Cleanup()
 			return SessionPlan{}, nil, err
 		}
@@ -79,7 +87,7 @@ func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg
 				skillRoots = append(skillRoots, localworkspace.SkillPath(skill))
 			}
 		}
-	} else if !req.DisableExecutionEnvironment && req.RemoteEnvironment == nil {
+	} else if !req.DisableExecutionEnvironment {
 		var root string
 		root, err = prepareManagedSkills(ctx, cfg.logger, req)
 		if root != "" {
@@ -91,10 +99,8 @@ func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg
 		return SessionPlan{}, nil, err
 	}
 
-	if req.RemoteEnvironment != nil {
-		configureRemoteEnvironment(&plan, *req.RemoteEnvironment)
-	}
 	plan.Env = append(plan.Env, mcpBearerEnv...)
+	plan.Env = append(plan.Env, environmentMCPEnv...)
 	if cfg.runtimeNetwork.Access == "restricted" {
 		if err := prepareManagedNetwork(&plan, cfg.runtimeNetwork); err != nil {
 			plan.Cleanup()

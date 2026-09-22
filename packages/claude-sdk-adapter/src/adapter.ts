@@ -1,3 +1,5 @@
+import { Subagents } from "./subagents.js";
+import type { Fact } from "./subagent_history.js";
 import { WorkspaceDirectories, type WorkspaceDirectoryEvent } from "./workspace_directories.js";
 import { getSessionInfo, query, startup, type McpServerConfig, type Options, type WarmQuery } from "@anthropic-ai/claude-agent-sdk";
 import { WorkspaceReads, type WorkspaceReadEvent } from "./workspace_reads.js";
@@ -16,6 +18,7 @@ import { recoverSession } from "./recovery.js";
 export { parseStart, type Start } from "./request.js";
 
 export type Event =
+  | Fact
   | WorkspaceDirectoryEvent
   | WorkspaceReadEvent
   | MessageEvent
@@ -32,7 +35,10 @@ export type Event =
 export async function execute(request: Start | Prepare, emit: (event: Event) => Promise<void>, abort: AbortController, functions = new FunctionBridge(emit), inputs = new Inputs(immediatePrompt(request)), reads = new WorkspaceReads(emit, abort), directories = new WorkspaceDirectories(emit, abort)): Promise<void> {
   const definitions = (request.functions ?? []).map(tool => ({ name: tool.name, description: tool.description, inputSchema: tool.parameters }));
   const names = definitions.map(tool => `mcp__functions__${tool.name}`);
-  const workspace = request.workspace === undefined ? undefined : new WorkspaceProfile(request.cwd, request.workspace, names);
+  const declarations = request.workspace?.mcp ?? request.mcp_http_servers;
+  const profile = declarations === undefined ? undefined : new MCPProfile(declarations, names);
+  const subagents = request.subagents ? new Subagents(request.cwd, request.subagents.max_concurrent, request.resume) : undefined;
+  const workspace = request.workspace === undefined ? undefined : new WorkspaceProfile(request.cwd, request.workspace, names, profile, subagents);
   const commands = workspace ? new CommandObserver() : undefined;
   if (request.type === "prepare" && !workspace) throw new Error("invalid_request");
   if (workspace && "mcp_http_servers" in request) throw new Error("invalid_request");
@@ -48,9 +54,9 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
     await emit({ type: "error", code: "history_unavailable" });
     return;
   }
+  subagents?.expectSession(request.resume);
   const mcpServers: Record<string, McpServerConfig> = Object.create(null);
   if (definitions.length) mcpServers.functions = createFunctionServer(definitions, functions.invoke);
-  const profile = request.mcp_http_servers === undefined ? undefined : new MCPProfile(request.mcp_http_servers, names);
   const mcp = profile ? new MCPObserver(profile.identities) : undefined;
   if (profile) Object.assign(mcpServers, profile.servers);
   const children: Promise<number | null>[] = [];
@@ -58,6 +64,7 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
   let nativeID = "";
   const resultIDs = new Set<string>();
   let failed = false;
+  let cancellationFactsFailed = false;
   const messages = request.observe_messages ? new MessageObserver() : undefined;
   let stream: ReturnType<typeof query> | undefined;
   let warm: WarmQuery | undefined;
@@ -68,12 +75,12 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
     if (abort.signal.aborted) throw new Error("cancelled");
     const options: Options = {
         cwd: request.cwd,
-        env: workspace?.options.env ?? { ...process.env },
+        env: workspace?.options.env ?? { ...process.env, ...(subagents ? { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1" } : {}) },
         model: request.model,
         systemPrompt: request.system_prompt,
         ...(request.resume ? { resume: request.resume } : {}),
-        tools: [], allowedTools: profile?.allowed ?? names, strictMcpConfig: true, settingSources: [],
-        ...(profile ? {
+        tools: subagents ? ["Agent", "SendMessage"] : [], allowedTools: profile?.allowed ?? names, strictMcpConfig: true, settingSources: [],
+        ...(profile && !workspace ? {
           agent: "parsar_root", disallowedTools: profile.denied,
           hooks: { PreToolUse: [{ hooks: [profile.beforeTool] }] },
           agents: { parsar_root: { description: "Execution root.", prompt: request.system_prompt,
@@ -83,6 +90,14 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
         canUseTool: async () => ({ behavior: "deny", message: "Tools are unavailable in this execution profile." }),
         ...(workspace?.options ?? {}),
         mcpServers,
+        ...(subagents ? { ...subagents.options(!!workspace), hooks: {
+          Stop: [{ hooks: [subagents.stopped] }], SubagentStart: [{ hooks: [subagents.childStart] }],
+          PostToolUseFailure: [{ hooks: [subagents.failedTool] }],
+          PreToolUse: [{ hooks: [async (input, id, context) => {
+            if (input.hook_event_name === "PreToolUse" && subagents.isCoordination(input.tool_name)) return subagents.beforeTool(input, id, context);
+            return workspace ? workspace.beforeTool(input, id, context) : {};
+          }] }],
+        } } : {}),
         spawnClaudeCodeProcess: options => {
           const child = spawnNative(options);
           nativeAlive = true;
@@ -112,6 +127,7 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
       inputs.release(request.prompt);
     } else stream = query({ prompt: inputs, options });
     for await (const message of stream) {
+      subagents?.consume(message);
       await functions.consume(message, nativeID);
       if (mcp) for (const event of mcp.consume(message, nativeID)) await emit(event);
       if (commands) for (const event of commands.consume(message, nativeID, inputs.hasInput)) await emit(event);
@@ -119,9 +135,9 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
       if (message.type === "system" && message.subtype === "init") {
         nativeID = message.session_id;
         if (!nativeID || (request.resume && nativeID !== request.resume)) throw new Error("unexpected native session");
-        if (workspace) workspace.verify(message.tools, message.mcp_servers);
+        if (workspace) workspace.verify(message.tools, profile ? await stream.mcpServerStatus() : message.mcp_servers, nativeID);
         else if (profile) profile.verify(message.tools, await stream.mcpServerStatus(), nativeID);
-        else if (message.tools.length !== names.length || message.tools.some(name => !names.includes(name)) ||
+        else if (message.tools.length !== names.length + (subagents ? 2 : 0) || message.tools.some(name => ![...names, ...(subagents ? ["Task", "SendMessage"] : [])].includes(name)) ||
             message.mcp_servers.length !== (definitions.length ? 1 : 0) ||
             message.mcp_servers.some(server => server.name !== "functions" || server.status !== "connected")) {
           throw new Error("unexpected native configuration");
@@ -140,6 +156,7 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
       }
       if (message.type !== "result") for (const event of inputs.consume(message)) await emit(event);
     }
+    if (subagents) for (const event of await subagents.facts()) await emit(event);
     functions.assertComplete();
     mcp?.assertComplete();
     commands?.assertComplete();
@@ -156,10 +173,15 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
     abort.signal.removeEventListener("abort", closeInputs);
     const exits = await Promise.all(children);
     if (!exits.length || exits.some(code => code !== 0)) failed = true;
+    if (subagents && abort.signal.aborted && exits.length === 1) {
+      try { for (const event of await subagents.facts(Date.now())) await emit(event); }
+      catch { cancellationFactsFailed = true; }
+    }
     if (mcp) for (const event of mcp.close()) await emit(event);
     if (commands) for (const event of commands.close()) await emit(event);
   }
-  if (abort.signal.aborted) await emit({ type: "error", code: "cancelled" });
+  if (cancellationFactsFailed) await emit({ type: "error", code: "execution_failed" });
+  else if (abort.signal.aborted) await emit({ type: "error", code: "cancelled" });
   else if (failed || !result || !inputs.complete) await emit({ type: "error", code: "execution_failed" });
   else await emit(result);
 }

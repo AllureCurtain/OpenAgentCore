@@ -233,10 +233,12 @@ type ErrorPayload struct {
 // embedded) so a refactor of PromptOutput doesn't silently flip the
 // wire shape.
 type DonePayload struct {
-	Content    string         `json:"content"`
-	Transcript string         `json:"transcript,omitempty"`
-	Usage      Usage          `json:"usage,omitzero"`
-	Metadata   map[string]any `json:"metadata,omitempty"`
+	// SourceCompletedAtMS freezes the native root completion before child settlement.
+	SourceCompletedAtMS *int64         `json:"source_completed_at_ms,omitempty"`
+	Content             string         `json:"content"`
+	Transcript          string         `json:"transcript,omitempty"`
+	Usage               Usage          `json:"usage,omitzero"`
+	Metadata            map[string]any `json:"metadata,omitempty"`
 }
 
 const (
@@ -249,6 +251,7 @@ const (
 // cancellation belong to the daemon connector itself; these bits are
 // the engine-specific surface the UI uses for filtering and copy.
 type AgentKindCapabilities struct {
+	SubagentObservations          bool `json:"subagent_observations,omitempty"`
 	Streaming                     bool `json:"streaming,omitempty"`
 	Permissions                   bool `json:"permissions,omitempty"`
 	Usage                         bool `json:"usage,omitempty"`
@@ -260,7 +263,6 @@ type AgentKindCapabilities struct {
 	ToolItems                     bool `json:"tool_items,omitempty"`
 	ToolObservations              bool `json:"tool_observations,omitempty"`
 	EnvironmentNone               bool `json:"environment_none,omitempty"`
-	RemoteEnvironment             bool `json:"remote_environment,omitempty"`
 	LocalEnvironment              bool `json:"local_environment,omitempty"`
 	LocalEnvironmentNetworkPolicy bool `json:"local_environment_network_policy,omitempty"`
 	Preparation                   bool `json:"preparation,omitempty"`
@@ -273,13 +275,11 @@ type AgentKindCapabilities struct {
 	SubagentControl      bool `json:"subagent_control,omitempty"`
 	DurableInputReceipts bool `json:"durable_input_receipts,omitempty"`
 	// DurableTurns includes strict resume, completion release and cancellation snapshots.
-	DurableTurns             bool `json:"durable_turns,omitempty"`
-	FunctionTools            bool `json:"function_tools,omitempty"`
-	MCPHTTPTools             bool `json:"mcp_http_tools,omitempty"`
-	MCPHTTPRequired          bool `json:"mcp_http_required,omitempty"`
-	MCPHTTPRemoteEnvironment bool `json:"mcp_http_remote_environment,omitempty"`
-	MCPHTTPRemoteBearerAuth  bool `json:"mcp_http_remote_bearer_auth,omitempty"`
-	MCPHTTPBearerAuth        bool `json:"mcp_http_bearer_auth,omitempty"`
+	DurableTurns      bool `json:"durable_turns,omitempty"`
+	FunctionTools     bool `json:"function_tools,omitempty"`
+	MCPHTTPTools      bool `json:"mcp_http_tools,omitempty"`
+	MCPHTTPRequired   bool `json:"mcp_http_required,omitempty"`
+	MCPHTTPBearerAuth bool `json:"mcp_http_bearer_auth,omitempty"`
 }
 
 // SupportedAgentKind is one daemon-advertised agent engine. Daemons
