@@ -62,14 +62,14 @@ func (w *Worker) SubmitInputs(ctx context.Context, tenant, session, key string, 
 	if err != nil {
 		return nil, err
 	}
+	if err := w.dispatcher.validateEngineInputs(value.Engine, value.Configuration, inputs); err != nil {
+		return nil, err
+	}
 	if preparedEnvironmentConfiguration(value.Configuration) {
 		return w.submitEnvironmentInputs(ctx, value, key, inputs)
 	}
 	if !w.dispatcher.canAdmitInputs(value.Engine, value.Configuration) {
 		return nil, store.ErrInvalidInput
-	}
-	if err := w.dispatcher.validateEngineInputs(value.Engine, inputs); err != nil {
-		return nil, err
 	}
 	return w.admission.SubmitInputs(ctx, tenant, session, key, inputs)
 }

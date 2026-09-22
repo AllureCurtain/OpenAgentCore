@@ -30,7 +30,7 @@ func preparationFixture(t *testing.T, mode string) Config {
 
 func preparationRequest() proto.PromptRequestPayload {
 	req := workspaceRequest()
-	req.RunID, req.Prompt = "", ""
+	req.RunID, req.Input = "", nil
 	req.AgentSessionID = "native-session"
 	return req
 }
@@ -57,7 +57,7 @@ func runPreparationHelper() {
 	_ = os.WriteFile(filepath.Join(state, "prepare.json"), raw, 0o600)
 	var fields map[string]json.RawMessage
 	var request startRequest
-	if json.Unmarshal(raw, &fields) != nil || json.Unmarshal(raw, &request) != nil || request.Type != "prepare" || fields["prompt"] != nil || fields["run_id"] != nil || request.Workspace == nil {
+	if json.Unmarshal(raw, &fields) != nil || json.Unmarshal(raw, &request) != nil || request.Type != "prepare" || fields["input"] != nil || fields["run_id"] != nil || request.Workspace == nil {
 		os.Exit(3)
 	}
 	emit := func(event bridgeEvent) { _ = json.NewEncoder(os.Stdout).Encode(event) }
@@ -93,7 +93,7 @@ func runPreparationHelper() {
 	raw = append([]byte{}, scanner.Bytes()...)
 	_ = os.WriteFile(filepath.Join(state, "start.json"), raw, 0o600)
 	fields = nil
-	if json.Unmarshal(raw, &fields) != nil || len(fields) != 2 || string(fields["type"]) != `"start"` || string(fields["prompt"]) != `"hello"` {
+	if json.Unmarshal(raw, &fields) != nil || len(fields) != 2 || string(fields["type"]) != `"start"` || string(fields["input"]) != `[{"content":[{"type":"input_text","text":"hello"}]}]` {
 		os.Exit(4)
 	}
 	if mode == "cancellation" {

@@ -38,8 +38,8 @@ func TestFunctionCallWaitsAndRepliesOnce(t *testing.T) {
 				t.Fatal("missing function call")
 			}
 			text, image, empty := "answer", "https://example.com/result.png", ""
-			content := []proto.FunctionResultContent{{Type: "input_text", Text: &text}, {Type: "input_image", ImageURL: &image}, {Type: "input_text", Text: &empty}}
-			if err := s.SubmitFunctionResult(t.Context(), proto.FunctionResultPayload{CallID: "call", Content: []proto.FunctionResultContent{{Type: "input_audio"}}}); err == nil {
+			content := []proto.InputContent{{Type: "input_text", Text: &text}, {Type: "input_image", ImageURL: &image}, {Type: "input_text", Text: &empty}}
+			if err := s.SubmitFunctionResult(t.Context(), proto.FunctionResultPayload{CallID: "call", Content: []proto.InputContent{{Type: "input_audio"}}}); err == nil {
 				t.Fatal("invalid result consumed the pending call")
 			}
 			finished := make(chan error, 1)

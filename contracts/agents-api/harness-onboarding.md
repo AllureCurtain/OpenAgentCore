@@ -90,6 +90,13 @@ confirmed native output through the existing Message contract. Register public
 qualification separately from the Runtime capability; see the
 [structured-output boundary](structured-output.md). No Core engine-name branch is required.
 
+Initial requests, `Prepared.Start` and steering consume the same ordered
+`proto.MessageInput`. Text-only adapters use `TextOnly()` to reject images without
+discarding content. Image adapters translate each part natively and acknowledge
+an active batch only after all its messages are applied. Register
+`MessageImages` and qualify `MessageImagePlacements` separately; see the
+[message-input contract and real acceptance](message-input.md).
+
 Hosted workspace execution additionally requires verified preparation, workspace
 reads/output export, network behavior and credential/history isolation. Reuse the
 same dedicated Runtime binding and shared Files helpers. A native Bash sandbox

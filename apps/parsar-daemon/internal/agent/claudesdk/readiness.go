@@ -25,6 +25,10 @@ type RuntimeInfo struct {
 	Features []string `json:"features"`
 }
 
+func (info RuntimeInfo) SupportsMessageImages() bool {
+	return slices.Contains(info.Features, "message_images")
+}
+
 func (info RuntimeInfo) SupportsStructuredOutput() bool {
 	return slices.Contains(info.Features, "structured_output")
 }

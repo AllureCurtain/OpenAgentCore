@@ -26,19 +26,19 @@ func TestFunctionDefinitionsRejectUnsupportedConfiguration(t *testing.T) {
 }
 
 func TestFunctionResultPreservesCompleteContent(t *testing.T) {
-	text := func(value string) proto.FunctionResultContent {
-		return proto.FunctionResultContent{Type: "input_text", Text: &value}
+	text := func(value string) proto.InputContent {
+		return proto.InputContent{Type: "input_text", Text: &value}
 	}
 	imageURL := "data:image/png;base64,test"
 	for _, test := range []struct {
 		raw     string
 		success bool
-		content []proto.FunctionResultContent
+		content []proto.InputContent
 	}{
-		{`{"success":true,"output":""}`, true, []proto.FunctionResultContent{text("")}},
-		{`{"success":true,"output":null,"error":null}`, true, []proto.FunctionResultContent{}},
-		{`{"success":false,"error":"failed"}`, false, []proto.FunctionResultContent{text("failed")}},
-		{`{"success":false,"output":[{"type":"input_text","text":"before"},{"type":"input_image","image_url":"data:image/png;base64,test"},{"type":"input_text","text":""}],"error":"failed"}`, false, []proto.FunctionResultContent{text("before"), {Type: "input_image", ImageURL: &imageURL}, text(""), text("failed")}},
+		{`{"success":true,"output":""}`, true, []proto.InputContent{text("")}},
+		{`{"success":true,"output":null,"error":null}`, true, []proto.InputContent{}},
+		{`{"success":false,"error":"failed"}`, false, []proto.InputContent{text("failed")}},
+		{`{"success":false,"output":[{"type":"input_text","text":"before"},{"type":"input_image","image_url":"data:image/png;base64,test"},{"type":"input_text","text":""}],"error":"failed"}`, false, []proto.InputContent{text("before"), {Type: "input_image", ImageURL: &imageURL}, text(""), text("failed")}},
 	} {
 		result, err := functionResult(store.FunctionCall{CallID: "public", ExecutorCallID: "native", Result: json.RawMessage(test.raw)})
 		if err != nil || result.CallID != "native" || result.DeliveryID != "function:public" || result.Success != test.success || !reflect.DeepEqual(result.Content, test.content) {

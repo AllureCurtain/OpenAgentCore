@@ -51,12 +51,20 @@ func (p Policy) canAdmitInputs(engine string, configuration json.RawMessage) boo
 	return p.ValidateSessionConfiguration(engine, configuration) == nil
 }
 
-func (p Policy) validateEngineInputs(engine string, inputs []store.Input) error {
+func (p Policy) validateEngineInputs(engine string, configuration json.RawMessage, inputs []store.Input) error {
 	profile, ok := p.Engines.Lookup(engine)
 	if !ok {
 		return store.ErrInvalidInput
 	}
-	return validateProfileInputs(profile, inputs)
+	var snapshot Snapshot
+	if json.Unmarshal(configuration, &snapshot) != nil {
+		return store.ErrInvalidInput
+	}
+	placement := ""
+	if snapshot.Environment != nil {
+		placement = snapshot.Environment.Type
+	}
+	return validateProfileInputs(profile, placement, inputs)
 }
 
 // engineCapabilities is shared by device selection and the final preclaim check.
