@@ -1518,7 +1518,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   Unsupported `low`/`high` and unreadable catalogs fail before model execution;
   unsupported non-default levels remain an explicit implementation gap.
   Product requests that omit the native option retain their existing defaults.
-  Structured output formats remain a separate protocol gap.
+  Structured output has a separately qualified profile described in
+  [Structured output execution](#structured-output-execution).
 - `subagent_control` advertises native subagent tool control. Agents API requires
   it when resolved `multi_agent.enabled` is false and sends the typed internal
   `disable_subagents` policy on both new and resumed Turns. Native translation
@@ -1906,6 +1907,36 @@ adapter accepts only one nonempty native history for the exact bound cwd. Missin
 foreign, ambiguous or metadata-only history rejects before model input. The Runtime
 volume and shared Environment/Session binding establish ownership; this lookup
 cannot select another Session's home or infer ownership from a model response.
+
+### Structured output execution
+
+The public `text.format={type:"json_schema",schema:{...}}` is resolved with saved
+Agent overrides and frozen in the existing Session configuration. Core transports
+it in `ExecutionControls.OutputFormat`; it does not append prompt instructions,
+validate/retry model answers, repair JSON or select native tool names. Public
+admission requires the selected profile's structured-output qualification, and
+only requests using this option require the Runtime's `structured_output` and
+message-observation capabilities. A capability advertisement does not qualify a
+new public combination. Claude advertises this operation only when the installed
+SDK bridge reports its `structured_output` feature and the selected Runtime is
+not a workspace profile.
+
+The current qualified path is Claude SDK, `environment:none`, medium verbosity,
+single Agent, with optional ordinary function tools and text results. Workspace,
+HTTP MCP, Subagent combinations and non-object root schemas remain unqualified.
+The SDK uses binary64 JSON numbers: reject execution schemas whose numeric values
+would change during that conversion, without narrowing saved Agent storage.
+Codex and MiniMax structured output remain explicit execution gaps.
+
+The Claude adapter passes `outputFormat` to the maintained native SDK and allows
+its native `StructuredOutput` terminal tool. A matching live root tool result and
+an attributed successful SDK result confirm the final output. Publish the native
+`result.result` string unchanged as a completed `final_answer` Message using the
+native tool-use ID; the parent assistant ID can already own a prose Item. Do not
+publish unvalidated retry candidates or serialize `structured_output` back to
+JSON. Native retries remain harness-owned. Existing input receipts, usage,
+cancellation, release and recovery rules apply unchanged. The implementation and
+qualification limits are recorded in [the coverage note](contracts/agents-api/structured-output.md).
 
 ### Claude SDK adapter foundation
 

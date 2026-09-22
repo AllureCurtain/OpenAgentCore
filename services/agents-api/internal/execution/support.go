@@ -69,10 +69,8 @@ func (p Policy) engineCapabilities(peer *gateway.Session, engine string, snapsho
 	if !ok || (snapshot.Environment != nil && !profile.Accepts(snapshot.Environment.Type)) {
 		return fail("execution engine placement is not supported")
 	}
-	if profile.ValidateConfiguration != nil {
-		if err := validateProfileConfiguration(profile, snapshot); err != nil {
-			return device.KindCapabilities{}, err
-		}
+	if err := validateProfileConfiguration(profile, snapshot); err != nil {
+		return device.KindCapabilities{}, err
 	}
 	info, found, known := peer.AgentKindStatus(engine)
 	caps := info.Capabilities
@@ -84,6 +82,9 @@ func (p Policy) engineCapabilities(peer *gateway.Session, engine string, snapsho
 	}
 	if profile.WebSearchControl && !caps.WebSearchControl {
 		return fail("device must advertise web_search_control")
+	}
+	if snapshot.Agent.Text.Format.Type == "json_schema" && (!caps.StructuredOutput || !caps.MessageItems) {
+		return fail("device must support structured output and message observations")
 	}
 	if profile.TextVerbosity && !caps.TextVerbosity {
 		return fail("device must advertise text_verbosity")
