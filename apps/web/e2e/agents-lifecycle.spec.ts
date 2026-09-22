@@ -2781,12 +2781,22 @@ test("applies a buffered live Environment event after an earlier durable snapsho
   await resetFixture(request);
   await controlFixture(request, {
     environmentScenario: 4,
-    environmentRetrieveDelayMs: 500,
     environmentResourceStatus: "pending",
-    environmentEventStatus: 3,
-    environmentEventCount: 1,
+    streamStatus: 401,
   });
   await openSessionsFromHome(page);
+
+  await expect(environmentTrigger(page)).toHaveAccessibleName("Environment pending");
+  const streamError = page.locator(".session-stream-error");
+  await expect(streamError.getByText("Couldn’t open live events")).toBeVisible();
+
+  await controlFixture(request, {
+    environmentRetrieveDelayMs: 500,
+    environmentEventStatus: 3,
+    environmentEventCount: 1,
+    streamStatus: 200,
+  });
+  await streamError.getByRole("button", { name: "Retry" }).click();
 
   const { panel, trigger } = await openEnvironmentDialog(page);
   await expect(trigger).toHaveAccessibleName("Environment connected");
