@@ -38,6 +38,25 @@ Do not split an already active batch again just to adopt this workflow. Preserve
 confirmed native differences and queue nonblocking findings without expanding the
 milestone; stop after completing it when the user has set that boundary.
 
+For the continuous official-semantics alignment campaign, repeat owned-resource
+API/documentation comparisons, bounded implementation batches, acceptance and
+rescan until reasonably addressable discovered differences are removed. Maintain
+operation-level evidence, including unverified behavior and approved native
+harness/daemon differences. A merged batch does not finish the campaign. Discuss
+uncertain designs before expanding mechanisms; simplify repeated patch loops and
+record unresolved low-ROI cases with evidence and impact. Never defer a safety or
+data-consistency blocker while claiming the affected workflow passed.
+
+Session creation requires initial input for `none`, and for streaming creation
+outside `self_hosted`. Check these conditions before creation retry lookup or
+resource resolution. The parser remains shared with subsequent message admission;
+non-streaming hosted and self-hosted requests may omit input. Do not retain an
+idle-none creation compatibility exception. Valid requests retain their documented
+local idempotency behavior; clients may use the same request/key with stream=false
+to recover a lost creation response. Session metadata updates require a supplied
+metadata field, with null/empty clearing it. Validate an empty update before any
+resource lookup, after authentication.
+
 Keep runtime state, test artifacts and build output under `~/.parsar/`. Require
 absolute user-supplied working directories. Keep credentials out of source and
 logs. Update this guide when architecture, ownership or generated contracts change.
@@ -1943,7 +1962,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   or user-message array through the same parser and admission path. Commit the
   Session, initial input, first Turn and Item/event projections in one transaction.
   A creation retry returns the existing Session without re-admitting initial work,
-  including after terminal or later Turns. Omitted/null input retains idle creation.
+  including after terminal or later Turns. Omitted/null input is permitted only
+  for non-streaming hosted creation and self-hosted creation.
   Creation streaming uses the shared live path above; non-text messages remain a gap.
 - Enabling `AGENTS_API_DAEMON_WS_URL` also starts a bounded execution worker. Select
   only connected, capable devices owned by the authenticated tenant; bind once and
