@@ -180,11 +180,7 @@ func run() error {
 	var daemonHandler http.Handler
 	var registry *gateway.Registry
 	if wsURL := os.Getenv("AGENTS_API_DAEMON_WS_URL"); wsURL != "" {
-		if managedNodes != nil && managedNodes.setup != nil {
-			daemonHandler, registry, err = runtime.NewGatewayWithURLResolver(executionStore, wsURL, managedNodes.setup.webSocketURL(wsURL))
-		} else {
-			daemonHandler, registry, err = runtime.NewGateway(executionStore, wsURL)
-		}
+		daemonHandler, registry, err = runtime.NewGatewayWithURLResolver(executionStore, wsURL, managedNodes.webSocketURL(wsURL))
 		if err != nil {
 			return err
 		}
@@ -255,6 +251,7 @@ func run() error {
 		mux := http.NewServeMux()
 		mux.Handle("/api/v1/agent-daemon/", daemonHandler)
 		mux.Handle("/api/v1/agent-daemon/enroll", runtimeenrollment.EnrollmentHandler(executionStore))
+		mux.Handle("/api/v1/agent-daemon/connection", runtimeenrollment.ConnectionHandler(executionStore, registry))
 
 		if managedNodes != nil {
 			mux.Handle("/core/v1/sandbox/node/connect", managedNodes.hub)

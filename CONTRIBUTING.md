@@ -1563,6 +1563,17 @@ microsandbox runtime/firmware hashes and executable native payloads. Release gen
 qualification. A release must be tested from fresh extraction with real models;
 no synthetic result may substitute for native execution acceptance.
 
+Distribution `images` records each exported image's config digest;
+`image_manifest_digests` records its OCI manifest/index digest. Derive and verify
+both from the same archive, including its referenced config and layer bytes, and
+require the build host's selected image ID to match one of them. Docker's classic
+store identifies images by config, while its containerd store uses the OCI
+descriptor. Core, node and self-hosted installers share one resolver for these
+required identities: confirm Linux amd64 and the returned immutable local ID,
+then use that ID in service/provider configuration and Runtime launches. Tags do
+not replace identity verification. The microsandbox-qualified `runtime_ref`
+remains independent of Docker's local store identity.
+
 The manifest is the shared download contract for Core, node and self-hosted
 installers: flat versioned filenames, compressed Runtime size/hash and unpacked
 size/hash, with HTTPS release URLs or the explicit offline payload. Download into
@@ -1572,6 +1583,11 @@ execution-only payloads. Python zipapps bundle the shared resolver with each
 remote bootstrap; the console publishes only fixed non-secret files and declared
 artifact names. Release automation builds artifacts and may create an unpublished
 draft, but cannot claim real execution qualification or public availability.
+Qualify the exact downloaded production artifacts before publishing the draft;
+keep the tested asset bytes and source identity unchanged. Never use an acceptance
+image containing a private test CA or model credential as a release input.
+Repository visibility is independent of publication. Do not add repository
+credentials to installed node/Runtime configuration to bypass download access.
 
 Project-authenticated executor-credential extensions remain outside the upstream
 API namespace and reuse the existing restricted issuer. They require the exact
@@ -1581,6 +1597,21 @@ explicit caller credentials on these routes and never substitutes its administra
 key. Self-hosted installation reuses Docker Runtime isolation, owns no sandbox
 node or Core allocation, and retains user-owned native history after uncertain
 launches. Report started, connected and real execution success separately.
+Self-hosted installation confirms connection through the private daemon transport
+using only its restricted executor credential. The read checks the exact live
+Environment/key binding and current authenticated connection; it never enrolls,
+allocates, wakes a sandbox or grants project resource access. Console forwarding
+preserves this credential without replacing it with an administrator or project
+key. Bounded polling and reruns retain the original container and history;
+timeout is a diagnostic failure, not permission to relaunch. An explicit installer
+`--public-url` supplies both the console origin and the advertised daemon `wss`
+origin. Keep local managed Provider routing separate; do not return an internal
+Compose hostname to a user-managed Runtime when an external origin was supplied. Bootstrap routing uses the
+node bound to the authenticated device's persisted allocation, never request Host
+or caller-supplied placement fields. An embedded managed node retains its internal
+Core route; remote managed nodes use the selected setup/public route, while
+self-hosted devices retain the deployment's advertised public address. This does
+not widen sandbox network policies or change credential admission.
 
 The distribution build sets umask 022 for non-root-readable payloads; installation
 credentials and state retain their explicit private permissions.
