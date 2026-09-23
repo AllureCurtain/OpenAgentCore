@@ -4,6 +4,7 @@ import { RefreshCw, Server } from "lucide-react";
 import { isLocalProxyBaseUrl } from "../../lib/connection";
 import { useLocale } from "../../lib/LocaleProvider";
 import { sandboxRequestError } from "../../lib/sandbox-labels";
+import { SandboxTopology } from "./SandboxTopology";
 import { SandboxNodeCard } from "./SandboxNodeCard";
 import { sandboxConsoleConfig, type SandboxConsoleConfig } from "./console-config";
 import { SandboxSetup } from "./SandboxSetup";
@@ -44,6 +45,8 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const [fresh, setFresh] = useState(false);
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedNode = snapshot?.nodes.find((node) => node.id === selectedId);
   const [removeId, setRemoveId] = useState<string | null>(null);
   const refresh = useCallback(() => setRevision((value) => value + 1), []);
   const initialCoreUrl = window.location.origin;
@@ -101,9 +104,8 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
     {snapshot?.deployment.provider ? <>
       {snapshot.deployment.maintenance ? <p className="sandbox-maintenance" role="status">{t("Maintenance is enabled. New sandbox placement is paused.")}</p> : null}
       <section aria-labelledby="sandbox-nodes-heading"><div className="sandbox-section-heading"><h2 id="sandbox-nodes-heading">{t("Nodes")}</h2><span>{snapshot.nodes.length}</span></div>
-        {snapshot.nodes.length ? <div className="sandbox-node-grid" role="region" aria-label={t("Sandbox nodes")}>
-          {snapshot.nodes.map((node) => <SandboxNodeCard key={node.id} node={node} allocations={snapshot.allocations.filter((allocation) => allocation.node_id === node.id)} stale={!fresh} disabled={busy || loading} confirming={removeId === node.id} onRemove={() => setRemoveId(node.id)} onConfirm={() => void remove()} onCancel={() => setRemoveId(null)} />)}
-        </div> : <div className="sandbox-empty"><Server size={32} strokeWidth={1.25} /><h3>{t("Add your first node")}</h3><p>{t("No nodes registered. Add a node to provide hosted capacity.")}</p></div>}
+        {snapshot.nodes.length ? <SandboxTopology nodes={snapshot.nodes} allocations={snapshot.allocations} stale={!fresh} selectedId={selectedId} onSelect={(id) => { setSelectedId(id); setRemoveId(null); }} /> : <div className="sandbox-empty"><Server size={32} strokeWidth={1.25} /><h3>{t("Add your first node")}</h3><p>{t("No nodes registered. Add a node to provide hosted capacity.")}</p></div>}
+        {selectedNode ? <div id="sandbox-selected-node" className="sandbox-selected-node"><SandboxNodeCard key={selectedNode.id} node={selectedNode} allocations={snapshot.allocations.filter((allocation) => allocation.node_id === selectedNode.id)} stale={!fresh} disabled={busy || loading} confirming={removeId === selectedNode.id} onRemove={() => setRemoveId(selectedNode.id)} onConfirm={() => void remove()} onCancel={() => setRemoveId(null)} /></div> : null}
       </section>
       <details className="sandbox-deployment-details"><summary>{t("Deployment details")}</summary><dl className="sandbox-summary">
         <div><dt>{t("Provider")}</dt><dd>{snapshot.deployment.provider === "docker" ? "Docker" : "microsandbox"}</dd></div>

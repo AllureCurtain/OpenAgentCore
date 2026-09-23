@@ -6,8 +6,8 @@ async function openManager(page: Page) {
   await expect(page.getByRole("heading", { name: "Nodes", exact: true })).toBeVisible();
 }
 async function details(page: Page, name = "Core server") {
+  await page.locator(".sandbox-topology-node").filter({ hasText: name }).click();
   const card = page.locator(".sandbox-node-card").filter({ has: page.getByRole("heading", { name, exact: true }) });
-  await card.getByText("Node details", { exact: true }).click();
   return card;
 }
 test.beforeEach(async ({ page, request }) => {
@@ -24,8 +24,8 @@ test("nodes lead the page, details preserve diagnostics and removal is confirmed
   await expect(page.getByText("fixture-installation", { exact: true })).toBeHidden();
   await expect(page.getByText("session_snapshot", { exact: true })).toBeHidden();
   const nodes = page.getByRole("region", { name: "Sandbox nodes", exact: true });
-  await expect(nodes).toContainText("Provider ready");
-  await expect(nodes).toContainText("Host metrics unavailable");
+  await expect(nodes).toContainText("Available");
+  await expect(nodes).toContainText("Offline");
   const card = await details(page);
   await expect(card.getByRole("region", { name: "Sandbox allocations" })).toContainText("session_snapshot");
   await card.getByRole("button", { name: "Remove Core server", exact: true }).click();
@@ -78,7 +78,7 @@ test("empty nodes and stale reads are distinct; failed reads cannot imply ready"
   await page.route("**/core/v1/sandbox/deployment", (route) => route.fulfill({ status: 503, json: { error: { message: "Deployment unavailable." } } }));
   await page.getByRole("button", { name: "Refresh sandbox state" }).click();
   await expect(page.getByRole("alert")).toContainText("Previously loaded state is shown below");
-  await expect(page.locator(".sandbox-node-status").first()).toHaveText("Status unconfirmed");
+  await expect(page.locator(".sandbox-topology-node-status").first()).toHaveText("Status unconfirmed");
   await page.unroute("**/core/v1/sandbox/deployment");
   await page.route("**/core/v1/sandbox/nodes", (route) => route.fulfill({ json: { data: [] } }));
   await page.getByRole("button", { name: "Refresh sandbox state" }).click();
@@ -103,7 +103,7 @@ test("Chinese actions, diagnostics, and enrollment are translated and language p
   await page.getByLabel("Language / 语言").selectOption("zh");
   await request.post(`${fixture}/__fixture/sandbox-diagnostic?value=resource_missing`);
   await page.getByRole("button", { name: "托管沙箱管理", exact: true }).click();
-  await page.locator(".sandbox-node-card").first().getByText("节点详情", { exact: true }).click();
+  await page.locator(".sandbox-topology-node").first().click();
   await expect(page.getByRole("region", { name: "沙箱资源分配" }).first()).toContainText("沙箱资源缺失");
   await page.getByRole("button", { name: "添加节点", exact: true }).click();
   await expect(page.getByLabel("一次性注册命令")).toHaveValue(/fixture-once-token/);
@@ -136,6 +136,31 @@ test("an uncertain write is never retried; closing discards a late token and all
   expect(attempts).toBe(2);
 });
 
+test("a connected node remains successful after its enrollment token expires", async ({ page, request }) => {
+  const startedAt = new Date();
+  await page.clock.install({ time: startedAt });
+  let attempts = 0;
+  await page.route("**/core/v1/sandbox/enrollment-tokens", (route) => {
+    attempts++;
+    return route.fulfill({ json: { token: "short-lived-token", expires_at: new Date(startedAt.getTime() + 60000).toISOString() } });
+  });
+  await openManager(page);
+  await page.getByRole("button", { name: "Add node", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Add node" });
+  await expect(dialog.getByLabel("One-time enrollment command")).toHaveValue(/short-lived-token/);
+  await request.post(`${fixture}/__fixture/sandbox-add-node`);
+  await page.clock.fastForward(3000);
+  await expect(dialog.getByRole("status")).toHaveText("Enrolled host · Connected");
+  await expect(dialog.getByLabel("One-time enrollment command")).toHaveCount(0);
+  await page.clock.fastForward(65000);
+  await expect(dialog.getByRole("status")).toHaveText("Enrolled host · Connected");
+  await expect(dialog.getByText("Generate a new command to continue.", { exact: true })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Generate new command" })).toHaveCount(0);
+  expect(attempts).toBe(1);
+  await dialog.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(dialog).toBeHidden();
+});
+
 test("expired commands and failed writes require an explicit retry", async ({ page }) => {
   await openManager(page);
   let attempts = 0;
@@ -153,7 +178,38 @@ test("expired commands and failed writes require an explicit retry", async ({ pa
   await expect(page.getByRole("button", { name: "Try again" })).toBeVisible();
 });
 
-for (const width of [320, 768, 1440]) {
+test("topology supports keyboard inspection, distinct health states, and reduced motion", async ({ page }, testInfo) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.route("**/core/v1/sandbox/nodes", async (route) => {
+    const result = await (await route.fetch()).json();
+    result.data.push({ ...result.data[0], id: "node-provider-down", name: "Provider unavailable host", provider_ready: false });
+    for (let index = 0; index < 4; index++) result.data.push({ ...result.data[0], id: `extra-${index}`, name: `Extra host ${index}` });
+    await route.fulfill({ json: result });
+  });
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await openManager(page);
+  const nodes = page.locator(".sandbox-topology-node");
+  await expect(nodes).toHaveCount(7);
+  await expect(page.locator(".sandbox-topology-node.warning")).toContainText("Unavailable");
+  await expect(page.locator(".sandbox-topology-connection.offline .sandbox-topology-flow")).toHaveCount(0);
+  await expect(page.locator(".sandbox-topology-flow").first()).toHaveCSS("animation-name", "none");
+  const boxes = await nodes.evaluateAll((elements) => elements.map((element) => {
+    const { x, y, width, height } = element.getBoundingClientRect(); return { x, y, width, height };
+  }));
+  for (let a = 0; a < boxes.length; a++) for (let b = a + 1; b < boxes.length; b++) {
+    const first = boxes[a]!, second = boxes[b]!;
+    expect(first.x + first.width <= second.x || second.x + second.width <= first.x || first.y + first.height <= second.y || second.y + second.height <= first.y).toBe(true);
+  }
+  await page.locator(".sandbox-topology").screenshot({ path: testInfo.outputPath("topology-seven-nodes.png"), animations: "disabled" });
+  await nodes.first().focus();
+  await page.keyboard.press("Enter");
+  await expect(nodes.first()).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("#sandbox-selected-node")).toContainText("session_snapshot");
+  await expect(page.getByRole("button", { name: "Remove Core server" })).toBeVisible();
+  await page.locator("#sandbox-selected-node").screenshot({ path: testInfo.outputPath("selected-node-details.png"), animations: "disabled" });
+});
+
+for (const width of [1280, 1440]) {
   for (const theme of ["light", "dark"]) {
     test(`node manager and add modal fit ${width}px ${theme}`, async ({ page }, testInfo) => {
       await page.setViewportSize({ width, height: 900 });
@@ -229,3 +285,17 @@ test("late placement reads cannot replace another Session's placement", async ({
   releaseOld();
   await expect(page.getByRole("dialog")).not.toContainText("Old placement");
 });
+
+for (const theme of ["light", "dark"]) {
+  test(`Chinese topology and node details render on desktop in ${theme}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.evaluate((theme) => document.documentElement.dataset.theme = theme, theme);
+    await page.getByLabel("Language / 语言").selectOption("zh");
+    await page.getByRole("button", { name: "托管沙箱管理", exact: true }).click();
+    await expect(page.getByRole("region", { name: "沙箱节点", exact: true })).toContainText("可用");
+    await page.screenshot({ path: testInfo.outputPath(`topology-zh-${theme}.png`), animations: "disabled" });
+    await page.locator(".sandbox-topology-node").first().click();
+    await expect(page.getByRole("button", { name: "移除 Core server", exact: true })).toBeVisible();
+    await page.locator("#sandbox-selected-node").screenshot({ path: testInfo.outputPath(`node-details-zh-${theme}.png`), animations: "disabled" });
+  });
+}

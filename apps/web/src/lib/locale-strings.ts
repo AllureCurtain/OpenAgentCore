@@ -1,4 +1,8 @@
 export const chinese = {
+  "Node network": "节点网络",
+  "Select a node to inspect it": "选择节点查看详情",
+  "Needs attention": "需要检查",
+  "Done": "完成",
   "Copy command": "复制命令",
   "Sandbox resources need attention": "沙箱资源需要检查",
   "Try again": "重试",

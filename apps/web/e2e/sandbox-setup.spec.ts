@@ -38,7 +38,7 @@ test("bundled console needs no extra admin key and provides one install command 
   await expect(page.locator(".sandbox-manager")).not.toContainText("Create a private /etc/parsar/sandbox-node.json");
   await request.post(`${fixture}/__fixture/sandbox-add-node`);
   await expect(page.getByRole("region", { name: "Sandbox nodes", exact: true })).toContainText("Enrolled host", { timeout: 10000 });
-  await expect(page.getByRole("region", { name: "Sandbox nodes", exact: true })).toContainText("Provider ready");
+  await expect(page.getByRole("region", { name: "Sandbox nodes", exact: true })).toContainText("Available");
   expect(browserAuthorizations.length).toBeGreaterThan(0);
   expect(browserAuthorizations.every((value) => value === undefined)).toBe(true);
 });
@@ -72,7 +72,7 @@ for (const provider of ["docker", "microsandbox"]) {
     await page.keyboard.press("Escape");
     await page.getByRole("button", { name: "Refresh sandbox state" }).click();
     await expect(page.getByRole("region", { name: "Sandbox nodes", exact: true })).toContainText("Enrolled host");
-    await expect(page.getByRole("region", { name: "Sandbox nodes", exact: true })).toContainText("Provider ready");
+    await expect(page.getByRole("region", { name: "Sandbox nodes", exact: true })).toContainText("Available");
     const state = await (await request.get(`${fixture}/__fixture/sandbox`)).json();
     expect(state.calls.filter((call: { path: string; method: string }) => call.path.endsWith("/deployment") && call.method === "POST")).toHaveLength(1);
     expect(state.provider).toBe(provider);

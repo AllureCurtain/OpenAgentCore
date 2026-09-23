@@ -10,7 +10,6 @@
 .sandbox-refresh { width: 36px; height: 36px; }
 .sandbox-section-heading { margin-bottom: 14px; }
 .sandbox-section-heading > span { font-size: 12px; color: var(--fg-muted); border: 1px solid var(--line); border-radius: 6px; padding: 1px 7px; }
-.sandbox-node-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 370px), 1fr)); gap: 16px; align-items: start; }
 .sandbox-node-card { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
 .sandbox-node-top { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; padding: 20px 20px 0; }
 .sandbox-node-icon { display: inline-flex; color: var(--fg-muted); }

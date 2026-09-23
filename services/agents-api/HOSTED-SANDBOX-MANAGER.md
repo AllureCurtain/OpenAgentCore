@@ -19,9 +19,11 @@ file server-side through `CORE_CONSOLE_SANDBOX_ADMIN_TOKEN_FILE`.
 The sandbox page and its setup, enrollment, status and diagnostic controls support
 Chinese and English. Choose a language in System navigation; the preference is
 saved, and otherwise the page follows the browser's first language. Nodes are the
-main view, with readiness and capacity visible immediately. Expand a node for
-allocation records, diagnostics and guarded removal; deployment identifiers are
-available in secondary details.
+main view, arranged around Core in a desktop topology with readiness and capacity
+visible immediately. Select a node for allocation records, diagnostics and guarded
+removal; deployment identifiers are available in secondary details. Animated links
+indicate live connections, not measured traffic. Offline links are static, and
+reduced-motion preferences disable decorative animation.
 
 The installer creates the separate key under the private `admin/` directory,
 including zero-node installs. Core receives its digest; the bundled Web server

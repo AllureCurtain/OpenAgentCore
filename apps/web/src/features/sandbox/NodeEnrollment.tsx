@@ -34,7 +34,7 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, disab
   const available = Boolean(consoleConfig.node_installer && sourceUrl && coreUrl);
   const expired = Boolean(enrollment && new Date(enrollment.expires_at).getTime() <= now);
   const connected = fresh && nodes.find((node) => !knownIds.current.has(node.id) && node.online && node.provider_ready);
-  const command = enrollment && available && !expired
+  const command = enrollment && available && !expired && !connected
     ? nodeInstallCommand(enrollment.token, coreUrl!, sourceUrl!, deployment.provider, deployment.installation_id, consoleConfig.node_installer_sha256) : "";
   useEffect(() => () => { generation.current++; request.current?.abort(); }, []);
   useEffect(() => {
@@ -79,16 +79,18 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, disab
     {createPortal(<Modal open={open} title={t("Add node")} onClose={close}>
       <div className="sandbox-add-node form-stack">
         {!available ? <p role="status">{t("Node installation is unavailable. Ask the deployment administrator to enable the node installer on this console.")}</p> : <>
-          <p>{t("Run on the host you want to add.")}</p>
+          {!connected ? <p>{t("Run on the host you want to add.")}</p> : null}
           {busy ? <p role="status">{t("Preparing your command…")}</p> : null}
           {error !== null ? <><p role="alert" className="sandbox-error">{sandboxRequestError(error, locale)}</p><button className="button outline" type="button" onClick={() => void generate()}>{t("Try again")}</button></> : null}
           {enrollment ? <>
             {command ? <div className="sandbox-command"><div className="sandbox-command-heading"><span><Terminal size={15} />{t("Terminal")}</span><button type="button" className="button outline" aria-label={copied ? t("Copied") : t("Copy node command")} onClick={() => void copyCommand()}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? t("Copied") : t("Copy command")}</button></div><label className="field"><span className="sr-only">{t("One-time enrollment command")}</span><textarea readOnly rows={5} value={command} onClick={(event) => event.currentTarget.select()} spellCheck={false} /></label></div> : null}
-            {copyFailed ? <p role="alert">{t("Select the command above and copy it manually.")}</p> : null}
+            {copyFailed && !connected ? <p role="alert">{t("Select the command above and copy it manually.")}</p> : null}
             <div className={`sandbox-enrollment-status ${connected ? "connected" : ""}`} role="status"><span className="sandbox-status-dot" />{connected ? `${connected.name} · ${t("Connected")}` : expired ? t("Command expired") : t("Waiting for your node to connect…")}</div>
             {!fresh ? <p>{t("Connection status unavailable. Refresh to check your node.")}</p> : null}
+            {connected ? <button className="button primary" type="button" onClick={close}>{t("Done")}</button> : <>
             <p className="sandbox-command-expiry">{expired ? t("Generate a new command to continue.") : `${t("One-time enrollment token expires")} ${new Date(enrollment.expires_at).toLocaleTimeString(locale)}.`}</p>
             {expired ? <button className="button primary" type="button" onClick={() => void generate()}>{t("Generate new command")}</button> : null}
+            </>}
           </> : null}
         </>}
       </div>
