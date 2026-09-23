@@ -36,7 +36,9 @@ Default installation starts Core, Web and PostgreSQL without local compute.
 Hosted Sandbox Manager first asks for Docker or microsandbox. It defaults to the
 paired console origin, which forwards the required Core API and WebSocket routes.
 Use advanced network settings only when nodes and guests need a different public
-HTTPS origin. HTTP loopback is accepted only for local development; a guest's
+HTTPS origin. When the inferred address is loopback or is not HTTPS, setup
+opens the network field and requires a non-loopback HTTPS origin before saving.
+The API still accepts HTTP loopback for explicit local development; a guest's
 loopback address cannot reach its Core host.
 
 Saving initializes the deployment once. An identical request may be retried;

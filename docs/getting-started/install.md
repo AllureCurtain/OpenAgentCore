@@ -109,7 +109,9 @@ management. Choose English or Chinese through the System language selector.
    The paired installation needs no second key or Core connection setup.
 2. Choose Docker or microsandbox. The paired console address is used
    automatically. If your network requires a different address for nodes and
-   guests, change it under advanced network settings during initial setup.
+   guests, change it under advanced network settings during initial setup. When
+   opening the console on localhost or an HTTP address, setup requires a
+   non-loopback HTTPS address that nodes and sandbox guests can reach.
 3. Save the selection. It takes effect without restarting Core and remains in
    PostgreSQL across restarts. All nodes in this deployment use the chosen type;
    this page does not switch providers. Microsandbox uses a five-minute idle

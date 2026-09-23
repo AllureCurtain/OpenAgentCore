@@ -1,4 +1,4 @@
-import { isValidDirectCoreBaseUrl } from "../../lib/connection";
+import { isLoopbackHostname, isValidDirectCoreBaseUrl } from "../../lib/connection";
 
 export function sandboxCoreOrigin(value: string): string | null {
   const candidate = value.trim();
@@ -6,4 +6,11 @@ export function sandboxCoreOrigin(value: string): string | null {
   const url = new URL(candidate);
   if (url.protocol === "http:" && url.hostname.endsWith(".localhost")) return null;
   return url.origin;
+}
+
+export function sandboxSetupOrigin(value: string): string | null {
+  const origin = sandboxCoreOrigin(value);
+  if (!origin) return null;
+  const url = new URL(origin);
+  return url.protocol === "https:" && !isLoopbackHostname(url.hostname.replace(/\.$/, "")) ? origin : null;
 }

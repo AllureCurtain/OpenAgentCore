@@ -1,4 +1,7 @@
 export const chinese = {
+  "This console address cannot be used by sandbox guests. Enter the HTTPS Core address that your nodes and guests can reach.": "沙箱无法使用此控制台地址。请输入节点和沙箱都能访问的 HTTPS Core 地址。",
+  "Use an HTTPS Core origin reachable from every node and sandbox guest, without a path or credentials. The console URL may be different.": "请输入所有节点和沙箱都能访问的 HTTPS Core 源地址，不含路径或凭据。此地址可能与控制台地址不同。",
+  "Enter a non-loopback HTTPS origin, such as https://core.example.": "请输入非回环的 HTTPS 源地址，例如 https://core.example。",
   "Node network": "节点网络",
   "Select a node to inspect it": "选择节点查看详情",
   "Needs attention": "需要检查",
@@ -143,8 +146,6 @@ export const chinese = {
   "Sandbox provider": "沙箱运行后端",
   "Choose a provider": "选择运行后端",
   "Core origin reachable from nodes and guests": "节点和沙箱可访问的 Core 地址",
-  "Use the Core API origin, reachable from every node and sandbox guest, without a path or credentials. Remote hosts require HTTPS; loopback HTTP is for local use only. The console URL may be different.": "请输入所有节点和沙箱都能访问的 Core API 源地址，不含路径或凭据。远程主机需要 HTTPS；回环 HTTP 仅限本机使用。此地址可能与控制台地址不同。",
-  "Enter an HTTPS origin such as https://core.example, or a loopback HTTP origin for local use.": "请输入 HTTPS 源地址，例如 https://core.example；本机使用时也可填写回环 HTTP 地址。",
   "Initialize sandbox deployment": "初始化沙箱部署",
   "Copied": "已复制",
   "Copy node command": "复制节点命令",

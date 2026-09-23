@@ -25,7 +25,8 @@ test("bundled console needs no extra admin key and provides one install command 
   await page.getByRole("button", { name: "Hosted Sandbox Manager", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Set up hosted sandboxes" })).toBeVisible();
   await expect(page.getByLabel("Deployment admin key")).toHaveCount(0);
-  await expect(page.getByLabel("Core origin reachable from nodes and guests")).toBeHidden();
+  await expect(page.getByLabel("Core origin reachable from nodes and guests")).toBeVisible();
+  await page.getByLabel("Core origin reachable from nodes and guests").fill("https://core.example");
   await page.getByLabel("Sandbox provider").selectOption("docker");
   await page.getByRole("button", { name: "Initialize sandbox deployment" }).click();
   await page.getByRole("button", { name: "Add node", exact: true }).click();
@@ -52,9 +53,8 @@ for (const provider of ["docker", "microsandbox"]) {
     await expect(page.getByLabel("Sandbox provider")).toHaveValue("");
     await expect(page.getByRole("button", { name: "Add node", exact: true })).toHaveCount(0);
     await page.getByLabel("Sandbox provider").selectOption(provider);
-    await page.getByText("Advanced network settings", { exact: true }).click();
     const origin = page.getByLabel("Core origin reachable from nodes and guests");
-    for (const invalid of ["http://core.example", "https://core.example/v1", "https://user:secret@core.example", "https://core.example?key=secret"]) {
+    for (const invalid of ["http://127.0.0.1:8080", "https://localhost", "https://[::1]", "http://core.example", "https://core.example/v1", "https://user:secret@core.example", "https://core.example?key=secret"]) {
       await origin.fill(invalid);
       await expect(submit).toBeDisabled();
     }
@@ -83,7 +83,6 @@ for (const provider of ["docker", "microsandbox"]) {
 test("concurrent setup conflict requires refresh and displays the committed provider", async ({ page, request }) => {
   await openSetup(page);
   await page.getByLabel("Sandbox provider").selectOption("docker");
-  await page.getByText("Advanced network settings", { exact: true }).click();
   await page.getByLabel("Core origin reachable from nodes and guests").fill("https://core.example");
   const winner = { provider: "microsandbox", core_url: "https://other-core.example" };
   expect((await request.post(setupUrl, { data: winner })).status()).toBe(200);
@@ -101,7 +100,6 @@ test("concurrent setup conflict requires refresh and displays the committed prov
 test("a lost setup response is not retried and refresh recovers the saved deployment", async ({ page, request }) => {
   await openSetup(page);
   await page.getByLabel("Sandbox provider").selectOption("docker");
-  await page.getByText("Advanced network settings", { exact: true }).click();
   await page.getByLabel("Core origin reachable from nodes and guests").fill("https://core.example");
   let writes = 0;
   await page.route("**/core/v1/sandbox/deployment", async (route) => {
@@ -124,7 +122,6 @@ test("a lost setup response is not retried and refresh recovers the saved deploy
 test("a failed setup refresh keeps setup disabled until a successful read", async ({ page }) => {
   await openSetup(page);
   await page.getByLabel("Sandbox provider").selectOption("docker");
-  await page.getByText("Advanced network settings", { exact: true }).click();
   await page.getByLabel("Core origin reachable from nodes and guests").fill("https://core.example");
   await page.route("**/core/v1/sandbox/deployment", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { message: "Deployment unavailable" } }) }));
   await page.getByRole("button", { name: "Initialize sandbox deployment" }).click();
@@ -158,8 +155,7 @@ for (const operation of ["setup", "enrollment"] as const) {
     await openSetup(page);
     if (operation === "setup") {
       await page.getByLabel("Sandbox provider").selectOption("docker");
-      await page.getByText("Advanced network settings", { exact: true }).click();
-  await page.getByLabel("Core origin reachable from nodes and guests").fill("https://core.example");
+      await page.getByLabel("Core origin reachable from nodes and guests").fill("https://core.example");
       await page.getByRole("button", { name: "Initialize sandbox deployment" }).click();
     } else {
       await request.post(setupUrl, { data: { provider: "docker", core_url: "https://core.example" } });
@@ -198,4 +194,38 @@ test("unpaired or unavailable consoles show setup guidance without admin credent
   await page.route("**/console/config", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ sandbox_admin: true, node_installer: true, node_installer_sha256: "a".repeat(64) }) }));
   await page.getByRole("button", { name: "Refresh sandbox state" }).click();
   await expect(page.getByRole("heading", { name: "Set up hosted sandboxes" })).toBeVisible();
+});
+
+test("loopback console setup exposes the address and cannot save the automatic default", async ({ page, request }) => {
+  await openSetup(page);
+  const origin = page.getByLabel("Core origin reachable from nodes and guests");
+  await expect(origin).toBeVisible();
+  await expect(origin).toHaveValue(new URL(page.url()).origin);
+  await expect(page.getByText("This console address cannot be used by sandbox guests.", { exact: false })).toBeVisible();
+  await page.getByLabel("Sandbox provider").selectOption("docker");
+  const submit = page.getByRole("button", { name: "Initialize sandbox deployment" });
+  await expect(submit).toBeDisabled();
+  await origin.press("Enter");
+  expect((await (await request.get(`${fixture}/__fixture/sandbox`)).json()).calls.filter((call: { method: string }) => call.method === "POST")).toHaveLength(0);
+  await origin.fill("https://core.example");
+  await submit.click();
+  expect((await (await request.get(setupUrl)).json()).core_url).toBe("https://core.example");
+});
+
+test("a usable HTTPS console origin initializes without exposing the network field", async ({ page, request }) => {
+  const localOrigin = new URL(page.url()).origin;
+  await page.route("https://core.example/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/console/config") return route.fallback();
+    if (url.pathname.endsWith("/events")) return route.fulfill({ contentType: "text/event-stream", body: "" });
+    const response = await route.fetch({ url: `${localOrigin}${url.pathname}${url.search}` });
+    await route.fulfill({ response });
+  });
+  await page.goto("https://core.example/");
+  await openSetup(page);
+  await expect(page.getByLabel("Core origin reachable from nodes and guests")).toBeHidden();
+  await page.getByLabel("Sandbox provider").selectOption("docker");
+  await page.getByRole("button", { name: "Initialize sandbox deployment" }).click();
+  await expect(page.getByRole("button", { name: "Add node", exact: true })).toBeVisible();
+  expect((await (await request.get(setupUrl)).json()).core_url).toBe("https://core.example");
 });
