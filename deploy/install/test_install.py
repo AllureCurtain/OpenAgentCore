@@ -4,6 +4,7 @@
 import base64
 import contextlib
 import hashlib
+import gzip
 import io
 import json
 import os
@@ -83,8 +84,17 @@ class InstallerTests(unittest.TestCase):
         (bundle / "runtime").mkdir()
         (bundle / "manifest.json").write_text(json.dumps(self.manifest))
         (bundle / "runtime/seccomp.json").write_text('{"defaultAction":"SCMP_ACT_ERRNO"}')
-        for name in ("install.py", "configuration.py", "native_service.py", "node_install.py", "install.sh"):
+        for name in ("install.py", "configuration.py", "native_service.py", "distribution.py", "install.sh"):
             shutil.copyfile(Path(__file__).with_name(name), bundle / name)
+        for name in ("node-install.pyz", "self-hosted-install.pyz"):
+            (bundle / name).write_bytes(b"synthetic verified Python bootstrap")
+        self.manifest["artifacts"] = {}
+        for name in ("images/runtime.tar.gz", "native/bin/parsar-sandbox-node",
+                     "native/bin/agents-api-microsandbox-provider", "native/microsandbox/msb",
+                     "native/microsandbox/libkrunfw.so.5.6.1"):
+            self.manifest["artifacts"][name] = {"filename": "parsar-" + "a" * 40 + "-" + name.replace("/", "-"),
+                "sha256": "a" * 64, "size": 1}
+        (bundle / "manifest.json").write_text(json.dumps(self.manifest))
         for name in self.manifest["images"]:
             (bundle / "images" / (name + ".tar")).write_bytes(("synthetic " + name).encode())
         for name in ("bin/agents-api", "bin/agents-api-migrate", "bin/agents-api-microsandbox-provider",
@@ -102,19 +112,32 @@ class InstallerTests(unittest.TestCase):
             hashlib.sha256(path.read_bytes()).hexdigest() + "  " + str(path.relative_to(bundle)) + "\n"
             for path in files))
 
+    def test_thin_bundle_verifies_without_downloading_runtime(self):
+        bundle = self.bundle()
+        for name in ("images/runtime.tar", "native/bin/parsar-sandbox-node",
+                     "native/bin/agents-api-microsandbox-provider", "native/microsandbox/msb",
+                     "native/microsandbox/libkrunfw.so.5.6.1"):
+            (bundle / name).unlink()
+        self.write_checksums(bundle)
+        with mock.patch.object(install, "obtain_artifact", side_effect=AssertionError("unneeded download")):
+            manifest = install.verify_bundle(bundle)
+            install.prepare_node_payload(self.root, self.initialize(), bundle)
+        self.assertEqual(manifest["source_commit"], "a" * 40)
+        self.assertFalse((self.root / "node-payload/images").exists())
+
     def test_node_payload_exports_only_matched_distribution_files(self):
         state = self.initialize()
         bundle = self.bundle()
         install.prepare_node_payload(self.root, state, bundle)
         payload = self.root / "node-payload"
         exported = {str(path.relative_to(payload)) for path in payload.rglob("*") if path.is_file()}
-        self.assertEqual(len(exported), 9)
+        self.assertEqual(len(exported), 5)
         self.assertNotIn("config/caller.key", exported)
         self.assertNotIn("admin/sandbox-admin.key", exported)
         for name in exported:
             self.assertEqual((payload / name).read_bytes(), (bundle / name).read_bytes())
         install.prepare_node_payload(self.root, state, bundle)
-        (payload / "node_install.py").write_text("changed")
+        (payload / "node-install.pyz").write_text("changed")
         with self.assertRaises(install.InstallError):
             install.prepare_node_payload(self.root, state, bundle)
 
@@ -127,10 +150,10 @@ class InstallerTests(unittest.TestCase):
         with mock.patch.object(install.shutil, "copyfile", side_effect=interrupted):
             with self.assertRaises(OSError):
                 install.prepare_node_payload(self.root, state, bundle)
-        self.assertFalse((self.root / "node-payload/node_install.py").exists())
+        self.assertFalse((self.root / "node-payload/node-install.pyz").exists())
         install.prepare_node_payload(self.root, state, bundle)
-        self.assertEqual((self.root / "node-payload/node_install.py").read_bytes(),
-                         (bundle / "node_install.py").read_bytes())
+        self.assertEqual((self.root / "node-payload/node-install.pyz").read_bytes(),
+                         (bundle / "node-install.pyz").read_bytes())
 
     def test_repeat_installation_preserves_execution_identity_and_all_secrets(self):
         first = self.initialize()
@@ -350,7 +373,7 @@ class InstallerTests(unittest.TestCase):
         bundle = self.bundle()
         checksums = bundle / "SHA256SUMS"
         original = checksums.read_text()
-        for name in ("images/runtime.tar", "native/bin/parsar-sandbox-node"):
+        for name in ("images/core.tar", "node-install.pyz"):
             checksums.write_text("".join(line + "\n" for line in original.splitlines()
                                         if not line.endswith("  " + name)))
             with self.subTest(name=name), self.assertRaises(install.InstallError):
@@ -403,6 +426,51 @@ class InstallerTests(unittest.TestCase):
                       ("--web-only", "--sandbox-provider", "true")):
             with self.subTest(flags=flags), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 self.args(*flags)
+
+    def test_local_microsandbox_accepts_actual_thin_and_offline_native_layouts(self):
+        for offline in (False, True):
+            with self.subTest(offline=offline):
+                bundle = self.bundle()
+                payloads = {}
+                for name, entry in self.manifest["artifacts"].items():
+                    payload = gzip.compress(b"runtime fixture") if name == "images/runtime.tar.gz" else b"\x7fELFfixture"
+                    payloads[entry["filename"]] = payload
+                    entry.update(sha256=hashlib.sha256(payload).hexdigest(), size=len(payload))
+                    if name == "images/runtime.tar.gz":
+                        entry.update(unpacked_sha256=hashlib.sha256(b"runtime fixture").hexdigest(), unpacked_size=len(b"runtime fixture"))
+                    if offline:
+                        target = bundle / "artifacts" / entry["filename"]
+                        target.parent.mkdir(exist_ok=True)
+                        target.write_bytes(payload)
+                    else:
+                        self.manifest["artifact_base_url"] = "https://release.example/immutable"
+                    (bundle / name.removesuffix(".gz")).unlink()
+                (bundle / "manifest.json").write_text(json.dumps(self.manifest))
+                self.write_checksums(bundle)
+                requested = []
+                def response(url, **kwargs):
+                    requested.append(url.rsplit("/", 1)[-1])
+                    return io.BytesIO(payloads[requested[-1]])
+                def host_command(arguments, failure):
+                    return SimpleNamespace(returncode=0, stdout="yes" if arguments[0] == "loginctl" else "", stderr="")
+                with mock.patch.object(install, "__file__", str(bundle / "install.py")), \
+                        mock.patch.object(install.platform, "system", return_value="Linux"), \
+                        mock.patch.object(install.platform, "machine", return_value="x86_64"), \
+                        mock.patch.object(install.os, "access", return_value=True), \
+                        mock.patch.object(install, "run", return_value=SimpleNamespace(stdout="", returncode=0)), \
+                        mock.patch.object(install, "wait_http", return_value=True), \
+                        mock.patch.object(install, "import_runtime"), \
+                        mock.patch.object(install.native_service, "_run", side_effect=host_command), \
+                        mock.patch("distribution.urllib.request.build_opener", return_value=SimpleNamespace(open=response)), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    install.main(["--install-dir", str(self.root), "--sandbox-provider", "true", "--provider", "microsandbox"])
+                self.assertTrue((self.root / "native/bin/agents-api").is_file())
+                self.assertTrue((self.root / "native/bin/agents-api-microsandbox-provider").is_file())
+                self.assertFalse((self.root / "native/bin/parsar-sandbox-node").exists())
+                self.assertNotIn(self.manifest["artifacts"]["native/bin/parsar-sandbox-node"]["filename"], requested)
+                self.assertEqual(len(requested), 0 if offline else 4)
+                shutil.rmtree(bundle)
+                shutil.rmtree(self.root)
 
     def test_default_main_skips_kvm_native_service_and_runtime_import(self):
         bundle = self.bundle()
