@@ -488,7 +488,7 @@ function targetIds(samples: readonly RuntimeTrendSample[], field: "cpuRatio" | "
   for (const sample of samples) {
     for (const target of sample.targets) {
       const value = target[field];
-      latest.set(target.seriesId, value ?? latest.get(target.seriesId) ?? 0);
+      if (value !== null) latest.set(target.seriesId, value);
     }
   }
   return [...latest.entries()].sort((left, right) => right[1] - left[1]).slice(0, 3).map(([id]) => id);

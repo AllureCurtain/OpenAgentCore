@@ -8,10 +8,15 @@ function sample(sampledAt: number, cpuRatio: number | null): RuntimeTrendSample 
   return {
     sampledAt,
     targets: [{
+      seriesId: "activity:session-1",
+      label: "Runtime worker",
+      cpuRatio: null,
+      runtimeActive: 1,
+    }, {
       seriesId: "session-1:allocation-1",
       label: "Runtime worker",
       cpuRatio,
-      runtimeActive: 1,
+      runtimeActive: null,
     }],
     cpuCandidates: [],
     memoryUsageBytes: 512,
@@ -117,6 +122,24 @@ describe("Runtime live-window chart accessibility", () => {
     expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(4);
     expect(html).toContain("Runtime active");
     expect(html).toContain("1 active / 0 inactive");
+  });
+
+  it("does not mix Session activity and allocation CPU series identities", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeTrendCharts samples={[sample(60_000, .25), sample(120_000, .5)]} />,
+    );
+
+    expect(html.match(/aria-label="Hide Runtime worker series"/g)).toHaveLength(2);
+
+    const pending = sample(180_000, null);
+    pending.targets = [{
+      seriesId: "activity:pending-session",
+      label: "Pending worker",
+      cpuRatio: null,
+      runtimeActive: 0,
+    }];
+    const pendingHtml = renderToStaticMarkup(<RuntimeTrendCharts samples={[pending]} />);
+    expect(pendingHtml.match(/aria-label="Hide Pending worker series"/g)).toHaveLength(1);
   });
 
   it("announces an isolated durable value as sparse rather than empty", () => {
