@@ -42,13 +42,34 @@ describe("Runtime live-window chart accessibility", () => {
     })).toBe("Memory usage all series hidden; use the legend to show a series");
   });
 
-  it("reports a current gap as unavailable instead of announcing a stale value as latest", () => {
+  it("renders an unavailable current value as zero without retaining a stale value", () => {
     const html = renderToStaticMarkup(
       <RuntimeTrendCharts samples={[sample(60_000, .5), sample(120_000, null)]} />,
     );
 
-    expect(html).toContain("Runtime worker</th><td>Unavailable</td><td>1</td>");
+    expect(html).toContain("Runtime worker</th><td>0%</td><td>0</td>");
     expect(html).not.toContain("Runtime worker</th><td>50%</td><td>1</td>");
+  });
+
+  it("renders empty retained buckets as continuous zero-value chart series", () => {
+    const empty = (sampledAt: number): RuntimeTrendSample => ({
+      ...sample(sampledAt, null),
+      targets: [],
+      memoryUsageBytes: null,
+      memoryLimitBytes: null,
+      inputTokensPerMinute: null,
+      outputTokensPerMinute: null,
+    });
+    const html = renderToStaticMarkup(
+      <RuntimeTrendCharts samples={[empty(60_000), empty(120_000)]} source="durable" />,
+    );
+
+    expect(html).toContain("usage</th><td>0%</td><td>0</td>");
+    expect(html).toContain("used</th><td>0 B</td><td>0</td>");
+    expect(html).toContain("input</th><td>0/min</td><td>0</td>");
+    expect(html).not.toContain("No retained CPU samples");
+    expect(html).not.toContain("No complete retained memory samples");
+    expect(html).not.toContain("No retained token samples");
   });
 
   it("renders uPlot chart mounts and reports trends only after two real samples", () => {

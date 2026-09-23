@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { RuntimeDashboardSnapshot } from "./runtime-snapshot";
 import { RUNTIME_SNAPSHOT_REFRESH_MS } from "./runtime-snapshot";
@@ -46,7 +46,15 @@ export function RuntimeTrendPanel({
   const [durableSnapshot, setDurableSnapshot] = useState<RuntimeDurableSnapshot | null>(null);
   const [durableState, setDurableState] = useState<"connecting" | "ready" | "unavailable" | "failed">("connecting");
   const [durableError, setDurableError] = useState<string | null>(null);
+  const [durableRefresh, setDurableRefresh] = useState(0);
   const [sourcePreference, setSourcePreference] = useState<RuntimeTrendSource>("durable");
+  const latestSnapshotRef = useRef(snapshot);
+  latestSnapshotRef.current = snapshot;
+  const durableTargetKey = useMemo(() => snapshot.observations
+    .filter((observation) => observation.mode === "openai_hosted" && observation.environment_id !== null)
+    .map((observation) => observation.session_id)
+    .sort()
+    .join("|"), [snapshot.observations]);
   const visibleTrendSamples = useMemo(
     () => runtimeTrendRange(trendSamples, selectedTrendRange),
     [selectedTrendRange, trendSamples],
@@ -74,10 +82,15 @@ export function RuntimeTrendPanel({
   }, [snapshot]);
 
   useEffect(() => {
+    const timer = window.setInterval(() => setDurableRefresh((current) => current + 1), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     const controller = new AbortController();
     setDurableState("connecting");
     setDurableError(null);
-    void loadRuntimeHistory(snapshot, selectedDurableRange, controller.signal).then((result) => {
+    void loadRuntimeHistory(latestSnapshotRef.current, selectedDurableRange, controller.signal).then((result) => {
       if (controller.signal.aborted) return;
       if (result === null) {
         setDurableSnapshot(null);
@@ -92,7 +105,7 @@ export function RuntimeTrendPanel({
       setDurableError(error instanceof Error ? error.message : "Durable Runtime history request failed.");
     });
     return () => controller.abort();
-  }, [loadRuntimeHistory, selectedDurableRange, snapshot]);
+  }, [durableRefresh, durableTargetKey, loadRuntimeHistory, selectedDurableRange]);
 
   const rangeOptions = source === "durable" ? RUNTIME_DURABLE_RANGES : RUNTIME_TREND_RANGES;
   const sourceStatus = source === "durable"

@@ -909,48 +909,40 @@ export function SessionsView({
               hidden
             />
           )}
-          {sessionView === "metrics" ? (
-            <div
-              className="session-view-panel session-metrics-panel"
-              id="session-metrics-panel"
-              role="tabpanel"
-              aria-labelledby="session-metrics-tab"
-            >
-              {sessionRuntimeSnapshot && loadRuntimeHistory ? (
-                <RuntimeTrendPanel
-                  key={selected.id}
-                  snapshot={sessionRuntimeSnapshot}
-                  stale={runtimeStale ?? false}
-                  loadRuntimeHistory={loadRuntimeHistory}
-                  headingId="session-runtime-trends-heading"
-                  title="Session resource trends"
-                  showDurableUptimePlaceholder
-                  allowSourceSelection
-                />
-              ) : runtimeError ? (
-                <ErrorState
-                  title="Couldn’t load Session metrics"
-                  description="The latest Runtime observation is unavailable."
-                  detail={runtimeError}
-                  onRetry={onRefresh}
-                />
-              ) : (
-                <div className="session-metrics-loading" aria-busy="true" aria-label="Loading Session metrics">
-                  <Skeleton />
-                  <Skeleton />
-                  <Skeleton />
-                  <Skeleton />
-                </div>
-              )}
-            </div>
-          ) : (
-            <div
-              id="session-metrics-panel"
-              role="tabpanel"
-              aria-labelledby="session-metrics-tab"
-              hidden
-            />
-          )}
+          <div
+            className="session-view-panel session-metrics-panel"
+            id="session-metrics-panel"
+            role="tabpanel"
+            aria-labelledby="session-metrics-tab"
+            hidden={sessionView !== "metrics"}
+          >
+            {sessionRuntimeSnapshot && loadRuntimeHistory ? (
+              <RuntimeTrendPanel
+                key={selected.id}
+                snapshot={sessionRuntimeSnapshot}
+                stale={runtimeStale ?? false}
+                loadRuntimeHistory={loadRuntimeHistory}
+                headingId="session-runtime-trends-heading"
+                title="Session resource trends"
+                showDurableUptimePlaceholder
+                allowSourceSelection
+              />
+            ) : runtimeError ? (
+              <ErrorState
+                title="Couldn’t load Session metrics"
+                description="The latest Runtime observation is unavailable."
+                detail={runtimeError}
+                onRetry={onRefresh}
+              />
+            ) : (
+              <div className="session-metrics-loading" aria-busy="true" aria-label="Loading Session metrics">
+                <Skeleton />
+                <Skeleton />
+                <Skeleton />
+                <Skeleton />
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="workspace-empty">
