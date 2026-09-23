@@ -56,6 +56,11 @@ export interface RuntimeDashboardRow {
 export interface RuntimeDashboardSummary {
   sessionCount: number;
   managedRuntimeCount: number;
+  sandboxTotalCount: number;
+  activeSandboxCount: number;
+  sleepingSandboxCount: number;
+  transitioningSandboxCount: number;
+  pendingSandboxCount: number;
   observedRuntimeCount: number;
   unavailableRuntimeCount: number;
   unsupportedRuntimeCount: number;
@@ -282,6 +287,11 @@ export function buildRuntimeDashboardModel(
   const sessionsById = new Map(sessions.map((session) => [session.id, session]));
   const rows: RuntimeDashboardRow[] = [];
   let managedRuntimeCount = 0;
+  let sandboxTotalCount = 0;
+  let activeSandboxCount = 0;
+  let sleepingSandboxCount = 0;
+  let transitioningSandboxCount = 0;
+  let pendingSandboxCount = 0;
   let observedRuntimeCount = 0;
   let unavailableRuntimeCount = 0;
   let unsupportedRuntimeCount = 0;
@@ -315,7 +325,29 @@ export function buildRuntimeDashboardModel(
       oldestResolvedAt = oldestResolvedAt === null ? resolvedAt : Math.min(oldestResolvedAt, resolvedAt);
       newestResolvedAt = newestResolvedAt === null ? resolvedAt : Math.max(newestResolvedAt, resolvedAt);
     }
-    if (observation.mode === "openai_hosted") managedRuntimeCount += 1;
+    if (observation.mode === "openai_hosted") {
+      managedRuntimeCount += 1;
+      switch (observation.lifecycle_state) {
+        case "active":
+          activeSandboxCount += 1;
+          sandboxTotalCount += 1;
+          break;
+        case "sleeping":
+          sleepingSandboxCount += 1;
+          sandboxTotalCount += 1;
+          break;
+        case "transitioning":
+          transitioningSandboxCount += 1;
+          sandboxTotalCount += 1;
+          break;
+        case "pending":
+          pendingSandboxCount += 1;
+          sandboxTotalCount += 1;
+          break;
+        case "stopped":
+          break;
+      }
+    }
     if (observation.status === "observed") {
       observedRuntimeCount += 1;
       const cpuUsage = safeFiniteNonNegative(observation.cpu?.usage_seconds_total);
@@ -388,6 +420,11 @@ export function buildRuntimeDashboardModel(
     summary: {
       sessionCount: rows.length,
       managedRuntimeCount,
+      sandboxTotalCount,
+      activeSandboxCount,
+      sleepingSandboxCount,
+      transitioningSandboxCount,
+      pendingSandboxCount,
       observedRuntimeCount,
       unavailableRuntimeCount,
       unsupportedRuntimeCount,

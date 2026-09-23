@@ -1633,6 +1633,15 @@ definitions:
         type: string
       instance:
         $ref: '#/definitions/v1.RuntimeInstance'
+      lifecycle_state:
+        enum:
+        - active
+        - sleeping
+        - transitioning
+        - pending
+        - stopped
+        type: string
+        x-nullable: true
       memory:
         allOf:
         - $ref: '#/definitions/v1.RuntimeMemoryObservation'
@@ -1686,6 +1695,7 @@ definitions:
     - environment_id
     - id
     - instance
+    - lifecycle_state
     - memory
     - mode
     - object

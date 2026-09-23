@@ -244,6 +244,7 @@ describe("Dashboard loaded-snapshot model", () => {
       mode: "openai_hosted",
       provider_type: "docker",
       instance: { kind: "managed_allocation", allocation_id: "44444444-4444-4444-8444-444444444444", device_id: null, connection_generation: null },
+      lifecycle_state: "active",
       status: "observed",
       reason: null,
       allocation_created_at: 100,
@@ -260,6 +261,7 @@ describe("Dashboard loaded-snapshot model", () => {
       mode: "none",
       provider_type: null,
       instance: { kind: "none", allocation_id: null, device_id: null, connection_generation: null },
+      lifecycle_state: null,
       status: "unsupported",
       reason: "runtime_mode_not_observable",
       allocation_created_at: null,
@@ -274,6 +276,11 @@ describe("Dashboard loaded-snapshot model", () => {
     expect(model.summary).toMatchObject({
       sessionCount: 2,
       managedRuntimeCount: 1,
+      sandboxTotalCount: 1,
+      activeSandboxCount: 1,
+      sleepingSandboxCount: 0,
+      transitioningSandboxCount: 0,
+      pendingSandboxCount: 0,
       observedRuntimeCount: 1,
       unavailableRuntimeCount: 0,
       unsupportedRuntimeCount: 1,
@@ -310,6 +317,7 @@ describe("Dashboard loaded-snapshot model", () => {
         device_id: null,
         connection_generation: null,
       },
+      lifecycle_state: "stopped",
       status: "unavailable",
       reason: "runtime_not_running",
       allocation_created_at: 100,
@@ -320,7 +328,9 @@ describe("Dashboard loaded-snapshot model", () => {
       memory: null,
     };
 
-    expect(buildRuntimeDashboardModel([stopped], [observation]).rows[0]?.allocationAgeSeconds).toBeNull();
+    const model = buildRuntimeDashboardModel([stopped], [observation]);
+    expect(model.rows[0]?.allocationAgeSeconds).toBeNull();
+    expect(model.summary).toMatchObject({ sandboxTotalCount: 0, activeSandboxCount: 0, sleepingSandboxCount: 0 });
   });
 
   it("does not count capacity-only or limit-only samples as usage coverage", () => {
@@ -349,6 +359,7 @@ describe("Dashboard loaded-snapshot model", () => {
         device_id: null,
         connection_generation: null,
       },
+      lifecycle_state: "active",
       status: "observed",
       reason: null,
       allocation_created_at: null,

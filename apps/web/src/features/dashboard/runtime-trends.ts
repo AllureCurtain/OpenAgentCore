@@ -16,7 +16,7 @@ export interface RuntimeTrendTarget {
   seriesId: string;
   label: string;
   cpuRatio: number | null;
-  uptimeSeconds: number | null;
+  runtimeActive: 0 | 1 | null;
 }
 
 export interface RuntimeTrendCPUCandidate extends RuntimeTrendTarget {
@@ -78,19 +78,10 @@ function reportedCpuRatio(observation: RuntimeObservation): number | null {
 }
 
 function allocationKey(observation: RuntimeObservation): string | null {
-  if (observation.status !== "observed") return null;
+  if (observation.mode !== "openai_hosted") return null;
   const allocationId = observation.instance.allocation_id;
   return typeof allocationId === "string" && allocationId.length > 0
     ? `${observation.instance.kind}:${allocationId}`
-    : null;
-}
-
-function uptimeSeconds(observation: RuntimeObservation): number | null {
-  if (observation.status !== "observed") return null;
-  const startedAt = safeInteger(observation.started_at);
-  const observedAt = safeInteger(observation.observed_at);
-  return startedAt !== null && observedAt !== null && observedAt >= startedAt
-    ? observedAt - startedAt
     : null;
 }
 
@@ -106,13 +97,13 @@ function tokenTotals(sessions: readonly AgentSession[], sampledAt: number): Runt
 
 export function runtimeTrendSample(snapshot: RuntimeDashboardSnapshot): RuntimeTrendSample {
   const sessions = new Map(snapshot.sessions.map((session) => [session.id, session]));
-  const observed = snapshot.observations.flatMap((observation) => {
+  const managed = snapshot.observations.flatMap((observation) => {
     const session = sessions.get(observation.session_id);
-    if (!session || observation.status !== "observed") return [];
+    if (!session || observation.mode !== "openai_hosted") return [];
     const key = allocationKey(observation);
-    if (key === null) return [];
     return [{
-      seriesId: `${observation.session_id}:${key}`,
+      sessionId: observation.session_id,
+      seriesId: key === null ? null : `${observation.session_id}:${key}`,
       label: sessionTitle(session),
       cpuRatio: reportedCpuRatio(observation),
       observedAt: safeInteger(observation.observed_at),
@@ -122,25 +113,26 @@ export function runtimeTrendSample(snapshot: RuntimeDashboardSnapshot): RuntimeT
       capacityCores: finiteNonNegative(observation.cpu?.capacity_cores),
       memoryUsageBytes: finiteNonNegative(observation.memory?.usage_bytes),
       memoryLimitBytes: finiteNonNegative(observation.memory?.limit_bytes),
-      uptimeSeconds: uptimeSeconds(observation),
+      runtimeActive: observation.status === "observed" ? 1 as const : 0 as const,
     }];
   });
-  const targetIds = new Set([
-    ...observed.filter((target) => target.cpuRatio !== null)
+  const activeTargets: RuntimeTrendTarget[] = managed.slice(0, RUNTIME_TREND_SERIES_LIMIT).map((target) => ({
+    seriesId: `activity:${target.sessionId}`,
+    label: target.label,
+    cpuRatio: null,
+    runtimeActive: target.runtimeActive,
+  }));
+  const cpuTargets: RuntimeTrendTarget[] = managed.filter((target) => target.seriesId !== null && target.cpuRatio !== null)
       .sort((left, right) => (right.cpuRatio ?? 0) - (left.cpuRatio ?? 0))
       .slice(0, RUNTIME_TREND_SERIES_LIMIT)
-      .map((target) => target.seriesId),
-    ...observed.filter((target) => target.uptimeSeconds !== null)
-      .sort((left, right) => (right.uptimeSeconds ?? 0) - (left.uptimeSeconds ?? 0))
-      .slice(0, RUNTIME_TREND_SERIES_LIMIT)
-      .map((target) => target.seriesId),
-  ]);
-  const targets = observed.filter((target) => targetIds.has(target.seriesId)).map((target) => ({
-    seriesId: target.seriesId,
+      .map((target) => ({
+    seriesId: target.seriesId!,
     label: target.label,
     cpuRatio: target.cpuRatio,
-    uptimeSeconds: target.uptimeSeconds,
+    runtimeActive: null,
   }));
+  const targets = [...activeTargets, ...cpuTargets];
+  const observed = managed.filter((target) => target.runtimeActive === 1);
   const pairedMemory = observed.filter((target) => (
     target.memoryUsageBytes !== null && target.memoryLimitBytes !== null
   ));
@@ -148,15 +140,15 @@ export function runtimeTrendSample(snapshot: RuntimeDashboardSnapshot): RuntimeT
     sampledAt: snapshot.loadedAt,
     targets,
     cpuCandidates: observed.flatMap((target): RuntimeTrendCPUCandidate[] => (
-      target.cpuRatio !== null || (
+      target.seriesId !== null && (target.cpuRatio !== null || (
         target.observedAt !== null && target.allocationKey !== null &&
         target.usageSecondsTotal !== null && target.capacityCores !== null && target.capacityCores > 0
-      )
+      ))
         ? [{
-          seriesId: target.seriesId,
+          seriesId: target.seriesId!,
           label: target.label,
           cpuRatio: target.cpuRatio,
-          uptimeSeconds: target.uptimeSeconds,
+          runtimeActive: null,
           observedAt: target.observedAt,
           startedAt: target.startedAt,
           allocationKey: target.allocationKey,
@@ -210,8 +202,8 @@ function cpuRatios(previous: RuntimeTrendSample, next: RuntimeTrendSample): Map<
 }
 
 function applyCPURatios(sample: RuntimeTrendSample, ratios: ReadonlyMap<string, number>): void {
-  const uptime = sample.targets.filter((target) => target.uptimeSeconds !== null)
-    .sort((left, right) => (right.uptimeSeconds ?? 0) - (left.uptimeSeconds ?? 0))
+  const active = sample.targets.filter((target) => target.runtimeActive !== null)
+    .sort((left, right) => (right.runtimeActive ?? 0) - (left.runtimeActive ?? 0))
     .slice(0, RUNTIME_TREND_SERIES_LIMIT)
     .map((target) => ({ ...target, cpuRatio: null }));
   const cpu = sample.cpuCandidates.flatMap((candidate): RuntimeTrendTarget[] => {
@@ -220,12 +212,12 @@ function applyCPURatios(sample: RuntimeTrendSample, ratios: ReadonlyMap<string, 
       seriesId: candidate.seriesId,
       label: candidate.label,
       cpuRatio: ratio,
-      uptimeSeconds: candidate.uptimeSeconds,
+      runtimeActive: null,
     }];
   }).sort((left, right) => (right.cpuRatio ?? 0) - (left.cpuRatio ?? 0))
     .slice(0, RUNTIME_TREND_SERIES_LIMIT);
   const selected = new Map<string, RuntimeTrendTarget>(
-    uptime.map((target) => [target.seriesId, target]),
+    active.map((target) => [target.seriesId, target]),
   );
   for (const target of cpu) selected.set(target.seriesId, target);
   sample.targets = [...selected.values()];

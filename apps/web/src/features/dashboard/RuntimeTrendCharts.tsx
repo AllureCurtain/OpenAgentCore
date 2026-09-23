@@ -9,7 +9,7 @@ import {
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-import { formatDashboardBytes, formatDashboardDuration, formatDashboardTokens } from "./dashboard-model";
+import { formatDashboardBytes, formatDashboardTokens } from "./dashboard-model";
 import { tokenThroughput, type RuntimeTrendSample } from "./runtime-trends";
 
 interface TrendPoint {
@@ -22,6 +22,7 @@ interface TrendSeries {
   label: string;
   tone: "orange" | "green" | "blue" | "purple";
   points: TrendPoint[];
+  stepped?: boolean;
 }
 
 interface TrendBand {
@@ -253,6 +254,7 @@ function TrendChart({
           stroke: toneColors[entry.tone],
           width: 2,
           spanGaps: false,
+          paths: entry.stepped ? uPlot.paths.stepped!({ align: 1 }) : undefined,
           points: {
             show: (plot, seriesIndex, first, last) => runtimeChartShowsSparsePoints(
               Array.from(plot.data[seriesIndex] ?? []).slice(first, last + 1),
@@ -481,7 +483,7 @@ function TrendChart({
   );
 }
 
-function targetIds(samples: readonly RuntimeTrendSample[], field: "cpuRatio" | "uptimeSeconds"): string[] {
+function targetIds(samples: readonly RuntimeTrendSample[], field: "cpuRatio" | "runtimeActive"): string[] {
   const latest = new Map<string, number>();
   for (const sample of samples) {
     for (const target of sample.targets) {
@@ -507,17 +509,15 @@ export function RuntimeTrendCharts({
   source = "live",
   rangeStart,
   rangeEnd,
-  showDurableUptimePlaceholder = false,
 }: {
   samples: readonly RuntimeTrendSample[];
   source?: RuntimeTrendSource;
   rangeStart?: number;
   rangeEnd?: number;
-  showDurableUptimePlaceholder?: boolean;
 }) {
   const charts = useMemo(() => {
     const cpuIds = targetIds(samples, "cpuRatio");
-    const uptimeIds = targetIds(samples, "uptimeSeconds");
+    const activeIds = targetIds(samples, "runtimeActive");
     const cpu = cpuIds.map((id, index): TrendSeries => ({
       id,
       label: targetLabel(samples, id),
@@ -526,11 +526,12 @@ export function RuntimeTrendCharts({
     }));
     const memoryUsed = samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.memoryUsageBytes }));
     const memoryLimit = samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.memoryLimitBytes }));
-    const uptime = uptimeIds.map((id, index): TrendSeries => ({
+    const active = activeIds.map((id, index): TrendSeries => ({
       id,
       label: targetLabel(samples, id),
       tone: tones[(index + 2) % tones.length] ?? "blue",
-      points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.targets.find((target) => target.seriesId === id)?.uptimeSeconds ?? null })),
+      stepped: true,
+      points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.targets.find((target) => target.seriesId === id)?.runtimeActive ?? 0 })),
     }));
     const throughput = tokenThroughput(samples);
     return {
@@ -539,7 +540,7 @@ export function RuntimeTrendCharts({
         { id: "used", label: "used", tone: "purple", points: memoryUsed },
         { id: "limit", label: "configured limit", tone: "green", points: memoryLimit },
       ] satisfies TrendSeries[],
-      uptime,
+      active,
       tokens: [
         { id: "input", label: "input", tone: "orange", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.inputPerMinute })) },
         { id: "output", label: "output", tone: "green", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.outputPerMinute })) },
@@ -548,7 +549,6 @@ export function RuntimeTrendCharts({
   }, [samples]);
   const cpuMaximum = Math.max(100, ...finite(charts.cpu.flatMap((series) => series.points.map((point) => point.value))));
   const memoryMaximum = Math.max(1, ...finite(charts.memory.flatMap((series) => series.points.map((point) => point.value))));
-  const uptimeMaximum = Math.max(1, ...finite(charts.uptime.flatMap((series) => series.points.map((point) => point.value))));
   const tokenMaximum = Math.max(1, ...finite(charts.tokens.flatMap((series) => series.points.map((point) => point.value))));
   const newest = rangeEnd ?? samples.at(-1)?.sampledAt ?? Date.now();
   const oldest = rangeStart ?? samples[0]?.sampledAt ?? newest - 60 * 60 * 1_000;
@@ -558,7 +558,7 @@ export function RuntimeTrendCharts({
     <div className="dashboard-runtime-trend-grid" aria-label={durable ? "Runtime durable-history charts" : "Runtime live-window charts"}>
       <TrendChart title="CPU usage" subtitle={durable ? "bucketed cumulative-delta utilization · durable history" : "reported or cumulative-delta utilization · live window"} samples={samples} series={charts.cpu} maximum={cpuMaximum} formatValue={(value) => `${Math.round(value)}%`} rangeStart={oldest} rangeEnd={newest} source={source} bands={[{ from: 0, to: 30, tone: "safe" }, { from: 30, to: 70, tone: "warning" }, { from: 70, to: 100, tone: "danger" }]} ticks={[1, .7, .3, 0]} emptyMessage={durable ? "No retained CPU samples" : undefined} />
       <TrendChart title="Memory usage" subtitle={durable ? "complete target aggregate / configured limit · durable history" : "working set / configured limit · live window"} samples={samples} series={charts.memory} maximum={memoryMaximum} formatValue={(value) => formatDashboardBytes(Math.round(value))} rangeStart={oldest} rangeEnd={newest} source={source} emptyMessage={durable ? "No complete retained memory samples" : undefined} />
-      {!durable || showDurableUptimePlaceholder ? <TrendChart title="Compute uptime" subtitle={durable ? "current Runtime measurement · not retained in durable history" : "provider started_at → observed_at · allocation series"} samples={samples} series={durable ? [] : charts.uptime} maximum={uptimeMaximum} formatValue={(value) => formatDashboardDuration(value)} rangeStart={oldest} rangeEnd={newest} source={source} emptyMessage={durable ? "Live-only metric" : undefined} emptyDetail={durable ? "Select Live to inspect current Runtime uptime" : undefined} /> : null}
+      <TrendChart title="Runtime active" subtitle={durable ? "successful observation per retained bucket · 1 active / 0 inactive" : "current observation status · 1 active / 0 inactive"} samples={samples} series={charts.active} maximum={1} formatValue={(value) => value >= .5 ? "Active" : "Inactive"} rangeStart={oldest} rangeEnd={newest} source={source} ticks={[1, 0]} emptyMessage={durable ? "No retained Runtime activity" : undefined} />
       <TrendChart title="Token throughput" subtitle={durable ? "canonical Session Usage deltas · durable history" : "Session Usage deltas · missing usage excluded"} samples={samples} series={charts.tokens} maximum={tokenMaximum} formatValue={(value) => `${formatDashboardTokens(Math.round(value))}/min`} rangeStart={oldest} rangeEnd={newest} source={source} emptyMessage={durable ? "No retained token samples" : undefined} />
     </div>
   );

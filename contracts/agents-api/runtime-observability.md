@@ -41,6 +41,12 @@ rendered or aggregated as zero. A whole observation has one of three states:
 `observed`, `unsupported`, or `unavailable`. Provider and permission failures are
 errors, not ordinary unavailability.
 
+Managed observations also expose a provider-neutral `lifecycle_state` derived
+from Core's allocation and compute lifecycle: `active`, `sleeping`,
+`transitioning`, `pending`, or `stopped`. Non-managed modes return `null`.
+This field is current control-plane state; it is not inferred from a failed
+provider sample.
+
 Docker reports cumulative cgroup CPU time and current cgroup memory usage. CPU and
 memory capacity come from the inspected container configuration. Inspect and Stats
 are read-only; observation must not renew, restart, create, or stop the container.
@@ -72,6 +78,11 @@ These durations answer different questions and must remain separate:
 This phase supplies compute uptime evidence and retains the existing durable
 allocation and Turn timestamps. It does not infer idle time. CPU quietness,
 heartbeat age, connection status, and `kept_at` are not authoritative idle state.
+
+Web projects Runtime activity as a binary chart: a successful observation in a
+time bucket is `1`; an absent or unavailable observation is `0`. This operational
+availability view is intentionally not a durable classification of sleeping
+versus collection failure.
 
 Future automatic suspension requires a separate durable control model, including
 an activity revision and timestamps such as `idle_since` and

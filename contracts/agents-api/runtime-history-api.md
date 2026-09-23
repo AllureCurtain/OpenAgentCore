@@ -172,3 +172,6 @@ or malformed data reject the entire response with a 502 client projection error.
 Compute uptime is available from current observations only. Retained allocation
 series can span compute restarts and unavailable intervals; their earliest start
 is not a per-bucket compute start and must not be used to draw an uptime history.
+Clients may project a binary Runtime activity series from bucket coverage:
+`observed_count > 0` is `1`; a missing or unavailable bucket is `0`. This does
+not distinguish a sleeping Runtime from a collection failure.

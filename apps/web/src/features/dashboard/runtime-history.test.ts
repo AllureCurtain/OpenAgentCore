@@ -129,19 +129,25 @@ describe("Runtime Durable Dashboard history", () => {
       memoryLimitBytes: 1_024,
       inputTokensPerMinute: null,
       outputTokensPerMinute: null,
-      targets: [{ label: "Durable worker", cpuRatio: .25, uptimeSeconds: null }],
     });
-    expect(samples[1]?.targets[0]?.uptimeSeconds).toBeNull();
+    expect(samples[0]?.targets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Durable worker", cpuRatio: null, runtimeActive: 1 }),
+      expect.objectContaining({ label: "Durable worker", cpuRatio: .25, runtimeActive: null }),
+    ]));
+    expect(samples[1]?.targets.find((target) => target.runtimeActive !== null)?.runtimeActive).toBe(1);
     expect(samples[1]).toMatchObject({ inputTokensPerMinute: 60, outputTokensPerMinute: 20 });
   });
 
-  it("does not derive compute uptime from retained allocation starts or unavailable observations", () => {
+  it("projects unavailable retained observations as inactive", () => {
     const source = history();
     source.series[0]!.points[1] = {
       ...source.series[0]!.points[1]!, observed_count: 0, unavailable_count: 1, cpu: null, memory: null,
     };
+    source.coverage.buckets[1] = {
+      ...source.coverage.buckets[1]!, observed_count: 0, unavailable_count: 1,
+    };
     const samples = runtimeDurableTrendSamples([session], [source]);
-    expect(samples.flatMap((sample) => sample.targets.map((target) => target.uptimeSeconds))).toEqual([null, null]);
+    expect(samples.flatMap((sample) => sample.targets.map((target) => target.runtimeActive)).filter((value) => value !== null)).toEqual([1, 0]);
   });
 
   it("keeps aggregate memory absent when any queried target has no memory value", () => {
@@ -183,13 +189,13 @@ describe("Runtime Durable Dashboard history", () => {
     expect(samples.map((sample) => sample.sampledAt)).toEqual(
       Array.from({ length: 11 }, (_, index) => (130 + index * 30) * 1_000),
     );
-    expect(samples[0]?.targets[0]?.cpuRatio).toBe(.25);
-    expect(samples[10]?.targets[0]?.cpuRatio).toBe(.5);
+    expect(samples[0]?.targets.find((target) => target.cpuRatio !== null)?.cpuRatio).toBe(.25);
+    expect(samples[10]?.targets.find((target) => target.cpuRatio !== null)?.cpuRatio).toBe(.5);
     expect(samples[10]?.inputTokensPerMinute).toBeNull();
     expect(samples[10]?.outputTokensPerMinute).toBeNull();
     for (const sample of samples.slice(1, -1)) {
       expect(sample).toMatchObject({
-        targets: [], memoryUsageBytes: null, memoryLimitBytes: null,
+        targets: [expect.objectContaining({ cpuRatio: null, runtimeActive: 0 })], memoryUsageBytes: null, memoryLimitBytes: null,
         inputTokensPerMinute: null, outputTokensPerMinute: null,
       });
     }
@@ -202,7 +208,7 @@ describe("Runtime Durable Dashboard history", () => {
     })]);
     expect(samples.map((sample) => sample.sampledAt)).toEqual([100_000, 130_000, 160_000, 190_000, 205_000]);
     expect(samples.map((sample) => sample.memoryUsageBytes)).toEqual([null, 512, 768, null, null]);
-    expect(samples.map((sample) => sample.targets.length)).toEqual([0, 1, 1, 0, 0]);
+    expect(samples.map((sample) => sample.targets.length)).toEqual([1, 2, 2, 1, 1]);
   });
 
   it("represents an entirely missing range without fabricating zero measurements", () => {
@@ -219,7 +225,7 @@ describe("Runtime Durable Dashboard history", () => {
     expect(samples.map((sample) => sample.sampledAt)).toEqual([130_000, 160_000, 175_000]);
     for (const sample of samples) {
       expect(sample).toMatchObject({
-        targets: [], memoryUsageBytes: null, memoryLimitBytes: null,
+        targets: [expect.objectContaining({ cpuRatio: null, runtimeActive: 0 })], memoryUsageBytes: null, memoryLimitBytes: null,
         inputTokensPerMinute: null, outputTokensPerMinute: null,
       });
     }

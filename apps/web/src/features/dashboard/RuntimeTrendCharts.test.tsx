@@ -11,7 +11,7 @@ function sample(sampledAt: number, cpuRatio: number | null): RuntimeTrendSample 
       seriesId: "session-1:allocation-1",
       label: "Runtime worker",
       cpuRatio,
-      uptimeSeconds: 120,
+      runtimeActive: 1,
     }],
     cpuCandidates: [],
     memoryUsageBytes: 512,
@@ -58,7 +58,7 @@ describe("Runtime live-window chart accessibility", () => {
 
     expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(4);
     expect(html).not.toContain("Collecting live samples");
-    expect(html).toContain("Compute uptime");
+    expect(html).toContain("Runtime active");
   });
 
   it("exposes interactive series, point selection, and Grafana-style in-plot range selection", () => {
@@ -82,21 +82,20 @@ describe("Runtime live-window chart accessibility", () => {
     );
 
     expect(html).toContain('aria-label="CPU usage durable history chart"');
-    expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(3);
-    expect(html).not.toContain("Compute uptime");
+    expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(4);
+    expect(html).toContain("Runtime active");
     expect(html).toContain('aria-label="CPU usage: 2 retained buckets"');
     expect(html).not.toContain('aria-label="CPU usage: 2 live samples"');
   });
 
-  it("can retain an honest uptime card when a consumer requires four metric panels", () => {
+  it("renders retained Runtime activity as a binary chart", () => {
     const html = renderToStaticMarkup(
-      <RuntimeTrendCharts samples={[sample(60_000, .25)]} source="durable" showDurableUptimePlaceholder />,
+      <RuntimeTrendCharts samples={[sample(60_000, .25)]} source="durable" />,
     );
 
     expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(4);
-    expect(html).toContain("Compute uptime");
-    expect(html).toContain("Live-only metric");
-    expect(html).toContain("Select Live to inspect current Runtime uptime");
+    expect(html).toContain("Runtime active");
+    expect(html).toContain("1 active / 0 inactive");
   });
 
   it("announces an isolated durable value as sparse rather than empty", () => {

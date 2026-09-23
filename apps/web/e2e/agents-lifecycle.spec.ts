@@ -2656,6 +2656,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
           device_id: null,
           connection_generation: null,
         },
+        lifecycle_state: "active",
         status: "observed",
         reason: null,
         allocation_created_at: baseline - 8_500,
@@ -2680,7 +2681,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   await expect(dashboard.locator(".dashboard-runtime-sample-count")).toContainText("1 sample ·");
   await expect(dashboard.getByRole("heading", { name: "CPU usage" })).toBeVisible();
   await expect(dashboard.getByRole("heading", { name: "Memory usage" })).toBeVisible();
-  await expect(dashboard.getByRole("heading", { name: "Compute uptime" })).toBeVisible();
+  await expect(dashboard.getByRole("heading", { name: "Runtime active" })).toBeVisible();
   await expect(dashboard.getByRole("heading", { name: "Token throughput" })).toBeVisible();
   await expect(dashboard.getByLabel("Live Runtime sampling every 30 seconds")).toBeVisible();
   const liveRange = dashboard.getByRole("group", { name: "Runtime live range" });
@@ -2692,7 +2693,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   await refresh.click();
   await expect(dashboard.getByLabel("CPU usage: 3 live samples")).toBeVisible();
   await expect(dashboard.getByLabel("Memory usage: 3 live samples")).toBeVisible();
-  await expect(dashboard.getByLabel("Compute uptime: 3 live samples")).toBeVisible();
+  await expect(dashboard.getByLabel("Runtime active: 3 live samples")).toBeVisible();
   await expect(dashboard.getByLabel("Token throughput: 3 live samples")).toBeVisible();
   await expect(dashboard.locator(".dashboard-runtime-sample-count")).toContainText("3 samples");
   await expect(dashboard.getByText("CPU usage live trend available")).toBeAttached();
@@ -2760,7 +2761,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   const keyboardSelectedAt = Number(await cpuChart.getAttribute("data-selected-at"));
   expect(keyboardSelectedAt).toBeGreaterThanOrEqual(zoomedViewStart);
   expect(keyboardSelectedAt).toBeLessThanOrEqual(zoomedViewEnd);
-  for (const chartName of ["Memory usage", "Compute uptime", "Token throughput"]) {
+  for (const chartName of ["Memory usage", "Runtime active", "Token throughput"]) {
     await expect(dashboard.getByLabel(`${chartName}: 3 live samples`)).toHaveAttribute("data-view-start", String(initialViewStart));
     await expect(dashboard.getByLabel(`${chartName}: 3 live samples`)).toHaveAttribute("data-view-end", String(initialViewEnd));
   }
@@ -2838,6 +2839,7 @@ test("restores retained Runtime history after a Dashboard reload", async ({ page
         id: sessionId, object: "agent.runtime_observation", session_id: sessionId, environment_id: environmentId,
         mode: "openai_hosted", provider_type: "docker",
         instance: { kind: "managed_allocation", allocation_id: allocationId, device_id: null, connection_generation: null },
+        lifecycle_state: "active",
         status: "observed", reason: null, allocation_created_at: now - 600, resolved_at: now,
         observed_at: now - 1, started_at: now - 600,
         cpu: { usage_seconds_total: 120, capacity_cores: 2, usage_cores: null, utilization_ratio: null },
@@ -2909,8 +2911,8 @@ test("restores retained Runtime history after a Dashboard reload", async ({ page
   await expect(dashboard.getByRole("group", { name: "Runtime trend source" })).toHaveCount(0);
   await expect(dashboard.getByLabel(/Durable · 30s; 1 Runtime targets/)).toBeVisible();
   await expect(dashboard.getByLabel("Runtime durable-history charts")).toBeVisible();
-  await expect(dashboard.getByRole("heading", { name: "Compute uptime", exact: true })).toHaveCount(0);
-  await expect(dashboard.locator('[data-chart-engine="uplot"]')).toHaveCount(3);
+  await expect(dashboard.getByRole("heading", { name: "Runtime active", exact: true })).toBeVisible();
+  await expect(dashboard.locator('[data-chart-engine="uplot"]')).toHaveCount(4);
   await expect(dashboard.getByText("CPU usage durable trend available")).toBeAttached();
   await expect(dashboard).toContainText("120 buckets");
   await expect(dashboard).toContainText("119/120 observations");

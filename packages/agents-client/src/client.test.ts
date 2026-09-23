@@ -122,6 +122,7 @@ function runtimeObservation(overrides: Record<string, unknown> = {}): Record<str
       device_id: runtimeDeviceId,
       connection_generation: null,
     },
+    lifecycle_state: "active",
     status: "observed",
     reason: null,
     allocation_created_at: 10,
@@ -2669,6 +2670,7 @@ describe("OpenAIAgentsClient", () => {
       mode: "none",
       provider_type: null,
       instance: { kind: "none", allocation_id: null, device_id: null, connection_generation: null },
+      lifecycle_state: null,
       status: "unsupported",
       reason: "runtime_mode_not_observable",
       allocation_created_at: null,
@@ -2685,6 +2687,7 @@ describe("OpenAIAgentsClient", () => {
     ["unknown field", () => ({ ...runtimeObservation(), provider_native_id: "hidden" })],
     ["foreign Session", () => ({ ...runtimeObservation(), session_id: "55555555-5555-4555-8555-555555555555" })],
     ["invalid status/reason", () => ({ ...runtimeObservation(), status: "observed", reason: "sample_timeout" })],
+    ["invalid lifecycle state", () => ({ ...runtimeObservation(), lifecycle_state: "paused" })],
     ["invalid mode/instance", () => ({ ...runtimeObservation(), mode: "none" })],
     ["negative CPU", () => ({ ...runtimeObservation(), cpu: {
       usage_seconds_total: -1, capacity_cores: 2, usage_cores: null, utilization_ratio: null,

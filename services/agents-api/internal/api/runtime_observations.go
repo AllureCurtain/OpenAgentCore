@@ -179,6 +179,11 @@ func runtimeObservationResponse(observation runtimeobs.Observation) (v1.RuntimeO
 	switch observation.Target.Mode {
 	case runtimeobs.ModeManaged:
 		result.Instance.Kind = "managed_allocation"
+		lifecycleState, err := runtimeLifecycleState(observation.Target.Instance)
+		if err != nil {
+			return v1.RuntimeObservation{}, err
+		}
+		result.LifecycleState = &lifecycleState
 		if observation.Target.Instance.AllocationID != "" {
 			result.Instance.AllocationID = &observation.Target.Instance.AllocationID
 		}
@@ -218,4 +223,31 @@ func runtimeObservationResponse(observation runtimeobs.Observation) (v1.RuntimeO
 		result.Memory = &v1.RuntimeMemoryObservation{UsageBytes: observation.Sample.MemoryUsageBytes, LimitBytes: observation.Sample.MemoryLimitBytes}
 	}
 	return result, nil
+}
+
+func runtimeLifecycleState(instance runtimeobs.Instance) (string, error) {
+	switch instance.AllocationState {
+	case "":
+		if instance.AllocationID == "" {
+			return "pending", nil
+		}
+		return "", errors.New("invalid Runtime allocation state")
+	case "creating":
+		return "pending", nil
+	case "cleanup_pending", "released":
+		return "stopped", nil
+	case "running":
+		switch instance.ComputePhase {
+		case "suspended":
+			return "sleeping", nil
+		case "quiescing", "suspending", "restoring", "waking":
+			return "transitioning", nil
+		case "disabled", "running":
+			return "active", nil
+		default:
+			return "", errors.New("invalid Runtime compute phase")
+		}
+	default:
+		return "", errors.New("invalid Runtime allocation state")
+	}
 }

@@ -183,13 +183,15 @@ measurement or lifecycle state.
 | --- | --- | --- |
 | Allocation age | allocation `created_at` to `released_at` or now | Age of Core's allocation record. |
 | Compute uptime | provider `started_at` to sample `observed_at` | Age of the current compute incarnation. |
+| Runtime active | successful observation in the selected bucket | Binary operational signal: 1 active, 0 inactive or unavailable. |
 | Busy duration | Turn `started_at` to `completed_at` or now | Time model work has been active. |
 | Idle duration | future durable `idle_since` | Not available in the current design. |
 
 Container restart resets compute uptime but not allocation age. Live CPU deltas
 require the same known compute start as well as the same allocation. Retained
-charts show CPU, memory and tokens; uptime stays in the current/Live view because
-the history contract does not supply each bucket's compute start. Dashboard labels
+charts show CPU, memory, tokens, and binary Runtime activity; uptime remains a
+current observation/table value because history does not supply each bucket's
+compute start. Dashboard labels
 must not collapse these values into one generic Runtime duration.
 
 ## 9. Collection behavior

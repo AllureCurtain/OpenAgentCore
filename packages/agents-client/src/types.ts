@@ -729,6 +729,7 @@ export interface CreateSessionStreamOptions extends StreamOptions {
 }
 
 export type RuntimeObservationStatus = "observed" | "unsupported" | "unavailable";
+export type RuntimeLifecycleState = "active" | "sleeping" | "transitioning" | "pending" | "stopped";
 export type RuntimeObservationReason =
   | "runtime_mode_not_observable"
   | "allocation_pending"
@@ -768,6 +769,7 @@ export interface RuntimeObservedObservation extends RuntimeObservationBase {
     device_id: string | null;
     connection_generation: null;
   };
+  lifecycle_state: RuntimeLifecycleState;
   status: "observed";
   reason: null;
   allocation_created_at: number | null;
@@ -787,6 +789,7 @@ export interface RuntimeUnavailableObservation extends RuntimeObservationBase {
     device_id: string | null;
     connection_generation: null;
   };
+  lifecycle_state: RuntimeLifecycleState;
   status: "unavailable";
   reason: RuntimeUnavailableReason;
   allocation_created_at: number | null;
@@ -801,6 +804,7 @@ export interface RuntimeNoneObservation extends RuntimeObservationBase {
   mode: "none";
   provider_type: null;
   instance: { kind: "none"; allocation_id: null; device_id: null; connection_generation: null };
+  lifecycle_state: null;
   status: "unsupported";
   reason: "runtime_mode_not_observable";
   allocation_created_at: null;
@@ -820,6 +824,7 @@ export interface RuntimeSelfHostedObservation extends RuntimeObservationBase {
     device_id: string | null;
     connection_generation: string | null;
   };
+  lifecycle_state: null;
   status: "unsupported";
   reason: "runtime_mode_not_observable";
   allocation_created_at: null;

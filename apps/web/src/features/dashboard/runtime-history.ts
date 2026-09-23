@@ -102,8 +102,16 @@ export function runtimeDurableTrendSamples(
 
   for (const history of histories) {
     const { start, end } = history.requested_range;
+    const coverageByEnd = new Map(history.coverage.buckets.map((coverage) => [coverage.end, coverage]));
     for (let bucketStart = start; bucketStart < end; bucketStart += history.resolution_seconds) {
-      bucket(Math.min(bucketStart + history.resolution_seconds, end) * 1_000);
+      const bucketEnd = Math.min(bucketStart + history.resolution_seconds, end);
+      const coverage = coverageByEnd.get(bucketEnd);
+      bucket(bucketEnd * 1_000).targets.set(`activity:${history.session_id}`, {
+        seriesId: `activity:${history.session_id}`,
+        label: titles.get(history.session_id) ?? "Runtime",
+        cpuRatio: null,
+        runtimeActive: coverage && coverage.observed_count > 0 ? 1 : 0,
+      });
     }
     for (const coverage of history.coverage.buckets) bucket(coverage.end * 1_000);
     for (const usage of history.token_usage) {
@@ -123,7 +131,7 @@ export function runtimeDurableTrendSamples(
           seriesId: targetID,
           label,
           cpuRatio: point.cpu?.utilization_ratio ?? null,
-          uptimeSeconds: null,
+          runtimeActive: null,
         });
         const usage = point.memory?.usage_bytes;
         const limit = point.memory?.limit_bytes;
