@@ -79,10 +79,13 @@ This phase supplies compute uptime evidence and retains the existing durable
 allocation and Turn timestamps. It does not infer idle time. CPU quietness,
 heartbeat age, connection status, and `kept_at` are not authoritative idle state.
 
-Web projects Runtime activity as a binary chart: a successful observation in a
-time bucket is `1`; an absent or unavailable observation is `0`. This operational
-availability view is intentionally not a durable classification of sleeping
-versus collection failure.
+Web projects active Runtime state differently by scope. The Dashboard shows one
+summed series of distinct allocation identities: live snapshots count
+`lifecycle_state: active`, while retained buckets count successfully observed
+allocations because lifecycle state is not retained yet. The single-Session view
+collapses the same value to `1` or `0`. Missing or unavailable retained values are
+currently rendered as zero, so this presentation intentionally does not yet
+distinguish sleeping from collection failure.
 
 Future automatic suspension requires a separate durable control model, including
 an activity revision and timestamps such as `idle_since` and

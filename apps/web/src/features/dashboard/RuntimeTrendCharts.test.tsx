@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { RuntimeTrendCharts, runtimeChartCaption, runtimeChartShowsSparsePoints } from "./RuntimeTrendCharts";
+import { integerTickRatios, RuntimeTrendCharts, runtimeChartCaption, runtimeChartShowsSparsePoints } from "./RuntimeTrendCharts";
 import type { RuntimeTrendSample } from "./runtime-trends";
 
 function sample(sampledAt: number, cpuRatio: number | null): RuntimeTrendSample {
@@ -23,6 +23,11 @@ function sample(sampledAt: number, cpuRatio: number | null): RuntimeTrendSample 
 }
 
 describe("Runtime live-window chart accessibility", () => {
+  it("uses exact integer y-axis positions for Sandbox counts", () => {
+    expect(integerTickRatios(5).map((ratio) => ratio * 5)).toEqual([5, 3, 2, 0]);
+    expect(integerTickRatios(17).map((ratio) => ratio * 17)).toEqual([17, 11, 6, 0]);
+  });
+
   it("shows isolated or sparse values as points without inventing continuity", () => {
     expect(runtimeChartShowsSparsePoints([null, 512, null])).toBe(true);
     expect(runtimeChartShowsSparsePoints([512, 768])).toBe(true);
@@ -130,6 +135,18 @@ describe("Runtime live-window chart accessibility", () => {
     expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(4);
     expect(html).toContain("active</th><td>3</td><td>0</td>");
     expect(html.match(/aria-label="Hide active series"/g)).toHaveLength(1);
+  });
+
+  it("renders the Session view as one binary Runtime-active series", () => {
+    const latest = { ...sample(120_000, .5), activeSandboxCount: 3 };
+    const html = renderToStaticMarkup(
+      <RuntimeTrendCharts samples={[sample(60_000, .25), latest]} activeDisplay="binary" />,
+    );
+
+    expect(html).toContain("Runtime active");
+    expect(html).toContain("1 active / 0 inactive");
+    expect(html).toContain("Runtime</th><td>Active</td><td>0</td>");
+    expect(html).not.toContain("Active sandboxes");
   });
   it("announces an isolated durable value as sparse rather than empty", () => {
     const html = renderToStaticMarkup(

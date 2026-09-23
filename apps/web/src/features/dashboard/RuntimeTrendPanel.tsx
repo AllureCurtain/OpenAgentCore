@@ -30,6 +30,7 @@ export function RuntimeTrendPanel({
   headingId = "dashboard-runtime-live-heading",
   title = "Resource trends",
   allowSourceSelection = false,
+  activeDisplay = "sum",
 }: {
   snapshot: RuntimeDashboardSnapshot;
   stale: boolean;
@@ -37,6 +38,7 @@ export function RuntimeTrendPanel({
   headingId?: string;
   title?: string;
   allowSourceSelection?: boolean;
+  activeDisplay?: "sum" | "binary";
 }) {
   const [trendSamples, setTrendSamples] = useState<RuntimeTrendSample[]>(() => appendRuntimeTrendSample([], snapshot));
   const [selectedTrendRange, setSelectedTrendRange] = useState<RuntimeTrendRange>(RUNTIME_TREND_WINDOW_MS);
@@ -172,7 +174,7 @@ export function RuntimeTrendPanel({
       </header>
       {durableState === "failed" && durableError ? <p className="dashboard-runtime-history-error" role="status">Durable history refresh failed: {durableError}</p> : null}
       {durableState === "unavailable" ? <p className="dashboard-runtime-history-note">Durable history is not configured; Live samples remain available.</p> : null}
-      <RuntimeTrendCharts samples={selectedSamples} source={source} rangeStart={rangeStart} rangeEnd={rangeEnd} />
+      <RuntimeTrendCharts samples={selectedSamples} source={source} rangeStart={rangeStart} rangeEnd={rangeEnd} activeDisplay={activeDisplay} />
     </section>
   );
 }

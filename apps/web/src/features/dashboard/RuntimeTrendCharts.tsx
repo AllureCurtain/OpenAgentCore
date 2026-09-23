@@ -504,16 +504,26 @@ function targetLabel(samples: readonly RuntimeTrendSample[], id: string): string
 
 const tones: TrendSeries["tone"][] = ["orange", "green", "blue"];
 
+export function integerTickRatios(maximum: number): number[] {
+  const integerMaximum = Math.max(1, Math.ceil(maximum));
+  const values = integerMaximum <= 4
+    ? Array.from({ length: integerMaximum + 1 }, (_, index) => integerMaximum - index)
+    : [integerMaximum, Math.round(integerMaximum * 2 / 3), Math.round(integerMaximum / 3), 0];
+  return [...new Set(values)].map((value) => value / integerMaximum);
+}
+
 export function RuntimeTrendCharts({
   samples,
   source = "live",
   rangeStart,
   rangeEnd,
+  activeDisplay = "sum",
 }: {
   samples: readonly RuntimeTrendSample[];
   source?: RuntimeTrendSource;
   rangeStart?: number;
   rangeEnd?: number;
+  activeDisplay?: "sum" | "binary";
 }) {
   const charts = useMemo(() => {
     const cpuIds = targetIds(samples, "cpuRatio");
@@ -530,10 +540,15 @@ export function RuntimeTrendCharts({
     const memoryLimit = samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.memoryLimitBytes ?? 0 }));
     const active = [{
       id: "active",
-      label: "active",
+      label: activeDisplay === "binary" ? "Runtime" : "active",
       tone: "green",
       stepped: true,
-      points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.activeSandboxCount ?? 0 })),
+      points: samples.map((sample) => ({
+        sampledAt: sample.sampledAt,
+        value: activeDisplay === "binary"
+          ? (sample.activeSandboxCount ?? 0) > 0 ? 1 : 0
+          : sample.activeSandboxCount ?? 0,
+      })),
     }] satisfies TrendSeries[];
     const throughput = tokenThroughput(samples);
     return {
@@ -548,23 +563,29 @@ export function RuntimeTrendCharts({
         { id: "output", label: "output", tone: "green", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.outputPerMinute ?? 0 })) },
       ] satisfies TrendSeries[],
     };
-  }, [samples]);
+  }, [activeDisplay, samples]);
   const cpuMaximum = Math.max(100, ...finite(charts.cpu.flatMap((series) => series.points.map((point) => point.value))));
   const memoryMaximum = Math.max(1, ...finite(charts.memory.flatMap((series) => series.points.map((point) => point.value))));
   const activeMaximum = Math.max(1, ...finite(charts.active.flatMap((series) => series.points.map((point) => point.value))));
-  const activeTicks = activeMaximum <= 4
-    ? Array.from({ length: activeMaximum + 1 }, (_, index) => (activeMaximum - index) / activeMaximum)
-    : [1, .66, .33, 0];
+  const activeTicks = integerTickRatios(activeMaximum);
   const tokenMaximum = Math.max(1, ...finite(charts.tokens.flatMap((series) => series.points.map((point) => point.value))));
   const newest = rangeEnd ?? samples.at(-1)?.sampledAt ?? Date.now();
   const oldest = rangeStart ?? samples[0]?.sampledAt ?? newest - 60 * 60 * 1_000;
   const durable = source === "durable";
+  const binaryActive = activeDisplay === "binary";
+  const activeTitle = binaryActive ? "Runtime active" : "Active sandboxes";
+  const activeSubtitle = binaryActive
+    ? durable ? "observed allocation in retained bucket · 1 active / 0 inactive" : "lifecycle state active · 1 active / 0 inactive"
+    : durable ? "observed allocations per retained bucket · durable history" : "lifecycle state active allocations per snapshot · live window";
+  const formatActive = binaryActive
+    ? (value: number) => value >= .5 ? "Active" : "Inactive"
+    : (value: number) => `${Math.round(value)}`;
 
   return (
     <div className="dashboard-runtime-trend-grid" aria-label={durable ? "Runtime durable-history charts" : "Runtime live-window charts"}>
       <TrendChart title="CPU usage" subtitle={durable ? "bucketed cumulative-delta utilization · durable history" : "reported or cumulative-delta utilization · live window"} samples={samples} series={charts.cpu} maximum={cpuMaximum} formatValue={(value) => `${Math.round(value)}%`} rangeStart={oldest} rangeEnd={newest} source={source} bands={[{ from: 0, to: 30, tone: "safe" }, { from: 30, to: 70, tone: "warning" }, { from: 70, to: 100, tone: "danger" }]} ticks={[1, .7, .3, 0]} emptyMessage={durable ? "No retained CPU samples" : undefined} />
       <TrendChart title="Memory usage" subtitle={durable ? "observed Sandbox aggregate / configured limit · durable history" : "observed Sandbox working set / configured limit · live window"} samples={samples} series={charts.memory} maximum={memoryMaximum} formatValue={(value) => formatDashboardBytes(Math.round(value))} rangeStart={oldest} rangeEnd={newest} source={source} emptyMessage={durable ? "No retained observed memory samples" : undefined} />
-      <TrendChart title="Active sandboxes" subtitle={durable ? "observed allocations per retained bucket · durable history" : "lifecycle state active allocations per snapshot · live window"} samples={samples} series={charts.active} maximum={activeMaximum} formatValue={(value) => `${Math.round(value)}`} rangeStart={oldest} rangeEnd={newest} source={source} ticks={activeTicks} emptyMessage={durable ? "No retained active Sandbox samples" : undefined} />
+      <TrendChart title={activeTitle} subtitle={activeSubtitle} samples={samples} series={charts.active} maximum={binaryActive ? 1 : activeMaximum} formatValue={formatActive} rangeStart={oldest} rangeEnd={newest} source={source} ticks={binaryActive ? [1, 0] : activeTicks} emptyMessage={durable ? "No retained active Sandbox samples" : undefined} />
       <TrendChart title="Token throughput" subtitle={durable ? "canonical Session Usage deltas · durable history" : "Session Usage deltas · missing usage excluded"} samples={samples} series={charts.tokens} maximum={tokenMaximum} formatValue={(value) => `${formatDashboardTokens(Math.round(value))}/min`} rangeStart={oldest} rangeEnd={newest} source={source} emptyMessage={durable ? "No retained token samples" : undefined} />
     </div>
   );

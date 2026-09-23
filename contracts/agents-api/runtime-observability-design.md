@@ -388,7 +388,9 @@ acceptance.
 - Confirmed active Sandbox count over time. Each bucket counts managed allocations
   with an observed provider sample; unavailable or timed-out samples are not
   presented as confirmed active. A bucket with collection coverage but no observed
-  allocation is zero; a bucket without collection coverage remains a gap.
+  allocation is zero. The history model retains missing coverage as null; the
+  current Dashboard presentation renders that null as zero until sleeping and
+  collection-failure history are represented separately.
 - Data freshness and source coverage.
 
 Aggregates include only present measurements. Each total states its denominator,

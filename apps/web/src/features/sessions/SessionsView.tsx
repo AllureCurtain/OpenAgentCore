@@ -954,6 +954,7 @@ export function SessionsView({
                     headingId={`session-runtime-trends-heading-${sessionId}`}
                     title="Session resource trends"
                     allowSourceSelection
+                    activeDisplay="binary"
                   />
                 </div>
               ) : null;
