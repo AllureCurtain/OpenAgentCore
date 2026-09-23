@@ -875,6 +875,30 @@ const server = http.createServer(async (request, response) => {
     const body = request.method === "GET" || request.method === "DELETE" ? undefined : await readJson(request);
     recordRequest(request, url, body);
 
+    if (request.method === "GET" && url.pathname === "/v1/agents/core/startup-configuration") {
+      if (url.search) return sendError(response, 400, "Fixture startup configuration does not accept query parameters.");
+      response.setHeader("cache-control", "no-store");
+      return sendJson(response, {
+        object: "agents.core.startup_configuration",
+        schema_version: 1,
+        supported: {
+          harnesses: ["claude_sdk", "codex", "mcode"],
+          managed_sandbox_providers: ["docker", "microsandbox"],
+        },
+        configured: {
+          default_harness: "codex",
+          enabled_harnesses: ["claude_sdk", "codex"],
+          daemon_gateway: true,
+          self_hosted: true,
+          managed_sandbox: { enabled: true, provider: "docker", maintenance: false },
+          model_providers: [
+            { harness: "claude_sdk", endpoint_configured: false },
+            { harness: "codex", endpoint_configured: true },
+          ],
+        },
+      });
+    }
+
     if (url.pathname === "/v1/vaults") {
       if (request.method === "GET") return sendJson(response, page(state.vaults));
       if (request.method === "POST") {
@@ -973,6 +997,7 @@ const server = http.createServer(async (request, response) => {
       const defaults = savedAgent(`agent_created_${state.sequence}`, body.name ?? null, body.model, baseline + state.sequence);
       const created = {
         ...defaults,
+        ...(body.x_agents_core === undefined ? {} : { x_agents_core: body.x_agents_core }),
         instructions: body.instructions ?? null,
         metadata: body.metadata ?? {},
         multi_agent: body.multi_agent ?? { enabled: false, max_concurrent_subagents: null },

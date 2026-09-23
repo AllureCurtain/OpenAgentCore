@@ -6,6 +6,7 @@ import type {
   AgentCore,
   AgentSession,
   AgentTurn,
+  CoreStartupConfiguration,
   CreateAgentInput,
   CreateEnvironmentTemplateInput,
   FunctionResultInput,
@@ -250,6 +251,9 @@ export function App() {
   const [vaultCollectionState, setVaultCollectionState] = useState<CoreConnectionState>("connecting");
   const [vaultCollectionError, setVaultCollectionError] = useState<string | null>(null);
   const [vaultSupported, setVaultSupported] = useState<boolean | null>(null);
+  const [startupConfiguration, setStartupConfiguration] = useState<CoreStartupConfiguration | null>(null);
+  const [startupConfigurationState, setStartupConfigurationState] = useState<CoreConnectionState>("connecting");
+  const [startupConfigurationSupported, setStartupConfigurationSupported] = useState<boolean | null>(null);
   const [environmentTemplates, setEnvironmentTemplates] = useState<EnvironmentTemplateCatalog | null>(null);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -310,8 +314,10 @@ export function App() {
   const filteredSessionCollectionRequestRef = useRef(0);
   const sessionAgentFilterRef = useRef<string | null>(sessionAgentFilter);
   const vaultCollectionAbortRef = useRef<AbortController | null>(null);
+  const startupConfigurationAbortRef = useRef<AbortController | null>(null);
   const environmentTemplateAbortRef = useRef<AbortController | null>(null);
   const vaultCollectionRequestRef = useRef(0);
+  const startupConfigurationRequestRef = useRef(0);
   const agentCollectionRevisionRef = useRef(0);
   const sessionCollectionRevisionRef = useRef(0);
   const sessionRequestRef = useRef(new Map<string, number>());
@@ -621,6 +627,44 @@ export function App() {
     }
   }, [core, coreGeneration]);
 
+  const refreshStartupConfiguration = useCallback(async () => {
+    if (coreGeneration !== connectionGenerationRef.current) return false;
+    startupConfigurationAbortRef.current?.abort();
+    const controller = new AbortController();
+    startupConfigurationAbortRef.current = controller;
+    const request = startupConfigurationRequestRef.current + 1;
+    startupConfigurationRequestRef.current = request;
+    setStartupConfigurationState("connecting");
+    try {
+      const configuration = await core.retrieveStartupConfiguration({ signal: controller.signal });
+      if (
+        coreGeneration !== connectionGenerationRef.current ||
+        request !== startupConfigurationRequestRef.current
+      ) return false;
+      setStartupConfiguration(configuration);
+      setStartupConfigurationSupported(true);
+      setStartupConfigurationState("ready");
+      return true;
+    } catch (error) {
+      if (
+        coreGeneration !== connectionGenerationRef.current ||
+        request !== startupConfigurationRequestRef.current ||
+        isAbort(error)
+      ) return false;
+      setStartupConfiguration(null);
+      if (error instanceof AgentCoreError && (error.status === 404 || error.status === 405)) {
+        setStartupConfigurationSupported(false);
+        setStartupConfigurationState("ready");
+        return false;
+      }
+      setStartupConfigurationSupported(null);
+      setStartupConfigurationState("failed");
+      return false;
+    } finally {
+      if (startupConfigurationAbortRef.current === controller) startupConfigurationAbortRef.current = null;
+    }
+  }, [core, coreGeneration]);
+
   const refreshEnvironmentTemplates = useCallback(async () => {
     // Managed Environment configuration is only ever read for the Web build that
     // can request it. An unread catalog stays null, never an implied capability.
@@ -859,6 +903,10 @@ export function App() {
     if (filter) void refreshFilteredSessions(filter);
   }, [refreshAgents, refreshEnvironmentTemplates, refreshFilteredSessions, refreshSessions, refreshVaults]);
 
+  const refreshSystem = useCallback(() => {
+    void refreshStartupConfiguration();
+  }, [refreshStartupConfiguration]);
+
   const changeSessionAgentFilter = useCallback((agentId: string | null) => {
     if (sessionAgentFilterRef.current === agentId) return;
     filteredSessionCollectionAbortRef.current?.abort();
@@ -891,6 +939,9 @@ export function App() {
     setVaultCollectionState("connecting");
     setVaultCollectionError(null);
     setVaultSupported(null);
+    setStartupConfiguration(null);
+    setStartupConfigurationState("connecting");
+    setStartupConfigurationSupported(null);
     setSessions([]);
     setAgentCollectionHasSnapshot(false);
     setSessionCollectionHasSnapshot(false);
@@ -908,7 +959,8 @@ export function App() {
     void refreshSessions();
     void refreshVaults();
     void refreshEnvironmentTemplates();
-  }, [refreshAgents, refreshEnvironmentTemplates, refreshSessions, refreshVaults]);
+    void refreshStartupConfiguration();
+  }, [refreshAgents, refreshEnvironmentTemplates, refreshSessions, refreshStartupConfiguration, refreshVaults]);
 
   useEffect(() => {
     filteredSessionCollectionAbortRef.current?.abort();
@@ -1951,6 +2003,7 @@ export function App() {
     sessionCollectionRequestRef.current += 1;
     filteredSessionCollectionRequestRef.current += 1;
     vaultCollectionRequestRef.current += 1;
+    startupConfigurationRequestRef.current += 1;
     agentCollectionRevisionRef.current = 0;
     sessionCollectionRevisionRef.current = 0;
     sessionRequestRef.current.clear();
@@ -1976,6 +2029,8 @@ export function App() {
     filteredSessionCollectionAbortRef.current = null;
     vaultCollectionAbortRef.current?.abort();
     vaultCollectionAbortRef.current = null;
+    startupConfigurationAbortRef.current?.abort();
+    startupConfigurationAbortRef.current = null;
     environmentTemplateAbortRef.current?.abort();
     environmentTemplateAbortRef.current = null;
     setEnvironmentTemplates(null);
@@ -1997,6 +2052,9 @@ export function App() {
     setVaultCollectionError(null);
     setVaultSupported(null);
     setVaultCatalog(null);
+    setStartupConfiguration(null);
+    setStartupConfigurationState("connecting");
+    setStartupConfigurationSupported(null);
     setAgents([]);
     setSessions([]);
     setItems([]);
@@ -2181,6 +2239,7 @@ export function App() {
               coreBaseUrl={connection.baseUrl}
               coreError={agentCollectionError}
               coreState={agentCollectionState}
+              startupConfiguration={startupConfigurationState === "ready" && startupConfigurationSupported === true ? startupConfiguration : null}
               vaultCatalog={sessionVaultCatalog}
               createRequest={agentCreateRequest ?? 0}
               onCreateRequestConsumed={consumeAgentCreateRequest}
@@ -2205,18 +2264,13 @@ export function App() {
           {view === "system" ? (
             <SystemView
               key={`system:${coreGeneration}`}
-              coreState={coreState}
-              coreBaseUrl={connection.baseUrl}
-              selfHostedEnabled={__AGENTS_CORE_WEB_SELF_HOSTED_SESSIONS__}
-              vaultCollectionState={vaultCollectionState}
-              vaultSupported={vaultSupported}
-              sourceFilesOperations={sourceFilesOperations}
-              refreshing={
-                agentCollectionState === "connecting" ||
-                sessionCollectionState === "connecting" ||
-                vaultCollectionState === "connecting"
-              }
-              onRefresh={refreshDashboard}
+              startupConfiguration={startupConfiguration}
+              startupConfigurationState={startupConfigurationState}
+              startupConfigurationSupported={startupConfigurationSupported}
+              selfHostedWebEnabled={__AGENTS_CORE_WEB_SELF_HOSTED_SESSIONS__}
+              managedWebEnabled={__AGENTS_CORE_WEB_OPENAI_HOSTED_SESSIONS__}
+              refreshing={startupConfigurationState === "connecting"}
+              onRefresh={refreshSystem}
             />
           ) : null}
         </div>

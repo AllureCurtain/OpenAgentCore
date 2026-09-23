@@ -49,6 +49,7 @@ type Handler struct {
 	sourceFiles        SourceFileStore
 	artifacts          SessionArtifactStore
 	subagents          SubagentStore
+	startup            *v1.CoreStartupConfiguration
 }
 
 func NewHandler(s ResourceStore, auth *Authenticator, engine string, options ...Option) (http.Handler, error) {
@@ -89,6 +90,7 @@ func NewHandler(s ResourceStore, auth *Authenticator, engine string, options ...
 		r.Get("/agents/{agent_id}", h.getAgent)
 		r.Post("/agents/{agent_id}", h.updateAgent)
 		r.Delete("/agents/{agent_id}", h.deleteAgent)
+		r.Get("/agents/core/startup-configuration", h.getStartupConfiguration)
 		r.Post("/agents/environments/templates", h.createEnvironmentTemplate)
 		r.Get("/agents/environments/templates", h.listEnvironmentTemplates)
 		r.Get("/agents/environments/templates/{environment_template_id}", h.getEnvironmentTemplate)
