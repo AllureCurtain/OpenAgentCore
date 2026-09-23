@@ -1583,8 +1583,14 @@ execution-only payloads. Python zipapps bundle the shared resolver with each
 remote bootstrap; the console publishes only fixed non-secret files and declared
 artifact names. Release automation builds artifacts and may create an unpublished
 draft, but cannot claim real execution qualification or public availability.
+Manual builds use the legal `build-<full source SHA>` release tag; tag-triggered
+builds use the actual `v*` tag. The manifest download base and draft tag must match,
+while artifact filenames and source provenance retain the full source SHA.
 Qualify the exact downloaded production artifacts before publishing the draft;
-keep the tested asset bytes and source identity unchanged. Never use an acceptance
+keep qualified executable, image and source payload bytes and source identity
+unchanged. A recorded release-address/checksum-only repack requires proof that
+every other archive member is unchanged and verification of final published asset
+digests and URLs. Never use an acceptance
 image containing a private test CA or model credential as a release input.
 Repository visibility is independent of publication. Do not add repository
 credentials to installed node/Runtime configuration to bypass download access.
