@@ -136,10 +136,6 @@ func NewHandler(s ResourceStore, auth *Authenticator, engine string, options ...
 // @Failure 400,401,404,409,413,500,503 {object} v1.ErrorResponse
 // @Router /agents/sessions [post]
 func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
-	if len(r.URL.Query()) > 0 {
-		writeError(w, http.StatusBadRequest, "unsupported_parameter", "Session creation does not accept query parameters.")
-		return
-	}
 	var request decodedSessionRequest
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16*1024*1024))
 	decoder.DisallowUnknownFields()
@@ -288,10 +284,6 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 // @Failure 400,401,404,500 {object} v1.ErrorResponse
 // @Router /agents/sessions/{session_id} [get]
 func (h *Handler) getSession(w http.ResponseWriter, r *http.Request) {
-	if len(r.URL.Query()) > 0 {
-		writeError(w, http.StatusBadRequest, "unsupported_parameter", "Session retrieval does not accept query parameters.")
-		return
-	}
 	session, err := h.store.GetSession(r.Context(), tenantID(r), chi.URLParam(r, "session_id"))
 	if err != nil {
 		writeStoreError(w, r, err)
@@ -321,13 +313,13 @@ func (h *Handler) respondSessionStatus(w http.ResponseWriter, r *http.Request, s
 // @Param OpenAI-Beta header string true "agents=v1"
 // @Param agent_id query string false "Root Agent ID whose Sessions to return"
 // @Param after query string false "Last Session ID from the previous page"
-// @Param limit query int false "Page size" minimum(1) maximum(100) default(20)
+// @Param limit query int false "Page size; 0 is treated as 1 and values above 100 as 100" minimum(0) default(20)
 // @Param order query string false "Creation order; omit for descending, explicit empty values are invalid" Enums(asc,desc) default(desc)
 // @Success 200 {object} v1.SessionList
 // @Failure 400,401,404,500 {object} v1.ErrorResponse
 // @Router /agents/sessions [get]
 func (h *Handler) listSessions(w http.ResponseWriter, r *http.Request) {
-	options, ok := readPage(w, r, "agent_id")
+	options, ok := readClampedPage(w, r, "agent_id")
 	if !ok {
 		return
 	}

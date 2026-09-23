@@ -251,8 +251,9 @@ upgrade the protocol.
   classification is stored, never returned; existing/new Vaults default active.
   Synthetic archived fixtures prove read/filter behavior only. No public archive
   writer or delete-to-archive mapping is implemented. Equal creation times use ID
-  order locally; repeated scalars and mixed status encodings are rejected. Exact
-  hosted query errors and pagination over changing data remain unverified.
+  order locally. A repeated scalar status is rejected; a scalar combined with
+  `status[]` filters by their union. Other hosted query errors and pagination over
+  changing data remain unverified.
 - `DELETE /vaults/{vault_id}` returns `id`, `deleted: true` and `object: vault.deleted`
   after project-scoped parent removal and atomic cascade of all stored Credentials.
   It needs no encryption key or execution connection. Local parent/child reads,
@@ -308,8 +309,9 @@ upgrade the protocol.
   404. Exact hosted errors and overlapping creation/deletion ordering are unverified.
 - `GET /agents` lists tenant-owned reusable resources with `after`, `limit` and
   `order` (default `desc`). It uses creation-time/ID keysets and the same resource
-  mapping as retrieval. Positive int64 limits are accepted; pages contain up to
-  100 resources, with `has_more` and the final resource ID guiding continuation.
+  mapping as retrieval. Limit 0 is treated as 1 and larger limits as 100; negative
+  and non-integer limits reject. Pages contain up to 100 resources, with `has_more`
+  and the final resource ID guiding continuation.
   The local default is 20. The list envelope includes `object`, `data`, `has_more`,
   `first_id` and `last_id`; empty pages use null IDs. The pinned SDK omits null
   limits and empty cursors. Exact upstream default/cap, empty-envelope nullability
@@ -370,7 +372,8 @@ upgrade the protocol.
   and character limits as creation. Preserve execution state, effective configuration
   and the original creation retry identity. Fixed SDK/raw HTTP checks cover these
   distinctions, tenant isolation, active Session reads and restart persistence.
-- `GET /agents/sessions` accepts `after`, `limit` (1..100, default 20), `order`
+- `GET /agents/sessions` accepts `after`, `limit` (default 20; 0 is treated as 1 and
+  values above 100 as 100), `order`
   (default `desc`) and optional `agent_id`. The filter matches the immutable root
   Agent ID, including inline IDs and Sessions whose saved source was changed or
   deleted. Filter before pagination within the authenticated tenant; no source
