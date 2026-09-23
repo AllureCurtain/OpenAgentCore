@@ -270,6 +270,20 @@ describe("Agent form contract", () => {
     })).toEqual({ toolsError: "At most 64 Functions can be configured." });
   });
 
+  it.each([
+    ["live", "Enabled web_search is saved-only; Core does not run enabled search in a Session"],
+    ["cached", "Enabled web_search is saved-only; Core does not run enabled search in a Session"],
+    ["disabled", "Disabled web_search is read-only in Web; Sessions keep search off"],
+  ])("labels saved %s web_search as a read-only tool without misstating Core admission", (mode, label) => {
+    const agent = {
+      id: "agent_1", object: "agent" as const, model: "provider/model", name: null, instructions: null, metadata: {},
+      multi_agent: { enabled: false, max_concurrent_subagents: null }, reasoning: {}, service_tier: "auto" as const,
+      text: { format: { type: "text" as const }, verbosity: "medium" as const }, created_at: 1, updated_at: 1,
+      tools: [{ type: "web_search", mode, context_size: "medium", allowed_domains: [], location: null }],
+    };
+    expect(valuesFromAgent(agent, null).tools[0]).toMatchObject({ kind: "read-only", label });
+  });
+
   it("omits read-only saved tools for unrelated updates and rejects deliberate Tool changes", () => {
     const opaque = { type: "mcp", credential_id: "vault-bound", headers: { Authorization: "not-rendered" } };
     const agent = {
