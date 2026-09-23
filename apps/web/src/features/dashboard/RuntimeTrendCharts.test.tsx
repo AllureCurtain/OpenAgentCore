@@ -7,6 +7,7 @@ import type { RuntimeTrendSample } from "./runtime-trends";
 function sample(sampledAt: number, cpuRatio: number | null): RuntimeTrendSample {
   return {
     sampledAt,
+    activeSandboxCount: 1,
     targets: [{
       seriesId: "session-1:allocation-1",
       label: "Runtime worker",
@@ -38,7 +39,7 @@ describe("Runtime live-window chart accessibility", () => {
       allSeriesHidden: true,
       validPoints: 0,
       sampleCount: 24,
-      emptyMessage: "No complete retained memory samples",
+      emptyMessage: "No retained observed memory samples",
     })).toBe("Memory usage all series hidden; use the legend to show a series");
   });
 
@@ -58,7 +59,7 @@ describe("Runtime live-window chart accessibility", () => {
 
     expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(4);
     expect(html).not.toContain("Collecting live samples");
-    expect(html).toContain("Compute uptime");
+    expect(html).toContain("Active Sandboxes");
   });
 
   it("exposes interactive series, point selection, and Grafana-style in-plot range selection", () => {
@@ -82,9 +83,11 @@ describe("Runtime live-window chart accessibility", () => {
     );
 
     expect(html).toContain('aria-label="CPU usage durable history chart"');
-    expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(3);
+    expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(4);
     expect(html).not.toContain("Compute uptime");
     expect(html).toContain('aria-label="CPU usage: 2 retained buckets"');
+    expect(html).toContain('aria-label="Active Sandboxes durable history chart"');
+    expect(html).toContain("active</th><td>1</td><td>0</td>");
     expect(html).not.toContain('aria-label="CPU usage: 2 live samples"');
   });
 
@@ -94,6 +97,6 @@ describe("Runtime live-window chart accessibility", () => {
     );
 
     expect(html).toContain("Memory usage durable trend has 1 sparse valid point; a line requires consecutive buckets");
-    expect(html).not.toContain("Memory usage No complete retained memory samples");
+    expect(html).not.toContain("Memory usage No retained observed memory samples");
   });
 });

@@ -257,6 +257,7 @@ describe("Dashboard loaded-result presentation", () => {
     expect(html).toContain("CPU usage");
     expect(html).toContain("Memory usage");
     expect(html).not.toContain("Compute uptime");
+    expect(html).toContain("Active Sandboxes");
     expect(html).toContain("Token throughput");
     expect(html).toContain("No retained CPU samples");
     expect(html).toContain("0/2 valid points · 0 snapshots · no history is synthesized");

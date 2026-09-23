@@ -92,6 +92,7 @@ describe("Runtime live-window trends", () => {
     const sample = runtimeTrendSample(snapshot(120_000));
     expect(sample).toMatchObject({
       sampledAt: 120_000,
+      activeSandboxCount: 1,
       tokenTotals: [{
         sessionId: "11111111-1111-4111-8111-111111111111",
         inputTokens: 100,
@@ -105,6 +106,29 @@ describe("Runtime live-window trends", () => {
       cpuRatio: .25,
       uptimeSeconds: 120,
     })]);
+  });
+
+  it("deduplicates live aggregate count and memory by Runtime allocation identity", () => {
+    const duplicate = snapshot(120_000);
+    const secondSession = {
+      ...duplicate.sessions[0]!,
+      id: "44444444-4444-4444-8444-444444444444",
+    } as AgentSession;
+    const secondObservation = {
+      ...duplicate.observations[0]!,
+      id: secondSession.id,
+      session_id: secondSession.id,
+      observed_at: (duplicate.observations[0]!.observed_at ?? 0) + 1,
+      memory: { usage_bytes: 128, limit_bytes: 256 },
+    } as RuntimeObservation;
+    duplicate.sessions.push(secondSession);
+    duplicate.observations.push(secondObservation);
+
+    expect(runtimeTrendSample(duplicate)).toMatchObject({
+      activeSandboxCount: 1,
+      memoryUsageBytes: 128,
+      memoryLimitBytes: 256,
+    });
   });
 
   it("deduplicates refreshes and bounds the rolling window", () => {

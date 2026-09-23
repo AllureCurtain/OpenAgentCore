@@ -2680,7 +2680,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   await expect(dashboard.locator(".dashboard-runtime-sample-count")).toContainText("1 sample ·");
   await expect(dashboard.getByRole("heading", { name: "CPU usage" })).toBeVisible();
   await expect(dashboard.getByRole("heading", { name: "Memory usage" })).toBeVisible();
-  await expect(dashboard.getByRole("heading", { name: "Compute uptime" })).toBeVisible();
+  await expect(dashboard.getByRole("heading", { name: "Active Sandboxes" })).toBeVisible();
   await expect(dashboard.getByRole("heading", { name: "Token throughput" })).toBeVisible();
   await expect(dashboard.getByLabel("Live Runtime sampling every 30 seconds")).toBeVisible();
   const liveRange = dashboard.getByRole("group", { name: "Runtime live range" });
@@ -2692,7 +2692,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   await refresh.click();
   await expect(dashboard.getByLabel("CPU usage: 3 live samples")).toBeVisible();
   await expect(dashboard.getByLabel("Memory usage: 3 live samples")).toBeVisible();
-  await expect(dashboard.getByLabel("Compute uptime: 3 live samples")).toBeVisible();
+  await expect(dashboard.getByLabel("Active Sandboxes: 3 live samples")).toBeVisible();
   await expect(dashboard.getByLabel("Token throughput: 3 live samples")).toBeVisible();
   await expect(dashboard.locator(".dashboard-runtime-sample-count")).toContainText("3 samples");
   await expect(dashboard.getByText("CPU usage live trend available")).toBeAttached();
@@ -2760,7 +2760,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   const keyboardSelectedAt = Number(await cpuChart.getAttribute("data-selected-at"));
   expect(keyboardSelectedAt).toBeGreaterThanOrEqual(zoomedViewStart);
   expect(keyboardSelectedAt).toBeLessThanOrEqual(zoomedViewEnd);
-  for (const chartName of ["Memory usage", "Compute uptime", "Token throughput"]) {
+  for (const chartName of ["Memory usage", "Active Sandboxes", "Token throughput"]) {
     await expect(dashboard.getByLabel(`${chartName}: 3 live samples`)).toHaveAttribute("data-view-start", String(initialViewStart));
     await expect(dashboard.getByLabel(`${chartName}: 3 live samples`)).toHaveAttribute("data-view-end", String(initialViewEnd));
   }
@@ -2910,10 +2910,11 @@ test("restores retained Runtime history after a Dashboard reload", async ({ page
   await expect(dashboard.getByLabel(/Durable · 30s; 1 Runtime targets/)).toBeVisible();
   await expect(dashboard.getByLabel("Runtime durable-history charts")).toBeVisible();
   await expect(dashboard.getByRole("heading", { name: "Compute uptime", exact: true })).toHaveCount(0);
-  await expect(dashboard.locator('[data-chart-engine="uplot"]')).toHaveCount(3);
+  await expect(dashboard.locator('[data-chart-engine="uplot"]')).toHaveCount(4);
   await expect(dashboard.getByText("CPU usage durable trend available")).toBeAttached();
   await expect(dashboard).toContainText("120 buckets");
   await expect(dashboard).toContainText("119/120 observations");
+  await expect(dashboard.getByText("Active Sandboxes durable trend available")).toBeAttached();
   await expect(dashboard.getByText("Token throughput durable trend available")).toBeAttached();
   const durableCpuChart = dashboard.getByLabel("CPU usage: 120 retained buckets");
   await expect(dashboard.getByRole("region", { name: "CPU usage durable history chart" })).toBeVisible();

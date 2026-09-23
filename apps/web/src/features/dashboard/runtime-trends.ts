@@ -30,6 +30,7 @@ export interface RuntimeTrendCPUCandidate extends RuntimeTrendTarget {
 
 export interface RuntimeTrendSample {
   sampledAt: number;
+  activeSandboxCount: number | null;
   targets: RuntimeTrendTarget[];
   cpuCandidates: RuntimeTrendCPUCandidate[];
   memoryUsageBytes: number | null;
@@ -110,9 +111,11 @@ export function runtimeTrendSample(snapshot: RuntimeDashboardSnapshot): RuntimeT
     const session = sessions.get(observation.session_id);
     if (!session || observation.status !== "observed") return [];
     const key = allocationKey(observation);
-    if (key === null) return [];
+    const allocationId = observation.instance.allocation_id;
+    if (key === null || typeof allocationId !== "string" || allocationId.length === 0) return [];
     return [{
       seriesId: `${observation.session_id}:${key}`,
+      allocationId,
       label: sessionTitle(session),
       cpuRatio: reportedCpuRatio(observation),
       observedAt: safeInteger(observation.observed_at),
@@ -141,11 +144,20 @@ export function runtimeTrendSample(snapshot: RuntimeDashboardSnapshot): RuntimeT
     cpuRatio: target.cpuRatio,
     uptimeSeconds: target.uptimeSeconds,
   }));
-  const pairedMemory = observed.filter((target) => (
+  const latestByAllocation = new Map<string, typeof observed[number]>();
+  for (const target of observed) {
+    const previous = latestByAllocation.get(target.allocationId);
+    if (!previous || (target.observedAt ?? -1) >= (previous.observedAt ?? -1)) {
+      latestByAllocation.set(target.allocationId, target);
+    }
+  }
+  const allocations = [...latestByAllocation.values()];
+  const pairedMemory = allocations.filter((target) => (
     target.memoryUsageBytes !== null && target.memoryLimitBytes !== null
   ));
   return {
     sampledAt: snapshot.loadedAt,
+    activeSandboxCount: allocations.length,
     targets,
     cpuCandidates: observed.flatMap((target): RuntimeTrendCPUCandidate[] => (
       target.cpuRatio !== null || (
