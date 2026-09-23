@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { AgentCoreError, type SandboxPlacement } from "@agents-core-web/agents-client";
 import { SandboxDiagnostic } from "./SandboxDiagnostic";
-import { useLocale } from "../../lib/LocaleProvider";
+import { useTranslation } from "react-i18next";
 import { sandboxStateLabel } from "../../lib/sandbox-labels";
 import { useSandboxClient } from "./SandboxContext";
 
 export function SessionPlacement({ sessionId }: { sessionId: string }) {
-  const { t, locale } = useLocale();
+  const { t, i18n } = useTranslation("sandbox");
+  const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
   const client = useSandboxClient();
   const [result, setResult] = useState<{ client: typeof client; sessionId: string; placement?: SandboxPlacement; error?: boolean; absent?: boolean } | null>(null);
   const [revision, setRevision] = useState(0);

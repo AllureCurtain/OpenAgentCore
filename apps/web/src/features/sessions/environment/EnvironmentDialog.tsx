@@ -2,6 +2,7 @@ import { createPortal } from "react-dom";
 import type { ComponentProps } from "react";
 
 import { Modal } from "../../../components/Modal";
+import i18n from "../../../i18n";
 import { EnvironmentPanel } from "./EnvironmentPanel";
 
 export interface EnvironmentDialogProps extends ComponentProps<typeof EnvironmentPanel> {
@@ -22,6 +23,7 @@ export function EnvironmentDialog({
   onListFiles,
   onCreateFile,
 }: EnvironmentDialogProps) {
+  const t = i18n.getFixedT(null, "sessions");
   const panelProps = {
     environment,
     observation,
@@ -36,11 +38,11 @@ export function EnvironmentDialog({
     <div className="environment-dialog">
       <Modal
         open={open}
-        title="Environment"
+        title={t("environment.title")}
         onClose={onClose}
         footer={
           <button className="button primary" type="button" onClick={onClose}>
-            Done
+            {t("common.done")}
           </button>
         }
       >

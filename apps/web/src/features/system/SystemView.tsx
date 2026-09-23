@@ -1,4 +1,5 @@
 import { Info, RefreshCw } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import type { CoreStartupConfiguration } from "@agents-core-web/agents-client";
 
@@ -20,10 +21,10 @@ function harnessLabel(harness: string): string {
   return harness;
 }
 
-function providerLabel(provider: string | null): string {
+function providerLabel(provider: string | null, noneLabel: string): string {
   if (provider === "microsandbox") return "Microsandbox";
   if (provider === "docker") return "Docker";
-  return "None";
+  return noneLabel;
 }
 
 interface SystemStatusCard {
@@ -33,11 +34,11 @@ interface SystemStatusCard {
   value: string;
 }
 
-function StartupStatus({ enabled, label }: { enabled: boolean; label?: string }) {
+function StartupStatus({ enabled, label, enabledLabel, disabledLabel }: { enabled: boolean; label?: string; enabledLabel: string; disabledLabel: string }) {
   return (
     <span className={`system-config-status ${enabled ? "enabled" : "disabled"}`}>
       <span aria-hidden="true" />
-      {label ?? (enabled ? "Enabled" : "Not configured")}
+      {label ?? (enabled ? enabledLabel : disabledLabel)}
     </span>
   );
 }
@@ -59,6 +60,7 @@ export function SystemView({
   refreshing: boolean;
   onRefresh: () => void;
 }) {
+  const { t } = useTranslation(["system", "pages"]);
   const configuration = startupConfigurationState === "ready" && startupConfigurationSupported === true
     ? startupConfiguration
     : null;
@@ -68,9 +70,9 @@ export function SystemView({
 
   const startupValue = (value: string): string => {
     if (configuration) return value;
-    if (startupUnavailable) return "Not exposed";
-    if (startupConfigurationState === "failed") return "Unavailable";
-    return "Checking…";
+    if (startupUnavailable) return t("status.notExposed");
+    if (startupConfigurationState === "failed") return t("status.unavailable");
+    return t("status.checking");
   };
   const startupStatus: StatusKind = configuration
     ? "completed"
@@ -78,41 +80,41 @@ export function SystemView({
       ? "interrupted"
       : stateKind(startupConfigurationState);
   const startupDetail = startupUnavailable
-    ? "This Core version does not expose the startup configuration extension."
+    ? t("startup.notExposed")
     : startupConfigurationState === "failed"
-      ? "The startup configuration request failed. No configuration is inferred."
-      : "Reported by the safe Core startup configuration extension.";
+      ? t("startup.failed")
+      : t("startup.reported");
   const cards: SystemStatusCard[] = [
     {
-      label: "Daemon gateway",
+      label: t("cards.daemon.label"),
       status: startupStatus,
-      value: startupValue(configuration?.configured.daemon_gateway ? "Enabled" : "Not configured"),
+      value: startupValue(configuration?.configured.daemon_gateway ? t("status.enabled") : t("status.notConfigured")),
       detail: configuration
         ? configuration.configured.daemon_gateway
-          ? `Accepts authenticated execution Runtime connections. ${selfHostedWebEnabled ? "This Web build can request self-hosted Sessions." : "This Web build cannot request self-hosted Sessions."}`
-          : "No execution Runtime gateway is enabled for this Core process."
+          ? t(selfHostedWebEnabled ? "cards.daemon.acceptsWithWeb" : "cards.daemon.acceptsWithoutWeb")
+          : t("cards.daemon.disabled")
         : startupDetail,
     },
     {
-      label: "Managed sandbox",
+      label: t("cards.sandbox.label"),
       status: startupStatus,
       value: startupValue(configuration
-        ? `${providerLabel(configuration.configured.managed_sandbox.provider)}${configuration.configured.managed_sandbox.maintenance ? " · Maintenance" : ""}`
+        ? `${providerLabel(configuration.configured.managed_sandbox.provider, t("providers.none"))}${configuration.configured.managed_sandbox.maintenance ? ` · ${t("status.maintenance")}` : ""}`
         : ""),
       detail: configuration
-        ? `${configuration.configured.managed_sandbox.maintenance ? "Selected provider is in maintenance mode. " : ""}Supported by this build: ${configuration.supported.managed_sandbox_providers.map(providerLabel).join(", ")}. ${managedWebEnabled ? "This Web build can request managed Sessions." : "This Web build cannot request managed Sessions."}`
+        ? `${configuration.configured.managed_sandbox.maintenance ? t("cards.sandbox.maintenance") : ""}${t(managedWebEnabled ? "cards.sandbox.supportedWithWeb" : "cards.sandbox.supportedWithoutWeb", { providers: configuration.supported.managed_sandbox_providers.map((provider) => providerLabel(provider, t("providers.none"))).join(", ") })}`
         : startupDetail,
     },
     {
-      label: "Endpoint overrides",
+      label: t("cards.endpoints.label"),
       status: startupStatus,
-      value: startupValue(endpointOverrideConfigured ? "Configured" : "Not configured"),
+      value: startupValue(endpointOverrideConfigured ? t("status.configured") : t("status.notConfigured")),
       detail: configuration
         ? endpointOverrideConfigured
-          ? "Explicit operator overrides are shown per adapter below; others may use native defaults."
+          ? t("cards.endpoints.configured")
           : executionAdaptersEnabled
-            ? "No explicit operator overrides; enabled adapters may use native defaults."
-            : "No execution adapters are enabled for this Core process."
+            ? t("cards.endpoints.nativeDefaults")
+            : t("cards.endpoints.noAdapters")
         : startupDetail,
     },
   ];
@@ -120,22 +122,22 @@ export function SystemView({
   return (
     <section className="page-section architecture-page system-page" aria-labelledby="system-heading">
       <header className="page-header">
-        <h1 id="system-heading">System <span>Core startup configuration</span></h1>
+        <h1 id="system-heading">{t("system.title", { ns: "pages" })} <span>{t("system.subtitle", { ns: "pages" })}</span></h1>
         <div className="page-actions">
           <button
             className="button outline"
             type="button"
             onClick={onRefresh}
             disabled={refreshing}
-            aria-label={refreshing ? "Refreshing System status" : "Refresh System status"}
+            aria-label={refreshing ? t("refreshingLabel") : t("refreshLabel")}
           >
             <RefreshCw className={refreshing ? "refresh-spinning" : undefined} size={14} strokeWidth={1.5} aria-hidden="true" />
-            {refreshing ? "Refreshing…" : "Refresh"}
+            {refreshing ? t("refreshing") : t("refresh")}
           </button>
         </div>
       </header>
 
-      <div className="system-summary" role="list" aria-label="System startup summary" aria-live="polite" aria-busy={refreshing}>
+      <div className="system-summary" role="list" aria-label={t("summaryLabel")} aria-live="polite" aria-busy={refreshing}>
         {cards.map((card) => (
           <div className="system-summary-cell" role="listitem" key={card.label}>
             <span><StatusIcon status={card.status} />{card.label}</span>
@@ -149,13 +151,13 @@ export function SystemView({
         <>
           <section className="system-config-section" aria-labelledby="configured-harnesses-heading">
             <header>
-              <h2 id="configured-harnesses-heading">Execution adapters <span>(harnesses)</span></h2>
-              <span>Build support vs startup enablement</span>
+              <h2 id="configured-harnesses-heading">{t("adapters.title")} <span>{t("adapters.qualifier")}</span></h2>
+              <span>{t("adapters.subtitle")}</span>
             </header>
             <p className="system-config-explanation">
               {executionAdaptersEnabled
-                ? <>Agent create and edit forms can select any adapter enabled for this Core process.</>
-                : <>This Core process has no daemon gateway, so no execution adapters are active.</>}
+                ? t("adapters.selectable")
+                : t("adapters.inactive")}
             </p>
             <div className="system-harness-grid">
               {configuration.supported.harnesses.map((harness) => {
@@ -167,15 +169,17 @@ export function SystemView({
                       <strong>{harnessLabel(harness)}</strong>
                       <StartupStatus
                         enabled={enabled}
-                        label={enabled ? "Enabled" : "Build only"}
+                        label={enabled ? t("status.enabled") : t("adapters.buildOnly")}
+                        enabledLabel={t("status.enabled")}
+                        disabledLabel={t("status.notConfigured")}
                       />
                     </div>
                     <small>
                       {enabled
                         ? endpoint?.endpoint_configured
-                          ? "Operator endpoint override: configured."
-                          : "Operator endpoint override: not set; the harness may use its native default."
-                        : "Compiled into this build, but not enabled when this Core process started."}
+                          ? t("adapters.endpointConfigured")
+                          : t("adapters.endpointNative")
+                        : t("adapters.compiledOnly")}
                     </small>
                   </article>
                 );
@@ -183,7 +187,7 @@ export function SystemView({
             </div>
           </section>
 
-          <p className="system-boundary-note"><Info size={15} aria-hidden="true" />These values describe Core startup configuration only. Runtime connection, native binary availability, sandbox health, and model execution belong to the relevant Session or Environment.</p>
+          <p className="system-boundary-note"><Info size={15} aria-hidden="true" />{t("boundary")}</p>
         </>
       ) : null}
     </section>

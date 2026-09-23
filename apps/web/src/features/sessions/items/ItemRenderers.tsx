@@ -1,5 +1,6 @@
 import { AlertTriangle, ChevronDown, ChevronRight, Search, TerminalSquare, Wrench } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { SessionItem } from "@agents-core-web/agents-client";
 
@@ -64,16 +65,16 @@ function isSupportedWorkItem(item: SessionItem): boolean {
   return supportedWorkItemTypes.has(item.type);
 }
 
-function toolPresentation(item: SessionItem) {
-  if (item.type === "command_execution") return { Icon: TerminalSquare, verb: "Run", target: item.command || "Command" };
+function toolPresentation(item: SessionItem, t: (key: string) => string) {
+  if (item.type === "command_execution") return { Icon: TerminalSquare, verb: t("items.verb.run"), target: item.command || t("items.command") };
   if (item.type === "web_search_call") {
     const action = item.action;
-    return { Icon: Search, verb: "Search", target: action?.query || action?.queries?.join(", ") || action?.url || action?.pattern || "Web search" };
+    return { Icon: Search, verb: t("items.verb.search"), target: action?.query || action?.queries?.join(", ") || action?.url || action?.pattern || t("items.webSearch") };
   }
-  if (item.type === "function_call_output") return { Icon: Wrench, verb: "Return", target: item.name || item.call_id || "Function result" };
-  if (item.type === "mcp_call") return { Icon: Wrench, verb: "Use", target: [item.server_label, item.name, firstString(item.arguments)].filter(Boolean).join(" ") || "MCP tool" };
-  if (item.type === "function_call") return { Icon: Wrench, verb: "Use", target: [item.name, firstString(item.arguments)].filter(Boolean).join(" ") || "Function" };
-  return { Icon: AlertTriangle, verb: "Unsupported", target: `${item.type || "unknown"} Item` };
+  if (item.type === "function_call_output") return { Icon: Wrench, verb: t("items.verb.return"), target: item.name || item.call_id || t("items.functionResult") };
+  if (item.type === "mcp_call") return { Icon: Wrench, verb: t("items.verb.use"), target: [item.server_label, item.name, firstString(item.arguments)].filter(Boolean).join(" ") || t("items.mcpTool") };
+  if (item.type === "function_call") return { Icon: Wrench, verb: t("items.verb.use"), target: [item.name, firstString(item.arguments)].filter(Boolean).join(" ") || t("items.function") };
+  return { Icon: AlertTriangle, verb: t("items.verb.unsupported"), target: `${item.type || t("items.unknown")} ${t("items.item")}` };
 }
 
 function toolArguments(item: SessionItem): unknown {
@@ -95,8 +96,9 @@ export function toolResult(item: SessionItem): unknown {
 }
 
 function WorkStep({ item }: { item: SessionItem }) {
+  const { t } = useTranslation("sessions");
   const [open, setOpen] = useState(false);
-  const { Icon, verb, target } = toolPresentation(item);
+  const { Icon, verb, target } = toolPresentation(item, t as (key: string) => string);
   const supported = isSupportedWorkItem(item);
   const args = supported ? toolArguments(item) : undefined;
   const result = supported && (item.status !== "in_progress" || item.type === "command_execution")
@@ -104,8 +106,8 @@ function WorkStep({ item }: { item: SessionItem }) {
     : undefined;
   const patch = supported && item.type === "function_call" && item.name === "apply_patch" ? parseParsarApplyPatch(item.arguments) : null;
   const expandable = args !== undefined && args !== null || result !== undefined && result !== null;
-  const row = <><Icon className="trace-step-icon" size={14} strokeWidth={1.5} aria-hidden="true" /><span className="trace-step-verb">{verb}</span><span className="trace-step-target" title={target}>{target}</span>{item.status != null && item.status !== "completed" ? <StatusIcon status={itemStatusKind(item.status)} title={item.status.replaceAll("_", " ")} /> : null}{item.duration_ms ? <span className="trace-duration">{formatDuration(item.duration_ms)}</span> : null}{expandable ? <ChevronRight className={`trace-step-chevron ${open ? "open" : ""}`} size={14} strokeWidth={1.5} aria-hidden="true" /> : null}</>;
-  return <li className="trace-step" data-trace-step={item.id}>{expandable ? <button className="trace-step-row" type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{row}</button> : <div className="trace-step-row">{row}</div>}{expandable ? <TraceCollapse open={open}>{patch ? <ApplyPatchDiffViewer item={item} patch={patch} result={result} /> : <div className="trace-step-details">{args !== undefined && args !== null ? <div><p>Arguments</p><pre>{pretty(args)}</pre></div> : null}{result !== undefined && result !== null ? <div><p>Result</p><pre>{pretty(result)}</pre></div> : null}</div>}</TraceCollapse> : null}</li>;
+  const row = <><Icon className="trace-step-icon" size={14} strokeWidth={1.5} aria-hidden="true" /><span className="trace-step-verb">{verb}</span><span className="trace-step-target" title={target}>{target}</span>{item.status != null && item.status !== "completed" ? <StatusIcon status={itemStatusKind(item.status)} title={t(`status.${item.status}` as never)} /> : null}{item.duration_ms ? <span className="trace-duration">{formatDuration(item.duration_ms)}</span> : null}{expandable ? <ChevronRight className={`trace-step-chevron ${open ? "open" : ""}`} size={14} strokeWidth={1.5} aria-hidden="true" /> : null}</>;
+  return <li className="trace-step" data-trace-step={item.id}>{expandable ? <button className="trace-step-row" type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>{row}</button> : <div className="trace-step-row">{row}</div>}{expandable ? <TraceCollapse open={open}>{patch ? <ApplyPatchDiffViewer item={item} patch={patch} result={result} /> : <div className="trace-step-details">{args !== undefined && args !== null ? <div><p>{t("items.arguments")}</p><pre>{pretty(args)}</pre></div> : null}{result !== undefined && result !== null ? <div><p>{t("items.result")}</p><pre>{pretty(result)}</pre></div> : null}</div>}</TraceCollapse> : null}</li>;
 }
 
 export function mergeFunctionSteps(items: SessionItem[]): SessionItem[] {
@@ -124,6 +126,7 @@ export function mergeFunctionSteps(items: SessionItem[]): SessionItem[] {
 }
 
 function WorkTrace({ items }: { items: SessionItem[] }) {
+  const { t } = useTranslation("sessions");
   const steps = mergeFunctionSteps(items);
   const status: StatusKind = steps.some((item) => item.status === "failed") ? "failed" : steps.some((item) => item.status === "in_progress") ? "running" : steps.some((item) => item.status === "incomplete") ? "interrupted" : "completed";
   const running = status === "running";
@@ -131,16 +134,17 @@ function WorkTrace({ items }: { items: SessionItem[] }) {
   const duration = steps.reduce((total, item) => total + (item.duration_ms ?? 0), 0);
   const current = running ? [...steps].reverse().find((item) => item.status === "in_progress") : undefined;
   useEffect(() => setExpanded(running), [running]);
-  return <section className="work-trace" aria-label="Agent work trace" aria-busy={running} data-work-trace={status}><button className="trace-header" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}><StatusIcon status={status} /><span>{status === "running" ? "Running" : status === "failed" ? "Failed" : status === "interrupted" ? "Interrupted" : "Completed"}</span>{duration ? <span className="trace-duration" aria-hidden={running || undefined}>· {formatDuration(duration)}</span> : null}<ChevronDown className={`trace-header-chevron ${expanded ? "" : "closed"}`} size={14} strokeWidth={1.5} aria-hidden="true" /></button><TraceCollapse open={expanded}><ul className="trace-steps">{steps.map((item) => <WorkStep item={item} key={item.id} />)}</ul></TraceCollapse>{!expanded && current ? <ul className="trace-steps" data-work-trace-tail=""><WorkStep item={current} key={`tail:${current.id}`} /></ul> : null}</section>;
+  return <section className="work-trace" aria-label={t("items.agentWorkTrace")} aria-busy={running} data-work-trace={status}><button className="trace-header" type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)}><StatusIcon status={status} /><span>{t(`status.${status}` as never)}</span>{duration ? <span className="trace-duration" aria-hidden={running || undefined}>· {formatDuration(duration)}</span> : null}<ChevronDown className={`trace-header-chevron ${expanded ? "" : "closed"}`} size={14} strokeWidth={1.5} aria-hidden="true" /></button><TraceCollapse open={expanded}><ul className="trace-steps">{steps.map((item) => <WorkStep item={item} key={item.id} />)}</ul></TraceCollapse>{!expanded && current ? <ul className="trace-steps" data-work-trace-tail=""><WorkStep item={current} key={`tail:${current.id}`} /></ul> : null}</section>;
 }
 
 export function ThreadItems({ items, agentName }: { items: SessionItem[]; agentName: string }) {
+  const { t } = useTranslation("sessions");
   const rendered = [];
   for (let index = 0; index < items.length;) {
     const item = items[index]; if (!item) break;
     if (item.type === "message") {
       const assistant = item.role === "assistant";
-      rendered.push(<article className={`message-row ${assistant ? "assistant" : "user"}`} key={item.id}><div className="message-body">{assistant ? <div className="message-byline">{agentName || "Agent"}{item.phase === "commentary" ? " · working note" : ""}</div> : null}{assistant ? <MessageMarkdown content={textOf(item) || "Empty message item"} /> : <div className="message-copy">{textOf(item) || "Empty message item"}</div>}</div></article>);
+      rendered.push(<article className={`message-row ${assistant ? "assistant" : "user"}`} key={item.id}><div className="message-body">{assistant ? <div className="message-byline">{agentName || t("common.agent")}{item.phase === "commentary" ? ` · ${t("items.workingNote")}` : ""}</div> : null}{assistant ? <MessageMarkdown content={textOf(item) || t("items.emptyMessage")} /> : <div className="message-copy">{textOf(item) || t("items.emptyMessage")}</div>}</div></article>);
       index += 1; continue;
     }
     const traceItems = [item]; let cursor = index + 1;

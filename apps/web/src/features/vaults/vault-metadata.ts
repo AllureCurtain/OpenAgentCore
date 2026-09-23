@@ -1,3 +1,7 @@
+import i18n from "../../i18n";
+
+const tv = (key: string) => i18n.t(key as never, { ns: "vaults" });
+
 export const VAULT_METADATA_MAX_BYTES = 64 * 1024;
 
 export type VaultMetadata = Record<string, string>;
@@ -35,14 +39,14 @@ export function parseVaultMetadata(source?: string): VaultMetadata {
   } catch {
     throw new VaultMetadataValidationError(
       "invalid_json",
-      "Metadata must be valid JSON.",
+      tv("errors.metadataJson"),
     );
   }
 
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new VaultMetadataValidationError(
       "invalid_shape",
-      "Metadata must be a JSON object whose values are strings.",
+      tv("errors.metadataShape"),
     );
   }
 
@@ -50,7 +54,7 @@ export function parseVaultMetadata(source?: string): VaultMetadata {
   if (entries.some(([, value]) => typeof value !== "string")) {
     throw new VaultMetadataValidationError(
       "invalid_shape",
-      "Metadata values must all be strings; nested values, arrays, numbers, booleans, and null are not supported.",
+      tv("errors.metadataStrings"),
     );
   }
 
@@ -58,7 +62,7 @@ export function parseVaultMetadata(source?: string): VaultMetadata {
   if (encodedBytes(JSON.stringify(metadata)) > VAULT_METADATA_MAX_BYTES) {
     throw new VaultMetadataValidationError(
       "too_large",
-      "Metadata must be at most 64 KiB after UTF-8 JSON encoding.",
+      tv("errors.metadataLarge"),
     );
   }
 

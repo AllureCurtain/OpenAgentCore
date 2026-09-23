@@ -255,9 +255,16 @@ export function dashboardEnvironmentLabel(profile: DashboardEnvironmentProfile):
   }
 }
 
-export function formatDashboardTimestamp(value: number | null): string {
+export function formatDashboardTimestamp(value: number | null, locale?: string): string {
   const seconds = canonicalTimestamp(value);
   if (seconds === null) return "Unknown";
+  if (locale) {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "UTC",
+    }).format(new Date(seconds * 1_000));
+  }
   return `${new Date(seconds * 1_000).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }
 
@@ -430,9 +437,9 @@ export function formatDashboardDuration(value: number | null): string {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
-export function formatDashboardTokens(value: number | null): string {
+export function formatDashboardTokens(value: number | null, locale = "en-US"): string {
   if (value === null) return "Unavailable";
-  return value.toLocaleString("en-US");
+  return value.toLocaleString(locale);
 }
 
 export function runtimeObservationStatusLabel(observation: RuntimeObservation): string {

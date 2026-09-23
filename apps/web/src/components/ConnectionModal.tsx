@@ -1,5 +1,7 @@
 import { Check, Container, Copy, ExternalLink, Info, KeyRound } from "lucide-react";
 import { useEffect, useId, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 
 import {
   isLocalProxyBaseUrl,
@@ -37,6 +39,7 @@ const parsarContainerSetupUrl = "https://github.com/MiniMax-AI/parsar-core/blob/
 const parsarDaemonSetupUrl = "https://github.com/MiniMax-AI/parsar-core/blob/main/services/agents-api/README.md#internal-execution-device-connection";
 
 function DockerCommand({ label, command }: { label: string; command: string }) {
+  const { t } = useTranslation("connection");
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -53,48 +56,46 @@ function DockerCommand({ label, command }: { label: string; command: string }) {
   return (
     <div className="connection-docker-command">
       <code>{command}</code>
-      <button className="button outline" type="button" onClick={() => void copy()} aria-label={`Copy ${label}`}>
+      <button className="button outline" type="button" onClick={() => void copy()} aria-label={t("copyLabel", { label })}>
         {copied ? <Check size={12} aria-hidden="true" /> : <Copy size={12} aria-hidden="true" />}
-        {copied ? "Copied" : "Copy"}
+        {copied ? t("copied") : t("copy")}
       </button>
     </div>
   );
 }
 
 function DockerBackendGuide({ profile }: { profile: LocalDockerBackendGuideProfile | null }) {
+  const { t } = useTranslation("connection");
   return (
     <section className="connection-docker-guide" aria-labelledby="connection-docker-guide-title">
       <div className="connection-guide-header">
         <Container size={15} strokeWidth={1.5} aria-hidden="true" />
         <div>
-          <strong id="connection-docker-guide-title">Start a local Docker backend</strong>
-          <p>
-            Run these commands in a terminal on the Docker host. Web only displays the reviewed commands;
-            it never receives Docker socket access or executes them.
-          </p>
+          <strong id="connection-docker-guide-title">{t("dockerTitle")}</strong>
+          <p>{t("dockerIntro")}</p>
         </div>
       </div>
       {profile ? (
         <>
           <div className="connection-docker-path">
             <div className="connection-docker-path-heading">
-              <strong>Already set up on this computer</strong>
-              <span>Start the existing containers</span>
+              <strong>{t("existingTitle")}</strong>
+              <span>{t("existingSubtitle")}</span>
             </div>
             <ol className="connection-docker-steps">
               <li>
-                <span><strong>Start the dedicated database</strong><small>Wait until its Docker health status is healthy.</small></span>
+                <span><strong>{t("databaseStart")}</strong><small>{t("databaseWait")}</small></span>
                 <DockerCommand label="database start command" command={`docker start ${profile.databaseContainer}`} />
               </li>
               <li>
-                <span><strong>Start Core API and daemon</strong><small>The daemon reconnects to Core independently.</small></span>
+                <span><strong>{t("coreDaemonStart")}</strong><small>{t("daemonReconnects")}</small></span>
                 <DockerCommand
                   label="Core API and daemon start command"
                   command={`docker start ${profile.apiContainer} ${profile.daemonContainer}`}
                 />
               </li>
               <li>
-                <span><strong>Verify Core process health</strong><small>A successful health response is liveness only; use Test connection next.</small></span>
+                <span><strong>{t("verifyHealth")}</strong><small>{t("healthBoundary")}</small></span>
                 <DockerCommand
                   label="Core health command"
                   command={`curl --fail --silent --show-error http://127.0.0.1:${profile.corePort}/healthz`}
@@ -104,35 +105,30 @@ function DockerBackendGuide({ profile }: { profile: LocalDockerBackendGuideProfi
           </div>
           <div className="connection-docker-path connection-docker-first-use">
             <div className="connection-docker-path-heading">
-              <strong>First time on this computer</strong>
-              <span>Create Core before trying <code>docker start</code></span>
+              <strong>{t("firstTime")}</strong>
+              <span>{t("firstTimeSubtitle")}</span>
             </div>
-            <p>
-              Docker is assumed to be installed. Parsar Core still requires a dedicated PostgreSQL database, a private
-              caller principal, migrations, the Core API container, and a provisioned daemon profile. Core does not
-              publish a safe zero-input bootstrap, so Web will not invent credentials or
-              create containers with guessed settings.
-            </p>
+            <p>{t("dockerAssumption")}</p>
             <ol className="connection-docker-first-steps">
               <li>
-                <span><strong>Build the Core image</strong><small>Run from the reviewed parsar-core checkout.</small></span>
+                <span><strong>{t("buildImage")}</strong><small>{t("reviewedCheckout")}</small></span>
                 <DockerCommand label="Core image build command" command="make docker-build-agents-api" />
               </li>
-              <li><span><strong>Create the private Core stack</strong><small>Prepare the dedicated database, caller key files, migrations, and API container using the in-repository container guide.</small></span></li>
-              <li><span><strong>Provision and connect the daemon</strong><small>Issue a separate device profile; caller keys and daemon credentials are not interchangeable.</small></span></li>
-              <li><span><strong>Return here and test</strong><small>Configure Web&apos;s server-side caller-key file, restart Web, then use Test connection.</small></span></li>
+              <li><span><strong>{t("createStack")}</strong><small>{t("createStackHelp")}</small></span></li>
+              <li><span><strong>{t("provisionDaemon")}</strong><small>{t("provisionDaemonHelp")}</small></span></li>
+              <li><span><strong>{t("returnTest")}</strong><small>{t("returnTestHelp")}</small></span></li>
             </ol>
             <div className="connection-docker-first-links">
               <a href={parsarContainerSetupUrl} target="_blank" rel="noreferrer">
-                Core container setup
+                {t("containerSetup")}
                 <ExternalLink size={12} strokeWidth={1.5} aria-hidden="true" />
               </a>
               <a href={parsarDaemonSetupUrl} target="_blank" rel="noreferrer">
-                Daemon provisioning
+                {t("daemonProvisioning")}
                 <ExternalLink size={12} strokeWidth={1.5} aria-hidden="true" />
               </a>
               <a href={operatorGuideUrl} target="_blank" rel="noreferrer">
-                Web proxy and caller-key setup
+                {t("proxySetup")}
                 <ExternalLink size={12} strokeWidth={1.5} aria-hidden="true" />
               </a>
             </div>
@@ -140,18 +136,11 @@ function DockerBackendGuide({ profile }: { profile: LocalDockerBackendGuideProfi
         </>
       ) : (
         <div className="connection-docker-unconfigured">
-          <strong>Docker startup guide is not configured for this Web build.</strong>
-          <p>
-            Set the non-secret <code>AGENTS_CORE_WEB_DOCKER_BACKEND_*</code> values from <code>.env.example</code>,
-            then restart Web. Container names are operator configuration and are never guessed in the browser.
-          </p>
+          <strong>{t("dockerUnconfigured")}</strong>
+          <p>{t("dockerUnconfiguredHelp")}</p>
         </div>
       )}
-      <p className="connection-docker-boundary">
-        Existing-stack commands only start saved database/Core/daemon containers. First-time setup remains an
-        operator action because it creates durable state and credentials. A self-hosted executor is Session-specific
-        and must be connected from that Session&apos;s Environment instructions.
-      </p>
+      <p className="connection-docker-boundary">{t("dockerBoundary")}</p>
     </section>
   );
 }
@@ -168,53 +157,47 @@ function initialAdvancedDraft(connection: CoreConnection): CoreConnection {
   };
 }
 
-function resultCopy(result: CoreProbeResult): { title: string; detail: string } {
+function resultCopy(result: CoreProbeResult, t: TFunction<"connection">): { title: string; detail: string } {
   switch (result.kind) {
     case "authenticated":
       return {
-        title: "Core API authenticated",
-        detail: "The read-only Agents API request returned a valid collection.",
+        title: t("result.authenticatedTitle"), detail: t("result.authenticatedDetail"),
       };
     case "invalid_configuration":
       return {
-        title: "Core URL blocked",
-        detail: "Remote Core URLs must use HTTPS. Plain HTTP is allowed only for an explicit loopback host.",
+        title: t("result.invalidTitle"), detail: t("result.invalidDetail"),
       };
     case "unauthorized":
       return {
-        title: "Authentication failed",
-        detail: "Core returned 401 invalid_api_key. Check the server-managed caller key or current-tab token.",
+        title: t("result.unauthorizedTitle"), detail: t("result.unauthorizedDetail"),
       };
     case "protocol_mismatch":
       return {
-        title: "Agents API protocol mismatch",
-        detail: "The endpoint did not accept the tested /v1/agents GET contract and OpenAI-Beta: agents=v1 header.",
+        title: t("result.mismatchTitle"), detail: t("result.mismatchDetail"),
       };
     case "http_error":
       return {
-        title: `Core returned HTTP ${result.httpStatus ?? "error"}`,
-        detail: "The basic Agents API read did not succeed. No Core resource was changed.",
+        title: t("result.httpTitle", { status: result.httpStatus ?? "error" }), detail: t("result.httpDetail"),
       };
     case "unreachable":
       return {
-        title: "Core unreachable",
-        detail: "The browser could not reach Core. Check the local proxy target, network, or direct-mode CORS policy.",
+        title: t("result.unreachableTitle"), detail: t("result.unreachableDetail"),
       };
   }
 }
 
 export function ConnectionProbeStatus({ state }: { state: ConnectionProbeState }) {
+  const { t } = useTranslation("connection");
   if (state.status === "idle") return null;
   if (state.status === "loading") {
     return (
       <div className="connection-modal-probe-result loading" role="status" aria-live="polite">
-        <strong>Testing Core connection…</strong>
-        <p>Sending one read-only Agents API GET request.</p>
+        <strong>{t("testingTitle")}</strong><p>{t("testingDetail")}</p>
       </div>
     );
   }
 
-  const copy = resultCopy(state.result);
+  const copy = resultCopy(state.result, t);
   const failed = state.result.kind !== "authenticated";
   return (
     <div
@@ -224,7 +207,7 @@ export function ConnectionProbeStatus({ state }: { state: ConnectionProbeState }
     >
       <strong>{copy.title}</strong>
       <p>{copy.detail}</p>
-      <small>Chat uses the current Agents API contract. This read-only probe does not start a Turn or verify its runtime dependencies.</small>
+      <small>{t("probeBoundary")}</small>
     </div>
   );
 }
@@ -237,6 +220,8 @@ export function ConnectionModal({
   onClose,
   onSave,
 }: ConnectionModalProps) {
+  const { t } = useTranslation("connection");
+  const { t: translateCommon } = useTranslation("common");
   const modeName = useId();
   const [mode, setMode] = useState<ConnectionMode>(() => initialMode(connection));
   const [advancedDraft, setAdvancedDraft] = useState<CoreConnection>(() => initialAdvancedDraft(connection));
@@ -295,11 +280,11 @@ export function ConnectionModal({
     <Modal
       open={open}
       onClose={onClose}
-      title="Connect an Agent Core"
+      title={t("title")}
       footer={
         <>
           <button className="button outline" type="button" onClick={onClose}>
-            Cancel
+            {translateCommon("actions.cancel")}
           </button>
           <button
             className="button primary"
@@ -307,13 +292,13 @@ export function ConnectionModal({
             disabled={applyDisabled}
             onClick={() => onSave(draft)}
           >
-            Apply connection
+            {t("apply")}
           </button>
         </>
       }
     >
       <fieldset className="connection-modal-modes">
-        <legend>Connection mode</legend>
+        <legend>{t("mode")}</legend>
         <label className={mode === "local" ? "selected" : ""}>
           <input
             type="radio"
@@ -323,8 +308,7 @@ export function ConnectionModal({
             onChange={() => setMode("local")}
           />
           <span>
-            <strong>Local Parsar Core</strong>
-            <small>Default · zero input</small>
+            <strong>{t("localCore")}</strong><small>{t("localDefault")}</small>
           </span>
         </label>
         <label className={mode === "advanced" ? "selected" : ""}>
@@ -336,8 +320,7 @@ export function ConnectionModal({
             onChange={() => setMode("advanced")}
           />
           <span>
-            <strong>Other compatible Core</strong>
-            <small>Advanced</small>
+            <strong>{t("compatibleCore")}</strong><small>{t("advanced")}</small>
           </span>
         </label>
       </fieldset>
@@ -348,24 +331,21 @@ export function ConnectionModal({
             <div className="connection-guide-header">
               <KeyRound size={15} strokeWidth={1.5} aria-hidden="true" />
               <div>
-                <strong id={`${modeName}-local-title`}>Local `/v1` proxy</strong>
-                <p>The Agents API base is fixed by this application. No URL is required.</p>
+                <strong id={`${modeName}-local-title`}>{t("localProxy")}</strong><p>{t("fixedBase")}</p>
               </div>
             </div>
             <dl>
               <div>
-                <dt>API base</dt>
+                <dt>{t("apiBase")}</dt>
                 <dd><code>/v1</code></dd>
               </div>
               <div>
-                <dt>Authentication</dt>
-                <dd>{proxyAuthEnabled ? "Server-managed key detected" : "Server-managed key not detected"}</dd>
+                <dt>{t("authentication")}</dt><dd>{proxyAuthEnabled ? t("keyDetected") : t("keyMissing")}</dd>
               </div>
             </dl>
             <p className="connection-modal-local-note">
               {proxyAuthEnabled
-                ? "The Vite proxy supplies its key server-side. No bearer credential is exposed to browser JavaScript."
-                : "Configure the local proxy token file and restart Web. Local mode will not request a browser token."}
+                ? t("proxySecure") : t("proxyConfigure")}
             </p>
           </section>
           <DockerBackendGuide profile={dockerBackendGuide} />
@@ -373,7 +353,7 @@ export function ConnectionModal({
       ) : (
         <div className="form-stack connection-modal-advanced">
           <label className="field">
-            <span>Compatible Core base URL</span>
+            <span>{t("compatibleUrl")}</span>
             <input
               value={advancedDraft.baseUrl}
               onChange={(event) => setAdvancedDraft((value) => ({ ...value, baseUrl: event.target.value }))}
@@ -388,31 +368,28 @@ export function ConnectionModal({
               }
             />
             <small id={`${modeName}-advanced-url-help`}>
-              Remote Core access requires HTTPS. Plain HTTP is allowed only for an explicit loopback host.
-              The Core must allow this Web origin, GET/POST methods, Authorization, and OpenAI-Beta through CORS.
+              {t("urlHelp")}
             </small>
             {advancedDraft.baseUrl && !advancedUrlValid ? (
               <small id={`${modeName}-advanced-url-error`} className="field-error" role="alert">
-                Enter an HTTPS URL, or an HTTP loopback URL, without credentials, query parameters, or fragments.
+                {t("urlError")}
               </small>
             ) : null}
           </label>
           <label className="field">
             <span className="field-label">
-              Bearer token
-              <span className="field-optional">Current tab only</span>
+              {t("bearerToken")}<span className="field-optional">{t("tabOnly")}</span>
             </span>
             <input
               type="password"
               value={advancedDraft.token}
               onChange={(event) => setAdvancedDraft((value) => ({ ...value, token: event.target.value }))}
-              placeholder="Compatible Core caller token"
+              placeholder={t("tokenPlaceholder")}
               autoComplete="off"
               aria-describedby={`${modeName}-advanced-token-help`}
             />
             <small id={`${modeName}-advanced-token-help`}>
-              Direct-mode fallback only. The token is kept in this tab&apos;s sessionStorage, never localStorage,
-              URLs, or server-managed proxy configuration.
+              {t("tokenHelp")}
             </small>
           </label>
         </div>
@@ -420,11 +397,10 @@ export function ConnectionModal({
 
       <section className="connection-modal-test" aria-labelledby={`${modeName}-test-title`}>
         <div>
-          <strong id={`${modeName}-test-title`}>Connection test</strong>
-          <p>Checks authenticated Agents API access with one GET. It never creates an Agent, Session, Turn, or Item.</p>
+          <strong id={`${modeName}-test-title`}>{t("testTitle")}</strong><p>{t("testHelp")}</p>
         </div>
         <button className="button outline" type="button" disabled={testDisabled} onClick={() => void testConnection()}>
-          {probeState.status === "loading" ? "Testing…" : "Test connection"}
+          {probeState.status === "loading" ? t("testing") : t("test")}
         </button>
       </section>
       <ConnectionProbeStatus state={probeState} />
@@ -433,31 +409,27 @@ export function ConnectionModal({
         <div className="connection-guide-header">
           <Info size={15} strokeWidth={1.5} aria-hidden="true" />
           <div>
-            <strong id={`${modeName}-guide-title`}>Operator-owned setup</strong>
-            <p>
-              This Web can configure and test an existing connection, but it does not start Docker or host
-              processes. Use the operator guide for Core, proxy, caller-key, daemon, executor, and provider setup.
-            </p>
+            <strong id={`${modeName}-guide-title`}>{t("operatorSetup")}</strong><p>{t("operatorHelp")}</p>
           </div>
         </div>
         <div className="connection-guide-links">
           <a className="connection-guide-link" href={operatorGuideUrl} target="_blank" rel="noreferrer">
-            Web connection guide · current repository
+            {t("webGuide")}
             <ExternalLink size={12} strokeWidth={1.5} aria-hidden="true" />
           </a>
           <a className="connection-guide-link" href={troubleshootingUrl} target="_blank" rel="noreferrer">
-            Connection troubleshooting · current repository
+            {t("troubleshooting")}
             <ExternalLink size={12} strokeWidth={1.5} aria-hidden="true" />
           </a>
           <a className="connection-guide-link" href={parsarCoreSetupUrl} target="_blank" rel="noreferrer">
-            Parsar Core setup
+            {t("coreSetup")}
             <ExternalLink size={12} strokeWidth={1.5} aria-hidden="true" />
           </a>
         </div>
       </section>
       <div className="notice neutral">
         <Info size={14} strokeWidth={1.5} aria-hidden="true" />
-        Test connection verifies Agents API access only. Chat uses the current Core events contract; a real request can still fail when its worker, executor, model, or provider is unavailable.
+        {t("finalBoundary")}
       </div>
     </Modal>
   );

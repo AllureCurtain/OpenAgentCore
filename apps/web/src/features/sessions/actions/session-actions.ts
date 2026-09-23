@@ -5,6 +5,9 @@ import {
   type AgentSession,
   type SessionDeleted,
 } from "@agents-core-web/agents-client";
+import i18n from "../../../i18n";
+
+const ts = (key: string, options?: Record<string, unknown>) => i18n.t(key as never, { ns: "sessions", ...options });
 
 export interface SessionMetadataValues {
   title: string;
@@ -48,7 +51,7 @@ export class SessionMetadataConflictError extends SessionActionError {
   constructor(keys: string[], latestSession?: AgentSession) {
     const sorted = [...keys].sort((left, right) => left.localeCompare(right));
     super(
-      `Metadata changed in Agent Core while you were editing: ${sorted.join(", ")}. Your draft was kept; review the latest values before saving again.`,
+      ts("actions.errors.metadataConflict", { keys: sorted.join(", ") }),
       "metadata_conflict",
     );
     this.name = "SessionMetadataConflictError";
@@ -77,31 +80,31 @@ export function validateSessionMetadata(values: SessionMetadataValues): SessionM
   try {
     parsed = values.metadata.trim() ? JSON.parse(values.metadata) : {};
   } catch {
-    return { metadataError: "Metadata must be valid JSON." };
+    return { metadataError: ts("actions.errors.metadataValidJson") };
   }
 
   if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
-    return { metadataError: "Metadata must be a JSON object." };
+    return { metadataError: ts("actions.errors.metadataObject") };
   }
 
   const entries = Object.entries(parsed as Record<string, unknown>);
   if (entries.some(([, value]) => typeof value !== "string")) {
-    return { metadataError: "Every metadata value must be a string." };
+    return { metadataError: ts("actions.errors.metadataStringValues") };
   }
   if (entries.some(([key]) => key === "title")) {
-    return { metadataError: "Edit title in the Title field, not in additional metadata." };
+    return { metadataError: ts("actions.errors.metadataTitleField") };
   }
 
   const metadata = Object.fromEntries(entries) as Record<string, string>;
   const title = values.title.trim();
   if (title) metadata.title = title;
   if (Object.keys(metadata).length > 16) {
-    return { metadataError: "Session metadata supports at most 16 pairs, including title." };
+    return { metadataError: ts("actions.errors.metadataMaxPairs") };
   }
   if (Object.entries(metadata).some(([key, value]) => (
     Array.from(key).length > 64 || Array.from(value).length > 512
   ))) {
-    return { metadataError: "Metadata keys must be at most 64 characters and values at most 512 characters." };
+    return { metadataError: ts("actions.errors.metadataLength") };
   }
   return { metadata };
 }
@@ -232,7 +235,7 @@ async function retrieveCanonicalSession(core: AgentCore, sessionId: string): Pro
   const session: unknown = await core.retrieveSession(sessionId);
   if (!isCanonicalSession(session, sessionId)) {
     throw new SessionActionError(
-      "Agent Core returned an invalid Session retrieval response. The Web kept its current durable view and did not send a write.",
+      ts("actions.errors.invalidRetrieval"),
       "request_failed",
     );
   }
@@ -270,7 +273,7 @@ export function rebaseSessionMetadataDraft(
 }
 
 function actionLabel(action: "update" | "delete"): string {
-  return action === "update" ? "update" : "deletion";
+  return ts(action === "update" ? "actions.errors.updateLabel" : "actions.errors.deletionLabel");
 }
 
 function normalizeSessionActionError(
@@ -286,21 +289,21 @@ function normalizeSessionActionError(
       (error.code === "invalid_session_resource" || error.code === "invalid_session_vaults")
     ) {
       return new SessionActionError(
-        "Agent Core returned an invalid Session retrieval response. The Web kept its current durable view and did not send a write.",
+        ts("actions.errors.invalidRetrieval"),
         "request_failed",
         { cause: error },
       );
     }
     if (error.status === 404) {
       return new SessionActionError(
-        "This Session was not found in Agent Core. The Web kept its current durable view; refresh Sessions before trying again.",
+        ts("actions.errors.notFound"),
         "not_found",
         { cause: error },
       );
     }
     if (action === "delete" && phase === "write" && isSessionDeletionConflict(error)) {
       return new SessionActionError(
-        "Agent Core deletes a Session only when it is idle or failed without required actions. This Session still has queued, running or waiting work or pending input, so nothing was changed. Choose Cancel work and delete to cancel it, wait until it is idle and then delete it.",
+        ts("actions.errors.busyDelete"),
         "session_busy",
         { cause: error },
       );
@@ -308,38 +311,38 @@ function normalizeSessionActionError(
     if (error.status === 409) {
       if (phase === "read") {
         return new SessionActionError(
-          "The latest Session could not be retrieved because this compatible Core returned a lifecycle conflict (409), so no update request was sent. Your draft and current durable view were kept.",
+          ts("actions.errors.readLifecycleConflict"),
           "lifecycle_conflict",
           { cause: error },
         );
       }
       return new SessionActionError(
-        `This compatible Core rejected the Session ${label} because it conflicts with the current lifecycle state. The Web did not retry.`,
+        ts("actions.errors.writeLifecycleConflict", { action: label }),
         "lifecycle_conflict",
         { cause: error },
       );
     }
     if (error.status === 503 || error.status >= 500) {
       const suffix = phase === "read"
-        ? "No update request was sent."
-        : "The write result is unknown. The Web kept its current durable view and did not retry; refresh before deciding whether to try again.";
+        ? ts("actions.errors.noUpdateSent")
+        : ts("actions.errors.unknownWriteSuffix");
       return new SessionActionError(
-        `Agent Core could not complete the Session ${label} (${error.status}). ${suffix}`,
+        ts("actions.errors.coreUnavailable", { action: label, status: error.status, suffix }),
         phase === "read" ? "core_unavailable" : "unknown_write",
         { cause: error },
       );
     }
     if (phase === "write" && [408, 425, 429].includes(error.status)) {
       return new SessionActionError(
-        `The Session ${label} result is uncertain after Agent Core returned ${error.status}. The Web kept its current durable view and did not retry; refresh before deciding whether to try again.`,
+        ts("actions.errors.uncertainStatus", { action: label, status: error.status }),
         "unknown_write",
         { cause: error },
       );
     }
     return new SessionActionError(
       phase === "read"
-        ? `${error.message} No update request was sent; your draft and current durable view were kept.`
-        : `${error.message} The Web kept its current durable view and did not retry.`,
+        ? ts("actions.errors.readFailureWithDetail", { detail: error.message })
+        : ts("actions.errors.writeFailureWithDetail", { detail: error.message }),
       "request_failed",
       { cause: error },
     );
@@ -347,13 +350,13 @@ function normalizeSessionActionError(
 
   if (phase === "read") {
     return new SessionActionError(
-      "The latest Session could not be retrieved, so no update request was sent. Your draft and the current durable view were kept.",
+      ts("actions.errors.latestReadFailure"),
       "request_failed",
       { cause: error },
     );
   }
   return new SessionActionError(
-    `The Session ${label} result is unknown because the connection ended before Core confirmed it. The Web kept its current durable view and did not retry; refresh before deciding whether to try again.`,
+    ts("actions.errors.unknownConnection", { action: label }),
     "unknown_write",
     { cause: error },
   );
@@ -389,7 +392,7 @@ export async function requestSessionUpdate(
     const updated: unknown = await core.updateSession(sessionId, metadata);
     if (!isCanonicalSession(updated, sessionId) || !metadataEquals(updated.metadata, metadata)) {
       throw new SessionActionError(
-        "Agent Core returned an invalid Session update confirmation. The write result is unknown; the Web kept its current durable view and did not retry.",
+        ts("actions.errors.invalidUpdateConfirmation"),
         "unknown_write",
       );
     }
@@ -422,7 +425,7 @@ async function classifyBusyDelete(core: AgentCore, sessionId: string, busy: Sess
   }
   if (!onlyInputPending(latest)) return busy;
   return new SessionActionError(
-    "Agent Core deletes a Session only when it is idle or failed without required actions. This Session has input waiting to start in its Environment, which cannot be cancelled, so nothing was changed. Delete it after that input starts, expires or fails; once it starts, cancel its work first.",
+    ts("actions.errors.inputPending"),
     "session_input_pending",
     { cause: busy.cause },
   );
@@ -442,7 +445,7 @@ export async function requestSessionDelete(core: AgentCore, sessionId: string): 
     deleted.deleted !== true
   ) {
     throw new SessionActionError(
-      "Agent Core returned an invalid deletion confirmation. The Web kept the Session; refresh durable state before taking another action.",
+      ts("actions.errors.invalidDeletionConfirmation"),
       "unknown_write",
     );
   }
@@ -465,10 +468,10 @@ export async function requestSessionCancelBeforeDelete(
       throw normalizeSessionActionError(error, "delete", "write");
     }
     const detail = error instanceof AgentCoreError
-      ? `Agent Core rejected the cancellation (${error.status}): ${error.message}`
-      : "The cancellation result is unknown because the connection ended before Core confirmed it.";
+      ? ts("actions.errors.cancelRejected", { status: error.status, detail: error.message })
+      : ts("actions.errors.cancelUnknown");
     throw new SessionActionError(
-      `${detail} The Session was not deleted and the Web did not retry.`,
+      ts("actions.errors.cancelDeleteKept", { detail }),
       "request_failed",
       { cause: error },
     );
@@ -514,7 +517,7 @@ export async function waitForSessionIdle(
     } catch (error) {
       if (error instanceof AgentCoreError && error.status === 404) return "missing";
       throw new SessionActionError(
-        "Cancellation was requested, but the Session could not be read while waiting for it to become idle. It was not deleted.",
+        ts("actions.errors.waitReadFailure"),
         "request_failed",
         { cause: error },
       );
@@ -523,7 +526,10 @@ export async function waitForSessionIdle(
     if (isDeletableSession(latest)) return "idle";
     if (now() >= deadline) {
       throw new SessionActionError(
-        `Cancellation was requested, but the Session was still ${latest.status.replaceAll("_", " ")} after ${Math.round(timeoutMs / 1000)} seconds. It was not deleted; try again once it is idle.`,
+        ts("actions.errors.waitTimeout", {
+          status: String(ts(`status.${latest.status}`)).toLocaleLowerCase(i18n.resolvedLanguage),
+          seconds: Math.round(timeoutMs / 1000),
+        }),
         "session_busy",
       );
     }

@@ -2,8 +2,8 @@ import { createPortal } from "react-dom";
 import { Check, Copy, Plus, Terminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { SandboxAdminClient, SandboxDeployment, SandboxNode } from "@agents-core-web/agents-client";
+import { useTranslation } from "react-i18next";
 import { Modal } from "../../components/Modal";
-import { useLocale } from "../../lib/LocaleProvider";
 import { sandboxRequestError } from "../../lib/sandbox-labels";
 import { sandboxCoreOrigin } from "./core-origin";
 import type { SandboxConsoleConfig } from "./console-config";
@@ -18,7 +18,8 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, disab
   fresh: boolean;
   onRefresh: () => void;
 }) {
-  const { t, locale } = useLocale();
+  const { t, i18n } = useTranslation("sandbox");
+  const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [enrollment, setEnrollment] = useState<{ token: string; expires_at: string } | null>(null);

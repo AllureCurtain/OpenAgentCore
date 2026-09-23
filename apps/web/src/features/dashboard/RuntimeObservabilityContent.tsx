@@ -11,6 +11,7 @@ import {
   Server,
 } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import {
   flexRender,
   getCoreRowModel,
@@ -25,13 +26,10 @@ import {
 
 import {
   buildRuntimeDashboardModel,
-  dashboardEnvironmentLabel,
-  dashboardStatusLabel,
   formatDashboardBytes,
   formatDashboardDuration,
   formatDashboardTimestamp,
   formatDashboardTokens,
-  runtimeObservationStatusLabel,
   type RuntimeDashboardRow,
 } from "./dashboard-model";
 import type { RuntimeDashboardSnapshot } from "./runtime-snapshot";
@@ -69,12 +67,12 @@ function percent(usage: number | null | undefined, limit: number | null | undefi
   return Math.min(100, Math.max(0, usage / limit * 100));
 }
 
-function runtimeModeLabel(row: RuntimeDashboardRow): string {
+function runtimeModeLabel(row: RuntimeDashboardRow, label: (key: string, options?: Record<string, unknown>) => string): string {
   if (row.observation.mode === "openai_hosted") {
     const provider = row.observation.provider_type;
-    return provider ? `Managed ${provider === "docker" ? "Docker" : provider}` : "Managed";
+    return provider ? label("runtime.managedProvider", { provider: provider === "docker" ? "Docker" : provider }) : label("runtime.managed");
   }
-  return dashboardEnvironmentLabel(row.session.environmentProfile);
+  return label(`runtime.filters.${row.session.environmentProfile === "openai_hosted" ? "managed" : row.session.environmentProfile === "self_hosted" ? "selfHosted" : "none"}`);
 }
 
 function SortHeader({
@@ -86,9 +84,10 @@ function SortHeader({
   sorted: false | "asc" | "desc";
   onClick: (event: unknown) => void;
 }) {
+  const { t } = useTranslation("dashboard");
   const Icon = sorted === "asc" ? ChevronUp : sorted === "desc" ? ChevronDown : ChevronsUpDown;
   return (
-    <button type="button" onClick={onClick} aria-label={`Sort by ${label}`}>
+    <button type="button" onClick={onClick} aria-label={t("runtime.sortBy", { label })}>
       {label}<Icon size={12} aria-hidden="true" />
     </button>
   );
@@ -107,7 +106,7 @@ const runtimeGlobalFilter: FilterFn<RuntimeDashboardRow> = (row, _columnId, valu
     item.observation.provider_type,
     item.observation.status,
     item.observation.reason,
-    runtimeModeLabel(item),
+    item.observation.mode,
   ].some((candidate) => typeof candidate === "string" && candidate.toLocaleLowerCase().includes(query));
 };
 
@@ -118,6 +117,12 @@ function RuntimeTargets({
   rows: RuntimeDashboardRow[];
   onOpenSession: (sessionId: string) => void;
 }) {
+  const { t, i18n } = useTranslation("dashboard");
+  const locale = i18n.resolvedLanguage;
+  const label = (key: string, options?: Record<string, unknown>) => String(t(key as never, options as never));
+  const unavailable = t("runtime.filters.unavailable");
+  const duration = (value: number | null) => value === null ? unavailable : formatDashboardDuration(value);
+  const bytes = (value: number | null) => value === null ? unavailable : formatDashboardBytes(value);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -129,7 +134,7 @@ function RuntimeTargets({
   const columns = useMemo<ColumnDef<RuntimeDashboardRow>[]>(() => [{
     id: "session",
     accessorFn: (row) => row.session.title,
-    header: ({ column }) => <SortHeader label="Session" sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
+    header: ({ column }) => <SortHeader label={t("runtime.columns.session")} sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
     cell: ({ row }) => {
       const item = row.original;
       return (
@@ -137,12 +142,12 @@ function RuntimeTargets({
           <button type="button" onClick={() => onOpenSession(item.observation.session_id)}>{item.session.title}</button>
           <small>{item.session.agentLabel}</small>
           <details>
-            <summary>Identity</summary>
+            <summary>{t("runtime.identity")}</summary>
             <dl>
-              <div><dt>Session</dt><dd>{item.observation.session_id}</dd></div>
-              <div><dt>Environment</dt><dd>{item.observation.environment_id ?? "Not applicable"}</dd></div>
-              <div><dt>Allocation</dt><dd>{item.observation.instance.allocation_id ?? "Not available"}</dd></div>
-              <div><dt>Resolved</dt><dd>{formatDashboardTimestamp(item.observation.resolved_at)}</dd></div>
+              <div><dt>{t("runtime.columns.session")}</dt><dd>{item.observation.session_id}</dd></div>
+              <div><dt>{t("runtime.environment")}</dt><dd>{item.observation.environment_id ?? t("runtime.notApplicable")}</dd></div>
+              <div><dt>{t("runtime.allocation")}</dt><dd>{item.observation.instance.allocation_id ?? t("runtime.notAvailable")}</dd></div>
+              <div><dt>{t("runtime.resolved")}</dt><dd>{formatDashboardTimestamp(item.observation.resolved_at, locale)}</dd></div>
             </dl>
           </details>
         </div>
@@ -150,57 +155,57 @@ function RuntimeTargets({
     },
   }, {
     id: "mode",
-    accessorFn: runtimeModeLabel,
-    header: ({ column }) => <SortHeader label="Mode" sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
-    cell: ({ row }) => <span>{runtimeModeLabel(row.original)}</span>,
+    accessorFn: (row) => runtimeModeLabel(row, label),
+    header: ({ column }) => <SortHeader label={t("runtime.columns.mode")} sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
+    cell: ({ row }) => <span>{runtimeModeLabel(row.original, label)}</span>,
   }, {
     id: "status",
     accessorFn: (row) => row.observation.status,
-    header: ({ column }) => <SortHeader label="Status" sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
+    header: ({ column }) => <SortHeader label={t("runtime.columns.status")} sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
     cell: ({ row }) => (
       <span className={`dashboard-runtime-status dashboard-runtime-status-${row.original.observation.status}`}>
-        <span aria-hidden="true" />{runtimeObservationStatusLabel(row.original.observation)}
+        <span aria-hidden="true" />{t(`runtime.status.${row.original.observation.status === "unavailable" ? row.original.observation.reason : row.original.observation.status}` as never)}
       </span>
     ),
   }, {
     id: "cpu",
     accessorFn: (row) => row.observation.cpu?.usage_seconds_total ?? -1,
-    header: ({ column }) => <SortHeader label="CPU time" sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
+    header: ({ column }) => <SortHeader label={t("runtime.columns.cpu")} sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
     cell: ({ row }) => {
       const cpu = row.original.observation.status === "observed" ? row.original.observation.cpu : null;
-      return <span className="dashboard-runtime-table-value"><strong>{formatDashboardDuration(cpu?.usage_seconds_total ?? null)}</strong><small>{typeof cpu?.capacity_cores === "number" ? `${cpu.capacity_cores.toLocaleString("en-US")} cores` : "Capacity unknown"}</small></span>;
+      return <span className="dashboard-runtime-table-value"><strong>{duration(cpu?.usage_seconds_total ?? null)}</strong><small>{typeof cpu?.capacity_cores === "number" ? t("runtime.cores", { value: cpu.capacity_cores.toLocaleString(locale) }) : t("runtime.capacityUnknown")}</small></span>;
     },
   }, {
     id: "memory",
     accessorFn: (row) => row.observation.memory?.usage_bytes ?? -1,
-    header: ({ column }) => <SortHeader label="Memory" sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
+    header: ({ column }) => <SortHeader label={t("runtime.columns.memory")} sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
     cell: ({ row }) => {
       const memory = row.original.observation.status === "observed" ? row.original.observation.memory : null;
       const memoryPercent = percent(memory?.usage_bytes, memory?.limit_bytes);
       return (
         <span className="dashboard-runtime-table-value">
-          <strong>{formatDashboardBytes(memory?.usage_bytes ?? null)}</strong>
-          <small>{memory?.limit_bytes == null ? "Limit unknown" : `of ${formatDashboardBytes(memory.limit_bytes)}`}</small>
-          {memoryPercent !== null ? <span className="dashboard-runtime-bar" aria-label={`${memoryPercent.toFixed(1)}% memory used`}><i style={{ width: `${memoryPercent}%` }} /></span> : null}
+          <strong>{bytes(memory?.usage_bytes ?? null)}</strong>
+          <small>{memory?.limit_bytes == null ? t("runtime.limitUnknown") : t("runtime.ofLimit", { limit: bytes(memory.limit_bytes) })}</small>
+          {memoryPercent !== null ? <span className="dashboard-runtime-bar" aria-label={t("runtime.memoryUsed", { percent: memoryPercent.toLocaleString(locale, { maximumFractionDigits: 1 }) })}><i style={{ width: `${memoryPercent}%` }} /></span> : null}
         </span>
       );
     },
   }, {
     id: "uptime",
     accessorFn: (row) => row.computeUptimeSeconds ?? -1,
-    header: ({ column }) => <SortHeader label="Uptime" sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
-    cell: ({ row }) => <span className="dashboard-runtime-table-value"><strong>{formatDashboardDuration(row.original.computeUptimeSeconds)}</strong><small>{row.original.allocationAgeSeconds === null ? "Allocation age unknown" : `${formatDashboardDuration(row.original.allocationAgeSeconds)} allocated`}</small></span>,
+    header: ({ column }) => <SortHeader label={t("runtime.columns.uptime")} sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
+    cell: ({ row }) => <span className="dashboard-runtime-table-value"><strong>{duration(row.original.computeUptimeSeconds)}</strong><small>{row.original.allocationAgeSeconds === null ? t("runtime.allocationUnknown") : t("runtime.allocated", { duration: duration(row.original.allocationAgeSeconds) })}</small></span>,
   }, {
     id: "sessionStatus",
     accessorFn: (row) => row.session.status,
-    header: ({ column }) => <SortHeader label="Session state" sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
-    cell: ({ row }) => <span>{dashboardStatusLabel(row.original.session.status)}</span>,
+    header: ({ column }) => <SortHeader label={t("runtime.columns.sessionState")} sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
+    cell: ({ row }) => <span>{t(`runtime.status.${row.original.session.status}` as never)}</span>,
   }, {
     id: "tokens",
     accessorFn: (row) => row.session.totalTokens ?? -1,
-    header: ({ column }) => <SortHeader label="Tokens" sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
-    cell: ({ row }) => <span className="dashboard-runtime-table-value"><strong>{formatDashboardTokens(row.original.session.totalTokens)}</strong><small>{row.original.session.totalTokens === null ? "Not reported" : "Session reported"}</small></span>,
-  }], [onOpenSession]);
+    header: ({ column }) => <SortHeader label={t("runtime.columns.tokens")} sorted={column.getIsSorted()} onClick={column.getToggleSortingHandler() ?? (() => undefined)} />,
+    cell: ({ row }) => <span className="dashboard-runtime-table-value"><strong>{row.original.session.totalTokens === null ? unavailable : formatDashboardTokens(row.original.session.totalTokens, locale)}</strong><small>{row.original.session.totalTokens === null ? t("runtime.notReported") : t("runtime.sessionReported")}</small></span>,
+  }], [locale, onOpenSession, t, unavailable]);
   const table = useReactTable({
     data: filteredRows,
     columns,
@@ -217,35 +222,35 @@ function RuntimeTargets({
   const visibleRows = table.getFilteredRowModel().rows.length;
 
   return (
-    <section className="dashboard-runtime-targets" aria-label="Runtime target explorer">
+    <section className="dashboard-runtime-targets" aria-label={t("runtime.explorer")}>
       <div className="dashboard-runtime-toolbar">
         <label className="dashboard-runtime-search">
           <Search size={14} aria-hidden="true" />
-          <span className="sr-only">Search Runtime targets</span>
-          <input value={globalFilter} onChange={(event) => setGlobalFilter(event.target.value)} placeholder="Search Session, provider, or identity" />
+          <span className="sr-only">{t("runtime.search")}</span>
+          <input value={globalFilter} onChange={(event) => setGlobalFilter(event.target.value)} placeholder={t("runtime.searchPlaceholder")} />
         </label>
         <label>
-          <span>Status</span>
+          <span>{t("runtime.columns.status")}</span>
           <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}>
-            <option value="all">All statuses</option>
-            <option value="observed">Observed</option>
-            <option value="unavailable">Unavailable</option>
-            <option value="unsupported">Unsupported</option>
+            <option value="all">{t("runtime.filters.allStatuses")}</option>
+            <option value="observed">{t("runtime.filters.observed")}</option>
+            <option value="unavailable">{t("runtime.filters.unavailable")}</option>
+            <option value="unsupported">{t("runtime.filters.unsupported")}</option>
           </select>
         </label>
         <label>
-          <span>Mode</span>
+          <span>{t("runtime.columns.mode")}</span>
           <select value={modeFilter} onChange={(event) => setModeFilter(event.target.value)}>
-            <option value="all">All modes</option>
-            <option value="openai_hosted">Managed</option>
-            <option value="self_hosted">Self-hosted</option>
-            <option value="none">None</option>
+            <option value="all">{t("runtime.filters.allModes")}</option>
+            <option value="openai_hosted">{t("runtime.filters.managed")}</option>
+            <option value="self_hosted">{t("runtime.filters.selfHosted")}</option>
+            <option value="none">{t("runtime.filters.none")}</option>
           </select>
         </label>
-        <span className="dashboard-runtime-visible-count">{visibleRows.toLocaleString("en-US")} visible</span>
+        <span className="dashboard-runtime-visible-count">{t("runtime.visible", { value: visibleRows.toLocaleString(locale) })}</span>
       </div>
       <div className="dashboard-runtime-table-scroll">
-        <table className="dashboard-runtime-table" aria-label="Runtime targets">
+        <table className="dashboard-runtime-table" aria-label={t("runtime.targets")}>
           <thead>
             {table.getHeaderGroups().map((headerGroup) => (
               <tr key={headerGroup.id}>
@@ -261,14 +266,14 @@ function RuntimeTargets({
             ))}
           </tbody>
         </table>
-        {visibleRows === 0 ? <p className="dashboard-runtime-no-results">No Runtime targets match these filters.</p> : null}
+        {visibleRows === 0 ? <p className="dashboard-runtime-no-results">{t("runtime.noResults")}</p> : null}
       </div>
       {table.getPageCount() > 1 ? (
         <footer className="dashboard-runtime-pagination">
-          <span>Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}</span>
+          <span>{t("runtime.page", { page: table.getState().pagination.pageIndex + 1, pages: table.getPageCount() })}</span>
           <div>
-            <button type="button" disabled={!table.getCanPreviousPage()} onClick={() => table.previousPage()}><ChevronLeft size={14} aria-hidden="true" /> Previous</button>
-            <button type="button" disabled={!table.getCanNextPage()} onClick={() => table.nextPage()}>Next <ChevronRight size={14} aria-hidden="true" /></button>
+            <button type="button" disabled={!table.getCanPreviousPage()} onClick={() => table.previousPage()}><ChevronLeft size={14} aria-hidden="true" /> {t("runtime.previous")}</button>
+            <button type="button" disabled={!table.getCanNextPage()} onClick={() => table.nextPage()}>{t("runtime.next")} <ChevronRight size={14} aria-hidden="true" /></button>
           </div>
         </footer>
       ) : null}
@@ -287,23 +292,25 @@ export function RuntimeObservabilityContent({
   loadRuntimeHistory: RuntimeHistoryLoader;
   onOpenSession: (sessionId: string) => void;
 }) {
+  const { t, i18n } = useTranslation("dashboard");
+  const locale = i18n.resolvedLanguage;
   const model = useMemo(() => buildRuntimeDashboardModel(snapshot.sessions, snapshot.observations), [snapshot]);
   const summary = model.summary;
   return (
     <>
-      <div className="dashboard-runtime-summary" aria-label="Runtime resource snapshot">
-        <RuntimeMetric icon={<Server size={17} />} label="Active Runtimes" value={summary.observedRuntimeCount.toLocaleString("en-US")} detail={`${summary.managedRuntimeCount} managed · ${summary.unavailableRuntimeCount} unavailable`} />
-        <RuntimeMetric icon={<Cpu size={17} />} label="Cumulative CPU / capacity" value={summary.cpuUsageSecondsTotal === null && summary.cpuCapacityCores === null ? "No current sample" : `${formatDashboardDuration(summary.cpuUsageSecondsTotal)} / ${summary.cpuCapacityCores?.toLocaleString("en-US") ?? "—"} cores`} detail={`${summary.cpuCoverageCount}/${summary.observedRuntimeCount} observed Runtimes report CPU time`} />
-        <RuntimeMetric icon={<MemoryStick size={17} />} label="Memory now" value={summary.memoryUsageBytes === null && summary.memoryLimitBytes === null ? "No current sample" : `${formatDashboardBytes(summary.memoryUsageBytes)} / ${formatDashboardBytes(summary.memoryLimitBytes)}`} detail={`${summary.memoryCoverageCount}/${summary.observedRuntimeCount} observed Runtimes report usage`} />
-        <RuntimeMetric icon={<Gauge size={17} />} label="Reported tokens" value={formatDashboardTokens(summary.totalTokens)} detail={`${summary.tokenCoverageCount}/${summary.sessionCount} Sessions report usage`} />
+      <div className="dashboard-runtime-summary" aria-label={t("runtime.resourceSnapshot")}>
+        <RuntimeMetric icon={<Server size={17} />} label={t("runtime.metrics.active")} value={summary.observedRuntimeCount.toLocaleString(locale)} detail={t("runtime.metrics.activeDetail", { managed: summary.managedRuntimeCount, unavailable: summary.unavailableRuntimeCount })} />
+        <RuntimeMetric icon={<Cpu size={17} />} label={t("runtime.metrics.cpu")} value={summary.cpuUsageSecondsTotal === null && summary.cpuCapacityCores === null ? t("runtime.metrics.noSample") : `${summary.cpuUsageSecondsTotal === null ? t("runtime.filters.unavailable") : formatDashboardDuration(summary.cpuUsageSecondsTotal)} / ${summary.cpuCapacityCores === null ? "—" : t("runtime.cores", { value: summary.cpuCapacityCores.toLocaleString(locale) })}`} detail={t("runtime.metrics.cpuDetail", { covered: summary.cpuCoverageCount, total: summary.observedRuntimeCount })} />
+        <RuntimeMetric icon={<MemoryStick size={17} />} label={t("runtime.metrics.memory")} value={summary.memoryUsageBytes === null && summary.memoryLimitBytes === null ? t("runtime.metrics.noSample") : `${summary.memoryUsageBytes === null ? t("runtime.filters.unavailable") : formatDashboardBytes(summary.memoryUsageBytes)} / ${summary.memoryLimitBytes === null ? t("runtime.filters.unavailable") : formatDashboardBytes(summary.memoryLimitBytes)}`} detail={t("runtime.metrics.memoryDetail", { covered: summary.memoryCoverageCount, total: summary.observedRuntimeCount })} />
+        <RuntimeMetric icon={<Gauge size={17} />} label={t("runtime.metrics.tokens")} value={summary.totalTokens === null ? t("runtime.filters.unavailable") : formatDashboardTokens(summary.totalTokens, locale)} detail={t("runtime.metrics.tokenDetail", { covered: summary.tokenCoverageCount, total: summary.sessionCount })} />
       </div>
 
       <RuntimeTrendPanel snapshot={snapshot} stale={stale} loadRuntimeHistory={loadRuntimeHistory} />
 
       <details className="dashboard-runtime-explorer">
         <summary>
-          <span><strong>Runtime targets</strong><small>Search and inspect exact observations · unknown remains unknown, never zero</small></span>
-          <span>{model.rows.length.toLocaleString("en-US")} targets · {stale ? "retained snapshot" : "current snapshot"}<ChevronDown size={15} aria-hidden="true" /></span>
+          <span><strong>{t("runtime.targets")}</strong><small>{t("runtime.explorerHint")}</small></span>
+          <span>{t("runtime.targetCount", { value: model.rows.length.toLocaleString(locale), snapshot: t(stale ? "runtime.retainedSnapshot" : "runtime.currentSnapshot") })}<ChevronDown size={15} aria-hidden="true" /></span>
         </summary>
         <RuntimeTargets rows={model.rows} onOpenSession={onOpenSession} />
       </details>

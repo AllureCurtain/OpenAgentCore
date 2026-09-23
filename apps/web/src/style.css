@@ -366,8 +366,16 @@ html[data-theme="dark"] .brand-mark-dark {
   text-transform: capitalize;
 }
 
-.theme-menu {
+.sidebar-preferences {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.theme-menu,
+.language-menu {
   display: inline-flex;
+  align-items: center;
   flex: 0 0 auto;
   padding: 2px;
   gap: 2px;
@@ -375,7 +383,8 @@ html[data-theme="dark"] .brand-mark-dark {
   border-radius: 6px;
 }
 
-.theme-menu button {
+.theme-menu button,
+.language-menu button {
   display: inline-flex;
   width: 26px;
   min-width: 26px;
@@ -389,21 +398,42 @@ html[data-theme="dark"] .brand-mark-dark {
   border-radius: 4px;
 }
 
-.theme-menu button:hover {
+.language-menu {
+  padding-left: 5px;
+}
+
+.language-menu > svg {
+  color: var(--fg-muted);
+  margin-right: 2px;
+}
+
+.language-menu button {
+  width: auto;
+  min-width: 28px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.theme-menu button:hover,
+.language-menu button:hover {
   color: var(--fg);
 }
 
-.theme-menu button.active {
+.theme-menu button.active,
+.language-menu button.active {
   color: var(--fg);
   background: var(--surface);
   box-shadow: var(--shadow-control);
 }
 
-.theme-menu button:active {
+.theme-menu button:active,
+.language-menu button:active {
   transform: scale(0.97);
 }
 
-.theme-menu button:focus-visible {
+.theme-menu button:focus-visible,
+.language-menu button:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
   outline-offset: 0;
 }
@@ -4416,6 +4446,19 @@ button.trace-step-row:hover {
 
   .theme-menu {
     flex-direction: column;
+  }
+
+  .sidebar-preferences {
+    flex-direction: column;
+  }
+
+  .language-menu {
+    flex-direction: column;
+    padding-left: 2px;
+  }
+
+  .language-menu > svg {
+    margin: 2px 0;
   }
 
   .agents-page .page-header {

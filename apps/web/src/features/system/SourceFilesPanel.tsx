@@ -1,5 +1,6 @@
 import { FileUp, FolderInput, RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   AgentCoreError,
@@ -37,22 +38,22 @@ function isAbort(error: unknown): boolean {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
-function safeFailure(error: unknown, operation: Exclude<Operation, null>): string {
+function safeFailure(error: unknown, operation: Exclude<Operation, null>, text: (key: string) => string): string {
   if (error instanceof TypeError && !error.message.toLowerCase().includes("fetch")) return error.message;
-  if (!(error instanceof AgentCoreError)) return "The Core request did not complete. Private transport details are hidden.";
-  if (error.status === 400) return "Core rejected the request as invalid. Check the ID, filename, or destination path.";
-  if (error.status === 401) return "Core rejected the current connection credentials.";
+  if (!(error instanceof AgentCoreError)) return text("sourceFiles.errors.transport");
+  if (error.status === 400) return text("sourceFiles.errors.invalid");
+  if (error.status === 401) return text("sourceFiles.errors.unauthorized");
   if (error.status === 404) return operation === "environment"
-    ? "That Environment is not available to the current project."
-    : "That Source File is not available to the current project.";
-  if (error.status === 409) return "Core has another unresolved Turn or file mutation. This request was not replayed.";
+    ? text("sourceFiles.errors.environmentMissing")
+    : text("sourceFiles.errors.sourceMissing");
+  if (error.status === 409) return text("sourceFiles.errors.conflict");
   if (error.status === 413) return operation === "upload"
-    ? "The Source File exceeds the 512 MiB upload limit."
-    : "The destination copy exceeds the 50 MiB Environment limit.";
+    ? text("sourceFiles.errors.sourceTooLarge")
+    : text("sourceFiles.errors.destinationTooLarge");
   if (error.status === 503) return operation === "environment"
-    ? "The Environment resource is temporarily unavailable."
-    : "The file service or execution placement is temporarily unavailable.";
-  return "Core could not complete the request. Private server details are hidden.";
+    ? text("sourceFiles.errors.environmentUnavailable")
+    : text("sourceFiles.errors.serviceUnavailable");
+  return text("sourceFiles.errors.generic");
 }
 
 export function validHostedDestinationPath(value: string): boolean {
@@ -86,13 +87,15 @@ export function SourceFilesPanel({
   operations: SourceFilesOperations;
   environmentFilesEnabled: boolean;
 }) {
+  const { t } = useTranslation("system");
+  const text = (key: string) => String(t(key as never));
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [fileInputKey, setFileInputKey] = useState(0);
   const [fileId, setFileId] = useState("");
   const [metadata, setMetadata] = useState<SourceFile | null>(null);
   const [notice, setNotice] = useState<Notice>({
     tone: "info",
-    text: "Choose a local file to upload, or enter a Source File ID returned by Core.",
+    text: t("sourceFiles.initial"),
   });
   const [environmentId, setEnvironmentId] = useState("");
   const [environment, setEnvironment] = useState<AgentEnvironmentResource | null>(null);
@@ -138,8 +141,8 @@ export function SourceFilesPanel({
     const file = event.target.files?.[0] ?? null;
     setSelectedFile(file);
     setNotice(file && file.size > maxSourceBytes
-      ? { tone: "error", text: "This file exceeds the 512 MiB Source File limit." }
-      : { tone: "info", text: file ? `${file.name} is ready for one upload attempt.` : "Choose a local file to upload." });
+      ? { tone: "error", text: t("sourceFiles.notices.tooLarge") }
+      : { tone: "info", text: file ? t("sourceFiles.notices.ready", { name: file.name }) : t("sourceFiles.notices.choose") });
   };
 
   const upload = async () => {
@@ -151,7 +154,7 @@ export function SourceFilesPanel({
     setMetadata(null);
     setCopyResult(null);
     setCopyUnknown(false);
-    setNotice({ tone: "info", text: "Uploading once. An uncertain response will not be retried." });
+    setNotice({ tone: "info", text: t("sourceFiles.notices.uploading") });
     try {
       const next = await operations.uploadSourceFile(
         { file, filename: file.name },
@@ -160,15 +163,15 @@ export function SourceFilesPanel({
       if (!finish(request, controller)) return;
       setMetadata(next);
       setFileId(next.id);
-      setNotice({ tone: "success", text: "Source File uploaded and its durable ID was returned by Core." });
+      setNotice({ tone: "success", text: t("sourceFiles.notices.uploaded") });
     } catch (error) {
       if (!current(request, controller) || isAbort(error)) return;
       finish(request, controller);
       setNotice(knownRejected(error)
-        ? { tone: "error", text: safeFailure(error, "upload") }
+        ? { tone: "error", text: safeFailure(error, "upload", text) }
         : {
             tone: "warning",
-            text: "Upload outcome is unknown. Core provides no Source Files list, so Web cannot safely locate or retry this upload.",
+            text: t("sourceFiles.notices.uploadUnknown"),
           });
     }
   };
@@ -183,11 +186,11 @@ export function SourceFilesPanel({
       const next = await operations.retrieveSourceFile(currentId, { signal: controller.signal });
       if (!finish(request, controller)) return;
       setMetadata(next);
-      setNotice({ tone: "success", text: "Source File metadata retrieved. Content was not downloaded." });
+      setNotice({ tone: "success", text: t("sourceFiles.notices.retrieved") });
     } catch (error) {
       if (!current(request, controller) || isAbort(error)) return;
       finish(request, controller);
-      setNotice({ tone: "error", text: safeFailure(error, "retrieve") });
+      setNotice({ tone: "error", text: safeFailure(error, "retrieve", text) });
     }
   };
 
@@ -195,24 +198,24 @@ export function SourceFilesPanel({
     if (!currentId) return;
     const id = currentId;
     const { controller, request } = start("delete");
-    setNotice({ tone: "info", text: "Deleting once. Web will not repeat an uncertain DELETE." });
+    setNotice({ tone: "info", text: t("sourceFiles.notices.deleting") });
     try {
       await operations.deleteSourceFile(id, { signal: controller.signal });
       if (!finish(request, controller)) return;
       if (metadata?.id === id) setMetadata(null);
       setCopyResult(null);
-      setNotice({ tone: "success", text: "Source File deleted. Existing Workspace copies, if any, are independent." });
+      setNotice({ tone: "success", text: t("sourceFiles.notices.deleted") });
     } catch (error) {
       if (!current(request, controller) || isAbort(error)) return;
       if (error instanceof AgentCoreError && error.status === 404) {
         finish(request, controller);
         if (metadata?.id === id) setMetadata(null);
-        setNotice({ tone: "success", text: "The Source File is absent from the current project." });
+        setNotice({ tone: "success", text: t("sourceFiles.notices.absent") });
         return;
       }
       if (knownRejected(error)) {
         finish(request, controller);
-        setNotice({ tone: "error", text: safeFailure(error, "delete") });
+        setNotice({ tone: "error", text: safeFailure(error, "delete", text) });
         return;
       }
 
@@ -222,14 +225,14 @@ export function SourceFilesPanel({
         const next = await operations.retrieveSourceFile(id, { signal: reconcileController.signal });
         if (request !== requestRef.current || reconcileController.signal.aborted) return;
         setMetadata(next);
-        setNotice({ tone: "warning", text: "DELETE was not confirmed; a single read found the Source File still present. Web did not repeat DELETE." });
+        setNotice({ tone: "warning", text: t("sourceFiles.notices.stillPresent") });
       } catch (reconcileError) {
         if (request !== requestRef.current || reconcileController.signal.aborted || isAbort(reconcileError)) return;
         if (reconcileError instanceof AgentCoreError && reconcileError.status === 404) {
           if (metadata?.id === id) setMetadata(null);
-          setNotice({ tone: "success", text: "The uncertain DELETE was reconciled by one read: the Source File is now absent." });
+          setNotice({ tone: "success", text: t("sourceFiles.notices.deleteReconciled") });
         } else {
-          setNotice({ tone: "warning", text: "DELETE outcome remains unknown after one read-only reconciliation. Web did not repeat DELETE." });
+          setNotice({ tone: "warning", text: t("sourceFiles.notices.deleteUnknown") });
         }
       } finally {
         if (request === requestRef.current && !reconcileController.signal.aborted) setOperation(null);
@@ -252,20 +255,20 @@ export function SourceFilesPanel({
         ? isWritableBasicHostedEnvironmentResource(resource, id)
           ? {
               tone: "success",
-              text: "Core returned the exact non-terminal basic openai_hosted resource. Referenced copy controls are now available; status alone is not execution readiness.",
+              text: t("sourceFiles.notices.hostedReady"),
             }
           : {
               tone: "warning",
-              text: "Core returned an openai_hosted resource, but it is terminal or exposes unsupported installation metadata. Write controls remain hidden.",
+              text: t("sourceFiles.notices.hostedUnsupported"),
             }
         : {
             tone: "info",
-            text: "Core returned a self_hosted Environment. It remains read-only in this Web; hosted write controls stay hidden.",
+            text: t("sourceFiles.notices.selfHosted"),
           });
     } catch (error) {
       if (!current(request, controller) || isAbort(error)) return;
       finish(request, controller);
-      setNotice({ tone: "error", text: safeFailure(error, "environment") });
+      setNotice({ tone: "error", text: safeFailure(error, "environment", text) });
     }
   };
 
@@ -275,7 +278,7 @@ export function SourceFilesPanel({
     const source = metadata;
     const { controller, request } = start("copy");
     setCopyResult(null);
-    setNotice({ tone: "info", text: "Copying once by Source File ID. The local filename or path is never used as file_id." });
+    setNotice({ tone: "info", text: t("sourceFiles.notices.copying") });
     try {
       const result = await operations.createEnvironmentFile(hosted.id, {
         type: "file_id",
@@ -284,12 +287,12 @@ export function SourceFilesPanel({
       }, { signal: controller.signal });
       if (!finish(request, controller)) return;
       setCopyResult(result);
-      setNotice({ tone: "success", text: "Core confirmed the Workspace copy." });
+      setNotice({ tone: "success", text: t("sourceFiles.notices.copied") });
     } catch (error) {
       if (!current(request, controller) || isAbort(error)) return;
       if (knownRejected(error)) {
         finish(request, controller);
-        setNotice({ tone: "error", text: safeFailure(error, "copy") });
+        setNotice({ tone: "error", text: safeFailure(error, "copy", text) });
         return;
       }
 
@@ -308,12 +311,12 @@ export function SourceFilesPanel({
         setNotice({
           tone: "warning",
           text: candidate
-            ? "Copy outcome is still unknown. One read found the same path and size, but that cannot prove byte identity; Web will not replay the write."
-            : "Copy outcome is unknown and one read did not prove the destination. Web will not replay the write.",
+            ? t("sourceFiles.notices.copyCandidate")
+            : t("sourceFiles.notices.copyMissing"),
         });
       } catch (reconcileError) {
         if (request !== requestRef.current || reconcileController.signal.aborted || isAbort(reconcileError)) return;
-        setNotice({ tone: "warning", text: "Copy outcome remains unknown after one read-only reconciliation. Web will not replay the write." });
+        setNotice({ tone: "warning", text: t("sourceFiles.notices.copyUnknown") });
       } finally {
         if (request === requestRef.current && !reconcileController.signal.aborted) setOperation(null);
       }
@@ -325,28 +328,28 @@ export function SourceFilesPanel({
       <header>
         <div>
           <FileUp size={15} strokeWidth={1.5} aria-hidden="true" />
-          <div><h2 id="source-files-heading">Source Files</h2><p>Project-owned upload, metadata, Workspace copy and delete</p></div>
+          <div><h2 id="source-files-heading">{t("sourceFiles.title")}</h2><p>{t("sourceFiles.subtitle")}</p></div>
         </div>
-        <span>{environmentFilesEnabled ? "512 MiB source · 50 MiB destination" : "512 MiB source"}</span>
+        <span>{t(environmentFilesEnabled ? "sourceFiles.limits" : "sourceFiles.sourceLimit")}</span>
       </header>
 
       <div className="source-files-grid">
         <div className="source-files-card">
-          <h3>Upload once</h3>
+          <h3>{t("sourceFiles.uploadOnce")}</h3>
           <label className="source-files-file-input">
-            <span>Local file</span>
+            <span>{t("sourceFiles.localFile")}</span>
             <input key={fileInputKey} type="file" onChange={changeFile} disabled={busy} />
           </label>
           <button className="button primary" type="button" onClick={() => void upload()} disabled={busy || !selectedFile || selectedFile.size > maxSourceBytes}>
-            <FileUp size={13} aria-hidden="true" />{operation === "upload" ? "Uploading…" : "Upload Source File"}
+            <FileUp size={13} aria-hidden="true" />{t(operation === "upload" ? "sourceFiles.uploading" : "sourceFiles.upload")}
           </button>
-          <p>Purpose is fixed to <code>user_data</code>. Upload has no idempotency key or list-based recovery.</p>
+          <p>{t("sourceFiles.uploadBoundary")}</p>
         </div>
 
         <div className="source-files-card">
-          <h3>Operate by Core ID</h3>
+          <h3>{t("sourceFiles.operate")}</h3>
           <label>
-            <span>Source File ID</span>
+            <span>{t("sourceFiles.sourceId")}</span>
             <input
               value={fileId}
               onChange={(event) => {
@@ -362,11 +365,11 @@ export function SourceFilesPanel({
             />
           </label>
           <div className="source-files-actions">
-            <button className="button outline" type="button" onClick={() => void retrieve()} disabled={busy || !currentId}><Search size={12} />Retrieve</button>
-            <button className="button outline danger" type="button" onClick={() => void deleteFile()} disabled={busy || !currentId}><Trash2 size={12} />Delete once</button>
+            <button className="button outline" type="button" onClick={() => void retrieve()} disabled={busy || !currentId}><Search size={12} />{t("sourceFiles.retrieve")}</button>
+            <button className="button outline danger" type="button" onClick={() => void deleteFile()} disabled={busy || !currentId}><Trash2 size={12} />{t("sourceFiles.deleteOnce")}</button>
           </div>
-          <p>Uploaded Source Files cannot be downloaded directly. Copy them to a Workspace for execution.</p>
-          <p>Core has no Source Files list API. Refreshing or reopening this page requires the ID again.</p>
+          <p>{t("sourceFiles.noDownload")}</p>
+          <p>{t("sourceFiles.noList")}</p>
         </div>
       </div>
 
@@ -375,22 +378,22 @@ export function SourceFilesPanel({
       </div>
 
       {metadata ? (
-        <dl className="source-files-result" aria-label="Source File metadata">
+        <dl className="source-files-result" aria-label={t("sourceFiles.metadata")}>
           <div><dt>ID</dt><dd><code>{metadata.id}</code></dd></div>
-          <div><dt>Filename</dt><dd>{metadata.filename}</dd></div>
-          <div><dt>Bytes</dt><dd>{formatFileSize(metadata.bytes)}</dd></div>
-          <div><dt>Status</dt><dd>{metadata.status} · stored bytes only, not scanned or indexed</dd></div>
+          <div><dt>{t("sourceFiles.filename")}</dt><dd>{metadata.filename}</dd></div>
+          <div><dt>{t("sourceFiles.bytes")}</dt><dd>{formatFileSize(metadata.bytes)}</dd></div>
+          <div><dt>{t("sourceFiles.status")}</dt><dd>{metadata.status} · {t("sourceFiles.storedOnly")}</dd></div>
         </dl>
       ) : null}
 
       {environmentFilesEnabled ? <section className="source-files-hosted" aria-labelledby="source-files-hosted-heading">
         <header>
-          <div><FolderInput size={14} strokeWidth={1.5} aria-hidden="true" /><h3 id="source-files-hosted-heading">Copy to hosted Workspace</h3></div>
-          <p>Write controls remain hidden until this exact Environment is retrieved as <code>openai_hosted</code>.</p>
+          <div><FolderInput size={14} strokeWidth={1.5} aria-hidden="true" /><h3 id="source-files-hosted-heading">{t("sourceFiles.copyTitle")}</h3></div>
+          <p>{t("sourceFiles.copyBoundary")}</p>
         </header>
         <div className="source-files-hosted-check">
           <label>
-            <span>Environment ID</span>
+            <span>{t("sourceFiles.environmentId")}</span>
             <input
               value={environmentId}
               onChange={(event) => {
@@ -405,15 +408,15 @@ export function SourceFilesPanel({
             />
           </label>
           <button className="button outline" type="button" onClick={() => void inspectEnvironment()} disabled={busy || !environmentId.trim()}>
-            <Search size={12} />{operation === "environment" ? "Checking…" : "Check Environment"}
+            <Search size={12} />{t(operation === "environment" ? "sourceFiles.checking" : "sourceFiles.checkEnvironment")}
           </button>
         </div>
 
         {hosted ? (
           <div className="source-files-hosted-write">
-            <p className="source-files-hosted-qualified"><strong>Qualified resource:</strong> <code>{hosted.id}</code> · {hosted.status}</p>
+            <p className="source-files-hosted-qualified"><strong>{t("sourceFiles.qualified")}</strong> <code>{hosted.id}</code> · {hosted.status}</p>
             <label>
-              <span>Destination path</span>
+              <span>{t("sourceFiles.destination")}</span>
               <input
                 value={destinationPath}
                 onChange={(event) => {
@@ -426,24 +429,24 @@ export function SourceFilesPanel({
                 disabled={busy}
               />
             </label>
-            {!destinationValid ? <p className="source-files-validation">Use one canonical absolute file path beneath <code>/workspace/</code>; parent traversal and trailing slashes are rejected.</p> : null}
-            {metadata && metadata.bytes > maxDestinationBytes ? <p className="source-files-validation">This Source File is retained, but it exceeds the 50 MiB destination-copy limit.</p> : null}
+            {!destinationValid ? <p className="source-files-validation">{t("sourceFiles.invalidPath")}</p> : null}
+            {metadata && metadata.bytes > maxDestinationBytes ? <p className="source-files-validation">{t("sourceFiles.destinationLimit")}</p> : null}
             <button
               className="button primary"
               type="button"
               onClick={() => void copyToEnvironment()}
               disabled={busy || !sourceReady || !destinationValid || metadata.bytes > maxDestinationBytes || copyUnknown}
             >
-              <FolderInput size={13} />{operation === "copy" ? "Copying…" : copyUnknown ? "Outcome unknown — not replayed" : "Copy by Source File ID"}
+              <FolderInput size={13} />{t(operation === "copy" ? "sourceFiles.copying" : copyUnknown ? "sourceFiles.outcomeUnknown" : "sourceFiles.copyById")}
             </button>
           </div>
         ) : null}
 
         {environment?.type === "self_hosted" ? (
-          <p className="source-files-readonly">This is a <code>self_hosted</code> Environment. Web keeps its Workspace file surface read-only.</p>
+          <p className="source-files-readonly">{t("sourceFiles.selfHostedReadonly")}</p>
         ) : null}
         {copyResult ? (
-          <p className="source-files-copy-result"><strong>Copy confirmed:</strong> <code>{copyResult.path}</code> · {formatFileSize(copyResult.size_bytes)}</p>
+          <p className="source-files-copy-result"><strong>{t("sourceFiles.copyConfirmed")}</strong> <code>{copyResult.path}</code> · {formatFileSize(copyResult.size_bytes)}</p>
         ) : null}
       </section> : null}
     </section>
