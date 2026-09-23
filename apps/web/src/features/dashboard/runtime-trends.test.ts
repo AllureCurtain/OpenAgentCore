@@ -131,6 +131,26 @@ describe("Runtime live-window trends", () => {
     });
   });
 
+  it("projects an unavailable live observation as no active allocation or observed memory", () => {
+    const unavailable = snapshot(180_000);
+    unavailable.observations[0] = {
+      ...unavailable.observations[0]!,
+      status: "unavailable",
+      reason: "runtime_not_running",
+      observed_at: null,
+      started_at: null,
+      cpu: null,
+      memory: null,
+    } as RuntimeObservation;
+
+    expect(runtimeTrendSample(unavailable)).toMatchObject({
+      activeSandboxCount: 0,
+      memoryUsageBytes: null,
+      memoryLimitBytes: null,
+      targets: [],
+    });
+  });
+
   it("deduplicates refreshes and bounds the rolling window", () => {
     let samples = appendRuntimeTrendSample([], snapshot(60_000), 120_000, 2);
     samples = appendRuntimeTrendSample(samples, snapshot(120_000));

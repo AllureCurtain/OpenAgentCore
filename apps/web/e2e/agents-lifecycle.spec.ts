@@ -2462,8 +2462,9 @@ test("presents Dashboard page-chain results and System boundaries without extra 
   await page.getByRole("button", { name: "Dashboard", exact: true }).click();
 
   await dashboard.getByRole("table", { name: "Recent Sessions" }).getByRole("button", { name: "Lifecycle Agent" }).click();
-  await expect(page.locator(".session-page")).toBeVisible();
-  await expect(page.getByText("Lifecycle Agent", { exact: true }).first()).toBeVisible();
+  const sessionPage = page.locator(".session-page");
+  await expect(sessionPage).toBeVisible();
+  await expect(sessionPage.getByText("Lifecycle Agent", { exact: true }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "System", exact: true }).click();
   const system = page.locator(".system-page");
@@ -2728,7 +2729,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   await expect(cpuCard.locator(".dashboard-runtime-trend-tooltip")).toBeVisible();
   await cpuChart.click({ position: { x: 260, y: 90 } });
   await expect(cpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("Pinned");
-  await expect(cpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("Unavailable");
+  await expect(cpuCard.locator(".dashboard-runtime-trend-tooltip")).not.toContainText("Unavailable");
   await cpuChart.focus();
   await cpuChart.press("ArrowRight");
   await expect(cpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("Pinned");
@@ -2921,9 +2922,9 @@ test("restores retained Runtime history after a Dashboard reload", async ({ page
   const durableCpuCard = durableCpuChart.locator("xpath=ancestor::section[contains(@class, 'dashboard-runtime-trend-card')]");
   await durableCpuChart.focus();
   await durableCpuChart.press("ArrowLeft");
-  await expect(durableCpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("Unavailable");
+  await expect(durableCpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("0%");
   await durableCpuChart.press("ArrowLeft");
-  await expect(durableCpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("Unavailable");
+  await expect(durableCpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("0%");
   const durableMemoryCard = dashboard.getByRole("region", { name: "Memory usage durable history chart" });
   const durableMemorySpan = await durableMemoryCard.locator("canvas").evaluate((canvas: HTMLCanvasElement) => {
     const context = canvas.getContext("2d");
@@ -3031,17 +3032,24 @@ test("publishes Dashboard counts only after every top-level Agent and Session pa
     });
   });
 
-  await openSessionsFromHome(page);
-  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
+  await page.goto("/");
   const dashboard = page.locator(".dashboard-page");
+  // The synthetic second Session has no Runtime observation. Let that initial
+  // snapshot finish before navigation, so requests cannot be aborted mid-chain.
+  await expect(dashboard.locator(".dashboard-source-badge").filter({ hasText: "Runtime" })).toContainText("Unavailable");
+  expect(sessionAfters).toEqual([null, "session_snapshot", null, "session_snapshot"]);
+  await page.getByRole("button", { name: "Sessions", exact: true }).click();
+  await expect.poll(() => sessionAfters.length).toBe(4);
+  await page.getByRole("button", { name: "Dashboard", exact: true }).click();
   await expect(dashboard.locator(".dashboard-summary > div").filter({ hasText: "Agents" })).toContainText("3");
   await expect(dashboard.locator(".dashboard-summary > div").filter({ hasText: "Sessions" })).toContainText("2");
   expect(agentAfters).toEqual([null, "agent_b"]);
-  // Session collection loads once for the page and once per Runtime snapshot.
-  // Returning to Dashboard refreshes Runtime immediately instead of waiting 30 seconds.
-  await expect.poll(() => sessionAfters.length).toBe(6);
-  expect(sessionAfters.filter((after) => after === null)).toHaveLength(3);
-  expect(sessionAfters.filter((after) => after === "session_snapshot")).toHaveLength(3);
+  // The cached Dashboard and shared Session collection stay mounted across
+  // navigation, so no extra page-chain read occurs on either transition.
+  await expect.poll(() => sessionAfters).toEqual([
+    null, "session_snapshot",
+    null, "session_snapshot",
+  ]);
 });
 
 test("keeps the previous Dashboard result when pagination exceeds the safety limit", async ({ page, request }) => {
