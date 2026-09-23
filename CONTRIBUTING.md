@@ -1601,7 +1601,18 @@ Chinese/English sandbox text, status and diagnostic formatting live in the share
 `apps/web/src/lib/` locale modules. A persisted explicit language preference wins
 before the first browser language; unrelated product surfaces are outside this
 translation scope. Preserve zero-node setup and node installation behavior when
-localizing their controls.
+localizing their controls. The sandbox manager centers node readiness and capacity;
+installation identifiers, provider metadata and allocation records are secondary
+inspection details. Node enrollment is an explicit Add node action in a focused
+dialog, using the saved Core origin or the paired console origin by default.
+Do not expose routine network wiring or manual runtime setup as the primary flow.
+Generate a one-time command only on user intent, never retry enrollment writes
+automatically, and discard credentials and late responses when the dialog closes
+or the Core connection changes. Detect successful addition against the node IDs
+present before enrollment; an existing node reconnecting is not a new enrollment.
+The command verifies the installer checksum before execution, retains normal TLS
+verification, and passes the enrollment credential only to the installer process.
+
 
 Both proxy paths retain fixed-origin, cross-site, safe-path, redirect and Upgrade
 restrictions through the standard Go reverse proxy with streaming/cancellation.

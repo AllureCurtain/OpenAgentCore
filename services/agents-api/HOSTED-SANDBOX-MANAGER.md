@@ -18,7 +18,10 @@ file server-side through `CORE_CONSOLE_SANDBOX_ADMIN_TOKEN_FILE`.
 
 The sandbox page and its setup, enrollment, status and diagnostic controls support
 Chinese and English. Choose a language in System navigation; the preference is
-saved, and otherwise the page follows the browser's first language.
+saved, and otherwise the page follows the browser's first language. Nodes are the
+main view, with readiness and capacity visible immediately. Expand a node for
+allocation records, diagnostics and guarded removal; deployment identifiers are
+available in secondary details.
 
 The installer creates the separate key under the private `admin/` directory,
 including zero-node installs. Core receives its digest; the bundled Web server
@@ -28,11 +31,11 @@ node installation payload. Project keys cannot register, edit or remove nodes.
 ## Start with zero nodes
 
 Default installation starts Core, Web and PostgreSQL without local compute.
-Hosted Sandbox Manager first asks for Docker or microsandbox and the public HTTPS
-Core origin reachable from node hosts and sandbox guests. Use Core's origin, not
-the Web console URL; the proxy must forward API routes and WebSocket upgrades.
-HTTP loopback is accepted only for local development. A guest's loopback address
-cannot reach its Core host.
+Hosted Sandbox Manager first asks for Docker or microsandbox. It defaults to the
+paired console origin, which forwards the required Core API and WebSocket routes.
+Use advanced network settings only when nodes and guests need a different public
+HTTPS origin. HTTP loopback is accepted only for local development; a guest's
+loopback address cannot reach its Core host.
 
 Saving initializes the deployment once. An identical request may be retried;
 a different provider or origin returns a conflict. Refresh after an uncertain
@@ -41,8 +44,11 @@ a restart and applies to every node. Removing all nodes does not reset it.
 Microsandbox suspends eligible idle Sessions after 300 seconds and retains their
 snapshots for 86400 seconds. Docker has no memory snapshot policy.
 
-Generate and copy the node installation command and run it on the target Linux
-amd64 host. The installer checks prerequisites, downloads the matched payload,
+Click **Add node**, copy the installation command from the dialog, and run it on
+the target Linux amd64 host. The command uses the saved deployment origin, or the
+paired console origin for file-managed deployments, without a routine URL field.
+Closing the dialog discards its one-time command. An expired command requires
+explicit regeneration; failed or uncertain writes are never retried automatically. The installer checks prerequisites, downloads the matched payload,
 checks its hashes, prepares provider configuration and starts the existing node
 program as a systemd user service. Web polls readiness and capacity while waiting.
 It does not install software through SSH. Registration itself

@@ -107,27 +107,29 @@ management. Choose English or Chinese through the System language selector.
 
 1. Log in to the bundled Web console and open **Hosted Sandbox Manager**.
    The paired installation needs no second key or Core connection setup.
-2. Choose Docker or microsandbox and enter the HTTPS Core origin reachable from
-   both node hosts and their sandbox guests. The address must expose Core's API
-   and WebSocket routes, not just the Web console. HTTP loopback is available for
-   local development only; loopback inside a sandbox is not the Core host.
+2. Choose Docker or microsandbox. The paired console address is used
+   automatically. If your network requires a different address for nodes and
+   guests, change it under advanced network settings during initial setup.
 3. Save the selection. It takes effect without restarting Core and remains in
    PostgreSQL across restarts. All nodes in this deployment use the chosen type;
    this page does not switch providers. Microsandbox uses a five-minute idle
    timeout and one-day snapshot retention.
-4. Generate and copy the node command, then run it as a non-root user on the
+4. Click **Add node**, copy the command, and run it as a non-root user on the
    target Linux amd64 host. It downloads the matched files from your console,
    verifies checksums, imports the Runtime image, writes the provider configuration,
    registers the node and starts a systemd user service. Web refreshes node health
    automatically. A registered but unavailable node cannot accept work.
 
-The target host needs Python 3.9+, a systemd user session with lingering enabled,
+The target host needs curl, sha256sum, Python 3.9+, a systemd user session with lingering enabled,
 and either Docker socket access or microsandbox's KVM/native-library prerequisites.
 The command checks host access before downloading the Runtime and verifies
 microsandbox's shared libraries after downloading its native programs.
 The console serves only fixed, non-secret distribution files at `/node-install/`;
 private installation configuration is never part of this payload. Retain the
-installed `node-payload/` directory.
+installed `node-payload/` directory. Manual console deployments enable the same
+flow with `CORE_CONSOLE_NODE_PAYLOAD_DIR` pointing to the matched distribution
+payload. TLS verification stays enabled; deployments using a private certificate
+authority must provision that trust on the target hosts and Runtime image.
 
 See the [Hosted Sandbox Manager guide](https://github.com/MiniMax-AI/parsar-core/blob/main/services/agents-api/HOSTED-SANDBOX-MANAGER.md)
 for host prerequisites and the registration command. The browser does not install
