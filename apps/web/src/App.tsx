@@ -1051,8 +1051,6 @@ export function App() {
   }, [refreshAgents, refreshEnvironmentTemplates, refreshSessions, refreshStartupConfiguration, refreshVaults]);
 
   useEffect(() => {
-    if (view !== "dashboard" && view !== "sessions") return;
-    let timer: number | null = null;
     void (async () => {
       if (
         sessionCollectionState === "ready" &&
@@ -1062,6 +1060,11 @@ export function App() {
         await refreshRuntimeSnapshot();
       }
     })();
+  }, [refreshRuntimeSnapshot, sessionCollectionState]);
+
+  useEffect(() => {
+    if (view !== "dashboard" && view !== "sessions") return;
+    let timer: number | null = null;
     const schedule = () => {
       const jitter = Math.floor(Math.random() * 5_000);
       timer = window.setTimeout(() => {
@@ -2281,7 +2284,7 @@ export function App() {
             onStartSession={() => openSessionSetup()}
           />
         </header>
-        <div className="page-transition" key={view}>
+        <div className="page-transition">
           {view === "templates" ? (
             <EnvironmentTemplatesView
               key={`templates:${coreGeneration}`}
@@ -2291,7 +2294,7 @@ export function App() {
               onConfigureConnection={() => setConnectionOpen(true)}
             />
           ) : null}
-          {view === "dashboard" ? (
+          <div className="cached-page-view" hidden={view !== "dashboard"}>
             <DashboardView
               agents={agents}
               sessions={sessions}
@@ -2319,7 +2322,7 @@ export function App() {
                 setView("sessions");
               }}
             />
-          ) : null}
+          </div>
           {view === "sessions" ? (
             <SessionsView
               key={`sessions:${coreGeneration}`}
