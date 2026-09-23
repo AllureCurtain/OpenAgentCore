@@ -11,7 +11,8 @@ import tempfile
 
 
 REQUIRED = ("bin/agents-api", "bin/agents-api-microsandbox-provider",
-            "microsandbox/msb", "microsandbox/libkrunfw.so.5.6.1")
+            "microsandbox/msb", "microsandbox/libkrunfw.so.5.6.1",
+            "bin/parsar-sandbox-node")
 
 
 def is_native(state):

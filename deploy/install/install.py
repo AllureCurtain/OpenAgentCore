@@ -62,7 +62,7 @@ def verify_bundle(bundle):
             raise InstallError("Distribution checksum mismatch: " + name)
     required = {"manifest.json", "install.sh", "install.py", "configuration.py", "native_service.py", "runtime/seccomp.json"}
     required.update(f"images/{name}.tar" for name in ("core", "web", "runtime", "database"))
-    required.update("native/bin/" + name for name in ("agents-api", "agents-api-migrate", "agents-api-microsandbox-provider"))
+    required.update("native/bin/" + name for name in ("agents-api", "agents-api-migrate", "agents-api-microsandbox-provider", "parsar-sandbox-node"))
     required.update("native/microsandbox/" + name for name in ("msb", "libkrunfw.so.5.6.1"))
     if not required.issubset(covered):
         raise InstallError("Distribution checksum list is incomplete")
@@ -213,8 +213,10 @@ def initialize(root, args, manifest):
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(root, 0o700)
     directories = ["config"]
+    if args.provider:
+        directories.extend(("state", "state/sandbox-node", "admin"))
     if args.provider == "microsandbox":
-        directories.extend(("state", "state/msb"))
+        directories.append("state/msb")
     for name in directories:
         (root / name).mkdir(mode=0o700)
     state = {"version": 1, "source_commit": manifest["source_commit"], "mode": mode,
@@ -233,6 +235,9 @@ def initialize(root, args, manifest):
         private_write(config / "credential.key", base64.b64encode(secrets.token_bytes(32)).decode())
         private_write(config / "database.password", secrets.token_hex(32))
         if args.provider:
+            admin_token = secrets.token_hex(32)
+            private_write(root / "admin/sandbox-admin.key", admin_token)
+            write_json(root / "admin/digests.json", [hashlib.sha256(admin_token.encode()).hexdigest()])
             write_json(config / "managed-runtimes.json", managed_config(root, state, manifest))
     private_write(config / "caller.key", token)
     if mode != "core-only":
@@ -298,7 +303,9 @@ def main(argv=None):
     import_runtime(root, state, manifest, bundle)
     compose(root, "up", "--detach", "--wait")
     if native_service.is_native(state):
-        run([str(root / "native/bin/agents-api-migrate")], env=dict(os.environ, **environment),
+        migration_environment = {key: value for key, value in environment.items()
+                                 if key != "AGENTS_API_SANDBOX_ADMIN_DIGESTS_FILE"}
+        run([str(root / "native/bin/agents-api-migrate")], env=dict(os.environ, **migration_environment),
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         native_service.start(root, state)
     if state["mode"] != "web-only" and not wait_http(f'http://127.0.0.1:{state["core_port"]}/healthz'):
@@ -315,6 +322,7 @@ def main(argv=None):
         print("Caller key file: " + str(root / "config/caller.key"))
         if state["provider"]:
             print("Provider: " + state["provider"] + ". Runtime image prepared; Core provisions Sessions on demand.")
+            print("Sandbox administrator key file: " + str(root / "admin/sandbox-admin.key"))
         else:
             print("No local sandbox provider configured. No execution node was installed.")
     print("Services installed. No model request was made. See docs/getting-started/quickstart.md.")

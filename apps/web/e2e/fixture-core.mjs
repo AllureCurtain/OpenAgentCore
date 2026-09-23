@@ -1,4 +1,5 @@
 import http from "node:http";
+import { handleSandboxFixture, resetSandboxFixture } from "./fixture-sandbox.mjs";
 
 const host = "127.0.0.1";
 const port = Number(process.env.AGENTS_FIXTURE_PORT ?? 18092);
@@ -759,6 +760,8 @@ const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? "/", `http://${host}:${port}`);
 
+    if (handleSandboxFixture(request, response, url, sendJson, sendError)) return;
+
     if (request.method === "GET" && url.pathname === "/__fixture/health") {
       return sendJson(response, { ready: true });
     }
@@ -766,6 +769,7 @@ const server = http.createServer(async (request, response) => {
       for (const stream of streamResponses.keys()) stream.end();
       streamResponses.clear();
       state = initialState();
+      resetSandboxFixture();
       return sendJson(response, { reset: true });
     }
     if (request.method === "POST" && url.pathname === "/__fixture/control") {

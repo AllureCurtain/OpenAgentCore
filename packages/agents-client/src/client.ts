@@ -1883,7 +1883,7 @@ export class OpenAIAgentsClient implements AgentCore {
     );
   }
 
-  private async request<T>(
+  protected async request<T>(
     path: string,
     init: RequestInit = {},
     expectedStatus?: number,

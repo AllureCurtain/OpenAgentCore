@@ -71,9 +71,17 @@ Retain together:
 
 - the dedicated PostgreSQL volume, including large objects;
 - `config/credential.key`, caller identity configuration and provider identity;
+- `admin/` when a local provider is enabled, containing the separate sandbox
+  administrator key and Core's digest configuration;
+- `state/sandbox-node` when a local provider is enabled, including its private
+  node credential and highest accepted owner epoch;
 - microsandbox's private state/cache/disks/snapshots, or Docker-owned Runtime
   volumes and histories;
 - the exact distribution and private deployment configuration needed to recover.
+
+Do not replace a missing local node identity directory with a fresh registration;
+restore its original saved state alongside the database and provider storage.
+Restarting the same installation preserves the directory.
 
 Never regenerate the encryption key to resolve an error: stored Session/model and
 Vault credentials require it. Never prune Docker volumes or delete native history

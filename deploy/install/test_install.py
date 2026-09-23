@@ -88,7 +88,7 @@ class InstallerTests(unittest.TestCase):
         for name in self.manifest["images"]:
             (bundle / "images" / (name + ".tar")).write_bytes(("synthetic " + name).encode())
         for name in ("bin/agents-api", "bin/agents-api-migrate", "bin/agents-api-microsandbox-provider",
-                     "microsandbox/msb", "microsandbox/libkrunfw.so.5.6.1"):
+                     "bin/parsar-sandbox-node", "microsandbox/msb", "microsandbox/libkrunfw.so.5.6.1"):
             path = bundle / "native" / name
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"synthetic native file")
@@ -180,6 +180,68 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual("runtime" in service.get("networks", []), name == "core")
         self.assertNotIn("/dev/kvm", self.device_probes)
 
+    def test_local_node_identity_has_persistent_private_state_only_on_core(self):
+        for provider in ("docker", "microsandbox"):
+            with self.subTest(provider=provider):
+                self.root = self.work / provider
+                state = self.initialize("--sandbox-provider", "true", "--provider", provider)
+                directory = self.root / "state/sandbox-node"
+                self.assertEqual(stat.S_IMODE(directory.stat().st_mode), 0o700)
+                identity = directory / "identity.json"
+                install.private_write(identity, "synthetic persistent node identity")
+                before = self.snapshot()
+                self.initialize("--sandbox-provider", "true", "--provider", provider)
+                self.assertEqual(self.snapshot(), before)
+                environment = install.core_environment(self.root, state, "synthetic database password")
+                expected = str(directory) if provider == "microsandbox" else "/state/sandbox-node"
+                self.assertEqual(environment["AGENTS_API_SANDBOX_NODE_STATE_DIR"], expected)
+                services = self.document("compose.json")["services"]
+                for name, service in services.items():
+                    mounts = service.get("volumes", [])
+                    node_mounts = [m for m in mounts if isinstance(m, dict) and m["target"] == "/state/sandbox-node"]
+                    self.assertEqual(len(node_mounts), 1 if name == "core" else 0)
+                    if node_mounts:
+                        self.assertEqual(node_mounts[0]["source"], str(directory))
+                        self.assertFalse(node_mounts[0]["read_only"])
+                        self.assertTrue(service["read_only"])
+                    for mount in mounts:
+                        if isinstance(mount, dict) and mount["target"] == "/config":
+                            self.assertTrue(mount["read_only"])
+
+    def test_sandbox_admin_credential_is_separate_and_belongs_only_to_core(self):
+        for provider in ("docker", "microsandbox"):
+            with self.subTest(provider=provider):
+                self.root = self.work / ("admin-" + provider)
+                state = self.initialize("--sandbox-provider", "true", "--provider", provider)
+                admin = self.root / "admin"
+                token = (admin / "sandbox-admin.key").read_text()
+                self.assertEqual(self.document("admin/digests.json"), [hashlib.sha256(token.encode()).hexdigest()])
+                self.assertNotEqual(token, (self.root / "config/caller.key").read_text())
+                self.assertNotEqual(token, (self.root / "config/console.password").read_text())
+                self.assertEqual(stat.S_IMODE(admin.stat().st_mode), 0o700)
+                for path in admin.iterdir():
+                    self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+                before = self.snapshot()
+                self.initialize("--sandbox-provider", "true", "--provider", provider)
+                self.assertEqual(self.snapshot(), before)
+                environment = install.core_environment(self.root, state, "synthetic database password")
+                expected = str(admin / "digests.json") if provider == "microsandbox" else "/admin/digests.json"
+                self.assertEqual(environment["AGENTS_API_SANDBOX_ADMIN_DIGESTS_FILE"], expected)
+                for name, service in self.document("compose.json")["services"].items():
+                    mounts = [m for m in service.get("volumes", []) if isinstance(m, dict) and m["target"].startswith("/admin")]
+                    self.assertEqual(len(mounts), 1 if name == "core" else 0)
+                    if mounts:
+                        self.assertEqual(mounts[0]["source"], str(admin / "digests.json"))
+                        self.assertEqual(mounts[0]["target"], "/admin/digests.json")
+                        self.assertTrue(mounts[0]["read_only"])
+                    for mount in service.get("volumes", []):
+                        if isinstance(mount, dict):
+                            source = Path(mount["source"])
+                            self.assertFalse((admin / "sandbox-admin.key").is_relative_to(source))
+                    if name != "core":
+                        self.assertNotIn("AGENTS_API_SANDBOX_ADMIN_DIGESTS_FILE", service.get("environment", {}))
+                    self.assertNotIn(token, json.dumps(service))
+
     def test_web_only_uses_existing_local_core_without_database_or_provider(self):
         source = self.caller_file()
         flags = ("--web-only", "--core-url", "http://127.0.0.1:9091", "--core-token-file", str(source))
@@ -239,7 +301,7 @@ class InstallerTests(unittest.TestCase):
     def test_bundle_verifies_transferred_bytes_before_trusting_manifest(self):
         bundle = self.bundle()
         self.assertEqual(install.verify_bundle(bundle), self.manifest)
-        for name in ("images/core.tar", "images/runtime.tar", "manifest.json"):
+        for name in ("images/core.tar", "images/runtime.tar", "manifest.json", "native/bin/parsar-sandbox-node"):
             with self.subTest(name=name):
                 path = bundle / name
                 original = path.read_bytes()
@@ -256,10 +318,11 @@ class InstallerTests(unittest.TestCase):
         bundle = self.bundle()
         checksums = bundle / "SHA256SUMS"
         original = checksums.read_text()
-        checksums.write_text("".join(line + "\n" for line in original.splitlines()
-                                    if not line.endswith("  images/runtime.tar")))
-        with self.assertRaises(install.InstallError):
-            install.verify_bundle(bundle)
+        for name in ("images/runtime.tar", "native/bin/parsar-sandbox-node"):
+            checksums.write_text("".join(line + "\n" for line in original.splitlines()
+                                        if not line.endswith("  " + name)))
+            with self.subTest(name=name), self.assertRaises(install.InstallError):
+                install.verify_bundle(bundle)
         checksums.write_text(original + original.splitlines()[0] + "\n")
         with self.assertRaises(install.InstallError):
             install.verify_bundle(bundle)
@@ -278,6 +341,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(self.device_probes, [])
         self.assertNotIn("device_gid", state)
         self.assertFalse((self.root / "state").exists())
+        self.assertFalse((self.root / "admin").exists())
         self.assertFalse((self.root / "config/managed-runtimes.json").exists())
         compose = self.document("compose.json")
         self.assertEqual(set(compose["services"]), {"database", "migrate", "core", "web"})
@@ -287,6 +351,7 @@ class InstallerTests(unittest.TestCase):
             self.assertNotIn("group_add", service)
             self.assertNotIn("docker.sock", json.dumps(service.get("volumes", [])))
             self.assertNotIn("AGENTS_API_MANAGED_RUNTIMES_FILE", service.get("environment", {}))
+            self.assertNotIn("AGENTS_API_SANDBOX_NODE_STATE_DIR", service.get("environment", {}))
 
     def test_provider_requires_explicit_enablement_and_cannot_belong_to_web_only(self):
         self.assertIsNone(self.args("--sandbox-provider", "false").provider)

@@ -117,7 +117,9 @@ migrations. The public protocol schema is `contracts/agents-api/openapi.yaml`;
 there is no product swaggo contract in this repository. Preserve its pinned types,
 coverage ledgers and official SDK/raw HTTP tests when changing API behavior.
 Run `make openapi` after handler annotation changes. It reuses the original
-Core-only swaggo v1.16.4 generator and writes this schema, without product routes.
+Core-only swaggo v1.16.4 generator, then separates project paths under `/v1` from
+`/core/v1/sandbox` administration in `sandbox-manager.openapi.yaml` (base path `/`).
+Both generated schemas remain free of product routes.
 
 Core changes must retain the independent build and official-client workflow.
 Native adapter changes require their applicable build/check targets and live provider
@@ -401,7 +403,8 @@ settlement distinct. Advance at most one bounded initialization operation per fu
 maintenance scan. At allocation EOF, begin the next page in the same call rather
 than consume an observation interval on an empty page. Refill at most once, retain
 the 32-allocation per-call bound and the five-second ticker, and never loop on an
-empty store. Use process-local progress and the existing lifecycle gate.
+empty store. For managed nodes these bounds apply independently to each node.
+Use process-local progress and the same node lifecycle gate as direct provisioning.
 
 After a next-Turn input is durably pending, a completed managed allocation in a
 suspension/recovery phase may hint this loop. Initial inputs, cold creation,
@@ -552,7 +555,7 @@ See the [Template coverage and unresolved semantics](contracts/agents-api/enviro
 
 SandboxProvider has five operations: Create, GetInfo, Renew, Kill and RunCommand.
 Use maintained provider SDKs and thin adapters. Hosted deployments select Docker or
-the optional single-host microsandbox profile.
+the optional microsandbox profile on the assigned node.
 Provider initialization creates the sandbox and starts its daemon/harness;
 RunCommand is for initialization only. Daily execution and Files use Runtime and
 native or bounded local capabilities. Docker's lack of a native renewable lease
@@ -591,13 +594,13 @@ The [managed Runtime build and operator configuration](services/agents-api/deplo
 defines the explicit opt-in for basic hosted admission. Building an image alone
 does not qualify its isolation or enable public creation.
 
-### Optional single-host sandbox suspension
+### Hosted sandbox nodes and optional suspension
 
 A Core deployment may run without a sandbox provider. When enabled, exactly one
 sandbox provider is selected at setup: Docker or microsandbox. Keep both adapters but reject multiple provider entries,
 legacy default-provider maps and engine-based placement. Harness selection is
-independent. The configuration has one installation UUID, one provider kind and
-one backend object. No compatibility parser or parallel provider route remains.
+independent. The configuration has one installation UUID and one provider kind.
+A local node has one explicit backend object; a remote-only Core has none. No mixed-provider or engine-based provider route is supported.
 
 The execution database pins the selected installation and backend namespace.
 Under the existing execution lease, startup validates that identity before
@@ -613,6 +616,112 @@ After a successful switch, restart the same configuration with maintenance off t
 admit new sandboxes. Retain immutable historical allocation ownership; never
 migrate an existing Session to another provider or recreate a released allocation.
 Fresh adoption of a deployment with unverified retained allocations fails closed.
+
+The [Hosted Sandbox Manager](services/agents-api/HOSTED-SANDBOX-MANAGER.md) is a
+deployment-level admin surface, separate from project credentials. Its Web token
+stays in memory. Node enrollment credentials authorize only registration; durable
+node credentials authorize only node transport. Project keys can read a narrow
+node directory and their own Session placement, never global allocations.
+
+One execution owner manages local and remote nodes through the same finite
+Provider protocol. The embedded local node preserves existing single-host setup;
+remote nodes actively connect over authenticated TLS. Persist private node
+identity and highest owner epoch; refuse another process using the same identity
+or a changed backend namespace. Reserve each NodeID before transport upgrade and
+retain that reservation through disconnect cleanup; a duplicate connection must
+not replace a live or opening connection. Keep one private state directory per
+node and never copy its identity to another host. This is connection exclusion,
+not host attestation. The Hub's global mutex protects only in-memory connection
+state. Authentication, ownership and Store callbacks run synchronously outside
+that mutex, respect cancellation and have a five-second limit; never detach
+database writes. Closing the Hub cancels opening and live connections without
+waiting for database callbacks. Keep each node reservation until its fenced
+disconnect cleanup finishes. Register database presence in an explicit transaction:
+a canceled statement must not later publish presence through autocommit. Disconnect
+cleanup first locks the node row by identity, then applies the connection/epoch
+fence with a fresh READ COMMITTED statement so an in-flight commit cannot be
+missed. These transactions must not acquire the deployment-wide manager lock.
+Heartbeats establish provider readiness and
+last-observed host metrics, never Session activity. Transport reconnects use
+bounded backoff. Send relative operation budgets, anchored to the node clock at
+receipt and consumed while queued; clocks on different hosts need not agree. Core
+still bounds its own response wait. Do not replay mutations after a timeout or
+lost response. Retain allocation
+and checkpoint operation receipts and observe the original operation instead.
+Disconnects and read timeouts are unavailable/uncertain, never resource absence.
+Runtime resource observation uses the same immutable node placement through one
+bounded read-only Provider operation. Preserve main's Runtime observation/history
+service and authorization boundaries. The node delegates only to a provider-owned
+observation source; absent capability or transport returns unavailable, never a
+Core-local fallback. Observation must not create, renew, restore, or touch Session
+activity. Preserve the durable compute receipt and provider timestamps; existing
+observation clock validation can reject skewed samples without changing idle policy.
+Online-state writes compare the handshake epoch atomically in PostgreSQL so a
+stale Core cannot publish readiness for a new owner. Node-managed allocations
+do not expire merely because the internal observation keepalive is an hour old;
+explicit deletion and configured snapshot retention still authorize cleanup.
+Persist only bounded, sanitized observation codes for offline, missing or
+unconfirmed resources; keep these separate from the lifecycle and do not invent
+a successful running observation after a host restart.
+
+Managed lifecycle state is owned by one serial worker per registered node:
+its gate, allocation and pending cursors, connections, initialization progress and
+wake hints are not shared with other nodes. A thin coordinator discovers nodes
+and owns worker shutdown; it never holds its map mutex during database, provider
+or wait operations. Each worker advances independently, including when another
+node is online but its provider is stuck. Do not add a shared scan barrier or
+global provider pool: lifecycle concurrency is at most one operation per node,
+and grows with the registered node count. This is not a fixed global limit.
+Keep offline workers so retained resources remain observable after reconnect.
+
+Allocation scans filter by the fixed node before their 32-row page limit; pending
+scans join the unreleased committed placement. Each node advances its own cursor,
+including failed observations, and wraps once at EOF. Direct provisioning resolves
+the tenant-scoped existing placement before entering that same node's gate; an
+existing allocation must agree with the placement. Never choose another node.
+Legacy allocations without node identity retain one separate serial lifecycle.
+The coordinator stops accepting work and cancels and drains all node workers and
+direct callers before releasing the sole execution lease. Lease loss is global;
+ordinary provider failures stay within their node. Session locks, deployment
+capacity transactions and revision/one-shot receipts remain authoritative, with
+no external operation holding a database lock.
+
+Commit environment-to-node placement with Session creation and its creation retry
+identity. Automatic selection chooses an eligible node; explicit
+`x_agents_core.sandbox_node_id` fails if unavailable or full. The optional
+model-provider extension remains independent. Existing retries keep their original
+node even when it is offline. Node capacity counts pending reservations and
+unresolved resources; new placement and suspended-to-restoring admission share a
+database lock. Confirmed cleanup releases placement capacity. Under the existing
+execution lease, first adoption requires matching installation/configuration identity
+and positive Provider evidence for every unreleased allocation on the actual local
+backend. A socket or runtime path is not host identity. Before the Worker or
+listener starts, a startup-only verifier uses the local adapter's common GetInfo,
+GetCompute and ObserveOnly snapshot operations; it cannot create, restore, kill or
+replay resources. Normal operation continues exclusively through the node proxy.
+Verify each retained current, target and snapshot identity independently; absence
+alone never proves ownership. Unknown, unavailable, mismatched or corrupt resources
+reject the entire adoption. Volume-only Docker remnants and consumed-restore
+transitions without the original source receipt require resolution with the
+previous Core before upgrading; do not reconstruct missing ownership evidence.
+
+Read candidates in bounded pages without holding a transaction across Provider
+calls. Then lock the deployment and all candidate allocation rows in a short
+leased transaction, compare the complete receipt set to the verified snapshot,
+and commit node placement, binding and the database idle anchor together. Database
+reads and the final transaction have a five-second budget; each Provider check has
+its own thirty-second budget. A changed plan or lost lease commits no adoption.
+Pending Environments without allocations receive their first placement; released
+history remains unassigned and cannot be recreated. Later startups preserve the
+fixed node, idle anchor and existing snapshot retention deadline.
+
+Do not add node-level drain controls. Refuse node removal with pending allocations,
+instances, snapshots, unknown results or cleanup resources. Offline ownership is
+retained. Removing a node does not delete compute. Refuse deletion of the embedded local
+node while deployment configuration still enables it; changing that configuration
+requires the existing clean maintenance transition. Keep the deployment-wide
+maintenance/provider-switch guard. This boundary does not add cross-node Session
+migration, Core multi-active, autoscaling, Kubernetes or harness residency.
 
 The common
 `services/agents-api/internal/sandbox` contract owns the five base operations
@@ -640,14 +749,23 @@ no external mount or separate storage lifecycle.
 
 Suspend only after at least one Turn is terminal, no queued/in-progress/waiting
 root or subagent Turn, pending input/file operation or initialization remains,
-and real activity has been idle for the configured interval. Heartbeats do not
-reset activity. The daemon must close admission and drain native cleanup, output
-receipts and file work before acknowledging planned suspension. Never change a
+and real activity has been idle for the configured interval. For node-managed
+allocations, record the first root or child terminal transition in the same
+transaction using Core's database clock and the existing compute activity field.
+Native completion timestamps remain unchanged in public history but cannot drive
+idle admission across hosts; repeated terminal projections never reset that timer.
+Read activity together with the database observation time. Candidate filtering and
+the Session-locked phase recheck compare elapsed database time with the configured
+idle duration; callers must not supply a Core-wall-clock cutoff. Anchor the initial
+snapshot retention deadline to that same database observation. Core and database
+host clocks need not be synchronized for these decisions.
+Heartbeats do not reset activity. The daemon must close admission and drain native
+cleanup, output receipts and file work before acknowledging planned suspension. Never change a
 harness or keep an agent process alive across Turns solely to meet this feature.
 The acceptance boundary is a next Turn in the same Session with history, files
 and configuration intact, without replaying an earlier request.
 
-The existing Worker lease, Session lock and lifecycle gate own both providers.
+The existing Worker lease, Session lock and per-node lifecycle gates own both providers.
 New Turn claims, file-write intents and capture admission serialize under the
 Session lock. Turn and file-write admission share the same compute-phase check;
 existing receipts remain readable. New pending work cancels capture and wakes
@@ -663,7 +781,7 @@ precedence over wake, including at the final database compare-and-swap. Retain
 unknown cleanup identities until owned resources are confirmed absent.
 
 Fixed guest CPU/memory/disk settings, max_active reservations, max_retained
-allocation count and snapshot retention bound the single host. Unknown operations
+allocation count and snapshot retention bound each assigned node. Unknown operations
 retain capacity reservations. Source teardown must be confirmed before releasing
 active capacity. Delete consumed artifacts and old compute closures; do not grow
 a chain of old writable disks across suspension cycles. No Kubernetes, distributed
@@ -1381,7 +1499,7 @@ across upgrades. This is the same managed Runtime, not user-managed enrollment.
 
 #### Matched Core and console distribution
 
-The installer milestone packages Core and the unchanged Web console together,
+The installer packages Core and the Web console together,
 with independent `--core-only` and `--web-only` modes. `site/` is the public static
 landing, separate from `apps/web`; it must not create an onboarding prerequisite,
 call a model, or claim complete protocol compatibility. Operator installation,
@@ -1420,6 +1538,14 @@ Compose in either case; native Core
 and its Web proxy use loopback, with a private PostgreSQL port. This packaging
 choice does not change either Provider's execution contract.
 The basic distroless API image and binary builds remain independent artifacts.
+The standalone API release and Core distribution both include the Hosted Sandbox
+Manager guide at the relative path used by their packaged README. Include the
+guide in each artifact checksum list so extracted documentation matches its build.
+The distribution includes the sandbox-node binary. An enabled local node uses a
+persistent private state directory, explicitly separate from read-only configuration.
+Docker grants Core write access only to that node-state mount; native Core uses the
+same installation-owned directory. Zero-node installs create neither node identity
+state nor sandbox administrator credentials.
 
 One Runtime image contains the existing daemon, shared helpers and three native
 harness packages. Their differences remain in the adapters. Core keeps exclusive
@@ -1431,11 +1557,20 @@ existing write-only model execution extension, with the installation's persisten
 credential encryption key. Provider identity/backend namespace and native history
 must not change on a repeated install.
 
-`services/core-console` serves the existing production Web build and forwards only
-public `/v1` requests to one configured Core. It uses the standard Go reverse
-proxy with streaming/cancellation, a separate operator password, fixed origin and
-cross-site checks. Only the server reads the Core bearer. It does not implement
-product identity, resource semantics, Runtime discovery or an execution loop.
+`services/core-console` serves the production Web build and forwards public `/v1`
+requests to one configured Core using its project bearer, after console Basic
+authentication. Its explicit sandbox administration routes instead require a
+unique browser-supplied Bearer credential and forward it unchanged for Core to
+verify; console Basic access does not confer deployment administration. Never
+substitute the project bearer on those routes or give the console a shared admin
+credential. The installer keeps the administrator key and digests separate from
+project configuration and exposes only the digest file to Core. The Web keeps an
+entered administrator credential in memory. Node registration, identity and
+WebSocket transport are not console routes; nodes connect directly to Core.
+Both proxy paths retain fixed-origin, cross-site, safe-path, redirect and Upgrade
+restrictions through the standard Go reverse proxy with streaming/cancellation.
+The console implements no product identity, resource semantics, Runtime discovery
+or execution loop.
 The console has neither KVM nor Docker authority; its static root contains no
 secrets. Installation exposes only loopback API/console ports. Remote exposure
 requires an operator-configured HTTPS/access boundary. Web-only mode can connect
@@ -2873,9 +3008,9 @@ Effective extension reads use the persisted engine; Sessions without the extensi
 retain the official Agent response shape. See the [extension contract](contracts/agents-api/harness-selection.md)
 for null/retry behavior and operator configuration.
 
-Hosted engine-to-provider selection belongs to Core composition. Admission and
-initial allocation share the mapping; retained allocations use their persisted
-provider identity. Runtime images must satisfy their existing qualification rules.
+Hosted provider selection belongs to deployment configuration and is independent
+of the engine. Session creation fixes a node through a Core extension or automatic
+placement; retained allocations keep that node and provider identity. Runtime images must satisfy their existing qualification rules.
 Transient model options are partitioned by engine and must not expose another
 engine's credentials. Do not infer an engine from a model name or template.
 

@@ -89,7 +89,8 @@ class NativeServiceTests(unittest.TestCase):
         for path in (env, self.unit_path(), self.root / "native/microsandbox/libkrunfw.so.5.6.1"):
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
         for path in (self.root / "config", self.root / "native/bin/agents-api",
-                     self.root / "native/bin/agents-api-microsandbox-provider", self.root / "native/microsandbox/msb"):
+                     self.root / "native/bin/agents-api-microsandbox-provider", self.root / "native/bin/parsar-sandbox-node",
+                     self.root / "native/microsandbox/msb"):
             self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
 
     def test_repeat_keeps_binary_and_private_file_inodes(self):
