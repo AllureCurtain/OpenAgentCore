@@ -88,6 +88,17 @@ describe("Runtime live-window chart accessibility", () => {
     expect(html).not.toContain('aria-label="CPU usage: 2 live samples"');
   });
 
+  it("can retain an honest uptime card when a consumer requires four metric panels", () => {
+    const html = renderToStaticMarkup(
+      <RuntimeTrendCharts samples={[sample(60_000, .25)]} source="durable" showDurableUptimePlaceholder />,
+    );
+
+    expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(4);
+    expect(html).toContain("Compute uptime");
+    expect(html).toContain("Live-only metric");
+    expect(html).toContain("Select Live to inspect current Runtime uptime");
+  });
+
   it("announces an isolated durable value as sparse rather than empty", () => {
     const html = renderToStaticMarkup(
       <RuntimeTrendCharts samples={[sample(60_000, .25)]} source="durable" />,
