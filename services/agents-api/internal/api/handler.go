@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
+	"reflect"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
 	"github.com/MiniMax-AI-Dev/parsar/internal/obs/log"
@@ -180,7 +180,7 @@ func (h *Handler) routes() *chi.Mux {
 // @Failure 400,401,404,409,413,500,503 {object} v1.ErrorResponse
 // @Router /agents/sessions [post]
 func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
-	raw, ok := readJSONBodyLimit(w, r, 16*1024*1024, "Request exceeds 16 MiB.")
+	raw, ok := readJSONObjectLimit(w, r, 16*1024*1024, "Request exceeds 16 MiB.")
 	if !ok {
 		return
 	}
@@ -190,12 +190,10 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 	var request decodedSessionRequest
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
+	// An unknown member, including a case variant such as Metadata, is rejected
+	// before decoding; see inexactMember.
+	if inexactMember(raw, reflect.TypeOf(request)) || decoder.Decode(&request) != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Request must be a JSON object containing supported fields.")
-		return
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Request must contain exactly one JSON object.")
 		return
 	}
 	input, err := request.validated()

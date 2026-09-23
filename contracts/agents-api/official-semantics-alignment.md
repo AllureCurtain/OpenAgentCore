@@ -393,21 +393,20 @@ Decisions:
   local limits and codes, and before harness admission. It is not a JSON Schema
   engine: function and output schemas, `request_metadata` values, MCP `transport`
   members, `metadata` and `x_agents_core` stay with their existing parsers.
-- In each object, a union's `type` is checked first. Unknown and repeated members
-  are then reported in document order, followed by member values in document
-  order and missing required members in the pinned order. The whole object is
-  checked before the C2/C3 conflicts, and tools before `text`. The official order
+- In each object, a union's `type` is checked first. Unknown members are then
+  reported in document order, followed by member values in document order and
+  missing required members in the pinned order. The whole object is checked
+  before the C2/C3 conflicts, and tools before `text`. The official order
   between several errors in one body was not observed.
 - Member names match exactly, so a name that differs from a member only by case,
-  such as `reasoning.Effort`, is an unknown parameter. A member repeated anywhere
-  in the checked tree returns 400 `invalid_request_error` with its path as param
-  and the local message `Duplicate parameter: '<path>'.`; the official response
-  is unobserved. Both are needed because encoding/json matches names
-  case-insensitively and merges repeated objects into the decoded structs:
-  checking only the last copy let `"text"` given twice store an array-root schema,
-  and `{"reasoning":{"Effort":"high"},"reasoning":{}}` store `effort: high`.
-  Members left to their parsers are checked on the decoded values, so they cannot
-  differ from what is stored.
+  such as `reasoning.Effort`, is an unknown parameter. This is needed because
+  encoding/json matches names case-insensitively. It also merges repeated
+  objects into the decoded structs; a key repeated anywhere in the body is now
+  rejected earlier by the shared body gate with the official message (see
+  [Request body parsing](#request-body-parsing--september-23)), which replaces
+  this batch's local `Duplicate parameter: '<path>'.` error. Members left to their
+  parsers are checked on the decoded values, so they cannot differ from what is
+  stored.
 - Observed expected-kind phrases are `an object`, `a boolean` and
   `an object with string keys and unknown value values`. At unsampled positions
   Core uses `a string` (also for enum members), `an integer` and `an array`, and
@@ -872,3 +871,97 @@ daemon-enabled composition and checks that no Agents API request is redirected. 
 `official_http_routing.py` updates an Agent through base URL `/v1//`, checks
 `_request_id` and the error `request_id`, and the raw checks in the other official
 scripts now expect the Beta check first.
+
+## Request body parsing — September 23
+
+Every Agents API JSON request body now passes one shared gate, before any
+route-specific decoding, validation or lookup, with the official parse semantics.
+Evidence is HP-09..HP-15 of the HTTP protocol campaign scan, recorded privately in
+`~/.parsar/remediation/20260923/campaign-scan-6/http-protocol/` (`findings.json`,
+`REPORT.txt`, raw requests in `official-ledger.jsonl`, labels `C01`–`C20`,
+`U01`–`U11`, `S1`): one owned Agent, created, updated and deleted (404 confirmed),
+without a Session or model. The official records cover Agent create and update;
+the other routes are assumed to share the official parser. Two later owned probes
+in `~/.parsar/remediation/20260924/http-json-body/official/results.json` created
+nothing: a lone high surrogate escape (`req_1a9b7680d615454ca97c816b25e2f401`) and
+Agent create with `metadata` and `Metadata` but no `model`
+(`req_6ba2a50c71a4410f87a1baac855e82df`).
+
+| Row | Case | Core behavior |
+| --- | --- | --- |
+| B1 | Malformed JSON, trailing data, two concatenated values, a UTF-8 byte order mark, a whitespace-only body (`C01`, `C06`, `C07`, `C12`, `C20`, `U01`, `U05`, `U06`), or a string escape that forms a lone or mis-paired UTF-16 surrogate, such as `"\ud800"`, in a key or value (`req_1a9b7680d615454ca97c816b25e2f401`) | 400, type and code `invalid_request_error`, param null: "Invalid body: failed to parse JSON value. Please check the value to ensure it is valid JSON. (Common errors include trailing commas, missing closing brackets, missing quotation marks, etc.)". Agent update no longer returns `unsupported_or_invalid_configuration`. Valid surrogate pairs are accepted; lone surrogates were previously stored as U+FFFD. |
+| B2 | Invalid UTF-8 anywhere in the body (`C13`) | 400 with the same fields: "Invalid body: encountered a unicode decode error when parsing this JSON value. Please check the value to ensure it is valid unicode." Previously the bytes were stored as U+FFFD. |
+| B3 | A repeated object key at any depth (`C08`, `C15`, `C16`, `U07`) | 400 with the same fields: "Invalid body: duplicate JSON key '<key>' at '<path>'. Duplicate JSON keys are not supported." The path joins object keys with `.` and omits array indices: `name`, `metadata.k`, `tools.type`. Keys compare after unescaping and case-sensitively: `metadata` and `Metadata` are distinct keys (`req_6ba2a50c71a4410f87a1baac855e82df`). The first repeat in document order is reported. Previously metadata, Vaults and Templates kept the last value, and Agent configuration returned the local "Duplicate parameter". |
+| B4 | A valid root that is not an object (`C05`) | 400 with the same fields: "Invalid type: expected an object, but got <kind> instead." with the existing kind phrases (`a string`, `an integer`, `a number`, `a boolean`). |
+| B5 | A zero-length body or `null` (`C02`, `C03`, `U02`, `U03`) | Treated as `{}`: Agent create reports the missing `model`, Agent update is the documented empty update, Session update keeps its "At least one update field is required" rejection, and Vault create creates an unnamed Vault. A whitespace-only body stays B1. |
+| B6 | Content-Type missing, `text/plain` or form-encoded, including a bodyless POST without Content-Type (`C09`–`C11`, `C19`, `U08`–`U10`) | 400 with the same fields, "expected request with Content-Type: application/json", checked before the body is read. `application/json` and `application/*+json` are accepted case-insensitively, with parameters (`S1`, `U11`, `C17`, `C18`); a malformed media type, such as `application/foo bar+json` or a conflicting repeated parameter, is rejected the same way. Previously Core ignored the header and applied the update. |
+| B7 | Valid bodies | Unchanged, including unknown-member errors, configuration validation, route body limits (413) and Core extensions such as `x_agents_core`. |
+
+Order: authentication and Beta handling as before, then B6, then the route's body
+limit, then B2, B1, B3 and B4/B5, then route validation. The gate covers Agent
+create and update, Vault create, Credential create and update, Template create
+and update, Environment Files create, Session create and update, and Session
+events. Environment Files create now reads its body before the Environment
+lookup; a missing Environment with a valid body still returns 404.
+
+Decisions:
+
+- An array root is rejected with the B4 message. The official service treats `[]`
+  as `{}` (HP-14); that upstream anomaly is not copied.
+- The duplicate key and path are repeated only when each is at most 256 bytes of
+  printable UTF-8, the shared `echotext` rule; otherwise the message is "Invalid
+  body: duplicate JSON key. Duplicate JSON keys are not supported."
+- The gate scans each body once in linear time and keeps key positions in the
+  body, not copies: objects with more than 16 keys use an open-addressing set of
+  8-byte slots, a position and 32 hash bits that skip comparing unequal keys. A
+  body of many short keys allocates about twice its size in the gate. Bodies are
+  read into a doubling buffer, which allocates two to four times the body in
+  total (four near the route limit), against 4.4 to 6.1 times for `io.ReadAll`.
+- Member names match exactly on every gated route. encoding/json would match a
+  case variant such as `Metadata`, `Input` or a nested `Role` to the field and
+  let the last copy win; such a key is now an unknown member at any depth,
+  rejected with the route's existing unknown-member error before any write.
+  Agent configuration already did this. On Agent create, a body with `Metadata`
+  and no `model` still reports the unknown member first, while the official
+  service reported the missing `model`; the official order between several
+  errors in one body remains unaligned.
+- A walk over the body bytes checks member names before a decoder runs and stops
+  at the first unknown or case-variant key, and the Session metadata check reads
+  only the `metadata` member. For unknown top-level keys this makes rejection
+  cheap: a whole 16 MiB Session create allocates about 96 MiB and events about
+  six times a 1 MiB body, instead of 482 MiB and 9 MiB before this batch, when
+  the decoder formatted an error for every unknown key. Unknown keys nested under
+  `agent` or `environment` still pass the existing object decoding of
+  `decodeInputObject` and stay linear, at or below main: about 779 and 871 MiB
+  for 16 MiB bodies, against 850 and 889 MiB on main.
+- Invalid UTF-8 is checked before JSON syntax; the official order for a body with
+  both faults was not observed.
+- Not gated: DELETE routes, which keep their empty-body rule, the multipart Files
+  and Skills uploads, Skills update (a non-Beta API with its own observed error
+  fields), the Core extension `/core/v1/*` routes, including executor credential
+  issuance, and the internal daemon, sandbox and node routes.
+
+Unchanged: the schema and the route validation and error codes of valid bodies.
+
+Caller check: the TypeScript client sends `application/json` with every JSON body
+(an empty Agent update sends `{}`), Core Web uses that client, the Go client uses
+the pinned openai-go SDK, the Python acceptance tools send JSON through the pinned
+SDK or `json=`, and the documentation has no JSON POST examples. The Parsar
+product repository does not call these routes.
+
+Go tests cover the gate on its own (B1–B5, surrogate escapes, the echo bound,
+media type parsing, deep bodies, a differential check of the duplicate-key scan
+against an encoding/json token walk on small and large objects, and an allocation
+bound on many short keys), case-variant members, route-level allocation bounds for
+unknown keys on Session create and events, and all eleven route families
+(B1–B4, B6, the order against authentication, Beta and the body limit, B5/B7). A
+real-PostgreSQL test sends B1–B4, B6 and case-variant members to every route
+family as the owner and as tenant B under a whole-database digest, then checks
+B5/B7 writes; another exercises the excluded DELETE, Files and Skills upload,
+Skills update and executor credential routes with real storage. The pinned-SDK
+scripts `official_agents.py`, `official_agent_update.py`, `official_vaults.py`,
+`official_credentials.py`, `official_credential_rotation.py` and
+`official_session_metadata.py` assert the official messages and recount or reread
+the resources to show no writes; `official_session_requests.py` rejects
+case-variant members without creating a Session.
+Independent acceptance is recorded separately by the coordinator.
