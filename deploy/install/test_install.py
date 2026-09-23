@@ -4,6 +4,7 @@
 import base64
 import contextlib
 import hashlib
+import gzip
 import io
 import json
 import os
@@ -19,6 +20,7 @@ import unittest
 from unittest import mock
 
 import install
+import distribution
 
 
 class InstallerTests(unittest.TestCase):
@@ -33,9 +35,15 @@ class InstallerTests(unittest.TestCase):
             "source_commit": "a" * 40,
             "images": {name: "sha256:" + digit * 64 for name, digit in (
                 ("core", "1"), ("runtime", "2"), ("database", "3"), ("web", "4"))},
+            "image_manifest_digests": {name: "sha256:" + digit * 64 for name, digit in (
+                ("core", "a"), ("runtime", "b"), ("database", "c"), ("web", "d"))},
             "runtime_ref": "localhost/parsar-runtime:test-install",
             "microsandbox": {"runtime_sha256": "5" * 64, "firmware_sha256": "6" * 64},
         }
+        self.loaded_images = set()
+        self.containerd = False
+        self.invalid_image = None
+        self.patched(mock.patch.object(distribution, "docker_command", side_effect=self.docker_command))
         self.ports = self.patched(mock.patch.object(install, "free_port"))
         self.device_probes = []
         original_stat = os.stat
@@ -49,6 +57,19 @@ class InstallerTests(unittest.TestCase):
         self.patched(mock.patch.object(install.os, "stat", side_effect=controlled_device_stat))
         self.patched(mock.patch.object(install.os, "getuid", return_value=1000))
         self.patched(mock.patch.object(install.os, "getgid", return_value=1000))
+
+    def docker_command(self, arguments, **kwargs):
+        if 'load' in arguments:
+            self.loaded_images.add(Path(arguments[-1]).stem)
+            install.run(arguments)
+            return SimpleNamespace(returncode=0, stdout='')
+        identity = arguments[3]
+        name = next(name for name in self.manifest['images'] if identity in distribution.image_identities(self.manifest, name))
+        if name not in self.loaded_images:
+            return SimpleNamespace(returncode=1, stdout='')
+        if self.containerd and identity == self.manifest['images'][name]:
+            return SimpleNamespace(returncode=1, stdout='')
+        return SimpleNamespace(returncode=0, stdout=self.invalid_image or identity + ' linux/amd64')
 
     def patched(self, patcher):
         result = patcher.start()
@@ -83,8 +104,17 @@ class InstallerTests(unittest.TestCase):
         (bundle / "runtime").mkdir()
         (bundle / "manifest.json").write_text(json.dumps(self.manifest))
         (bundle / "runtime/seccomp.json").write_text('{"defaultAction":"SCMP_ACT_ERRNO"}')
-        for name in ("install.py", "configuration.py", "native_service.py", "node_install.py", "install.sh"):
+        for name in ("install.py", "configuration.py", "native_service.py", "distribution.py", "install.sh"):
             shutil.copyfile(Path(__file__).with_name(name), bundle / name)
+        for name in ("node-install.pyz", "self-hosted-install.pyz"):
+            (bundle / name).write_bytes(b"synthetic verified Python bootstrap")
+        self.manifest["artifacts"] = {}
+        for name in ("images/runtime.tar.gz", "native/bin/parsar-sandbox-node",
+                     "native/bin/agents-api-microsandbox-provider", "native/microsandbox/msb",
+                     "native/microsandbox/libkrunfw.so.5.6.1"):
+            self.manifest["artifacts"][name] = {"filename": "parsar-" + "a" * 40 + "-" + name.replace("/", "-"),
+                "sha256": "a" * 64, "size": 1}
+        (bundle / "manifest.json").write_text(json.dumps(self.manifest))
         for name in self.manifest["images"]:
             (bundle / "images" / (name + ".tar")).write_bytes(("synthetic " + name).encode())
         for name in ("bin/agents-api", "bin/agents-api-migrate", "bin/agents-api-microsandbox-provider",
@@ -102,19 +132,32 @@ class InstallerTests(unittest.TestCase):
             hashlib.sha256(path.read_bytes()).hexdigest() + "  " + str(path.relative_to(bundle)) + "\n"
             for path in files))
 
+    def test_thin_bundle_verifies_without_downloading_runtime(self):
+        bundle = self.bundle()
+        for name in ("images/runtime.tar", "native/bin/parsar-sandbox-node",
+                     "native/bin/agents-api-microsandbox-provider", "native/microsandbox/msb",
+                     "native/microsandbox/libkrunfw.so.5.6.1"):
+            (bundle / name).unlink()
+        self.write_checksums(bundle)
+        with mock.patch.object(install, "obtain_artifact", side_effect=AssertionError("unneeded download")):
+            manifest = install.verify_bundle(bundle)
+            install.prepare_node_payload(self.root, self.initialize(), bundle)
+        self.assertEqual(manifest["source_commit"], "a" * 40)
+        self.assertFalse((self.root / "node-payload/images").exists())
+
     def test_node_payload_exports_only_matched_distribution_files(self):
         state = self.initialize()
         bundle = self.bundle()
         install.prepare_node_payload(self.root, state, bundle)
         payload = self.root / "node-payload"
         exported = {str(path.relative_to(payload)) for path in payload.rglob("*") if path.is_file()}
-        self.assertEqual(len(exported), 9)
+        self.assertEqual(len(exported), 5)
         self.assertNotIn("config/caller.key", exported)
         self.assertNotIn("admin/sandbox-admin.key", exported)
         for name in exported:
             self.assertEqual((payload / name).read_bytes(), (bundle / name).read_bytes())
         install.prepare_node_payload(self.root, state, bundle)
-        (payload / "node_install.py").write_text("changed")
+        (payload / "node-install.pyz").write_text("changed")
         with self.assertRaises(install.InstallError):
             install.prepare_node_payload(self.root, state, bundle)
 
@@ -127,10 +170,10 @@ class InstallerTests(unittest.TestCase):
         with mock.patch.object(install.shutil, "copyfile", side_effect=interrupted):
             with self.assertRaises(OSError):
                 install.prepare_node_payload(self.root, state, bundle)
-        self.assertFalse((self.root / "node-payload/node_install.py").exists())
+        self.assertFalse((self.root / "node-payload/node-install.pyz").exists())
         install.prepare_node_payload(self.root, state, bundle)
-        self.assertEqual((self.root / "node-payload/node_install.py").read_bytes(),
-                         (bundle / "node_install.py").read_bytes())
+        self.assertEqual((self.root / "node-payload/node-install.pyz").read_bytes(),
+                         (bundle / "node-install.pyz").read_bytes())
 
     def test_repeat_installation_preserves_execution_identity_and_all_secrets(self):
         first = self.initialize()
@@ -149,6 +192,73 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(first, second)
         self.assertEqual(before, self.snapshot())
         self.assertEqual(keys, self.document("config/keys.json"))
+
+    def test_new_console_account_state_is_private_and_only_web_can_write_it(self):
+        state = self.initialize()
+        self.assertEqual(state["console_auth"], "account")
+        self.assertFalse((self.root / "config/console.password").exists())
+        self.assertEqual(stat.S_IMODE((self.root / "state/console").stat().st_mode), 0o700)
+        setup = (self.root / "config/console.setup.key").read_text()
+        self.assertEqual(len(setup), 64)
+        services = self.document("compose.json")["services"]
+        web = services["web"]
+        self.assertEqual(web["environment"]["CORE_CONSOLE_AUTH_MODE"], "account")
+        self.assertEqual(web["environment"]["CORE_CONSOLE_SETUP_KEY_FILE"], "/config/console.setup.key")
+        self.assertEqual(web["environment"]["CORE_CONSOLE_STATE_DIR"], "/state/console")
+        for name, service in services.items():
+            mounts = [m for m in service.get("volumes", []) if isinstance(m, dict) and m["target"] == "/state/console"]
+            self.assertEqual(len(mounts), 1 if name == "web" else 0)
+            if mounts:
+                self.assertEqual(mounts[0]["source"], str(self.root / "state/console"))
+                self.assertFalse(mounts[0]["read_only"])
+            self.assertNotIn(setup, json.dumps(service))
+        install.private_write(self.root / "state/console/admin.json", '{"synthetic":"retained account"}')
+        before = self.snapshot()
+        self.initialize()
+        self.assertEqual(before, self.snapshot())
+
+    def test_legacy_installation_keeps_basic_credentials_and_compose(self):
+        state = self.initialize()
+        state.pop("console_auth")
+        install.private_write(self.root / "config/console.password", "retained-console-password")
+        (self.root / "config/console.setup.key").unlink()
+        shutil.rmtree(self.root / "state")
+        (self.root / "installation.json").write_text(json.dumps(state))
+        compose = install.compose_config(self.root, state, self.manifest, "retained-database-password")
+        (self.root / "compose.json").write_text(json.dumps(compose))
+        self.assertEqual(compose["services"]["web"]["environment"]["CORE_CONSOLE_PASSWORD_FILE"], "/config/console.password")
+        self.assertNotIn("CORE_CONSOLE_AUTH_MODE", compose["services"]["web"]["environment"])
+        before = self.snapshot()
+        self.assertEqual(self.initialize(), state)
+        self.assertEqual(before, self.snapshot())
+
+    def test_repeat_account_install_refuses_missing_authentication_sources(self):
+        self.initialize()
+        (self.root / "config/console.setup.key").unlink()
+        before = self.snapshot()
+        with self.assertRaisesRegex(install.InstallError, "authentication state"):
+            self.initialize()
+        self.assertEqual(before, self.snapshot())
+        install.private_write(self.root / "config/console.setup.key", "retained-setup-key")
+        shutil.rmtree(self.root / "state/console")
+        before = self.snapshot()
+        with self.assertRaisesRegex(install.InstallError, "authentication state"):
+            self.initialize()
+        self.assertEqual(before, self.snapshot())
+
+    def test_retained_config_cannot_launch_an_unresolved_image(self):
+        self.initialize('--sandbox-provider', 'true', '--provider', 'docker')
+        for path, select in (('compose.json', lambda value: value['services']['web']),
+                             ('config/managed-runtimes.json', lambda value: value['docker'])):
+            original = (self.root / path).read_bytes()
+            config = self.document(path)
+            select(config)['image'] = 'sha256:' + 'f' * 64
+            (self.root / path).write_text(json.dumps(config))
+            before = self.snapshot()
+            with self.subTest(path=path), self.assertRaisesRegex(install.InstallError, 'image differs'):
+                self.initialize('--sandbox-provider', 'true', '--provider', 'docker')
+            self.assertEqual(before, self.snapshot())
+            (self.root / path).write_bytes(original)
 
     def test_configuration_changes_refuse_without_mutating_existing_deployment(self):
         self.initialize()
@@ -200,6 +310,8 @@ class InstallerTests(unittest.TestCase):
         services = compose["services"]
         self.assertNotIn("web", services)
         self.assertFalse((self.root / "config/console.password").exists())
+        self.assertNotIn("console_auth", state)
+        self.assertFalse((self.root / "config/console.setup.key").exists())
         self.assertEqual(compose["networks"]["runtime"]["name"], managed["docker"]["network"])
         self.assertEqual(managed["installation_id"], state["installation_id"])
         for name, service in services.items():
@@ -248,7 +360,7 @@ class InstallerTests(unittest.TestCase):
                 token = (admin / "sandbox-admin.key").read_text()
                 self.assertEqual(self.document("admin/digests.json"), [hashlib.sha256(token.encode()).hexdigest()])
                 self.assertNotEqual(token, (self.root / "config/caller.key").read_text())
-                self.assertNotEqual(token, (self.root / "config/console.password").read_text())
+                self.assertNotEqual(token, (self.root / "config/console.setup.key").read_text())
                 self.assertEqual(stat.S_IMODE(admin.stat().st_mode), 0o700)
                 for path in admin.iterdir():
                     self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
@@ -289,7 +401,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(web["environment"]["CORE_CONSOLE_UPSTREAM"], "http://127.0.0.1:9091")
         self.assertNotIn("ports", web)
         self.assertNotIn("devices", web)
-        self.assertEqual({path.name for path in (self.root / "config").iterdir()}, {"caller.key", "console.password"})
+        self.assertEqual({path.name for path in (self.root / "config").iterdir()}, {"caller.key", "console.setup.key"})
         self.assertEqual((self.root / "config/caller.key").read_bytes(), source.read_bytes())
         before = self.snapshot()
         self.assertEqual(state, self.initialize(*flags))
@@ -306,7 +418,7 @@ class InstallerTests(unittest.TestCase):
                 expected = 0o700 if path.is_dir() else 0o600
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode), expected)
         self.assertNotEqual((self.root / "config/caller.key").read_bytes(),
-                            (self.root / "config/console.password").read_bytes())
+                            (self.root / "config/console.setup.key").read_bytes())
 
     def test_web_only_rejects_exposed_or_malformed_caller_files(self):
         for contents, mode in (("synthetic-token", 0o644), ("", 0o600), ("two tokens", 0o600),
@@ -350,7 +462,7 @@ class InstallerTests(unittest.TestCase):
         bundle = self.bundle()
         checksums = bundle / "SHA256SUMS"
         original = checksums.read_text()
-        for name in ("images/runtime.tar", "native/bin/parsar-sandbox-node"):
+        for name in ("images/core.tar", "node-install.pyz"):
             checksums.write_text("".join(line + "\n" for line in original.splitlines()
                                         if not line.endswith("  " + name)))
             with self.subTest(name=name), self.assertRaises(install.InstallError):
@@ -372,7 +484,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIsNone(state["provider"])
         self.assertEqual(self.device_probes, [])
         self.assertNotIn("device_gid", state)
-        self.assertFalse((self.root / "state").exists())
+        self.assertFalse((self.root / "state/sandbox-node").exists())
         self.assertTrue((self.root / "admin/digests.json").is_file())
         self.assertFalse((self.root / "config/managed-runtimes.json").exists())
         compose = self.document("compose.json")
@@ -392,8 +504,34 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(web["environment"]["CORE_CONSOLE_ORIGIN"], "https://core.example")
         self.assertEqual(web["ports"], ["127.0.0.1:8080:8080"])
         self.assertEqual(state["public_url"], "https://core.example")
+        self.assertEqual(self.document("compose.json")["services"]["core"]["environment"]["AGENTS_API_DAEMON_WS_URL"],
+                         "wss://core.example/api/v1/agent-daemon/ws")
         with self.assertRaises(install.InstallError):
             self.initialize("--public-url", "https://other.example")
+
+    def test_public_daemon_address_is_shared_across_placement_modes(self):
+        state = self.initialize("--public-url", "https://core.example:8443")
+        for provider in (None, "docker", "microsandbox"):
+            with self.subTest(provider=provider):
+                configured = dict(state, provider=provider, database_port=15432)
+                env = install.core_environment(self.root, configured, "fixture-password")
+                self.assertEqual(env["AGENTS_API_DAEMON_WS_URL"],
+                                 "wss://core.example:8443/api/v1/agent-daemon/ws")
+                configured["public_url"] = None
+                local = install.core_environment(self.root, configured, "fixture-password")
+                expected_host = "host.microsandbox.internal:8091" if provider == "microsandbox" else "core:8091"
+                self.assertEqual(local["AGENTS_API_DAEMON_WS_URL"], "ws://" + expected_host + "/api/v1/agent-daemon/ws")
+
+    def test_accepted_public_origin_schemes_generate_websocket_urls(self):
+        state = self.initialize()
+        for origin, expected in (("HTTPS://core.example", "wss://core.example"),
+                                 ("http://localhost:8080", "ws://localhost:8080"),
+                                 ("http://127.0.0.1:8080", "ws://127.0.0.1:8080")):
+            with self.subTest(origin=origin):
+                args = self.args("--public-url", origin)
+                configured = dict(state, public_url=args.public_url)
+                env = install.core_environment(self.root, configured, "fixture-password")
+                self.assertEqual(env["AGENTS_API_DAEMON_WS_URL"], expected + "/api/v1/agent-daemon/ws")
 
     def test_provider_requires_explicit_enablement_and_cannot_belong_to_web_only(self):
         self.assertIsNone(self.args("--sandbox-provider", "false").provider)
@@ -403,6 +541,53 @@ class InstallerTests(unittest.TestCase):
                       ("--web-only", "--sandbox-provider", "true")):
             with self.subTest(flags=flags), contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 self.args(*flags)
+
+    def test_local_microsandbox_accepts_actual_thin_and_offline_native_layouts(self):
+        path_exists = Path.exists
+        for offline in (False, True):
+            with self.subTest(offline=offline):
+                bundle = self.bundle()
+                payloads = {}
+                for name, entry in self.manifest["artifacts"].items():
+                    payload = gzip.compress(b"runtime fixture") if name == "images/runtime.tar.gz" else b"\x7fELFfixture"
+                    payloads[entry["filename"]] = payload
+                    entry.update(sha256=hashlib.sha256(payload).hexdigest(), size=len(payload))
+                    if name == "images/runtime.tar.gz":
+                        entry.update(unpacked_sha256=hashlib.sha256(b"runtime fixture").hexdigest(), unpacked_size=len(b"runtime fixture"))
+                    if offline:
+                        target = bundle / "artifacts" / entry["filename"]
+                        target.parent.mkdir(exist_ok=True)
+                        target.write_bytes(payload)
+                    else:
+                        self.manifest["artifact_base_url"] = "https://release.example/immutable"
+                    (bundle / name.removesuffix(".gz")).unlink()
+                (bundle / "manifest.json").write_text(json.dumps(self.manifest))
+                self.write_checksums(bundle)
+                requested = []
+                def response(url, **kwargs):
+                    requested.append(url.rsplit("/", 1)[-1])
+                    return io.BytesIO(payloads[requested[-1]])
+                def host_command(arguments, failure):
+                    return SimpleNamespace(returncode=0, stdout="yes" if arguments[0] == "loginctl" else "", stderr="")
+                with mock.patch.object(install, "__file__", str(bundle / "install.py")), \
+                        mock.patch.object(install.platform, "system", return_value="Linux"), \
+                        mock.patch.object(install.platform, "machine", return_value="x86_64"), \
+                        mock.patch.object(install.Path, "exists", lambda path: str(path) == "/dev/kvm" or path_exists(path)), \
+                        mock.patch.object(install.os, "access", return_value=True), \
+                        mock.patch.object(install, "run", return_value=SimpleNamespace(stdout="", returncode=0)), \
+                        mock.patch.object(install, "wait_http", return_value=True), \
+                        mock.patch.object(install, "import_runtime"), \
+                        mock.patch.object(install.native_service, "_run", side_effect=host_command), \
+                        mock.patch("distribution.urllib.request.build_opener", return_value=SimpleNamespace(open=response)), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    install.main(["--install-dir", str(self.root), "--sandbox-provider", "true", "--provider", "microsandbox"])
+                self.assertTrue((self.root / "native/bin/agents-api").is_file())
+                self.assertTrue((self.root / "native/bin/agents-api-microsandbox-provider").is_file())
+                self.assertFalse((self.root / "native/bin/parsar-sandbox-node").exists())
+                self.assertNotIn(self.manifest["artifacts"]["native/bin/parsar-sandbox-node"]["filename"], requested)
+                self.assertEqual(len(requested), 0 if offline else 4)
+                shutil.rmtree(bundle)
+                shutil.rmtree(self.root)
 
     def test_default_main_skips_kvm_native_service_and_runtime_import(self):
         bundle = self.bundle()
@@ -423,6 +608,8 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse((self.root / "native").exists())
         self.assertFalse((self.root / "config/seccomp.json").exists())
         self.assertIn("No execution node installed", output.getvalue())
+        self.assertIn("Setup key file: " + str(self.root / "config/console.setup.key"), output.getvalue())
+        self.assertNotIn((self.root / "config/console.setup.key").read_text(), output.getvalue())
 
     def test_main_web_only_never_imports_runtime_or_leaks_caller_password(self):
         source = self.caller_file()
@@ -446,9 +633,56 @@ class InstallerTests(unittest.TestCase):
         imports = [call for call in calls if call[:2] == ["docker", "load"]]
         self.assertEqual(imports, [["docker", "load", "--input", str(bundle / "images/web.tar")]])
         self.assertFalse(any(call[:2] == ["docker", "run"] for call in calls))
-        self.assertEqual([call.args[0] for call in health.call_args_list], ["http://127.0.0.1:8080/v1/agents"])
+        self.assertEqual([call.args[0] for call in health.call_args_list], ["http://127.0.0.1:8080/console/auth", "http://127.0.0.1:9091/v1/agents"])
         for path in (self.root / "config").iterdir():
             self.assertNotIn(path.read_text(), output.getvalue())
+
+    def test_containerd_core_configuration_uses_local_ids_and_keeps_published_manifest(self):
+        self.containerd = True
+        self.loaded_images.update(self.manifest['images'])
+        for provider in (None, 'docker'):
+            with self.subTest(provider=provider):
+                bundle = self.bundle()
+                (bundle / 'images/runtime.tar').unlink()
+                self.write_checksums(bundle)
+                published = (bundle / 'manifest.json').read_bytes()
+                with mock.patch.object(install, '__file__', str(bundle / 'install.py')), \
+                        mock.patch.object(install.platform, 'system', return_value='Linux'), \
+                        mock.patch.object(install.platform, 'machine', return_value='x86_64'), \
+                        mock.patch.object(install, 'run'), mock.patch.object(install, 'wait_http', return_value=True), \
+                        mock.patch.object(install, 'runtime_archive', side_effect=AssertionError('cache must avoid Runtime download')), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    flags = ['--sandbox-provider', 'true', '--provider', provider] if provider else []
+                    install.main(['--install-dir', str(self.root), *flags])
+                    before = self.snapshot()
+                    install.main(['--install-dir', str(self.root), *flags])
+                    self.assertEqual(self.snapshot(), before)
+                for service, config in self.document('compose.json')['services'].items():
+                    self.assertEqual(config['image'], self.manifest['image_manifest_digests']['core' if service == 'migrate' else service])
+                if provider:
+                    self.assertEqual(self.document('config/managed-runtimes.json')['docker']['image'],
+                                     self.manifest['image_manifest_digests']['runtime'])
+                else:
+                    self.assertFalse((self.root / 'state/sandbox-node').exists())
+                self.assertEqual((self.root / 'node-payload/manifest.json').read_bytes(), published)
+                self.assertEqual((bundle / 'manifest.json').read_bytes(), published)
+                shutil.rmtree(bundle)
+                shutil.rmtree(self.root)
+
+    def test_postload_wrong_identity_or_platform_cannot_create_deployment(self):
+        bundle = self.bundle()
+        for observed in ('sha256:' + 'f' * 64 + ' linux/amd64', self.manifest['images']['core'] + ' linux/arm64'):
+            self.invalid_image = observed
+            self.loaded_images.clear()
+            with self.subTest(observed=observed), \
+                    mock.patch.object(install, '__file__', str(bundle / 'install.py')), \
+                    mock.patch.object(install.platform, 'system', return_value='Linux'), \
+                    mock.patch.object(install.platform, 'machine', return_value='x86_64'), \
+                    mock.patch.object(install, 'run') as command, \
+                    self.assertRaisesRegex(distribution.DistributionError, 'identity or platform'):
+                install.main(['--install-dir', str(self.root)])
+            self.assertFalse(self.root.exists())
+            self.assertFalse(any('up' in call.args[0] for call in command.call_args_list))
 
     def test_cli_failure_does_not_print_external_command_secrets(self):
         secret = "synthetic-sensitive-command-value"

@@ -84,7 +84,34 @@ export interface ProgrammaticToolCallingInput {
   enabled?: boolean;
 }
 
-export type SavedAgentToolInput = FunctionToolInput | ServiceHttpMcpToolInput | ToolSearchInput | ProgrammaticToolCallingInput;
+export interface WebSearchLocationInput {
+  city?: string | null;
+  country?: string | null;
+  region?: string | null;
+  timezone?: string | null;
+}
+
+/**
+ * Saved Agents keep every pinned mode; omitted or null `mode` is saved as `live`
+ * and omitted or null `context_size` as `medium`. Session admission executes only
+ * `disabled` and rejects the other modes unless the Session replaces its tools.
+ */
+export interface WebSearchToolInput {
+  type: "web_search";
+  mode?: "disabled" | "cached" | "live" | null;
+  context_size?: "low" | "medium" | "high" | null;
+  /** null and [] are saved distinctly. */
+  allowed_domains?: string[] | null;
+  /** A saved location includes all four keys, with null for omitted ones. */
+  location?: WebSearchLocationInput | null;
+}
+
+export type SavedAgentToolInput =
+  | FunctionToolInput
+  | ServiceHttpMcpToolInput
+  | ToolSearchInput
+  | ProgrammaticToolCallingInput
+  | WebSearchToolInput;
 export type SessionFunctionToolInput = Omit<FunctionToolInput, "defer_loading"> & { defer_loading?: false };
 export type ConfigurableAgentToolInput = SessionFunctionToolInput | ServiceHttpMcpToolInput;
 
@@ -534,7 +561,8 @@ export interface SessionItemBase {
   /** Inter-agent messages have no status; reasoning may have an unknown status. */
   status?: ItemStatus | null;
   role?: "user" | "assistant";
-  phase?: "commentary" | "final_answer";
+  /** Null on user messages and when the harness reports none; older Cores omit it. */
+  phase?: "commentary" | "final_answer" | null;
   content?: ItemContent[];
   command?: string;
   cwd?: string | null;
@@ -619,7 +647,8 @@ export interface SessionEventBase {
   turn?: AgentTurn;
   item?: SessionItem;
   item_id?: string;
-  output_index?: number;
+  /** Null on Item events for input Items; older Cores omit it. */
+  output_index?: number | null;
   content_index?: number;
   part?: ItemContent;
   delta?: string;
@@ -986,6 +1015,22 @@ export interface AgentsCoreSelection {
   harness: CoreHarnessKind;
 }
 
+export type ExecutionConfigurationSource = "session" | "agent" | "deployment" | "unknown";
+
+/** Immutable committed selections, not live execution health. */
+export interface SessionExecutionConfiguration {
+  object: "agent.session.execution_configuration";
+  schema_version: 1;
+  session_id: string;
+  model: { value: string | null; source: ExecutionConfigurationSource };
+  harness: { value: string | null; source: ExecutionConfigurationSource };
+  model_provider: {
+    source: ExecutionConfigurationSource;
+    status: "available" | "redacted" | "unavailable";
+    configuration: ModelProviderView | null;
+  };
+}
+
 export interface CoreStartupConfiguration {
   object: "agents.core.startup_configuration";
   schema_version: 1;
@@ -1011,6 +1056,7 @@ export interface CoreStartupConfiguration {
 }
 
 export interface AgentCore {
+  retrieveSessionExecutionConfiguration(sessionId: string, options?: ReadOptions): Promise<SessionExecutionConfiguration>;
   retrieveStartupConfiguration(options?: ReadOptions): Promise<CoreStartupConfiguration>;
   listAgents(options?: PageOptions): Promise<ListPage<SavedAgent>>;
   createAgent(input: CreateAgentInput): Promise<SavedAgent>;

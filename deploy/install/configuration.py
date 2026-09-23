@@ -1,5 +1,6 @@
 """Deployment files for the existing Core, Runtime and production console."""
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 def bind(source, target, readonly=True):
@@ -42,13 +43,18 @@ def core_environment(root, state, database_password):
     config = str(Path(root) / "config") if native else "/config"
     database = f'127.0.0.1:{state["database_port"]}' if native else "database:5432"
     daemon_host = f'host.microsandbox.internal:{state["core_port"]}' if native else "core:8091"
+    daemon_url = f"ws://{daemon_host}/api/v1/agent-daemon/ws"
+    if state.get("public_url"):
+        origin = urlsplit(state["public_url"])
+        daemon_url = origin._replace(scheme="wss" if origin.scheme == "https" else "ws",
+                                     path="/api/v1/agent-daemon/ws").geturl()
     result = {
         "AGENTS_API_DATABASE_URL": f"postgres://agents_api:{database_password}@{database}/agents_api?sslmode=disable",
         "AGENTS_API_KEYS_FILE": config + "/keys.json",
         "AGENTS_API_CREDENTIAL_KEY_FILE": config + "/credential.key",
         "AGENTS_API_ADDR": f'127.0.0.1:{state["core_port"]}' if native else ":8091",
         "AGENTS_API_ENGINE": "codex", "AGENTS_API_HARNESSES": "codex,claude_sdk,mcode",
-        "AGENTS_API_DAEMON_WS_URL": f"ws://{daemon_host}/api/v1/agent-daemon/ws",
+        "AGENTS_API_DAEMON_WS_URL": daemon_url,
     }
     result["AGENTS_API_SANDBOX_ADMIN_DIGESTS_FILE"] = (
         str(Path(root) / "admin/digests.json") if native else "/admin/digests.json")
@@ -107,14 +113,25 @@ def compose_config(root, state, manifest, database_password):
             "image": manifest["images"]["web"], "user": identity, "restart": "unless-stopped",
             "ports": [f'127.0.0.1:{state["web_port"]}:8080'], "read_only": True,
             "security_opt": ["no-new-privileges:true"],
-            "volumes": [bind(config / "caller.key", "/config/caller.key"),
-                        bind(config / "console.password", "/config/console.password")],
+            "volumes": [bind(config / "caller.key", "/config/caller.key")],
             "environment": {"CORE_CONSOLE_ORIGIN": state.get("public_url") or f'http://127.0.0.1:{state["web_port"]}',
                 "CORE_CONSOLE_UPSTREAM": (f'http://127.0.0.1:{state["core_port"]}' if native
                                           else state.get("core_url") or "http://core:8091"),
-                "CORE_CONSOLE_TOKEN_FILE": "/config/caller.key",
-                "CORE_CONSOLE_PASSWORD_FILE": "/config/console.password"},
+                "CORE_CONSOLE_TOKEN_FILE": "/config/caller.key"},
         }
+        if state.get("console_auth") == "account":
+            services["web"]["volumes"].extend([
+                bind(config / "console.setup.key", "/config/console.setup.key"),
+                bind(root / "state/console", "/state/console", False),
+            ])
+            services["web"]["environment"].update(
+                CORE_CONSOLE_AUTH_MODE="account",
+                CORE_CONSOLE_SETUP_KEY_FILE="/config/console.setup.key",
+                CORE_CONSOLE_STATE_DIR="/state/console",
+            )
+        else:
+            services["web"]["volumes"].append(bind(config / "console.password", "/config/console.password"))
+            services["web"]["environment"]["CORE_CONSOLE_PASSWORD_FILE"] = "/config/console.password"
         if state["mode"] == "all":
             services["web"]["volumes"].extend([
                 bind(root / "admin/sandbox-admin.key", "/admin/sandbox-admin.key"),

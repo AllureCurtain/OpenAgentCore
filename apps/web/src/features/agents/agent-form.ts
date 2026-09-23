@@ -172,6 +172,14 @@ function readOnlyToolLabel(value: unknown): string {
     && hasOnlyKeys(value, ["type", "enabled"])
     && (value.enabled === undefined || typeof value.enabled === "boolean")
   ) return ta("savedTool.programmatic");
+  if (
+    value.type === "web_search"
+    && hasOnlyKeys(value, ["type", "mode", "context_size", "allowed_domains", "location"])
+  ) {
+    return value.mode === "disabled"
+      ? ta("savedTool.webSearchDisabled")
+      : ta("savedTool.webSearchEnabled");
+  }
   if (value.type === "function" && value.defer_loading === true) return ta("savedTool.deferred");
   if (value.type === "mcp" && value.credential_id != null) return ta("savedTool.credentialedMcp");
   if (value.type === "function") return ta("savedTool.unsupportedFunction");

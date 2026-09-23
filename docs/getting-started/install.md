@@ -23,11 +23,14 @@ in the [add-node steps](#add-nodes-after-a-default-installation).
 
 ## Verify, extract and install
 
-Obtain the archive and checksum from a trusted distributor. Until a release is
-published, obtain a verified bundle from your deployment administrator or build
-an archive using [Build a distribution](#build-a-distribution);
-a source checkout alone is not an installable binary bundle. Do not substitute an
-unpublished download URL.
+Download the matching Linux amd64 archive and its `.sha256` file from
+[GitHub Releases](https://github.com/MiniMax-AI/parsar-core/releases). Use one
+release for the entire installation. If GitHub requires sign-in, use an authenticated
+browser or `gh release download RELEASE --repo MiniMax-AI/parsar-core`.
+Choose the ordinary `.tar.gz` for a zero-node installation, or `-offline.tar.gz`
+when you also need all execution assets locally. A source checkout alone is not
+an installable binary bundle; [build a distribution](#build-a-distribution) for
+unreleased changes.
 
 For the recommended node workflow, choose an HTTPS address that both node hosts
 and their sandbox guests can reach, such as `https://core.example`. Configure
@@ -44,38 +47,75 @@ cd "$HOME/.parsar/releases/parsar-core-<commit>-linux-amd64"
 ./install.sh --public-url https://core.example
 ```
 
-The bundle contains the same-revision native Core binaries and service image,
-unchanged Web build, production Web proxy and colocated Runtime. It includes microsandbox's pinned runtime and
-firmware. It also contains image archives, source provenance and checksums;
-installation does not need Go, Node, Rust or a product checkout. The default
-installation loads only the Core, Web and PostgreSQL images; Runtime and
-microsandbox payloads are used only when a sandbox provider is enabled.
-The matched `parsar-sandbox-node` executable is included in the native payload
-and Core service image; packaging it does not start or register a node.
+The thin bundle contains same-revision Core and Web service images, PostgreSQL,
+native Core binaries, installer bootstraps, documentation and checksums. Node,
+Runtime and microsandbox binaries are separate prebuilt assets. Installing the
+default zero-node deployment downloads none of those execution assets and needs
+no Go, Node, Rust or source checkout.
+
+The manifest identifies every asset by immutable revision, SHA-256 and byte size.
+Adding a node downloads only its selected provider's assets. Runtime images use
+compressed archives; verified local files and already imported images are reused.
+Downloads use temporary files and bounded retries, so a truncated response is
+never promoted into the cache. An optional `-offline.tar.gz` bundle contains the
+same assets locally. For console-based distribution without a release host, build
+that offline bundle with no release URL. A bundle that records a release URL
+retains that URL for remote node downloads; it does not silently change mirrors.
 
 ## Sign in to Web
 
 Installation creates private configuration under `~/.parsar/core`, a dedicated
-PostgreSQL volume, an API caller key and a credential encryption key. It also
-creates a separate console password and deployment administrator key. Secret values
-are not printed.
+PostgreSQL volume, an API caller key and a credential encryption key. New Web
+installations create a one-time console setup key and a separate deployment
+administrator key. Secret values are not printed.
 
 Open the console address printed by the installer (`https://core.example` in
-the example above). Sign in as `admin` using the password in
-`~/.parsar/core/config/console.password`. The bundled console is already connected
-to Core; you do not need to paste an API key.
+the example above). On the first visit, enter the setup key from
+`~/.parsar/core/config/console.setup.key`, choose an administrator username and
+password, and keep your sign-in details safe. The Web has one role: administrator,
+with access to every console operation. It has no secondary user roles. The paired
+console already connects to Core; no API key is needed to sign in.
+
+On a paired deployment, the first-run Home creates an Agent API key, then guides you through optional
+host enrollment and a real Agent request. Save the generated key when it is shown;
+its secret is returned only once. The **API keys** page lists safe metadata and
+lets you create or revoke keys later. You can skip or replay it from **Getting started**. Hosts registered here
+supply sandbox resources for **hosted** Sessions; self-hosted Sessions use their
+application-managed environments. The request workbench lets you configure model,
+provider and harness defaults and run the generated request from your machine.
+Caller API keys authorize Core requests; model provider keys authorize model calls.
+Neither is the administrator password. Examples read environment variables or ask
+for keys privately in the terminal, and reject HTTP redirects. Keep the generated Core API key for later requests from your own machine.
+A Web-only installation without paired key management guides you to use an
+existing Core API key and still allows the request workbench.
+Creating a saved Agent stores its configuration; it does not start a Session or
+call the model. The full protocol surface and execution support are documented
+in the [API guide](./quickstart.md).
 
 Default local ports and private files:
 
 - API: `http://127.0.0.1:8091/v1`
 - Web upstream: `http://127.0.0.1:8080`; use the configured public URL in your browser
-- Console password file: `~/.parsar/core/config/console.password`
-- API caller key file: `~/.parsar/core/config/caller.key`
-- Sandbox administrator key file: `~/.parsar/core/admin/sandbox-admin.key`
+- One-time setup key: `~/.parsar/core/config/console.setup.key`
+- Administrator state: `~/.parsar/core/state/console/` (`admin.json` and `registered`)
+- API caller key: `~/.parsar/core/config/caller.key`
+- Sandbox administrator key: `~/.parsar/core/admin/sandbox-admin.key`
 
 Use exactly the displayed console address; the production proxy validates its
-configured browser origin. The console password authenticates to the Web server;
-the server holds the independent Core key. Model keys remain API execution input.
+configured origin. The account file contains a password hash, not a recoverable
+password. Back up the private console state along with installation configuration;
+do not remove it to reset a password or reopen registration. Cookie sessions expire
+after 12 hours and on console restart; the account survives restarts. Existing
+installations retain `admin` Basic login with `config/console.password`; rerunning
+the installer does not silently migrate their authentication mode.
+
+Manual account-mode consoles set `CORE_CONSOLE_AUTH_MODE=account`, an absolute
+`CORE_CONSOLE_STATE_DIR` (private writable directory) and
+`CORE_CONSOLE_SETUP_KEY_FILE` (private credential file). Keep state outside the
+static Web root. Setup/login/logout use private `/console/auth` routes and do not
+extend the public Agent API. Public `/v1` requests carrying an explicit caller
+Bearer are forwarded unchanged to Core; browser cookie requests use the paired
+console's server-held caller key. The console never exports that key to the page.
 
 Every Core installation creates a separate private deployment administrator key at
 `admin/sandbox-admin.key`. Core loads its SHA-256 digest from
@@ -102,9 +142,11 @@ management. Choose English or Chinese through the System language selector.
    this page does not switch providers. Microsandbox uses a five-minute idle
    timeout and one-day snapshot retention.
 4. Click **Add node**, copy the command, and run it as a non-root user on the
-   target Linux amd64 host. It downloads the matched files from your console,
-   verifies checksums, imports the Runtime image, writes the provider configuration,
-   registers the node and starts a systemd user service. Web refreshes node health
+   target Linux amd64 host. It downloads the matched bootstrap from your console and execution assets from
+   the manifest's release location (or the offline console payload), verifies
+   checksums, imports the Runtime image only when missing, writes the provider configuration,
+   registers the node and starts a systemd user service. The installer waits for Core to confirm
+   connection and provider readiness. Web refreshes node health
    automatically. Wait for the node to be online and its provider to be ready;
    registration alone does not mean it can accept work.
 
@@ -131,6 +173,53 @@ the colocated daemon, native harness and workspace.
 
 Once a node is ready, you can [make an API request](quickstart.md). The model
 credentials are supplied with execution requests, not during node installation.
+
+## Connect a user-managed Runtime
+
+A `self_hosted` Session uses your own execution machine; it does not enroll that
+machine as a shared sandbox node. Create the Session through the public API, then
+use your project caller credential to obtain a restricted credential for its
+Environment. The [credential contract](../../contracts/agents-api/environment-executor-credentials.md)
+describes issuance, rotation and revocation. Save the response to an owned,
+mode-0600 file. Keep the project caller key on your application machine.
+
+After saving the restricted credential on your execution machine, run one command
+with your Core origin, Environment ID and returned `remote_url`. This downloads
+and verifies the matching bootstrap before starting it:
+
+```sh
+(
+  set -eu
+  core=https://core.example
+  work=$(mktemp -d)
+  trap 'rm -rf "$work"' EXIT
+  curl -fsS "$core/node-install/self-hosted-install.pyz" -o "$work/self-hosted-install.pyz"
+  curl -fsS "$core/node-install/SHA256SUMS" -o "$work/SHA256SUMS"
+  (cd "$work"; awk '$2 == "self-hosted-install.pyz"' SHA256SUMS | sha256sum -c -)
+  python3 "$work/self-hosted-install.pyz" --source-url "$core" \
+    --environment-id ENVIRONMENT_UUID \
+    --remote wss://core.example/api/v1/agent-daemon/ws \
+    --credential-file /absolute/private/executor-key.json
+)
+```
+
+Use the exact Environment ID and reachable `remote_url` returned by your Session.
+The Linux amd64 host needs Python 3.9+ and Docker access as a non-root user.
+The installer prepares the matched daemon, native harnesses and local workspace
+inside the same isolated Runtime used for hosted execution. No shared node,
+model credential or source build is needed. Model access remains execution input.
+
+The command waits for Core to confirm that this Environment and its restricted
+credential are connected. It distinguishes a running container from a connected
+Environment. Connection failure or timeout exits with diagnostic and retry
+instructions, preserving the same container, credentials and native history.
+Rerun the command after correcting the reported problem; it does not create
+replacement history. A connected Environment does not prove model availability.
+Submit your task through the Session API to test execution.
+Installation state stays under `~/.parsar/self-hosted/ENVIRONMENT_UUID`; retain its
+credentials, volumes and native history. An uncertain launch gives inspection
+instructions instead of creating replacement history. Session deletion does not
+reclaim user-owned Docker resources.
 
 ## Installation choices
 
@@ -210,7 +299,9 @@ For nodes added through Web, install with the intended shared HTTPS endpoint:
 ./install.sh --public-url https://core.example
 ```
 
-Configure your TLS reverse proxy to forward that origin to the loopback Web port,
+The installer also uses this origin for the `wss` connection URL returned by
+self-hosted Sessions, so remote Runtime hosts never receive a Compose-only
+hostname. Configure your TLS reverse proxy to forward that origin to the loopback Web port,
 preserve Host, and support WebSocket upgrades. The bundled Web forwards the fixed
 node and daemon transport routes to Core using their own credentials. Both the
 node host and its sandbox guests must reach this address. Installation does not
@@ -243,6 +334,7 @@ MiniMax companion prepared through the existing Runtime build instructions:
 ```sh
 export AGENTS_RUNTIME_CODEX_PACKAGE=/absolute/path/to/codex-linux-package
 export MCODE_HARNESS_BUILD_DIR=/absolute/path/to/mcode-harness-artifact
+export CORE_DISTRIBUTION_RELEASE_BASE_URL=https://downloads.example/releases/COMMIT
 make build-core-distribution
 ```
 
@@ -251,3 +343,46 @@ the commit, immutable image identities, microsandbox binary hashes and the actua
 Runtime OCI manifest digest. Build output lives under `~/.parsar/build/`; it is
 not automatically published to GitHub, an image registry or a website. Qualify the
 exact bundle before distribution. See the [contributor guide](https://github.com/MiniMax-AI/parsar-core/blob/main/CONTRIBUTING.md).
+
+The release base must host the generated flat asset filenames over HTTPS. Use
+`CORE_DISTRIBUTION_OFFLINE=1` to also emit a full offline archive; a build without
+any release URL must select offline mode. A fully disconnected console deployment
+uses that empty-URL offline build; remote node installers then obtain assets from
+the console. The release workflow prepares pinned
+harness dependencies, builds versioned assets, and uploads an Actions artifact.
+An explicit manual option can create an unpublished draft release. Neither a
+successful build nor a draft makes a private repository anonymously downloadable;
+publish qualified assets through your chosen distribution channel before sharing
+installation instructions with external users.
+
+## Produce and qualify a release
+
+The `core-release` GitHub Actions workflow builds production assets from a full
+committed source SHA. It uses the existing pinned Runtime builders; acceptance
+credentials and private test certificate authorities must never enter its inputs.
+Run the workflow from the repository's Actions page, or use:
+
+```sh
+revision=$(git rev-parse HEAD)
+gh workflow run core-release --repo MiniMax-AI/parsar-core --ref main \
+  -f ref="$revision" -f offline=true -f draft_release=true
+```
+
+The workflow uploads the matched files as an Actions artifact and creates a draft
+Release whose tag is that full SHA. The manifest records the same tag in every
+asset URL. Do not mix files across releases or resolve individual components
+through `latest`. The node command comes from its connected Core, which selects
+the matching release automatically.
+
+Download the draft assets using repository access, verify their checksums, and
+qualify a fresh installation plus the node/self-hosted connection paths before
+publishing the draft. A workflow build alone is not live acceptance. Retain the
+exact tested assets when publishing; do not rebuild or replace files under the
+same release identity. Publishing a Release does not change repository visibility.
+
+For an offline installation, provide the extracted matching archive through the
+existing `--offline-root` option where supported. Remote node commands use the
+manifest's release URL; use the explicitly configured console-hosted offline
+build described above when node hosts cannot access that URL. Download access
+errors should be fixed at the distribution source, without passing repository
+credentials into Runtime or changing its executor authorization.

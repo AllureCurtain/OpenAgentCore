@@ -104,7 +104,7 @@ paths start at `/vaults`, not `/agents/vaults`.
 | sessions.subagents.turns | retrieve, list | Implemented; child Turns carry the Session's Agent ID and are not Session Turns |
 | sessions.subagents.turns.items | list | Implemented; scoped persisted reads |
 | environments | retrieve | Three-harness colocated self-hosted implementation and qualified Docker hosted profiles: durable status and safe initial-file metadata; other installation inventory and full lifecycle parity remain gaps |
-| environments.files | create, list | [Bounded live listing and inline/source-file creation](environment-files.md) on qualified Docker workspaces; [user-managed enrollment](user-managed-runtime-v1.md) reuses the local implementation with separate real public acceptance. [Aligned](environment-files.md#wire-alignment--september-23-2026) the 201 status, page envelope, query keys, empty pages for non-directory paths on local workspace readers, sampled path/token errors and pending hosted rejection; recursion, parent creation, overwrite and other errors remain partial |
+| environments.files | create, list | [Bounded live listing and inline/source-file creation](environment-files.md) on qualified Docker workspaces; [user-managed enrollment](user-managed-runtime-v1.md) reuses the local implementation with separate real public acceptance. [Aligned](environment-files.md#wire-alignment--september-23-2026) the 201 status, page envelope, query keys, empty pages for non-directory paths on local workspace readers, sampled path/token errors and pending hosted rejection; [aligned](environment-files.md#write-semantics--september-23-2026) parent creation, no-replacement and the 5 MiB inline bound; recursion and other errors remain partial |
 | environments.templates | create, retrieve, update, list, delete | [Reusable network, files, env/setup/packages, inline/referenced Skills and Session snapshots](environment-templates.md); other initialization and full semantics remain gaps |
 | vaults | create, retrieve, list, delete | Create/retrieve/list/delete with independent tenant persistence, stored status filtering, atomic Credential cascade and frozen Session attachments; archive semantics and full hosted lifecycle parity remain missing |
 | vaults.credentials | create, retrieve, update, list, delete | Static-bearer and OAuth create/retrieve/list/replacement/deletion with scoped encrypted storage and dispatch-time refresh; Session attachment and exact-URL HTTPS MCP binding; archive semantics and full hosted lifecycle parity remain missing |
@@ -284,10 +284,11 @@ upgrade the protocol.
 - [Explicit disabled tools](tool-policy.md) can be saved, used inline or resolved from saved Agents:
   `web_search.mode=disabled` and `programmatic_tool_calling.enabled=false`. Search
   responses include `context_size=medium` for omitted/null size, nullable domains
-  and location; an empty domain list stays empty. Only explicit disabled mode is
-  qualified; omitted/null mode and enabled search remain gaps. Sessions reject
-  enabled programmatic execution, including the default true on a supplied PTC
-  declaration. An omitted PTC declaration preserves native behavior: this is an
+  and location; an empty domain list stays empty. Saved Agents keep every pinned
+  search mode, saving omitted/null mode as `live`; only explicit disabled mode is
+  qualified, so Session admission rejects enabled search unless the Session
+  replaces the saved tools. Sessions reject enabled programmatic execution,
+  including the default true on a supplied PTC declaration. An omitted PTC declaration preserves native behavior: this is an
   approved difference from the official default-on behavior, not full compatibility.
   Core carries the frozen disabled intent through the common Runtime contract;
   native translation and inventory restrictions stay in adapters. Codex checks
@@ -355,7 +356,7 @@ upgrade the protocol.
   rechecked before dispatch-only decryption; authenticated execution requires the
   separate bearer capability and never downgrades on failure. Exact URL/selection
   timing, implicit response population and hosted errors remain local or unverified.
-  Other MCP variants and enabled web-search remain gaps, not changes to the pinned target
+  Other MCP variants and enabled web-search execution remain gaps, not changes to the pinned target
   or claims of complete resource coverage.
 
 - Use `/agents/sessions` beneath the configured API base URL, bearer authentication
@@ -540,13 +541,14 @@ support `after`, `limit` (1..100, default 20), and `order` (default `desc`).
 The cursor is a Turn ID in the same tenant and Session. Failed turns expose a
 generic `internal_error`, never raw engine diagnostics. `usage` exposes the latest persisted complete token breakdown, including cached input
 and reasoning output. Missing measurements remain null; Session usage sums recorded
-Turn measurements as best-effort usage, without estimating missing history. Session runtime state derives from the latest Turn.
+Turn measurements as best-effort usage, without estimating missing history; it is
+null while any root Turn has not ended or once one ends with unknown usage. Session runtime state derives from the latest Turn.
 
 ### Item recovery reads
 
 `GET /v1/agents/sessions/{session_id}/items` supports the same list controls,
 with a stable Item ID cursor and first-observation ordering. Messages preserve
-text, phase and completion snapshots. Commands preserve reported output, exit
+text, phase (null when none) and completion snapshots. Commands preserve reported output, exit
 code, duration and working directory. MCP calls preserve server/tool identity,
 arguments and structured results/errors. Dynamic functions have linked call and
 result Items. Native file changes appear as `apply_patch` function calls with
@@ -786,10 +788,10 @@ configured engine must support admission before any initial work is persisted.
 
 Fixed SDK/raw HTTP and PostgreSQL tests cover the accepted forms, saved and inline
 configuration, ordering, tenant isolation, retries, rollback and persistence.
-Image support is bounded as documented above. Empty arrays and blank text
-fail the shared message validator. Official probes also rejected empty arrays
-and empty strings, but accepted whitespace-only strings; the latter is a queued
-difference. Full local size-limit and error-detail parity remains unverified. Swagger 2 cannot
+Image support is bounded as documented above. Empty arrays, empty content and
+empty text fail the shared message validator, as official probes also did.
+Whitespace-only text is admitted and stored verbatim, as officially observed
+([text content](message-input.md#text-content)). Full local size-limit and error-detail parity remains unverified. Swagger 2 cannot
 express the string/array union, so input is unconstrained with a type description.
 
 ### Session creation streaming

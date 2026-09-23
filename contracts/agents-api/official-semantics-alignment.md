@@ -40,9 +40,9 @@ credential values belong in the repository or task board.
   status/configuration shapes are a queued baseline upgrade, as approved by the user.
 - The Session admission batch rejects missing/null input for `none` and for
   streaming creation outside `self_hosted`. September 23 official probes confirmed
-  these conditions and idle self-hosted creation. Existing blank-text validation
-  remains stricter: official whitespace-only string input returned 201. This
-  newly found difference is queued rather than expanding the admission batch.
+  these conditions and idle self-hosted creation. Official whitespace-only string
+  input returned 201; the
+  [whitespace batch](#whitespace-only-message-text--september-23) admits it.
 - Two otherwise identical official creates with the same `Idempotency-Key`
   returned 201 and distinct Session IDs. Core retains its durable creation retry
   guarantee. This is a local behavior, not evidence of official idempotency parity.
@@ -52,6 +52,9 @@ credential values belong in the repository or task board.
   The error mapping above must not be extrapolated to every status or resource.
 - Template references with inline installation overrides, optional Skill version
   semantics and the other active board entries remain outstanding.
+- Files.create cannot tell a file written by an earlier Files.create from any other
+  existing file, so both report the untracked-file message; see the
+  [write semantics](environment-files.md#write-semantics--september-23-2026).
 - Native model defaults, tool combinations and unavailable usage counters retain
   their documented multi-harness differences. Core does not reconstruct model
   output, guess counters or introduce a second tool loop to manufacture equality.
@@ -175,10 +178,11 @@ Decisions:
   assigns because it only generates version 4 and 5 UUIDs. The request then
   follows exactly the missing-identifier path, including body, query and storage
   checks. Routes whose lookup is the next check keep their direct not-found
-  response. Malformed list cursors and request-body references are unchanged:
-  Session, Turn, Item, Subagent, Artifact, Agent, Vault and Credential cursors
-  still return 400 `invalid_request`, and Template cursors keep their existing
-  not-found response.
+  response. Request-body references are unchanged. Malformed list cursors were
+  later aligned by the [list cursor error batch](list-query-semantics.md#list-cursor-errors--september-23-2026):
+  Agent, Session, Turn, Template, Vault and Credential cursors take the same
+  missing-cursor path, and Item, Subagent, Artifact and Skill version cursors
+  return their list's official cursor error.
 - Network messages are Core wording; the official prose is not copied.
 - Documented message difference for M2: the official message abbreviated a
   65-character key as `'KKK...KKK'`. That single sample of identical characters
@@ -191,7 +195,8 @@ accepts (SFT-22); non-canonical UUID spellings such as uppercase, braces or
 `urn:uuid:` still resolve to the same resource; Skill sole-version deletion and
 number reuse (since resolved or recorded in
 [file resource semantics](file-resource-semantics.md#sole-version-deletion--september-23-2026));
-Session deletion lifecycle; whitespace input; response defaults;
+Session deletion lifecycle; whitespace input (since addressed by the
+[whitespace batch](#whitespace-only-message-text--september-23)); response defaults;
 and the Files `limit=abc` code. The Environment Files list query parser is aligned
 for unknown and repeated keys by the [Environment Files wire batch](environment-files.md#wire-alignment--september-23-2026);
 it still rejects malformed query encoding locally.
@@ -257,9 +262,11 @@ devices and device crossings still reject the whole capture and fail the Turn
 with `artifact_capture_failed`; there is no official evidence for them yet.
 Republication after changed bytes is inferred rather than observed, and the
 deleted-newest case above is unobserved. The unknown `after` cursor (HE-57)
-belongs to ERROR-PROTOCOL-001. Subagent lists keep their `data`/`has_more`
-envelope until there is official Subagent evidence. Artifact IDs keep the Core
-UUID format. Paths removed from the workspace keep their Artifacts.
+was later aligned by the
+[list cursor error batch](list-query-semantics.md#list-cursor-errors--september-23-2026).
+Subagent lists keep their `data`/`has_more` envelope until there is official
+Subagent evidence. Artifact IDs keep the Core UUID format. Paths removed from
+the workspace keep their Artifacts.
 
 Rust tests cover every link kind, including absolute links to a secret outside
 the workspace and a relative link to a workspace file outside `outputs/`; an
@@ -374,7 +381,7 @@ deleted and a read confirmed 404.
 | C4 | Session create on `none` without input and with an invalid inline agent (TV-04) | The configuration error first. Valid configurations, including enabled `web_search` or programmatic tool calling, still receive the input requirement. |
 | K1 | Function names with any characters or over 64 characters, programmatic tool calling enabled on a saved Agent, reasoning effort `max`, service tier `flex` (TV-07) | Unchanged: saved and echoed. |
 | K2 | Harness and execution admission limits: enabled `web_search` or programmatic tool calling, structured output on an unqualified harness, explicit reasoning or a non-`auto` service tier on Session create (TV-06) | Unchanged: `unsupported_or_invalid_configuration` with the existing messages, after protocol validation. |
-| K3 | Saved `web_search` with mode `live`, `cached`, null or omitted (TV-05) | Unchanged: `unsupported_or_invalid_configuration`, "Only disabled web_search is qualified for execution." |
+| K3 | Saved `web_search` with mode `live`, `cached`, null or omitted (TV-05) | Resolved by [Saved web_search modes](#saved-web_search-modes--september-23): saved with the official projection; Session admission keeps the K2 rejection. |
 
 Decisions:
 
@@ -430,9 +437,9 @@ Decisions:
   checks run after recovery. Core is pre-release, so the order is not changed for
   such retries.
 
-Deferred and unchanged: TV-05, saving `web_search` with mode `live`, `cached` or
-omitted (officially saved, omitted stored as `live`), needs a separate decision
-about saved-but-unqualified settings. Duplicate `programmatic_tool_calling`
+TV-05, saving `web_search` with mode `live`, `cached` or omitted, was deferred
+here and is resolved by [Saved web_search modes](#saved-web_search-modes--september-23).
+Deferred and unchanged: duplicate `programmatic_tool_calling`
 declarations and MCP server labels were not sampled: saved Agents accept them and
 Session admission keeps "Execution requires distinct tool controls." and
 "Execution requires distinct MCP server labels.". A missing model without
@@ -448,3 +455,212 @@ and saved-override Session creates, with a database digest proving no writes; it
 then saves and reads back the K1 values and checks tenant isolation. The
 pinned-SDK acceptance scripts assert the new codes, params and messages. Real
 Core, daemon and model acceptance is recorded separately by the coordinator.
+
+## Whitespace-only message text — September 23
+
+Core admitted user text only when it had a non-whitespace character; the official
+service admits any non-empty text and stores it unchanged. Evidence comes from the
+campaign scan recorded privately in
+`~/.parsar/remediation/20260923/campaign-scan-1/sessions/findings.json`
+(SES-01..08) with raw official records under `official/`: `s1-create-string-spaces`,
+`s4-create-string-newline-tab`, `s2-create-message-part-newline-tab`,
+`e1-events-two-whitespace-messages`, `q2-items-l100` (user Item text `"   "`),
+`p1a-create-missingagent-empty-string`, `e2-events-empty-content`,
+`e3-events-text-emptystring` and `e4-events-empty-input`. The probed Sessions were
+deleted.
+
+| Row | Case | Core behavior |
+| --- | --- | --- |
+| W1 | Session create with string input `"   "` or `"\n\t"` (SES-01/02) | 201; the user Item keeps the exact text. |
+| W2 | Session create with a message whose only `input_text` part is whitespace-only (SES-03) | 201; stored verbatim. |
+| W3 | `events.create` message with whitespace-only `input_text` parts, including two such messages in one event (SES-04) | 202; one Turn, Items verbatim. String `content` or string `input` stay type errors, as observed officially. |
+| W4 | Empty string, empty `content`, empty `input`, or a message whose text parts are all empty (SES-05..07) | Unchanged 400 `invalid_request` with the generic message and null param, without writes. The official responses use code `invalid_request_error`, specific messages and, for the empty create string, param `input`; aligning them is outside this batch. |
+| W5 | A message with parts `["", "real text"]` (SES-08) | Unchanged: accepted and stored with the empty part. Official behavior is unobserved; its per-part error message suggests it may reject. |
+| W6 | Native execution of a whitespace-only Turn on Codex, Claude SDK and MiniMax Code | Declared per harness through the engine profile. Codex admits and delivers the text unchanged; live acceptance at `898b197a` completed its whitespace-only Turns. Claude SDK and MiniMax Code are not qualified: a message without an image or non-whitespace text returns 400 `unsupported_or_invalid_configuration` at Session creation (including streaming and self-hosted creation) and `events.create`, before any write, reservation or promotion. Live evidence for MiniMax Code: after admission its native runtime refused the prompt with "Local message content or attachments are required." and the Turn failed with `engine_failed` (public `internal_error`). The Claude SDK admission rejection was confirmed live at `d88ffba6`. |
+
+Decisions:
+
+- `MessageInput.Validate` treats any non-empty text part as content and no longer
+  trims. Image reference checks are unchanged. The rule applies wherever the
+  validator runs: Core admission for create and events, Worker delivery, daemon
+  steering and prepared start, and the Codex and MiniMax adapters.
+- W6 reuses the engine profile that declares image placements: a
+  `WhitespaceOnlyText` qualification checked with the other input profile rules
+  during Worker admission, without engine-name branches in handlers. The Claude
+  bridge and Anthropic-compatible providers reject text blocks without
+  non-whitespace characters, and the MiniMax Code native runtime refuses such a
+  prompt, so Core declares both combinations instead of failing the Turn or
+  rewriting input. Whitespace beside non-whitespace text in one
+  message stays admitted for every harness. Whitespace is one explicit set, the
+  union of Go `unicode.IsSpace` and ECMAScript `String.prototype.trim`, used by
+  both Core admission and the Claude bridge; a shared table test keeps them
+  equal. The MiniMax native check is covered only by live evidence.
+  Admission makes the bridge's own check unreachable. If such a steering message
+  still reached the bridge it would report `input_rejected`, and Core would end
+  the running Turn as before; the delivery lifetime is unchanged.
+- The TypeScript client mirrored the old rule for event batches; it now rejects
+  only messages whose text is empty. Core Web keeps its local nonblank composer
+  and Start Session rules; they are a UI choice, not protocol validation.
+- No schema, model output or image rule changes.
+
+Follow-ups:
+
+- Codex omits the `text` field of an empty text part (`omitempty` on its native
+  input), so a W5 message `["", "text"]` may be rejected natively. It is recorded
+  rather than changed here, because removing the tag would also add empty text to
+  image parts.
+- On Claude SDK, a mixed message such as `["   ", "text"]` is admitted and sends
+  a whitespace-only native text block, and `["", "text"]` sends an empty block;
+  the provider's behavior for such blocks is unverified.
+- The Core Web composer trims leading and trailing whitespace from all sent text,
+  not only blank sends. This is a UI choice; other clients' text is unchanged.
+
+Go proto, dispatch, Codex and API handler tests cover W1–W5. Profile, error
+mapping and real-PostgreSQL Worker tests cover W6 admission: Codex admits and
+stores the text, and Claude SDK and MiniMax Code reject at none, streaming and
+self-hosted creation and at events.create without writes. A real-PostgreSQL
+test creates Sessions and submits events over HTTP, reads back the exact user
+Item text, and proves the W4 rejections write nothing; the pinned-SDK initial
+input script asserts the same. Real Core, daemon and model acceptance is recorded
+separately by the coordinator.
+
+## Session input conflicts and result targets — September 23
+
+This batch gives every 409 the official conflict type and aligns the conflict and
+tool result target errors of `events.create`, from Core main `0035435a`. Evidence
+comes from the campaign scans recorded privately in
+`~/.parsar/remediation/20260923/campaign-scan-4/errors/findings.json` (ERR-22 and
+ERR-27, raw records in `official/results.json`: `sessB-message-while-running`,
+`sessA-delete-while-waiting`) and
+`~/.parsar/remediation/20260923/campaign-scan-2/events-tools/findings.json`
+(EVT-11, EVT-12 and EVT-14, raw records in `official/calls-s2.json`:
+`s2-result-unknown-call`, `s2-result-unknown-turn`,
+`s2-result-duplicate-after-terminal`, `s2-result-changed-after-terminal` and
+`s2-result-after-cancel`). Every observed official 409 has type and code
+`conflict_error` and a null param.
+
+| Row | Case | Core behavior |
+| --- | --- | --- |
+| CF1 | Every 409 response (ERR-27) | Type `conflict_error`. The code stays specific to the case (CF2–CF5). |
+| CF2 | `events.create` input that the Session cannot accept in its current state: a tool result after its Turn was cancelled, or ended without a saved result (EVT-12), and any other Turn conflict on this route; a batch while earlier input still waits for admission, such as the reserved initial input of a provisioning hosted Session or of a self-hosted Session awaiting its connection (ERR-22) | 409 with code `conflict_error` and a null param. Core keeps its message "The Turn cannot accept this input in its current state."; pending input reports "Earlier input to this Session is still pending." (official: "session initial input is still pending"). |
+| CF3 | A tool result that differs from the call's saved result, before or after its Turn ends (EVT-12) | 409 `conflict_error`, "The tool call already has a different result." |
+| CF4 | Idempotency-Key reuse with a different body on Session creation or `events.create` | Unchanged local code `idempotency_conflict` and message, with type `conflict_error`. Request idempotency is a documented Core extension of these operations. |
+| CF5 | Other Core-only conflicts: `sandbox_deployment_conflict`, `runtime_node_in_use`, `runtime_local_node_configured`, `environment_unavailable`, `environment_input_expired`, `environment_input_cancelled`, `runtime_history_unsupported`, and `turn_conflict` from an Environment file write while Session work or input is active | Codes and messages unchanged, with type `conflict_error`. |
+| CF6 | A tool result whose `call_id` names no function call of the caller's own Session, with any `turn_id` (EVT-11) | 400 with type and code `invalid_request_error`, param null, "Unknown pending tool call." Nothing is written and the pending action is unchanged. |
+| CF7 | A tool result for a call of the Session whose `turn_id` names another Turn, an unknown UUID or no UUID at all (EVT-11) | 400 `invalid_request_error`, param null, "The tool call belongs to a different Turn." Nothing is written. |
+| CF8 | Any input to a missing, malformed or foreign Session | Unchanged: the byte-identical 404 `not_found_error`, whatever the result target. |
+| CF9 | An identical tool result repeated before or after its Turn ends (EVT-14) | Unchanged: 202 without another application or event. The official repeated `item.added` is not copied. |
+
+Decisions:
+
+- The error writer selects type `conflict_error` from the 409 status, so later
+  conflicts cannot drift. The Session input writer maps Turn conflicts to code
+  `conflict_error`; other routes keep `turn_conflict`, because official conflicts
+  there, such as an Environment file write during work, are unsampled.
+- Result targets are resolved under the tenant Session lock after the Session
+  lookup. A well-formed Turn ID is looked up in that Session and must own the call;
+  otherwise the Session's own calls decide between CF6 and CF7. The `turn_id` is
+  therefore no longer rejected as a malformed UUID before the Session lookup, and
+  malformed, missing and foreign Sessions keep one 404. The decision reads only
+  the caller's Session, so it reveals nothing about other Sessions or tenants.
+- The official messages name the call or internal executor IDs ("Unknown pending
+  tool call: <call_id>", "function call exec-... belongs to a different managed
+  agent turn"). Core's messages are fixed and repeat neither caller input nor
+  internal identifiers.
+- Checks keep their order: request validation, the Session lookup, the retry
+  lookup (CF4), for batches with a message the Environment file-write gate (a
+  Turn conflict, also CF2 with the Turn message), the pending input gate (CF2),
+  then each event in batch order. A
+  batch sent while input is pending therefore returns the CF2 409 even when its
+  result target is unknown; the official order between these errors is
+  unobserved. An empty `turn_id` or a
+  blank `call_id` remains the generic 400 `invalid_request`.
+- The official pending-input sample is the asynchronous admission window of
+  `none` initial input (ERR-22). Core admits `none` input synchronously and does
+  not emulate that window; the same fields apply to Core's reserved hosted and
+  self-hosted input, initial or later.
+- The TypeScript client and Core Web did not branch on the old codes. The client
+  documents that `isSessionDeletionConflict` classifies only a `deleteSession`
+  failure, since input conflicts now share its code. Cores before this batch
+  returned 409 `turn_conflict` or `idempotency_conflict` with type
+  `invalid_request_error`, and 404 for unknown result targets; clients that span
+  both should treat any 409 as a conflict, and a 400 on new Cores or a 404 on
+  older Cores as an unknown result target.
+
+Unchanged: the ERR-22 asynchronous admission window (an architectural difference),
+Idempotency-Key semantics, Session-level 404 isolation, admission timing and the
+schema. The pinned SDK still retries a 409 by default; the status did not change.
+
+Go API tests pin the exact CF2–CF9 bodies and the conflict type of every Core-only
+409 code. A real-PostgreSQL HTTP test replays CF2–CF4 and CF6–CF9 with tenant B
+requests, missing and malformed Sessions, a rolled-back mixed batch, a
+whole-database digest and Session reads proving that every rejection writes
+nothing and keeps the pending action. Store tests cover target classification and
+rollback. The pinned-SDK scripts `official_function_inputs.py`,
+`official_pending_actions_native.py` and `official_session_creators.py` assert the
+new fields, and TypeScript client and Core Web unit tests cover them. Real Core,
+daemon and model acceptance is recorded separately by the coordinator.
+
+## Saved web_search modes — September 23
+
+Saved Agents now keep every pinned `web_search` mode, as the official service
+does, from Core main `1eb60c27`. Evidence is TV-05 (official W01/W02) in the
+campaign scan recorded privately in
+`~/.parsar/remediation/20260923/campaign-scan-3/subagents-tools/findings.json`,
+and owned probes under `~/.parsar/remediation/20260923/saved-web-search/official/`
+(`results.json`, `ledger.jsonl`): four owned Agents with the create records
+`type-only`, `mode-null`, `mode-cached` and `mode-cached-full`, the update records
+`update-disabled`, `update-omitted-low` and `update-live-domains-empty`, and a
+`retrieve`, without a Session or model. All four Agents were deleted. A second
+probe created two more Agents, both deleted and confirmed 404 afterwards:
+`location-partial-omitted` (`{"city":"Paris","country":"FR"}` saved with null
+`region` and `timezone`, `req_db41d2f6261b4abfb69465eafe719ab5`) and `location-empty`
+(`{}` saved with all four keys null, `req_165d53b88445490b9146d8272c54134d`).
+
+| Row | Case | Core behavior |
+| --- | --- | --- |
+| W1 | Agent create with `web_search` mode `live`, `cached`, null or omitted | 201. Omitted or null mode is saved as `live`, and omitted or null `context_size` as `medium`. `allowed_domains` keeps null versus `[]`. `location` stays null, or else includes `city`, `country`, `region` and `timezone`, with null for omitted keys, also for `{}`. |
+| W2 | Agent update replacing tools with these forms, including a return to `disabled` | 200 with the same projection. Retrieve and list return the saved form. |
+| W3 | Protocol errors in a `web_search` declaration | Unchanged: the C1 and C2 fields. |
+| W4 | Session creation from a saved Agent with enabled search, without a Session `tools` replacement | Unchanged K2 rejection: 400 `unsupported_or_invalid_configuration`, "Only disabled web_search is qualified for execution.", writing no Session, Turn, Environment or reservation, for plain, streamed, self-hosted and hosted creation. Protocol errors and the C4 input requirement still come first. |
+| W5 | The same creation with a per-Session `tools` replacement | Admitted as before; the saved search is not used. |
+| W6 | Inline Session agent with enabled or omitted-mode search | Unchanged K2 rejection. |
+| W7 | Explicit `disabled` search, saved or inline, including records saved before this batch | Unchanged, including the frozen Runtime control on all three harnesses. |
+| W8 | Another tenant's `agent_id` | Unchanged: the same 404 as a missing Agent. |
+
+Decisions:
+
+- Saved Agents use a separate saved-form parser. Session admission re-resolves the
+  effective tools with the unchanged execution parser, which admits only disabled
+  search. This is the path saved enabled `programmatic_tool_calling` already takes
+  (K1, K2). All creation modes share that admission, and Worker device selection
+  and the final preclaim still refuse a non-disabled search control, so enabled
+  search cannot reach dispatch.
+- Same-key creation retries keep their rules. A retry recovers the earlier Session
+  with its frozen disabled control only when that Session recorded its creation
+  request hash, as current Sessions do. An older Session without that record falls
+  through to admission and, like a new key, receives the 400.
+- An inline agent passes the saved-form parser before execution admission, so its
+  enabled search is now reported by the execution check, with the same message.
+  When one configuration hits several execution limits, another limit, such as
+  explicit reasoning, can be reported first, as for saved Agents.
+- Saved tools keep the stored key order of other saved configuration; Session
+  snapshots keep their own. Clients compare decoded values.
+- The TypeScript client types the saved `web_search` declaration with its mode
+  union; inline execution types are unchanged. Core Web shows saved search as a
+  read-only tool. Its Session admission check mirrors Core: it starts Sessions
+  from Agents with one well-formed disabled search and blocks enabled or
+  omitted-mode search, which Core does not run.
+
+Unchanged: execution qualification, Runtime controls, the schema and the
+configuration validation errors. Enabling search execution needs its own
+qualification.
+
+Go handler tests cover the projection table and W4–W7 on every creation mode. A
+real-PostgreSQL HTTP test creates, updates, retrieves and lists Agents with exact
+tool bytes, rejects W4 on plain, streamed, self-hosted and hosted creation under a
+whole-database digest, checks a same-key retry, admits W5 and checks tenant B.
+The pinned-SDK scripts `official_agents.py` and `official_agent_update.py` assert
+the saved projections and the admission rejection, and `official_tool_policy.py`
+adds saved enabled search to its live rejection cases. Real Core acceptance is
+recorded separately by the coordinator.

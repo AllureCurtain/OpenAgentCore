@@ -52,6 +52,19 @@ function isCanonicalExecutionFunction(tool: Record<string, unknown>): boolean {
     && (tool.defer_loading === undefined || typeof tool.defer_loading === "boolean");
 }
 
+// Mirrors Core's saved web_search projection; Core runs only mode "disabled".
+function isCanonicalWebSearch(tool: Record<string, unknown>): boolean {
+  const domains = tool.allowed_domains;
+  const location = tool.location;
+  return hasOnlyKeys(tool, ["type", "mode", "context_size", "allowed_domains", "location"])
+    && (tool.mode == null || ["disabled", "cached", "live"].includes(String(tool.mode)))
+    && (tool.context_size == null || ["low", "medium", "high"].includes(String(tool.context_size)))
+    && (domains == null || Array.isArray(domains) && domains.every((domain) => typeof domain === "string"))
+    && (location == null || isRecord(location)
+      && hasOnlyKeys(location, ["city", "country", "region", "timezone"])
+      && Object.values(location).every((value) => value === null || typeof value === "string"));
+}
+
 function isCanonicalExecutionMcp(tool: Record<string, unknown>): boolean {
   const transport = tool.transport;
   const allowedTools = tool.allowed_tools;
@@ -133,6 +146,7 @@ export function knownSessionAdmissionBlockers(agent: SavedAgent): string[] {
   const functionNames = new Set<string>();
   const mcpLabels = new Set<string>();
   let functionCount = 0;
+  let searchCount = 0;
   for (const rawTool of agent.tools) {
     if (!rawTool || typeof rawTool !== "object" || Array.isArray(rawTool)) {
       blockers.push(ta("admission.malformedTool"));
@@ -161,6 +175,11 @@ export function knownSessionAdmissionBlockers(agent: SavedAgent): string[] {
           mcpLabels.add(tool.server_label);
         }
         break;
+      case "web_search":
+        searchCount += 1;
+        if (!isCanonicalWebSearch(tool)) blockers.push(ta("admission.malformedWebSearch"));
+        else if (tool.mode !== "disabled") blockers.push(ta("admission.enabledWebSearch"));
+        break;
       case "tool_search":
       case "programmatic_tool_calling":
         blockers.push(ta("admission.savedOnly", { type: String(tool.type) }));
@@ -170,6 +189,7 @@ export function knownSessionAdmissionBlockers(agent: SavedAgent): string[] {
     }
   }
   if (functionCount > 64) blockers.push(ta("admission.functionCount"));
+  if (searchCount > 1) blockers.push(ta("admission.webSearchCount"));
   return [...new Set(blockers)];
 }
 

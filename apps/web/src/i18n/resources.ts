@@ -20,11 +20,24 @@ import { system as zhCNSystem } from "./locales/zh-CN/system";
 import { dashboard as zhCNDashboard } from "./locales/zh-CN/dashboard";
 import { app as zhCNApp } from "./locales/zh-CN/app";
 import { sessions as zhCNSessions } from "./locales/zh-CN/sessions";
+import { apiKeyChinese } from "../lib/api-key-strings";
+import { consoleAuthChinese } from "../lib/console-auth-strings";
+import { firstRunChinese } from "../lib/first-run-strings";
 import { chinese as zhCNSandbox } from "../lib/locale-strings";
 
 const enSandbox = Object.fromEntries(
   Object.keys(zhCNSandbox).map((key) => [key, key]),
 ) as { [K in keyof typeof zhCNSandbox]: K };
+
+const zhCNFirstRun = {
+  ...consoleAuthChinese,
+  ...apiKeyChinese,
+  ...firstRunChinese,
+} as const;
+
+const enFirstRun = Object.fromEntries(
+  Object.keys(zhCNFirstRun).map((key) => [key, key]),
+) as { [K in keyof typeof zhCNFirstRun]: K };
 
 export const defaultNamespace = "common";
 
@@ -42,6 +55,7 @@ export const resources = {
     app: enApp,
     sessions: enSessions,
     sandbox: enSandbox,
+    firstRun: enFirstRun,
   },
   "zh-CN": {
     common: zhCNCommon,
@@ -56,5 +70,6 @@ export const resources = {
     app: zhCNApp,
     sessions: zhCNSessions,
     sandbox: zhCNSandbox,
+    firstRun: zhCNFirstRun,
   },
 } as const;
