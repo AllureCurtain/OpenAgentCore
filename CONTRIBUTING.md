@@ -64,7 +64,8 @@ record unresolved low-ROI cases with evidence and impact. Never defer a safety o
 data-consistency blocker while claiming the affected workflow passed.
 
 Session creation requires initial input for `none`, and for streaming creation
-outside `self_hosted`. Check these conditions before creation retry lookup or
+outside `self_hosted`. Report inline agent protocol errors first, then check these
+conditions before creation retry lookup or
 resource resolution. The parser remains shared with subsequent message admission;
 non-streaming hosted and self-hosted requests may omit input. Do not retain an
 idle-none creation compatibility exception. Valid requests retain their documented
@@ -87,7 +88,10 @@ observed upstream server failures as compatibility behavior. See
 
 Report validation failures with official evidence through the typed field error,
 which emits `invalid_request_error` with the observed param and message; keep
-other local codes until their official fields are sampled. A malformed path
+other local codes until their official fields are sampled. Agent configuration
+(saved create/update and the inline Session agent) uses one path-tracking
+validator of the pinned shapes before its parsers and harness admission, which
+keep their local codes; do not grow it into a JSON Schema engine. A malformed path
 identifier must produce exactly the response of a well-formed missing one on that
 route, including invalid bodies, queries and storage availability: resolve it to
 the never-assigned maximum UUID and let the missing path run, or reject it
@@ -1606,7 +1610,21 @@ Chinese/English sandbox text, status and diagnostic formatting live in the share
 `apps/web/src/lib/` locale modules. A persisted explicit language preference wins
 before the first browser language; unrelated product surfaces are outside this
 translation scope. Preserve zero-node setup and node installation behavior when
-localizing their controls.
+localizing their controls. The sandbox manager centers node readiness and capacity in a desktop topology,
+with Core surrounded by actual node buttons. Connection animation represents
+liveness only, never invented traffic or work; offline/stale connections are
+static and reduced-motion preferences disable decorative animation. Node selection
+reveals inspection details. Installation identifiers, provider metadata and
+allocation records are secondary content. Node enrollment is an explicit Add node action in a focused
+dialog, using the saved Core origin or the paired console origin by default.
+Do not expose routine network wiring or manual runtime setup as the primary flow.
+Generate a one-time command only on user intent, never retry enrollment writes
+automatically, and discard credentials and late responses when the dialog closes
+or the Core connection changes. Detect successful addition against the node IDs
+present before enrollment; an existing node reconnecting is not a new enrollment.
+The command verifies the installer checksum before execution, retains normal TLS
+verification, and passes the enrollment credential only to the installer process.
+
 
 Both proxy paths retain fixed-origin, cross-site, safe-path, redirect and Upgrade
 restrictions through the standard Go reverse proxy with streaming/cancellation.
@@ -1890,6 +1908,29 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   binding failures never fall back to anonymous execution. Exact URL equality,
   immutable selection timing, implicit response population and hosted error/redirect
   semantics remain local decisions or unverified gaps. No new MCP loop is permitted.
+- Saved Agent execution defaults use separate input and safe-output Core extensions.
+  Keep model-provider bundles whole at every replacement boundary: endpoint, key,
+  protocol and limits must never be independently inherited. Ordinary Agent JSON
+  contains only safe provider fields and an output-only configured flag; encrypt the
+  complete bundle separately with tenant/Agent binding and a distinct purpose.
+  Commit configuration and secret changes together under the Agent row lock. Merge
+  only the extension's supplied members; omission preserves, provider null clears
+  its bundle, and extension null clears both defaults and secret. Model-only edits
+  require no key. Validate the merged harness/protocol/limits without reading keys.
+  Read safe defaults and ciphertext in one database snapshot for Session creation;
+  a complete Session override need not decrypt the inherited bundle.
+- Hosted Session provider selection resolves explicit bundle, saved bundle, then
+  deployment bundle, and freezes it in the existing encrypted Session-owned row.
+  Convert existing native operator options only at server composition, never in
+  scheduling. Retain the complete selected operator options in the private encrypted
+  Session snapshot for deployment fallback, preserving headers, query parameters
+  and native settings; do not reconstruct them from a smaller public input type. Keep runtime dispatch on the common adapter path and fail closed for
+  missing/decryption-failed snapshots. Agent edits/deletion, restart and idle
+  suspend/resume never resolve defaults again. Record caller intent for every new
+  hosted Session before resolving defaults, including inline deployment fallback;
+  matching retries return committed state without replay. No Turn-level overrides,
+  provider catalog or self-hosted/none credential expansion is included. Public
+  input/null semantics and examples live in `contracts/agents-api/model-execution.md`.
 - Public Agent updates use `POST /v1/agents/{agent_id}` with the same tenant/Beta
   boundary and shared saved-field validation. Preserve omission separately from
   null; only supplied fields replace saved values. Metadata is a separate whole-map
@@ -1897,7 +1938,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   merging validated fields and enforcing the complete configuration bound, then
   commit configuration, metadata and update timestamp together. Never write a stale
   full snapshot over another update. No-field updates read without changing timestamps.
-  Supplied nested fields currently replace the whole field and explicit null uses
+  Except for the Core execution-default extension described above, supplied nested
+  fields replace the whole field and explicit null uses
   existing saved defaults; exact hosted nested/null and no-op timestamp semantics
   remain unverified. Model-derived reasoning defaults remain a separate gap.
   Neither updates nor retries modify existing Session snapshots or execution state.
@@ -1915,12 +1957,13 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   create/retrieve. Page by `(created_at, id)` with a same-tenant saved-Agent cursor;
   listing never resolves Sessions, product objects or execution capabilities.
   Reuse shared list-query parsing and its per-family limit policy. Agent, Session,
-  Item and Template lists treat limit 0 as 1 and larger limits as 100; Vault and
-  Credential lists also clamp negative limits; Turn, Subagent and Artifact lists
-  reject limits outside 1–100; Skill lists accept 0–100, where 0 returns an empty
-  page; Files accept 1–10000. Pages hold at most 100 records (Files 10000) with
-  accurate continuation. The local default is 20 (Files 10000). Return the
-  list envelope with data/has_more and first/last IDs (null for empty pages).
+  Item, Subagent Item and Template lists treat limit 0 as 1 and larger limits as
+  100; Vault and Credential lists also clamp negative limits; Turn, Subagent,
+  Subagent Turn and Artifact lists reject limits outside 1–100; Skill lists accept
+  0–100, where 0 returns an empty page; Files accept 1–10000. Pages hold at most
+  100 records (Files 10000) with accurate continuation. The local default is 20
+  (Files 10000). Return the list envelope with data/has_more and first/last IDs
+  (null for empty pages).
   Exact pinned upstream default/cap, empty-envelope and error semantics remain
   unverified; do not present local limits or generic SDK parsing as full conformance.
 - Session `agent_id` lookup uses the authenticated tenant. Copy the saved resource
@@ -2082,8 +2125,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   Core replaces complete valid token breakdowns and preserves the last committed
   measurement on interruption. Missing measurements remain unknown. Do not infer
   token consumption from context occupancy or estimated costs, or parse native
-  Raw payloads in Core. Session totals cover recorded root Turns; mixed root/child
-  Turn listings are not a summable accounting ledger. Native measurement coverage
+  Raw payloads in Core. Session totals cover recorded root Turns; Subagent Turn
+  listings are not a summable accounting ledger. Native measurement coverage
   and exact provider/model attribution remain explicit qualification boundaries.
   No separate public usage event or historical SSE replay is introduced.
 - The dispatcher is an internal entry point used by the standalone service worker.
@@ -2156,8 +2199,12 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   assigns public IDs and projects them under the existing Session lock and leased
   execution journal. Native names, history parsing and outcome proof stay in
   adapters. Public GETs read persisted resources without starting native work.
-  Child Turns have a native writer and a separate table from the Core queue;
-  `public_execution_turns` provides the shared Session read/pagination view.
+  Child Turns have a native writer and a separate table from the Core queue.
+  Session Turn reads and the Session event stream carry root work only: read child
+  Turns and Items through the Subagent routes, and never publish child Turn or Item
+  events on the Session stream. A child Turn's `agent_id` is the Session's Agent
+  ID; `subagent_id` names the child. The migration-defined `public_execution_turns`
+  view has no public reader; do not reintroduce mixed Session Turn pages.
   Session Items stay root-owned; copied parent transcripts never become child work.
   Repeated effects are idempotent. Active includes idle; task completion, process
   release and cancellation cannot fabricate public closure. Native timestamps
@@ -2594,8 +2641,8 @@ adapter. The maintained native harness owns dynamic model/provider eligibility;
 its SDK exposes no reliable pre-input receipt proving effective deferral after a
 policy change. Do not represent tool inventory or an operator allowlist as that
 proof. Record exact real model/provider evidence and this detection gap separately.
-Search-only, missing-search, duplicate-search, workspace, MCP and Subagent combinations
-remain unqualified. See [the operation coverage](contracts/agents-api/tool-search.md).
+Search-only, missing-search, workspace, MCP and Subagent combinations remain
+unqualified; a repeated `tool_search` is a protocol error. See [the operation coverage](contracts/agents-api/tool-search.md).
 
 ### Structured output execution
 
@@ -2618,8 +2665,9 @@ function tools and text results. The workspace uses its existing preparation and
 native sandbox with only the SDK's configured `StructuredOutput` tool added to
 inventory and permission checks. Frozen schemas reach preparation before the
 input handoff; Start cannot replace them. Skills, Plugins, capability directories,
-HTTP MCP, Subagent/tool-discovery combinations and non-object root schemas remain
-unqualified. Check resolved template contents as well as inline configuration;
+HTTP MCP, Subagent/tool-discovery combinations and schemas without an explicit
+object root remain unqualified; an explicit non-object root type is a protocol
+error for every harness. Check resolved template contents as well as inline configuration;
 ordinary text requests retain their existing qualifications.
 The SDK uses binary64 JSON numbers: reject execution schemas whose numeric values
 would change during that conversion, without narrowing saved Agent storage.

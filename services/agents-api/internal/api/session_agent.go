@@ -14,7 +14,12 @@ import (
 func resolveSessionAgent(input sessionRequest, saved *v1.SavedAgent) (v1.Agent, error) {
 	request := v1.CreateAgentRequest{}
 	if agent := input.Agent; agent != nil {
-		request.XAgentsCore = agent.XAgentsCore
+		if err := agent.XAgentsCore.Validate(); err != nil {
+			return v1.Agent{}, err
+		}
+		if agent.XAgentsCore != nil {
+			request.XAgentsCore = &v1.SavedAgentCoreInput{Harness: agent.XAgentsCore.Harness}
+		}
 		request.Model, request.Instructions = agent.Model, agent.Instructions
 		request.MultiAgent, request.Reasoning, request.ServiceTier = agent.MultiAgent, agent.Reasoning, agent.ServiceTier
 		request.Text, request.Tools = agent.Text, agent.Tools
@@ -61,6 +66,10 @@ func resolveSessionAgent(input sessionRequest, saved *v1.SavedAgent) (v1.Agent, 
 }
 
 func admitSessionAgent(cfg v1.SavedAgentConfiguration) (v1.Agent, error) {
+	// Protocol conflicts precede execution limits, including in saved records.
+	if err := configurationConflict(cfg.Tools, cfg.Text.Format.Type, cfg.Text.Format.Schema); err != nil {
+		return v1.Agent{}, err
+	}
 	if strings.TrimSpace(cfg.Model) == "" {
 		return v1.Agent{}, errors.New("Execution currently requires a nonempty model.")
 	}
@@ -79,7 +88,11 @@ func admitSessionAgent(cfg v1.SavedAgentConfiguration) (v1.Agent, error) {
 	if err != nil {
 		return v1.Agent{}, err
 	}
-	return v1.Agent{XAgentsCore: cfg.XAgentsCore, Model: cfg.Model, Name: cfg.Name, Instructions: cfg.Instructions,
+	var extension *v1.AgentsCore
+	if cfg.XAgentsCore != nil && cfg.XAgentsCore.Harness != "" {
+		extension = &v1.AgentsCore{Harness: cfg.XAgentsCore.Harness}
+	}
+	return v1.Agent{XAgentsCore: extension, Model: cfg.Model, Name: cfg.Name, Instructions: cfg.Instructions,
 		MultiAgent: cfg.MultiAgent, Reasoning: cfg.Reasoning, ServiceTier: cfg.ServiceTier,
 		Text: text, Tools: tools}, nil
 }
