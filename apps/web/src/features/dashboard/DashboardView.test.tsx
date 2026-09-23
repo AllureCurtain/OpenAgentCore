@@ -257,7 +257,8 @@ describe("Dashboard loaded-result presentation", () => {
     expect(html).toContain('aria-pressed="true">1h</button>');
     expect(html).toContain("CPU usage");
     expect(html).toContain("Memory usage");
-    expect(html).toContain("Runtime active");
+    expect(html).not.toContain("Compute uptime");
+    expect(html).toContain("Active sandboxes");
     expect(html).toContain("Token throughput");
     expect(html).not.toContain("No retained CPU samples");
     expect(html).toContain("Latest value");

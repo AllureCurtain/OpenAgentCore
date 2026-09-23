@@ -90,12 +90,13 @@ function snapshot(at: number, options: {
 }
 
 describe("Runtime live-window trends", () => {
-  const cpuTarget = (sample: RuntimeTrendSample | undefined) => sample?.targets.find((target) => target.runtimeActive === null);
+  const cpuTarget = (sample: RuntimeTrendSample | undefined) => sample?.targets[0];
 
   it("projects only honest point-in-time and cumulative Session values", () => {
     const sample = runtimeTrendSample(snapshot(120_000));
     expect(sample).toMatchObject({
       sampledAt: 120_000,
+      activeSandboxCount: 1,
       tokenTotals: [{
         sessionId: "11111111-1111-4111-8111-111111111111",
         inputTokens: 100,
@@ -104,15 +105,10 @@ describe("Runtime live-window trends", () => {
       memoryUsageBytes: 512,
       memoryLimitBytes: 1_024,
     });
-    expect(sample.targets).toEqual(expect.arrayContaining([expect.objectContaining({
-      label: "Runtime worker",
-      cpuRatio: null,
-      runtimeActive: 1,
-    }), expect.objectContaining({
+    expect(sample.targets).toEqual([expect.objectContaining({
       label: "Runtime worker",
       cpuRatio: .25,
-      runtimeActive: null,
-    })]));
+    })]);
   });
 
   it("projects a managed Session without an allocation as inactive", () => {
@@ -130,9 +126,50 @@ describe("Runtime live-window trends", () => {
       memory: null,
     } as RuntimeObservation];
 
-    expect(runtimeTrendSample(pending).targets).toEqual([
-      expect.objectContaining({ seriesId: `activity:${pending.sessions[0]!.id}`, runtimeActive: 0 }),
-    ]);
+    expect(runtimeTrendSample(pending)).toMatchObject({ activeSandboxCount: 0, targets: [] });
+  });
+
+  it("deduplicates live aggregate count and memory by Runtime allocation identity", () => {
+    const duplicate = snapshot(120_000);
+    const secondSession = {
+      ...duplicate.sessions[0]!,
+      id: "44444444-4444-4444-8444-444444444444",
+    } as AgentSession;
+    const secondObservation = {
+      ...duplicate.observations[0]!,
+      id: secondSession.id,
+      session_id: secondSession.id,
+      observed_at: (duplicate.observations[0]!.observed_at ?? 0) + 1,
+      memory: { usage_bytes: 128, limit_bytes: 256 },
+    } as RuntimeObservation;
+    duplicate.sessions.push(secondSession);
+    duplicate.observations.push(secondObservation);
+
+    expect(runtimeTrendSample(duplicate)).toMatchObject({
+      activeSandboxCount: 1,
+      memoryUsageBytes: 128,
+      memoryLimitBytes: 256,
+    });
+  });
+
+  it("keeps lifecycle-active allocation count when resource metrics are unavailable", () => {
+    const unavailable = snapshot(180_000);
+    unavailable.observations[0] = {
+      ...unavailable.observations[0]!,
+      status: "unavailable",
+      reason: "runtime_not_running",
+      observed_at: null,
+      started_at: null,
+      cpu: null,
+      memory: null,
+    } as RuntimeObservation;
+
+    expect(runtimeTrendSample(unavailable)).toMatchObject({
+      activeSandboxCount: 1,
+      memoryUsageBytes: null,
+      memoryLimitBytes: null,
+      targets: [],
+    });
   });
 
   it("deduplicates refreshes and bounds the rolling window", () => {
@@ -291,6 +328,7 @@ describe("Runtime live-window trends", () => {
       ...many.observations[0]!,
       id: session.id,
       session_id: session.id,
+      instance: { ...many.observations[0]!.instance, allocation_id: `allocation-${index}` },
       cpu: { ...many.observations[0]!.cpu!, utilization_ratio: index / 10 },
       started_at: 60 - index,
     } as RuntimeObservation));

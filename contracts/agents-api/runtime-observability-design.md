@@ -183,16 +183,20 @@ measurement or lifecycle state.
 | --- | --- | --- |
 | Allocation age | allocation `created_at` to `released_at` or now | Age of Core's allocation record. |
 | Compute uptime | provider `started_at` to sample `observed_at` | Age of the current compute incarnation. |
-| Runtime active | successful observation in the selected bucket | Binary operational signal: 1 active, 0 inactive or unavailable. |
+| Active sandboxes | distinct active allocations in the selected snapshot or bucket | Count across Sessions on the Dashboard; naturally 0/1 in a single-Session view. |
 | Busy duration | Turn `started_at` to `completed_at` or now | Time model work has been active. |
 | Idle duration | future durable `idle_since` | Not available in the current design. |
 
 Container restart resets compute uptime but not allocation age. Live CPU deltas
-require the same known compute start as well as the same allocation. Retained
-charts show CPU, memory, tokens, and binary Runtime activity; uptime remains a
-current observation/table value because history does not supply each bucket's
-compute start. Dashboard labels
-must not collapse these values into one generic Runtime duration.
+require the same known compute start as well as the same allocation. Trend charts
+show CPU, memory, active Sandbox count, and tokens. Live active count uses the
+provider-neutral lifecycle state and deduplicates allocation identities; retained
+history counts observed allocation identities in each bucket because lifecycle
+state is not retained yet. A single-Session view therefore remains binary while
+the Dashboard shows the sum across Sessions. Compute uptime stays in current
+target details because the history contract does not supply each bucket's compute
+start. Dashboard labels must not collapse these values into one generic Runtime
+duration.
 
 ## 9. Collection behavior
 
@@ -352,7 +356,9 @@ Every bucket reports explicit observation coverage and nullable CPU/memory
 values. CPU utilization may be derived only from ordered cumulative counters
 inside one fence; successive intervals are assigned to the bucket containing
 their right endpoint and combined by CPU-capacity time. Memory uses the final
-observed value in the bucket. Empty
+observed value in the bucket. Dashboard memory totals aggregate only allocations with
+a complete observed usage/limit pair in that bucket; an unavailable or released
+target does not erase measurements from active targets. Empty
 buckets remain gaps. The service rejects cross-scope rows, duplicate series,
 overlapping or out-of-range buckets, unsafe provider labels, invalid numeric
 values, and results exceeding the total point budget.
@@ -379,6 +385,10 @@ acceptance.
 - Observed CPU usage and known configured capacity.
 - Observed memory usage and known limits.
 - Reported Session tokens, together with the reporting Session count.
+- Confirmed active Sandbox count over time. Each bucket counts managed allocations
+  with an observed provider sample; unavailable or timed-out samples are not
+  presented as confirmed active. A bucket with collection coverage but no observed
+  allocation is zero; a bucket without collection coverage remains a gap.
 - Data freshness and source coverage.
 
 Aggregates include only present measurements. Each total states its denominator,

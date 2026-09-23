@@ -125,20 +125,62 @@ describe("Runtime Durable Dashboard history", () => {
     expect(samples).toHaveLength(2);
     expect(samples[0]).toMatchObject({
       sampledAt: 130_000,
+      activeSandboxCount: 1,
       memoryUsageBytes: 512,
       memoryLimitBytes: 1_024,
       inputTokensPerMinute: null,
       outputTokensPerMinute: null,
     });
-    expect(samples[0]?.targets).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: "Durable worker", cpuRatio: null, runtimeActive: 1 }),
-      expect.objectContaining({ label: "Durable worker", cpuRatio: .25, runtimeActive: null }),
-    ]));
-    expect(samples[1]?.targets.find((target) => target.runtimeActive !== null)?.runtimeActive).toBe(1);
+    expect(samples[0]?.targets).toEqual([
+      expect.objectContaining({ label: "Durable worker", cpuRatio: .25 }),
+    ]);
     expect(samples[1]).toMatchObject({ inputTokensPerMinute: 60, outputTokensPerMinute: 20 });
   });
 
-  it("projects unavailable retained observations as inactive", () => {
+  it("counts and aggregates distinct Runtime allocations within one Session", () => {
+    const source = history();
+    const secondSeries = {
+      ...source.series[0]!,
+      allocation_id: "55555555-5555-4555-8555-555555555555",
+      points: source.series[0]!.points.map((point) => ({
+        ...point,
+        memory: point.memory ? { ...point.memory, usage_bytes: 128, limit_bytes: 256 } : null,
+      })),
+    };
+    const samples = runtimeDurableTrendSamples([session], [{
+      ...source,
+      series: [source.series[0]!, secondSeries],
+    }]);
+
+    expect(samples[0]).toMatchObject({
+      activeSandboxCount: 2,
+      memoryUsageBytes: 640,
+      memoryLimitBytes: 1_280,
+    });
+  });
+
+  it("deduplicates one Runtime allocation repeated across Session histories", () => {
+    const second = { ...session, id: "44444444-4444-4444-8444-444444444444" } as AgentSession;
+    const repeated = history({
+      session_id: second.id,
+      series: [{
+        ...history().series[0]!,
+        points: history().series[0]!.points.map((point) => ({
+          ...point,
+          memory: point.memory ? { ...point.memory, usage_bytes: 128, limit_bytes: 256 } : null,
+        })),
+      }],
+    });
+    const samples = runtimeDurableTrendSamples([session, second], [history(), repeated]);
+
+    expect(samples[0]).toMatchObject({
+      activeSandboxCount: 1,
+      memoryUsageBytes: 128,
+      memoryLimitBytes: 256,
+    });
+  });
+
+  it("projects an unavailable retained observation as zero active Sandboxes", () => {
     const source = history();
     source.series[0]!.points[1] = {
       ...source.series[0]!.points[1]!, observed_count: 0, unavailable_count: 1, cpu: null, memory: null,
@@ -147,10 +189,10 @@ describe("Runtime Durable Dashboard history", () => {
       ...source.coverage.buckets[1]!, observed_count: 0, unavailable_count: 1,
     };
     const samples = runtimeDurableTrendSamples([session], [source]);
-    expect(samples.flatMap((sample) => sample.targets.map((target) => target.runtimeActive)).filter((value) => value !== null)).toEqual([1, 0]);
+    expect(samples[1]?.activeSandboxCount).toBe(0);
   });
 
-  it("keeps aggregate memory absent when any queried target has no memory value", () => {
+  it("aggregates observed memory without letting an unavailable target erase it", () => {
     const second = { ...session, id: "44444444-4444-4444-8444-444444444444" } as AgentSession;
     const secondHistory = history({
       session_id: second.id,
@@ -158,7 +200,8 @@ describe("Runtime Durable Dashboard history", () => {
       series: [],
     });
     const samples = runtimeDurableTrendSamples([session, second], [history(), secondHistory]);
-    expect(samples.every((sample) => sample.memoryUsageBytes === null && sample.memoryLimitBytes === null)).toBe(true);
+    expect(samples.every((sample) => sample.memoryUsageBytes !== null && sample.memoryLimitBytes !== null)).toBe(true);
+    expect(samples[0]).toMatchObject({ memoryUsageBytes: 512, memoryLimitBytes: 1_024, activeSandboxCount: 1 });
   });
 
   it("keeps omitted buckets between distant observations as gaps", () => {
@@ -195,7 +238,7 @@ describe("Runtime Durable Dashboard history", () => {
     expect(samples[10]?.outputTokensPerMinute).toBeNull();
     for (const sample of samples.slice(1, -1)) {
       expect(sample).toMatchObject({
-        targets: [expect.objectContaining({ cpuRatio: null, runtimeActive: 0 })], memoryUsageBytes: null, memoryLimitBytes: null,
+        activeSandboxCount: null, targets: [], memoryUsageBytes: null, memoryLimitBytes: null,
         inputTokensPerMinute: null, outputTokensPerMinute: null,
       });
     }
@@ -208,7 +251,8 @@ describe("Runtime Durable Dashboard history", () => {
     })]);
     expect(samples.map((sample) => sample.sampledAt)).toEqual([100_000, 130_000, 160_000, 190_000, 205_000]);
     expect(samples.map((sample) => sample.memoryUsageBytes)).toEqual([null, 512, 768, null, null]);
-    expect(samples.map((sample) => sample.targets.length)).toEqual([1, 2, 2, 1, 1]);
+    expect(samples.map((sample) => sample.targets.length)).toEqual([0, 1, 1, 0, 0]);
+    expect(samples.map((sample) => sample.activeSandboxCount)).toEqual([null, 1, 1, null, null]);
   });
 
   it("represents an entirely missing range without fabricating zero measurements", () => {
@@ -225,7 +269,7 @@ describe("Runtime Durable Dashboard history", () => {
     expect(samples.map((sample) => sample.sampledAt)).toEqual([130_000, 160_000, 175_000]);
     for (const sample of samples) {
       expect(sample).toMatchObject({
-        targets: [expect.objectContaining({ cpuRatio: null, runtimeActive: 0 })], memoryUsageBytes: null, memoryLimitBytes: null,
+        activeSandboxCount: null, targets: [], memoryUsageBytes: null, memoryLimitBytes: null,
         inputTokensPerMinute: null, outputTokensPerMinute: null,
       });
     }

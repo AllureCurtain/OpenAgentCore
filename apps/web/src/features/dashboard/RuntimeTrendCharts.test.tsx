@@ -7,16 +7,11 @@ import type { RuntimeTrendSample } from "./runtime-trends";
 function sample(sampledAt: number, cpuRatio: number | null): RuntimeTrendSample {
   return {
     sampledAt,
+    activeSandboxCount: 1,
     targets: [{
-      seriesId: "activity:session-1",
-      label: "Runtime worker",
-      cpuRatio: null,
-      runtimeActive: 1,
-    }, {
       seriesId: "session-1:allocation-1",
       label: "Runtime worker",
       cpuRatio,
-      runtimeActive: null,
     }],
     cpuCandidates: [],
     memoryUsageBytes: 512,
@@ -43,23 +38,32 @@ describe("Runtime live-window chart accessibility", () => {
       allSeriesHidden: true,
       validPoints: 0,
       sampleCount: 24,
-      emptyMessage: "No complete retained memory samples",
+      emptyMessage: "No retained observed memory samples",
     })).toBe("Memory usage all series hidden; use the legend to show a series");
   });
 
   it("renders an unavailable current value as zero without retaining a stale value", () => {
+    const unavailable = {
+      ...sample(120_000, null),
+      activeSandboxCount: 0,
+      memoryUsageBytes: null,
+      memoryLimitBytes: null,
+    } satisfies RuntimeTrendSample;
     const html = renderToStaticMarkup(
-      <RuntimeTrendCharts samples={[sample(60_000, .5), sample(120_000, null)]} />,
+      <RuntimeTrendCharts samples={[sample(60_000, .5), unavailable]} />,
     );
 
     expect(html).toContain("Runtime worker</th><td>0%</td><td>0</td>");
     expect(html).not.toContain("Runtime worker</th><td>50%</td><td>1</td>");
+    expect(html).toContain("used</th><td>0 B</td><td>0</td>");
+    expect(html).toContain("active</th><td>0</td><td>0</td>");
   });
 
   it("renders empty retained buckets as continuous zero-value chart series", () => {
     const empty = (sampledAt: number): RuntimeTrendSample => ({
       ...sample(sampledAt, null),
       targets: [],
+      activeSandboxCount: 0,
       memoryUsageBytes: null,
       memoryLimitBytes: null,
       inputTokensPerMinute: null,
@@ -71,6 +75,7 @@ describe("Runtime live-window chart accessibility", () => {
 
     expect(html).toContain("usage</th><td>0%</td><td>0</td>");
     expect(html).toContain("used</th><td>0 B</td><td>0</td>");
+    expect(html).toContain("active</th><td>0</td><td>0</td>");
     expect(html).toContain("input</th><td>0/min</td><td>0</td>");
     expect(html).not.toContain("No retained CPU samples");
     expect(html).not.toContain("No complete retained memory samples");
@@ -84,7 +89,7 @@ describe("Runtime live-window chart accessibility", () => {
 
     expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(4);
     expect(html).not.toContain("Collecting live samples");
-    expect(html).toContain("Runtime active");
+    expect(html).toContain("Active sandboxes");
   });
 
   it("exposes interactive series, point selection, and Grafana-style in-plot range selection", () => {
@@ -109,45 +114,29 @@ describe("Runtime live-window chart accessibility", () => {
 
     expect(html).toContain('aria-label="CPU usage durable history chart"');
     expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(4);
-    expect(html).toContain("Runtime active");
+    expect(html).not.toContain("Compute uptime");
     expect(html).toContain('aria-label="CPU usage: 2 retained buckets"');
+    expect(html).toContain('aria-label="Active sandboxes durable history chart"');
+    expect(html).toContain("active</th><td>1</td><td>0</td>");
     expect(html).not.toContain('aria-label="CPU usage: 2 live samples"');
   });
 
-  it("renders retained Runtime activity as a binary chart", () => {
+  it("renders one summed active-Sandbox series instead of one series per Session", () => {
+    const latest = { ...sample(120_000, .5), activeSandboxCount: 3 };
     const html = renderToStaticMarkup(
-      <RuntimeTrendCharts samples={[sample(60_000, .25)]} source="durable" />,
+      <RuntimeTrendCharts samples={[sample(60_000, .25), latest]} />,
     );
 
     expect(html.match(/data-chart-engine="uplot"/g)).toHaveLength(4);
-    expect(html).toContain("Runtime active");
-    expect(html).toContain("1 active / 0 inactive");
+    expect(html).toContain("active</th><td>3</td><td>0</td>");
+    expect(html.match(/aria-label="Hide active series"/g)).toHaveLength(1);
   });
-
-  it("does not mix Session activity and allocation CPU series identities", () => {
-    const html = renderToStaticMarkup(
-      <RuntimeTrendCharts samples={[sample(60_000, .25), sample(120_000, .5)]} />,
-    );
-
-    expect(html.match(/aria-label="Hide Runtime worker series"/g)).toHaveLength(2);
-
-    const pending = sample(180_000, null);
-    pending.targets = [{
-      seriesId: "activity:pending-session",
-      label: "Pending worker",
-      cpuRatio: null,
-      runtimeActive: 0,
-    }];
-    const pendingHtml = renderToStaticMarkup(<RuntimeTrendCharts samples={[pending]} />);
-    expect(pendingHtml.match(/aria-label="Hide Pending worker series"/g)).toHaveLength(1);
-  });
-
   it("announces an isolated durable value as sparse rather than empty", () => {
     const html = renderToStaticMarkup(
       <RuntimeTrendCharts samples={[sample(60_000, .25)]} source="durable" />,
     );
 
     expect(html).toContain("Memory usage durable trend has 1 sparse valid point; a line requires consecutive buckets");
-    expect(html).not.toContain("Memory usage No complete retained memory samples");
+    expect(html).not.toContain("Memory usage No retained observed memory samples");
   });
 });

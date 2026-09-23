@@ -16,7 +16,6 @@ export interface RuntimeTrendTarget {
   seriesId: string;
   label: string;
   cpuRatio: number | null;
-  runtimeActive: 0 | 1 | null;
 }
 
 export interface RuntimeTrendCPUCandidate extends RuntimeTrendTarget {
@@ -30,6 +29,7 @@ export interface RuntimeTrendCPUCandidate extends RuntimeTrendTarget {
 
 export interface RuntimeTrendSample {
   sampledAt: number;
+  activeSandboxCount: number | null;
   targets: RuntimeTrendTarget[];
   cpuCandidates: RuntimeTrendCPUCandidate[];
   memoryUsageBytes: number | null;
@@ -101,11 +101,14 @@ export function runtimeTrendSample(snapshot: RuntimeDashboardSnapshot): RuntimeT
     const session = sessions.get(observation.session_id);
     if (!session || observation.mode !== "openai_hosted") return [];
     const key = allocationKey(observation);
+    const allocationId = observation.instance.allocation_id;
+    if (key === null || typeof allocationId !== "string" || allocationId.length === 0) return [];
     return [{
-      sessionId: observation.session_id,
-      seriesId: key === null ? null : `${observation.session_id}:${key}`,
+      seriesId: `${observation.session_id}:${key}`,
+      allocationId,
       label: sessionTitle(session),
       cpuRatio: reportedCpuRatio(observation),
+      resolvedAt: safeInteger(observation.resolved_at),
       observedAt: safeInteger(observation.observed_at),
       startedAt: safeInteger(observation.started_at),
       allocationKey: allocationKey(observation),
@@ -113,31 +116,41 @@ export function runtimeTrendSample(snapshot: RuntimeDashboardSnapshot): RuntimeT
       capacityCores: finiteNonNegative(observation.cpu?.capacity_cores),
       memoryUsageBytes: finiteNonNegative(observation.memory?.usage_bytes),
       memoryLimitBytes: finiteNonNegative(observation.memory?.limit_bytes),
-      runtimeActive: observation.status === "observed" ? 1 as const : 0 as const,
+      lifecycleState: observation.lifecycle_state,
+      observed: observation.status === "observed",
     }];
   });
-  const activeTargets: RuntimeTrendTarget[] = managed.slice(0, RUNTIME_TREND_SERIES_LIMIT).map((target) => ({
-    seriesId: `activity:${target.sessionId}`,
-    label: target.label,
-    cpuRatio: null,
-    runtimeActive: target.runtimeActive,
-  }));
-  const cpuTargets: RuntimeTrendTarget[] = managed.filter((target) => target.seriesId !== null && target.cpuRatio !== null)
-      .sort((left, right) => (right.cpuRatio ?? 0) - (left.cpuRatio ?? 0))
-      .slice(0, RUNTIME_TREND_SERIES_LIMIT)
-      .map((target) => ({
-    seriesId: target.seriesId!,
-    label: target.label,
-    cpuRatio: target.cpuRatio,
-    runtimeActive: null,
-  }));
-  const targets = [...activeTargets, ...cpuTargets];
-  const observed = managed.filter((target) => target.runtimeActive === 1);
+  const latestByAllocation = new Map<string, typeof managed[number]>();
+  for (const target of managed) {
+    const previous = latestByAllocation.get(target.allocationId);
+    if (!previous || (target.resolvedAt ?? -1) >= (previous.resolvedAt ?? -1)) {
+      latestByAllocation.set(target.allocationId, target);
+    }
+  }
+  const allocations = [...latestByAllocation.values()];
+  const latestObservedByAllocation = new Map<string, typeof managed[number]>();
+  for (const target of managed) {
+    if (!target.observed) continue;
+    const previous = latestObservedByAllocation.get(target.allocationId);
+    if (!previous || (target.observedAt ?? -1) >= (previous.observedAt ?? -1)) {
+      latestObservedByAllocation.set(target.allocationId, target);
+    }
+  }
+  const observed = [...latestObservedByAllocation.values()];
+  const targets: RuntimeTrendTarget[] = observed.filter((target) => target.cpuRatio !== null)
+    .sort((left, right) => (right.cpuRatio ?? 0) - (left.cpuRatio ?? 0))
+    .slice(0, RUNTIME_TREND_SERIES_LIMIT)
+    .map((target) => ({
+      seriesId: target.seriesId,
+      label: target.label,
+      cpuRatio: target.cpuRatio,
+    }));
   const pairedMemory = observed.filter((target) => (
     target.memoryUsageBytes !== null && target.memoryLimitBytes !== null
   ));
   return {
     sampledAt: snapshot.loadedAt,
+    activeSandboxCount: allocations.filter((target) => target.lifecycleState === "active").length,
     targets,
     cpuCandidates: observed.flatMap((target): RuntimeTrendCPUCandidate[] => (
       target.seriesId !== null && (target.cpuRatio !== null || (
@@ -148,7 +161,6 @@ export function runtimeTrendSample(snapshot: RuntimeDashboardSnapshot): RuntimeT
           seriesId: target.seriesId!,
           label: target.label,
           cpuRatio: target.cpuRatio,
-          runtimeActive: null,
           observedAt: target.observedAt,
           startedAt: target.startedAt,
           allocationKey: target.allocationKey,
@@ -202,25 +214,16 @@ function cpuRatios(previous: RuntimeTrendSample, next: RuntimeTrendSample): Map<
 }
 
 function applyCPURatios(sample: RuntimeTrendSample, ratios: ReadonlyMap<string, number>): void {
-  const active = sample.targets.filter((target) => target.runtimeActive !== null)
-    .sort((left, right) => (right.runtimeActive ?? 0) - (left.runtimeActive ?? 0))
-    .slice(0, RUNTIME_TREND_SERIES_LIMIT)
-    .map((target) => ({ ...target, cpuRatio: null }));
   const cpu = sample.cpuCandidates.flatMap((candidate): RuntimeTrendTarget[] => {
     const ratio = ratios.get(candidate.seriesId);
     return ratio === undefined ? [] : [{
       seriesId: candidate.seriesId,
       label: candidate.label,
       cpuRatio: ratio,
-      runtimeActive: null,
     }];
   }).sort((left, right) => (right.cpuRatio ?? 0) - (left.cpuRatio ?? 0))
     .slice(0, RUNTIME_TREND_SERIES_LIMIT);
-  const selected = new Map<string, RuntimeTrendTarget>(
-    active.map((target) => [target.seriesId, target]),
-  );
-  for (const target of cpu) selected.set(target.seriesId, target);
-  sample.targets = [...selected.values()];
+  sample.targets = cpu;
 }
 
 function tokenRate(

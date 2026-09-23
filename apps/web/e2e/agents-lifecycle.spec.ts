@@ -2462,8 +2462,9 @@ test("presents Dashboard page-chain results and System boundaries without extra 
   await page.getByRole("button", { name: "Dashboard", exact: true }).click();
 
   await dashboard.getByRole("table", { name: "Recent Sessions" }).getByRole("button", { name: "Lifecycle Agent" }).click();
-  await expect(page.locator(".session-page")).toBeVisible();
-  await expect(page.getByText("Lifecycle Agent", { exact: true }).first()).toBeVisible();
+  const sessionPage = page.locator(".session-page");
+  await expect(sessionPage).toBeVisible();
+  await expect(sessionPage.getByText("Lifecycle Agent", { exact: true }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "System", exact: true }).click();
   const system = page.locator(".system-page");
@@ -2681,7 +2682,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   await expect(dashboard.locator(".dashboard-runtime-sample-count")).toContainText("1 sample ·");
   await expect(dashboard.getByRole("heading", { name: "CPU usage" })).toBeVisible();
   await expect(dashboard.getByRole("heading", { name: "Memory usage" })).toBeVisible();
-  await expect(dashboard.getByRole("heading", { name: "Runtime active" })).toBeVisible();
+  await expect(dashboard.getByRole("heading", { name: "Active sandboxes" })).toBeVisible();
   await expect(dashboard.getByRole("heading", { name: "Token throughput" })).toBeVisible();
   await expect(dashboard.getByLabel("Live Runtime sampling every 30 seconds")).toBeVisible();
   const liveRange = dashboard.getByRole("group", { name: "Runtime live range" });
@@ -2693,7 +2694,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   await refresh.click();
   await expect(dashboard.getByLabel("CPU usage: 3 live samples")).toBeVisible();
   await expect(dashboard.getByLabel("Memory usage: 3 live samples")).toBeVisible();
-  await expect(dashboard.getByLabel("Runtime active: 3 live samples")).toBeVisible();
+  await expect(dashboard.getByLabel("Active sandboxes: 3 live samples")).toBeVisible();
   await expect(dashboard.getByLabel("Token throughput: 3 live samples")).toBeVisible();
   await expect(dashboard.locator(".dashboard-runtime-sample-count")).toContainText("3 samples");
   await expect(dashboard.getByText("CPU usage live trend available")).toBeAttached();
@@ -2761,7 +2762,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   const keyboardSelectedAt = Number(await cpuChart.getAttribute("data-selected-at"));
   expect(keyboardSelectedAt).toBeGreaterThanOrEqual(zoomedViewStart);
   expect(keyboardSelectedAt).toBeLessThanOrEqual(zoomedViewEnd);
-  for (const chartName of ["Memory usage", "Runtime active", "Token throughput"]) {
+  for (const chartName of ["Memory usage", "Active sandboxes", "Token throughput"]) {
     await expect(dashboard.getByLabel(`${chartName}: 3 live samples`)).toHaveAttribute("data-view-start", String(initialViewStart));
     await expect(dashboard.getByLabel(`${chartName}: 3 live samples`)).toHaveAttribute("data-view-end", String(initialViewEnd));
   }
@@ -2911,11 +2912,13 @@ test("restores retained Runtime history after a Dashboard reload", async ({ page
   await expect(dashboard.getByRole("group", { name: "Runtime trend source" })).toHaveCount(0);
   await expect(dashboard.getByLabel(/Durable · 30s; 1 Runtime targets/)).toBeVisible();
   await expect(dashboard.getByLabel("Runtime durable-history charts")).toBeVisible();
-  await expect(dashboard.getByRole("heading", { name: "Runtime active", exact: true })).toBeVisible();
+  await expect(dashboard.getByRole("heading", { name: "Compute uptime", exact: true })).toHaveCount(0);
+  await expect(dashboard.getByRole("heading", { name: "Active sandboxes", exact: true })).toBeVisible();
   await expect(dashboard.locator('[data-chart-engine="uplot"]')).toHaveCount(4);
   await expect(dashboard.getByText("CPU usage durable trend available")).toBeAttached();
   await expect(dashboard).toContainText("120 buckets");
   await expect(dashboard).toContainText("119/120 observations");
+  await expect(dashboard.getByText("Active sandboxes durable trend available")).toBeAttached();
   await expect(dashboard.getByText("Token throughput durable trend available")).toBeAttached();
   const durableCpuChart = dashboard.getByLabel("CPU usage: 120 retained buckets");
   await expect(dashboard.getByRole("region", { name: "CPU usage durable history chart" })).toBeVisible();
@@ -3039,16 +3042,14 @@ test("publishes Dashboard counts only after every top-level Agent and Session pa
   await expect(dashboard.locator(".dashboard-source-badge").filter({ hasText: "Runtime" })).toContainText("Unavailable");
   expect(sessionAfters).toEqual([null, "session_snapshot", null, "session_snapshot"]);
   await page.getByRole("button", { name: "Sessions", exact: true }).click();
-  await expect.poll(() => sessionAfters.length).toBe(6);
+  await expect.poll(() => sessionAfters.length).toBe(4);
   await page.getByRole("button", { name: "Dashboard", exact: true }).click();
   await expect(dashboard.locator(".dashboard-summary > div").filter({ hasText: "Agents" })).toContainText("3");
   await expect(dashboard.locator(".dashboard-summary > div").filter({ hasText: "Sessions" })).toContainText("2");
   expect(agentAfters).toEqual([null, "agent_b"]);
-  // Session collection loads once; the unavailable Runtime snapshot is retried
-  // on entry to Sessions and again on return to Dashboard. Each reads both pages.
+  // The cached Dashboard and shared Session collection stay mounted across
+  // navigation, so no extra page-chain read occurs on either transition.
   await expect.poll(() => sessionAfters).toEqual([
-    null, "session_snapshot",
-    null, "session_snapshot",
     null, "session_snapshot",
     null, "session_snapshot",
   ]);
