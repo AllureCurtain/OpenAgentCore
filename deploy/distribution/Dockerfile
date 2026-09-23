@@ -6,7 +6,7 @@ FROM debian:bookworm-slim@sha256:a0982977ea1cf754c15281f48a7d5957cd14039a2a4f2ac
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates libgcc-s1 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --chmod=0555 bin/agents-api bin/agents-api-migrate bin/agents-api-device bin/agents-api-environment-key bin/agents-api-microsandbox-provider /usr/local/bin/
+COPY --chmod=0555 bin/agents-api bin/agents-api-migrate bin/agents-api-device bin/agents-api-environment-key bin/agents-api-microsandbox-provider bin/parsar-sandbox-node /usr/local/bin/
 COPY --chmod=0555 microsandbox/msb microsandbox/libkrunfw.so.5.6.1 /opt/microsandbox/
 
 ENV AGENTS_API_ADDR=:8091

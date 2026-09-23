@@ -49,7 +49,11 @@ func newConsole(c config) (*console, error) {
 			r.Out.Header.Del("Cookie")
 			r.Out.Header.Del("Origin")
 			r.Out.Header.Del("Referer")
-			r.Out.Header.Set("Authorization", "Bearer "+c.token)
+			if sandboxAdminRequest(r.In) {
+				r.Out.Header.Set("Authorization", r.In.Header.Get("Authorization"))
+			} else {
+				r.Out.Header.Set("Authorization", "Bearer "+c.token)
+			}
 		},
 		ModifyResponse: func(r *http.Response) error {
 			// Never send a browser to a different origin with its cached login.
@@ -93,6 +97,22 @@ func (h *console) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
 	}
+	if !safePath(r.URL.Path) || r.URL.IsAbs() || r.Method == http.MethodConnect || r.Method == http.MethodTrace || r.Header.Get("Upgrade") != "" {
+		http.Error(w, "Invalid request", http.StatusBadRequest)
+		return
+	}
+	if r.URL.Path == "/core" || strings.HasPrefix(r.URL.Path, "/core/") {
+		if !sandboxAdminRequest(r) {
+			http.NotFound(w, r)
+			return
+		}
+		if !explicitBearer(r) {
+			http.Error(w, "A deployment administrator bearer key is required", http.StatusUnauthorized)
+			return
+		}
+		h.proxy.ServeHTTP(w, r)
+		return
+	}
 	username, password, ok := r.BasicAuth()
 	digest := sha256.Sum256([]byte(password))
 	userDigest, adminDigest := sha256.Sum256([]byte(username)), sha256.Sum256([]byte("admin"))
@@ -100,10 +120,6 @@ func (h *console) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		subtle.ConstantTimeCompare(digest[:], h.password[:])&subtle.ConstantTimeCompare(userDigest[:], adminDigest[:]) != 1 {
 		w.Header().Set("WWW-Authenticate", `Basic realm="Core console", charset="UTF-8"`)
 		http.Error(w, "Authentication required", http.StatusUnauthorized)
-		return
-	}
-	if !safePath(r.URL.Path) || r.URL.IsAbs() || r.Method == http.MethodConnect || r.Method == http.MethodTrace || r.Header.Get("Upgrade") != "" {
-		http.Error(w, "Invalid request", http.StatusBadRequest)
 		return
 	}
 	if r.URL.Path == "/v1" || strings.HasPrefix(r.URL.Path, "/v1/") {

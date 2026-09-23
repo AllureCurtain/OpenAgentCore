@@ -13,11 +13,17 @@ enable microsandbox or Docker explicitly when installing. With a provider enable
 Core creates each required sandbox from the colocated Runtime image. Model
 credentials are supplied through the existing write-only API extension.
 
+Hosted deployments use one selected provider across local or remote nodes. The
+Hosted Sandbox Manager shows node health, capacity and Session placement. New
+Sessions use automatic placement by default or an explicitly selected node;
+existing Sessions retain their node across disconnects and resume.
+
 ## Start here
 
 - [Install Core and Web](docs/getting-started/install.md)
 - [Make your first API request](docs/getting-started/quickstart.md)
 - [Service health, data and operations](docs/getting-started/operations.md)
+- [Hosted Sandbox Manager](services/agents-api/HOSTED-SANDBOX-MANAGER.md)
 - [Protocol coverage and native differences](contracts/agents-api/README.md)
 - [Add or select a harness](contracts/agents-api/harness-selection.md)
 - [Public landing page source](site/index.html)

@@ -14,17 +14,25 @@ import (
 // RuntimeDeployment identifies the one operator-selected installation for this database.
 // Its fingerprint describes the backend namespace, never credentials or image contents.
 type RuntimeDeployment struct {
-	InstallationID     string
-	BackendFingerprint string
-	Maintenance        bool
+	ProviderKind                     string
+	LocalNodeID                      string
+	LocalCredentialSHA256            string
+	LocalMaxActive, LocalMaxRetained int
+	InstallationID                   string
+	BackendFingerprint               string
+	Maintenance                      bool
 }
 
 // ConfigureRuntimeDeployment runs before Worker startup under its execution lease.
 // Maintenance must be committed for the old installation before any switch.
 // A nil selection never forgets the previous identity or unresolved resources.
-func (s *Store) ConfigureRuntimeDeployment(ctx context.Context, selected *RuntimeDeployment) error {
+func (s *Store) ConfigureRuntimeDeployment(ctx context.Context, selected *RuntimeDeployment, verify RuntimeOwnershipVerifier) error {
 	if s.executionLease == nil {
 		return ErrInvalidInput
+	}
+	if selected != nil {
+		copy := *selected
+		selected = &copy
 	}
 	var update sqlc.SetRuntimeDeploymentParams
 	if selected != nil {
@@ -38,14 +46,23 @@ func (s *Store) ConfigureRuntimeDeployment(ctx context.Context, selected *Runtim
 		}
 		update = sqlc.SetRuntimeDeploymentParams{InstallationID: id, BackendFingerprint: selected.BackendFingerprint, Maintenance: selected.Maintenance}
 	}
+	plan, err := s.verifyLegacyRuntimeAdoption(ctx, selected, verify)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, executionTransactionTimeout)
+	defer cancel()
 	return s.executionLease.transaction(ctx, func(tx pgx.Tx) error {
 		q := s.queries.WithTx(tx)
 		previous, err := q.LockRuntimeDeployment(ctx)
 		if err != nil {
 			return err
 		}
-		if selected != nil && previous.InstallationID == update.InstallationID && previous.BackendFingerprint == update.BackendFingerprint {
-			return q.SetRuntimeDeployment(ctx, update)
+		if selected != nil && previous.InstallationID == update.InstallationID && previous.BackendFingerprint == update.BackendFingerprint && (previous.ProviderKind == "" || selected.ProviderKind == previous.ProviderKind) {
+			if err := q.SetRuntimeDeployment(ctx, update); err != nil {
+				return err
+			}
+			return configureRuntimeManager(ctx, q, previous, selected, plan)
 		}
 		resources, err := q.CountRuntimeDeploymentResources(ctx)
 		if err != nil {
@@ -69,7 +86,10 @@ func (s *Store) ConfigureRuntimeDeployment(ctx context.Context, selected *Runtim
 				return fmt.Errorf("cannot switch sandbox installation: %d unreleased allocations (instances, retained snapshots, uncertain operations or pending cleanup) and %d pending hosted environments remain", resources.Allocations, resources.Pending)
 			}
 		}
-		return q.SetRuntimeDeployment(ctx, update)
+		if err := q.SetRuntimeDeployment(ctx, update); err != nil {
+			return err
+		}
+		return configureRuntimeManager(ctx, q, previous, selected, plan)
 	})
 }
 

@@ -17,22 +17,24 @@ check-database:
 sqlc-generate:
 	cd services/agents-api && $(SQLC) generate
 
+SWAG ?= go run github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION)
+
 .PHONY: openapi
 openapi:
 	@set -e; root="$${PARSAR_HOME:-$$HOME/.parsar}/build"; mkdir -p "$$root"; \
 	output=$$(mktemp -d "$$root/core-openapi.XXXXXX"); trap 'rm -rf "$$output"' EXIT; \
-	go run github.com/swaggo/swag/cmd/swag@$(SWAG_VERSION) init \
+	$(SWAG) init \
 	    -g cmd/server/main.go --dir ./services/agents-api,./contracts/agents-api/v1 \
 	    --output "$$output" \
 	    --outputTypes yaml --parseInternal; \
 	python3 scripts/patch-agents-openapi.py "$$output/swagger.yaml"; \
-	mv "$$output/swagger.yaml" contracts/agents-api/openapi.yaml
+	go run ./scripts/openapi-split "$$output/swagger.yaml" contracts/agents-api/openapi.yaml contracts/agents-api/sandbox-manager.openapi.yaml
 
 check-sqlc:
 	python3 scripts/check-sqlc.py
 
 check-go:
-	go test ./apps/parsar-daemon/... ./internal/... ./contracts/agents-api/... -count=1
+	go test ./apps/parsar-daemon/... ./internal/... ./contracts/agents-api/... ./scripts/openapi-split -count=1
 
 build-daemon:
 	@set -e; output="$${PARSAR_HOME:-$$HOME/.parsar}/build/daemon"; \

@@ -52,22 +52,26 @@ func (r *runtimeLifecycle) saveCompute(ctx context.Context, owner store.RuntimeA
 	if err != nil {
 		return owner, err
 	}
-	idleBefore := time.Time{}
+	idleTimeout := time.Duration(0)
 	if phase == "quiescing" {
 		policy := r.config.Suspension
 		if policy == nil {
 			return owner, sandbox.ErrInvalid
 		}
-		idleBefore = time.Now().Add(-policy.IdleTimeout)
+		idleTimeout = policy.IdleTimeout
 	}
-	return r.store.SetRuntimeCompute(ctx, owner, phase, raw, until, idleBefore)
+	return r.store.SetRuntimeCompute(ctx, owner, phase, raw, until, idleTimeout)
 }
 func (r *runtimeLifecycle) enableCompute(ctx context.Context, owner store.RuntimeAllocation) error {
 	p, ok := r.config.Provider.(sandbox.CheckpointProvider)
 	if !ok {
 		return sandbox.ErrInvalid
 	}
-	state, err := p.GetCompute(ctx, runtimeReference(owner), p.Initial(runtimeReference(owner)))
+	initial, err := p.Initial(ctx, runtimeReference(owner))
+	if err != nil {
+		return err
+	}
+	state, err := p.GetCompute(ctx, runtimeReference(owner), initial)
 	if err != nil {
 		return err
 	}
@@ -142,11 +146,11 @@ func (r *runtimeLifecycle) idleCompute(ctx context.Context, p sandbox.Checkpoint
 		return r.store.ClearRuntimeWake(ctx, owner, owner.ComputeActivityAt)
 	}
 	policy := r.config.Suspension
-	if policy == nil || activity.Busy || !activity.HasCompletedTurn || time.Since(activity.LastActivity) < policy.IdleTimeout {
+	if policy == nil || !activity.ReadyToSuspend(policy.IdleTimeout) {
 		return nil
 	}
 	state.SuspendID, state.RestoreID, state.Rollback = uuid.NewString(), "", false
-	until := time.Now().Add(policy.Retention)
+	until := activity.ObservedAt.Add(policy.Retention)
 	next, err := r.saveCompute(ctx, owner, "quiescing", state, &until)
 	if err != nil {
 		return err
@@ -226,13 +230,13 @@ func (r *runtimeLifecycle) restoreIdleCompute(ctx context.Context, p sandbox.Che
 	if !activity.Busy && !activity.WakeRequested {
 		return nil
 	}
-	if err := r.computeCapacity(ctx, owner.ProviderKey); err != nil {
+	if err := r.computeCapacityForAllocation(ctx, owner); err != nil {
 		return err
 	}
 	if state.Snapshot == nil || state.Target != nil {
 		return sandbox.ErrOwnership
 	}
-	target, err := p.NewCompute(runtimeReference(owner), state.Current.Generation+1, state.Snapshot)
+	target, err := p.NewCompute(ctx, runtimeReference(owner), state.Current.Generation+1, state.Snapshot)
 	if err != nil {
 		return err
 	}
@@ -269,4 +273,12 @@ func ignoreComputeAbsent(err error) error {
 		return nil
 	}
 	return err
+}
+
+// Node-backed restores reserve capacity atomically in SetRuntimeCompute.
+func (r *runtimeLifecycle) computeCapacityForAllocation(ctx context.Context, owner store.RuntimeAllocation) error {
+	if owner.NodeID != "" {
+		return nil
+	}
+	return r.computeCapacity(ctx, owner.ProviderKey)
 }

@@ -52,6 +52,10 @@ def core_environment(root, state, database_password):
     }
     if state["provider"]:
         result["AGENTS_API_MANAGED_RUNTIMES_FILE"] = config + "/managed-runtimes.json"
+        result["AGENTS_API_SANDBOX_NODE_STATE_DIR"] = (
+            str(Path(root) / "state/sandbox-node") if native else "/state/sandbox-node")
+        result["AGENTS_API_SANDBOX_ADMIN_DIGESTS_FILE"] = (
+            str(Path(root) / "admin/digests.json") if native else "/admin/digests.json")
     return result
 
 
@@ -77,6 +81,8 @@ def compose_config(root, state, manifest, database_password):
                   "read_only": True, "tmpfs": ["/tmp:mode=1777"], "init": True,
                   "security_opt": ["no-new-privileges:true"]}
         services["migrate"] = dict(shared, command=["/usr/local/bin/agents-api-migrate"],
+            environment={key: value for key, value in env.items()
+                         if key != "AGENTS_API_SANDBOX_ADMIN_DIGESTS_FILE"},
             depends_on={"database": {"condition": "service_healthy"}})
         core = dict(shared, restart="unless-stopped", ports=[f'127.0.0.1:{state["core_port"]}:8091'],
                     depends_on={"migrate": {"condition": "service_completed_successfully"}})
@@ -87,6 +93,8 @@ def compose_config(root, state, manifest, database_password):
         else:
             if state["provider"] == "docker":
                 core["volumes"].append(bind("/var/run/docker.sock", "/var/run/docker.sock", False))
+                core["volumes"].append(bind(root / "state/sandbox-node", "/state/sandbox-node", False))
+                core["volumes"].append(bind(root / "admin/digests.json", "/admin/digests.json"))
                 core["group_add"] = [str(state["device_gid"])]
                 core["networks"] = ["default", "runtime"]
                 doc["networks"] = {"runtime": {"name": state["project"] + "-runtime"}}

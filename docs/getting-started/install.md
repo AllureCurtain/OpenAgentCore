@@ -50,6 +50,8 @@ firmware. It also contains image archives, source provenance and checksums;
 installation does not need Go, Node, Rust or a product checkout. The default
 installation loads only the Core, Web and PostgreSQL images; Runtime and
 microsandbox payloads are used only when a sandbox provider is enabled.
+The matched `parsar-sandbox-node` executable is included in the native payload
+and Core service image; packaging it does not start or register a node.
 
 Installation creates private configuration under `~/.parsar/core`, a dedicated
 PostgreSQL volume, an API caller key and a credential encryption key. It also
@@ -82,7 +84,26 @@ The provider choice does not select a harness or alter the public `openai_hosted
 discriminator. Both providers reuse one colocated Runtime containing the native
 harnesses. The Docker option grants
 only Core access to the Docker socket; microsandbox uses the native service account's
-KVM access. Web receives neither. When a Session needs a sandbox, Core asks the
+KVM access. Web receives neither. An enabled local provider runs through Core's
+embedded node connection and preserves its identity and owner epoch in the private
+`state/sandbox-node` directory. Docker Core mounts only this state directory
+writable in addition to its selected socket; `config` remains read-only.
+Native Core uses the same persistent directory directly. The default zero-node
+installation creates neither this state directory nor its mount.
+
+Opting in also creates a separate private deployment administrator key at
+`admin/sandbox-admin.key`. Core loads its SHA-256 digest from
+`AGENTS_API_SANDBOX_ADMIN_DIGESTS_FILE`. Only the Core container mounts the
+digest file read-only; the raw administrator key remains on the host. The console
+and migration service receive neither file. Use this administrator key only for
+the Hosted Sandbox Manager's separate administration surface, never as the
+project caller key. Values are not printed. Default zero-node installation
+configures neither a sandbox provider nor sandbox administrator access; it remains
+a read-capable Core installation. Remote node enrollment requires an explicit
+managed deployment configuration and administrator setup, as described in the
+[Hosted Sandbox Manager guide](https://github.com/MiniMax-AI/parsar-core/blob/main/services/agents-api/HOSTED-SANDBOX-MANAGER.md).
+
+When a Session needs a sandbox, Core asks the
 enabled Provider to create one from the prepared Runtime image and initializes
 the colocated daemon, native harness and workspace.
 

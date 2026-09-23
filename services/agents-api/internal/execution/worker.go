@@ -20,7 +20,7 @@ type Worker struct {
 	fileWrites          chan fileWriteRequest
 	stopped             chan struct{}
 	stopOnce            sync.Once
-	runtimes            *runtimeLifecycle
+	runtimes            *runtimeManager
 	enrolledConnections map[string]*runtimeConnection
 }
 
@@ -32,17 +32,19 @@ func StartWorker(ctx context.Context, dispatcher *Dispatcher) (*Worker, error) {
 	owned := *dispatcher
 	owned.Store = lease.Store()
 	worker := &Worker{dispatcher: &owned, admission: dispatcher.Store, lease: lease, directoryReads: make(chan directoryReadRequest), fileWrites: make(chan fileWriteRequest), stopped: make(chan struct{}), enrolledConnections: make(map[string]*runtimeConnection)}
-	worker.runtimes, err = newRuntimeLifecycle(owned.Store, owned.Registry, owned.ManagedRuntimes)
+	worker.runtimes, err = newRuntimeManager(owned.Store, owned.Registry, owned.ManagedRuntimes)
 	if err != nil {
 		_ = lease.Close(context.Background())
 		return nil, err
 	}
 	var deployment *store.RuntimeDeployment
+	var verify store.RuntimeOwnershipVerifier
 	if worker.runtimes != nil {
 		config := worker.runtimes.config
-		deployment = &store.RuntimeDeployment{InstallationID: config.InstallationID, BackendFingerprint: config.BackendFingerprint, Maintenance: config.Maintenance}
+		verify = config.VerifyLegacyOwnership
+		deployment = &store.RuntimeDeployment{ProviderKind: config.ProviderKind, LocalNodeID: config.LocalNodeID, LocalCredentialSHA256: config.LocalCredentialSHA256, LocalMaxActive: config.LocalMaxActive, LocalMaxRetained: config.LocalMaxRetained, InstallationID: config.InstallationID, BackendFingerprint: config.BackendFingerprint, Maintenance: config.Maintenance}
 	}
-	if err := owned.Store.ConfigureRuntimeDeployment(ctx, deployment); err != nil {
+	if err := owned.Store.ConfigureRuntimeDeployment(ctx, deployment, verify); err != nil {
 		if worker.runtimes != nil {
 			worker.runtimes.stop()
 		}
@@ -115,8 +117,7 @@ func (w *Worker) Run(ctx context.Context) error {
 		running.Wait()
 		if w.runtimes != nil {
 			// Drain an external provisioning caller before releasing the writer lease.
-			w.runtimes.gate <- struct{}{}
-			<-w.runtimes.gate
+			w.runtimes.drain()
 		}
 		closeCtx, stop := context.WithTimeout(context.Background(), 5*time.Second)
 		defer stop()

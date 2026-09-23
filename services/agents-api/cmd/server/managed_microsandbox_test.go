@@ -112,6 +112,7 @@ func TestManagedMicrosandboxFingerprintPinsOnlyBackendNamespace(t *testing.T) {
 	close()
 	config.Maintenance = true
 	config.Microsandbox.Image = "registry.example/parsar-runtime@sha256:" + strings.Repeat("d", 64)
+	config.Microsandbox.EnvironmentDiskMiB++
 	config.Microsandbox.MaxActive++
 	config.Microsandbox.IdleSeconds++
 	write(config)
@@ -121,7 +122,7 @@ func TestManagedMicrosandboxFingerprintPinsOnlyBackendNamespace(t *testing.T) {
 	}
 	close()
 	if !changed.Maintenance || changed.BackendFingerprint != original.BackendFingerprint {
-		t.Fatal("policy/image change replaced backend identity")
+		t.Fatal("sizing/policy/image change replaced backend identity")
 	}
 	config.Microsandbox.RuntimeHome = "/var/lib/parsar/another-installation"
 	write(config)

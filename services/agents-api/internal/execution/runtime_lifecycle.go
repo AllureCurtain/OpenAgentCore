@@ -20,18 +20,24 @@ import (
 // RuntimeProvider binds one deployment to one sandbox installation.
 // BackendFingerprint identifies its namespace independently of mutable sizing.
 type RuntimeProvider struct {
-	CoreURL            string
-	InstallationID     string
-	BackendFingerprint string
-	Provider           sandbox.Provider
-	Maintenance        bool
-	Suspension         *RuntimeSuspensionPolicy
+	VerifyLegacyOwnership            store.RuntimeOwnershipVerifier
+	ProviderKind                     string
+	LocalNodeID                      string
+	LocalCredentialSHA256            string
+	LocalMaxActive, LocalMaxRetained int
+	CoreURL                          string
+	InstallationID                   string
+	BackendFingerprint               string
+	Provider                         sandbox.Provider
+	Maintenance                      bool
+	Suspension                       *RuntimeSuspensionPolicy
 }
 
 type runtimeLifecycle struct {
 	store         *store.Store
 	registry      *gateway.Registry
 	config        RuntimeProvider
+	nodeID        string
 	gate          chan struct{}
 	ctx           context.Context
 	stop          context.CancelFunc
@@ -42,7 +48,7 @@ type runtimeLifecycle struct {
 	wakeHints     chan struct{}
 }
 
-func newRuntimeLifecycle(s *store.Store, registry *gateway.Registry, config *RuntimeProvider) (*runtimeLifecycle, error) {
+func newRuntimeManager(s *store.Store, registry *gateway.Registry, config *RuntimeProvider) (*runtimeManager, error) {
 	if config == nil {
 		return nil, nil
 	}
@@ -64,7 +70,7 @@ func newRuntimeLifecycle(s *store.Store, registry *gateway.Registry, config *Run
 		copied.Suspension = &policy
 	}
 	ctx, stop := context.WithCancel(context.Background())
-	return &runtimeLifecycle{store: s, registry: registry, config: copied, gate: make(chan struct{}, 1), ctx: ctx, stop: stop, connections: make(map[string]*runtimeConnection), wakeHints: make(chan struct{}, 1)}, nil
+	return &runtimeManager{store: s, registry: registry, config: copied, ctx: ctx, cancel: stop, nodes: make(map[string]*runtimeNode), failed: make(chan error, 1), inventory: make(chan struct{}, 1)}, nil
 }
 
 func (r *runtimeLifecycle) lock(ctx context.Context) error {
@@ -92,10 +98,22 @@ func (w *Worker) ProvisionEnvironment(ctx context.Context, tenant, environment, 
 	if w.runtimes == nil {
 		return store.RuntimeAllocation{}, ErrExecutionUnavailable
 	}
-	r := w.runtimes
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	detach := context.AfterFunc(r.ctx, cancel)
-	defer func() { detach(); cancel() }()
+	defer cancel()
+	ctx, finish, err := w.runtimes.enter(ctx)
+	if err != nil {
+		return store.RuntimeAllocation{}, err
+	}
+	defer finish()
+	nodeID, err := w.runtimes.store.ResolveRuntimeLifecycleNode(ctx, tenant, environment)
+	if err != nil {
+		return store.RuntimeAllocation{}, err
+	}
+	node, err := w.runtimes.node(nodeID)
+	if err != nil {
+		return store.RuntimeAllocation{}, err
+	}
+	r := node.lifecycle
 	if err := r.lock(ctx); err != nil {
 		return store.RuntimeAllocation{}, err
 	}
@@ -121,10 +139,10 @@ func (r *runtimeLifecycle) provision(ctx context.Context, tenant, environment, p
 		if r.config.Maintenance {
 			return store.RuntimeAllocation{}, ErrExecutionUnavailable
 		}
-		if err := r.computeCapacity(ctx, providerKey); err != nil {
+		if err := r.computeFreshCapacity(ctx, providerKey); err != nil {
 			return store.RuntimeAllocation{}, err
 		}
-		if policy := r.config.Suspension; policy != nil {
+		if policy := r.config.Suspension; policy != nil && r.config.ProviderKind == "" {
 			count, err := r.store.CountRuntimeRetainedAllocations(ctx, providerKey)
 			if err != nil {
 				return store.RuntimeAllocation{}, err
@@ -142,8 +160,14 @@ func (r *runtimeLifecycle) provision(ctx context.Context, tenant, environment, p
 	}
 	token := hex.EncodeToString(secret)
 	owner, err := r.store.ReserveRuntimeAllocation(ctx, tenant, environment, providerKey, device.HashCredential(token))
-	if err != nil || owner.Replayed {
+	if err != nil {
 		return owner, err
+	}
+	if owner.NodeID != r.nodeID {
+		return owner, sandbox.ErrOwnership
+	}
+	if owner.Replayed {
+		return owner, nil
 	}
 	if err := r.store.CheckExecutionOwnership(ctx); err != nil {
 		return owner, err
@@ -176,7 +200,10 @@ func (w *Worker) ReconcileManagedRuntimes(ctx context.Context) error {
 	if w.runtimes == nil {
 		return nil
 	}
-	r := w.runtimes
+	return w.runtimes.reconcile(ctx)
+}
+
+func (r *runtimeLifecycle) reconcile(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	detach := context.AfterFunc(r.ctx, cancel)
 	defer func() { detach(); cancel() }()
@@ -184,7 +211,7 @@ func (w *Worker) ReconcileManagedRuntimes(ctx context.Context) error {
 		return err
 	}
 	defer func() { <-r.gate }()
-	rows, err := r.store.ListRuntimeAllocations(ctx, r.cursor)
+	rows, err := r.store.ListRuntimeAllocationsForNode(ctx, r.nodeID, r.cursor)
 	if err != nil {
 		return err
 	}
@@ -200,7 +227,7 @@ func (w *Worker) ReconcileManagedRuntimes(ctx context.Context) error {
 		if wrapped {
 			// Service the next page now instead of spending a ticker interval on EOF.
 			// Refill only once so an empty store still returns without spinning.
-			rows, err = r.store.ListRuntimeAllocations(ctx, "")
+			rows, err = r.store.ListRuntimeAllocationsForNode(ctx, r.nodeID, "")
 			if err != nil {
 				return err
 			}
@@ -210,6 +237,7 @@ func (w *Worker) ReconcileManagedRuntimes(ctx context.Context) error {
 		r.cursor = owner.ID
 		operation, stop := context.WithTimeout(ctx, 30*time.Second)
 		err := r.observe(operation, owner)
+		r.recordObservation(ctx, owner, err)
 		stop()
 		if err != nil {
 			if ownership := r.store.CheckExecutionOwnership(ctx); ownership != nil {
@@ -224,7 +252,7 @@ func (w *Worker) ReconcileManagedRuntimes(ctx context.Context) error {
 }
 
 func (r *runtimeLifecycle) observe(ctx context.Context, owner store.RuntimeAllocation) error {
-	if owner.ProviderKey != r.config.InstallationID {
+	if owner.ProviderKey != r.config.InstallationID || owner.NodeID != r.nodeID {
 		return sandbox.ErrOwnership
 	}
 	if owner.Initialization == "running" && (r.initializing == nil || r.initializing.owner.ID != owner.ID) {
@@ -291,6 +319,12 @@ func (r *runtimeLifecycle) observe(ctx context.Context, owner store.RuntimeAlloc
 	// A stopped or missing container does not authorize destroying retained
 	// workspace/history. Preserve it until explicit cleanup or actual expiry.
 	if !running || !info.BootstrapComplete {
+		if owner.NodeID != "" {
+			if errors.Is(err, sandbox.ErrNotFound) && owner.CreateSettled {
+				return sandbox.ErrNotFound
+			}
+			return sandbox.ErrComputeUnconfirmed
+		}
 		return nil
 	}
 	owner, err = r.store.ObserveRuntimeRunning(ctx, owner)
@@ -330,7 +364,13 @@ func runtimeReference(owner store.RuntimeAllocation) sandbox.Reference {
 }
 
 func (w *Worker) runManagedRuntimes(ctx context.Context) error {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-	return runRuntimeMaintenance(ctx, ticker.C, w.runtimes.wakeHints, w.ReconcileManagedRuntimes)
+	return w.runtimes.run(ctx)
+}
+
+// Manager deployments reserve capacity with Session placement before provisioning.
+func (r *runtimeLifecycle) computeFreshCapacity(ctx context.Context, key string) error {
+	if r.config.ProviderKind != "" {
+		return nil
+	}
+	return r.computeCapacity(ctx, key)
 }
