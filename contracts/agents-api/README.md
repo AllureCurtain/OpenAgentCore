@@ -109,6 +109,17 @@ paths start at `/vaults`, not `/agents/vaults`.
 | vaults | create, retrieve, list, delete | Create/retrieve/list/delete with independent tenant persistence, stored status filtering, atomic Credential cascade and frozen Session attachments; archive semantics and full hosted lifecycle parity remain missing |
 | vaults.credentials | create, retrieve, update, list, delete | Static-bearer and OAuth create/retrieve/list/replacement/deletion with scoped encrypted storage and dispatch-time refresh; Session attachment and exact-URL HTTPS MCP binding; archive semantics and full hosted lifecycle parity remain missing |
 
+## Core extension inventory
+
+The operations below are implemented public Core extensions. They are excluded
+from the 42-operation upstream inventory and must not be counted as OpenAI Agents
+compatibility.
+
+| Extension | Operations | Current coverage |
+| --- | --- | --- |
+| Runtime observations | `GET /v1/agents/runtime-observations`; `GET /v1/agents/sessions/{session_id}/runtime-observation` | Current, read-only, tenant-scoped Session contexts with stable Session-keyset pagination, bounded concurrent sampling, Docker and microsandbox metrics, explicit unsupported/unavailable states, strict `packages/agents-client` projection, and no lifecycle mutation. Kubernetes, E2B, self-hosted telemetry, and automatic idle policy remain unimplemented. See [Runtime observation API](runtime-observability-api.md). |
+| Runtime history | `GET /v1/agents/runtime-history/capabilities`; `GET /v1/agents/sessions/{session_id}/runtime-history` | Optional backend-neutral capability and bounded tenant/Session-scoped history contract with allocation/incarnation fencing, explicit coverage and strict client projection. Disabled by default until a production Reader and qualified periodic collection are configured; Durable Web rendering remains pending. See [Runtime history API](runtime-history-api.md). |
+
 For each resource, verify the referenced request/response unions and observable
 behavior, not just the route. Non-text initial input, configuration
 options, text/image content, function results, environment variants, full Item/SSE

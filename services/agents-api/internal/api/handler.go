@@ -36,21 +36,23 @@ type ResourceStore interface {
 }
 
 type Handler struct {
-	policy             execution.Policy
-	store              ResourceStore
-	auth               *Authenticator
-	harnesses          map[string]bool
-	engine             string
-	inputs             InputSubmitter
-	executorURL        string
-	hostedEnvironments bool
-	directoryReader    EnvironmentDirectoryReader
-	fileWriter         EnvironmentFileWriter
-	skills             SkillStore
-	sourceFiles        SourceFileStore
-	artifacts          SessionArtifactStore
-	subagents          SubagentStore
-	startup            *v1.CoreStartupConfiguration
+	policy              execution.Policy
+	store               ResourceStore
+	auth                *Authenticator
+	harnesses           map[string]bool
+	engine              string
+	inputs              InputSubmitter
+	executorURL         string
+	hostedEnvironments  bool
+	directoryReader     EnvironmentDirectoryReader
+	fileWriter          EnvironmentFileWriter
+	skills              SkillStore
+	sourceFiles         SourceFileStore
+	artifacts           SessionArtifactStore
+	subagents           SubagentStore
+	runtimeObservations RuntimeObservationService
+	runtimeHistory      RuntimeHistoryService
+	startup             *v1.CoreStartupConfiguration
 }
 
 func NewHandler(s ResourceStore, auth *Authenticator, engine string, options ...Option) (http.Handler, error) {
@@ -103,6 +105,10 @@ func NewHandler(s ResourceStore, auth *Authenticator, engine string, options ...
 		r.Post("/agents/sessions", h.createSession)
 		r.Get("/agents/sessions", h.listSessions)
 		r.Get("/agents/sessions/{session_id}", h.getSession)
+		r.Get("/agents/sessions/{session_id}/runtime-observation", h.getRuntimeObservation)
+		r.Get("/agents/runtime-observations", h.listRuntimeObservations)
+		r.Get("/agents/runtime-history/capabilities", h.getRuntimeHistoryCapabilities)
+		r.Get("/agents/sessions/{session_id}/runtime-history", h.getRuntimeHistory)
 		r.Post("/agents/sessions/{session_id}", h.updateSession)
 		r.Delete("/agents/sessions/{session_id}", h.deleteSession)
 		r.Post("/agents/sessions/{session_id}/events", h.createEvents)

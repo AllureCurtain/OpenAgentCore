@@ -20,10 +20,13 @@ hashes. Do not automatically sync or delete the original repository's Core.
 
 Develop in an isolated worktree on a feature branch and submit a PR. Do not edit
 or commit implementation directly on main. An empty repository bootstrap commit
-is only the comparison base for the first import PR. After validation, conduct an
-independent blind review using only requirements, acceptance criteria, boundaries,
-repository path and comparison baseline. Fix in-scope blockers before delivery.
-Do not use `codex exec` as a substitute reviewer.
+is only the comparison base for the first import PR. Choose review depth by risk. Substantial changes and changes involving security,
+shared lifecycle ownership or uncertain cross-package behavior need an independent
+blind review after validation. Give the reviewer only requirements, acceptance
+criteria, boundaries, repository path and comparison baseline. Small, verified
+fixes may use self-review, including focused corrections after a blind review;
+repeat independent review when a correction materially changes the design or risk.
+Fix in-scope blockers before delivery. Do not use `codex exec` as a substitute reviewer.
 
 The Core Web is an administrator console for execution and resource operations;
 business collaboration remains in Parsar. Environment Template management shares
@@ -290,6 +293,35 @@ management, SandboxProvider creates and reclaims it. For user management, the us
 starts the Runtime and its daemon authenticates and initiates the Core connection;
 Core verifies principal ownership and the exact Environment binding. These are
 management responsibilities, not separate execution architectures.
+
+Runtime telemetry uses a separate read-only service boundary documented in
+[`contracts/agents-api/runtime-observability.md`](contracts/agents-api/runtime-observability.md).
+Resolve durable Session, Environment and Runtime-instance identity before selecting
+a provider source. Observation never extends a lease or changes compute lifecycle.
+Keep observed zero, unavailable data and unsupported Runtime modes distinct. Metrics
+may inform operators, but automatic suspension requires durable Core-owned activity
+state and must not use a monitoring backend as lifecycle authority.
+Managed Docker observes one non-streaming Inspect/Stats sample. Managed microsandbox
+observes the exact persisted compute generation through the existing one-shot helper
+and pinned native CLI metrics report, with SDK identity checks before and after
+observation. Derive compute start from the same native sample timestamp and precise
+uptime; never subtract rounded uptime from a new wall-clock timestamp. Preserve
+cumulative CPU seconds, memory usage/limit and
+compute uptime semantics across both. Do not use microsandbox's instantaneous CPU
+percent, wake suspended compute, or expose provider-native identifiers to fill a
+common field.
+
+Runtime history uses the existing Core PostgreSQL database: one sanitized row per
+periodic observation, seven-day retention and bounded reads. It is best-effort
+operational evidence, not execution or Usage authority. The execution owner samples
+by default every 30 seconds. Existing canonical Session Usage supplies token
+snapshots; never aggregate provider counters as model tokens. Preserve missing data
+and reset CPU derivation across compute incarnations or counter regressions.
+The bounded asynchronous database writer and optional OTLP exporter have independent
+queues; external telemetry outages must not stall local history or execution.
+Retention cleanup also runs without active Runtimes. The browser queries only Core,
+never storage or a Collector, and stays a lightweight administrator console.
+No additional metrics database or Collector is required for retained charts.
 
 In V1, our daemon fills the user-side executor role. Users deploy daemon, the
 selected harness, local tools and workspace together. Do not require Codex
