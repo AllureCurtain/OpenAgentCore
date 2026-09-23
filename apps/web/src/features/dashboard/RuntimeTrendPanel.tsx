@@ -62,7 +62,7 @@ export function RuntimeTrendPanel({
   const durableAvailable = durableState !== "unavailable" || durableSnapshot !== null;
   const source: RuntimeTrendSource = allowSourceSelection && sourcePreference === "live"
     ? "live"
-    : durableAvailable
+    : durableSnapshot !== null
       ? "durable"
       : "live";
   const selectedSamples = source === "durable"
@@ -108,16 +108,23 @@ export function RuntimeTrendPanel({
   }, [durableRefresh, durableTargetKey, loadRuntimeHistory, selectedDurableRange]);
 
   const rangeOptions = source === "durable" ? RUNTIME_DURABLE_RANGES : RUNTIME_TREND_RANGES;
+  const waitingForHistory = source === "live" && (!allowSourceSelection || sourcePreference === "durable");
   const sourceStatus = source === "durable"
     ? durableState === "failed"
       ? "History stale"
       : durableState === "connecting"
         ? "History · loading"
         : `Durable · ${durableSnapshot?.resolutionSeconds ?? 0}s`
+    : waitingForHistory
+      ? durableState === "failed"
+        ? "Live · history retrying"
+        : durableState === "unavailable"
+          ? "Live · history unavailable"
+          : "Live · loading history"
     : stale
       ? "Stale · retrying"
       : `Live · ${RUNTIME_SNAPSHOT_REFRESH_MS / 1_000}s`;
-  const sourceStatusStale = source === "durable" ? durableState === "failed" : stale;
+  const sourceStatusStale = source === "durable" ? durableState === "failed" : stale || waitingForHistory && durableState === "failed";
 
   return (
     <section className="dashboard-runtime-live" aria-labelledby={headingId}>

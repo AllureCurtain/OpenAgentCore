@@ -62,6 +62,7 @@ import { SessionActionsDialog } from "./actions/SessionActionsDialog";
 export type StreamState = "idle" | "connecting" | "listening" | "recovering" | "failed";
 export type SessionDetailState = "idle" | "loading" | "ready" | "failed";
 type SessionView = "conversation" | "trace" | "metrics";
+const SESSION_METRICS_CACHE_LIMIT = 6;
 
 export interface SessionCreateRequest {
   agentId: string | null;
@@ -320,6 +321,7 @@ export function SessionsView({
   const newSessionUnavailableReason = null;
   const [message, setMessage] = useState("");
   const [sessionView, setSessionView] = useState<SessionView>("conversation");
+  const [metricsSessionIds, setMetricsSessionIds] = useState<string[]>([]);
   const [newSessionOpen, setNewSessionOpen] = useState(false);
   const [environmentDialogSessionId, setEnvironmentDialogSessionId] = useState<string | null>(null);
   const [preselectedAgentId, setPreselectedAgentId] = useState<string | null>(null);
@@ -416,13 +418,36 @@ export function SessionsView({
     environmentPresentation?.visible &&
     (environmentPresentation.status === "failed" || environmentPresentation.status === "expired"),
   );
-  const sessionRuntimeSnapshot = useMemo((): RuntimeDashboardSnapshot | null => {
-    if (!selected || !runtimeSnapshot) return null;
-    const runtimeSession = runtimeSnapshot.sessions.find((session) => session.id === selected.id);
-    const observation = runtimeSnapshot.observations.find((candidate) => candidate.session_id === selected.id);
-    if (!runtimeSession || !observation) return null;
-    return { sessions: [runtimeSession], observations: [observation], loadedAt: runtimeSnapshot.loadedAt };
-  }, [runtimeSnapshot, selected]);
+  const retainedMetricsSessionIds = useMemo(() => {
+    if (!selected) return metricsSessionIds;
+    return [selected.id, ...metricsSessionIds.filter((sessionId) => sessionId !== selected.id)]
+      .slice(0, SESSION_METRICS_CACHE_LIMIT);
+  }, [metricsSessionIds, selected]);
+  useEffect(() => {
+    if (!selected) return;
+    setMetricsSessionIds((current) => {
+      const next = [selected.id, ...current.filter((sessionId) => sessionId !== selected.id)]
+        .slice(0, SESSION_METRICS_CACHE_LIMIT);
+      return next.length === current.length && next.every((sessionId, index) => sessionId === current[index])
+        ? current
+        : next;
+    });
+  }, [selected]);
+  const sessionRuntimeSnapshots = useMemo(() => {
+    const result = new Map<string, RuntimeDashboardSnapshot>();
+    if (!runtimeSnapshot) return result;
+    const runtimeSessions = new Map(runtimeSnapshot.sessions.map((session) => [session.id, session]));
+    const observations = new Map(runtimeSnapshot.observations.map((observation) => [observation.session_id, observation]));
+    for (const sessionId of retainedMetricsSessionIds) {
+      const runtimeSession = runtimeSessions.get(sessionId);
+      const observation = observations.get(sessionId);
+      if (runtimeSession && observation) {
+        result.set(sessionId, { sessions: [runtimeSession], observations: [observation], loadedAt: runtimeSnapshot.loadedAt });
+      }
+    }
+    return result;
+  }, [retainedMetricsSessionIds, runtimeSnapshot]);
+  const sessionRuntimeSnapshot = selected ? sessionRuntimeSnapshots.get(selected.id) ?? null : null;
 
   const send = async (event?: FormEvent) => {
     event?.preventDefault();
@@ -916,18 +941,23 @@ export function SessionsView({
             aria-labelledby="session-metrics-tab"
             hidden={sessionView !== "metrics"}
           >
-            {sessionRuntimeSnapshot && loadRuntimeHistory ? (
-              <RuntimeTrendPanel
-                key={selected.id}
-                snapshot={sessionRuntimeSnapshot}
-                stale={runtimeStale ?? false}
-                loadRuntimeHistory={loadRuntimeHistory}
-                headingId="session-runtime-trends-heading"
-                title="Session resource trends"
-                showDurableUptimePlaceholder
-                allowSourceSelection
-              />
-            ) : runtimeError ? (
+            {loadRuntimeHistory ? retainedMetricsSessionIds.map((sessionId) => {
+              const cachedSnapshot = sessionRuntimeSnapshots.get(sessionId);
+              return cachedSnapshot ? (
+                <div key={sessionId} hidden={sessionId !== selected.id}>
+                  <RuntimeTrendPanel
+                    snapshot={cachedSnapshot}
+                    stale={runtimeStale ?? false}
+                    loadRuntimeHistory={loadRuntimeHistory}
+                    headingId={`session-runtime-trends-heading-${sessionId}`}
+                    title="Session resource trends"
+                    showDurableUptimePlaceholder
+                    allowSourceSelection
+                  />
+                </div>
+              ) : null;
+            }) : null}
+            {sessionRuntimeSnapshot ? null : runtimeError ? (
               <ErrorState
                 title="Couldn’t load Session metrics"
                 description="The latest Runtime observation is unavailable."

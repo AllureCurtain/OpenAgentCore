@@ -435,6 +435,18 @@ html[data-theme="dark"] .brand-mark-dark {
   animation: page-in 320ms var(--ease-spring) both;
 }
 
+.cached-page-view {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.cached-page-view[hidden] {
+  display: none;
+}
+
 .page-header {
   position: sticky;
   top: 0;

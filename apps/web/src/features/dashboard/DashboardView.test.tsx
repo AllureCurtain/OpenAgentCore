@@ -194,7 +194,7 @@ describe("Dashboard loaded-result presentation", () => {
     expect(html).not.toContain("Execution ready");
   });
 
-  it("renders current Docker resources without inventing a CPU percentage or history", () => {
+  it("renders current Docker resources immediately while durable history loads", () => {
     const hosted = session("11111111-1111-4111-8111-111111111111", {
       metadata: { title: "Managed research" },
       environment: {
@@ -246,20 +246,19 @@ describe("Dashboard loaded-result presentation", () => {
     expect(html).toContain("Cumulative CPU / capacity");
     expect(html).toContain("1m 13s / 2 cores");
     expect(html).toContain("512 MiB / 2.00 GiB");
-    expect(html).toContain('aria-label="Runtime durable-history charts"');
+    expect(html).toContain('aria-label="Runtime live-window charts"');
     expect(html).toContain("Resource trends");
-    expect(html).toContain("Retained samples · durable history");
+    expect(html).toContain("Browser-local samples · reset on reload");
     expect(html).not.toContain('aria-label="Runtime trend source"');
-    expect(html).toContain("History · loading");
-    expect(html).toContain("0 buckets");
-    expect(html).toContain('aria-label="Runtime durable range"');
+    expect(html).toContain("Live · loading history");
+    expect(html).toContain("1 sample");
+    expect(html).toContain('aria-label="Runtime live range"');
     expect(html).toContain('aria-pressed="true">1h</button>');
     expect(html).toContain("CPU usage");
     expect(html).toContain("Memory usage");
-    expect(html).not.toContain("Compute uptime");
+    expect(html).toContain("Compute uptime");
     expect(html).toContain("Token throughput");
-    expect(html).toContain("No retained CPU samples");
-    expect(html).toContain("0/2 valid points · 0 snapshots · no history is synthesized");
+    expect(html).not.toContain("No retained CPU samples");
     expect(html).toContain("Latest value");
     expect(html).toContain("Missing samples");
     expect(html).toContain("Runtime targets");
@@ -360,7 +359,7 @@ describe("Dashboard loaded-result presentation", () => {
     });
 
     expect(html).toContain("Runtime: Runtime refresh failed");
-    expect(html).toContain("History · loading");
+    expect(html).toContain("Live · loading history");
     expect(html).not.toContain("Live · 30s");
   });
 
