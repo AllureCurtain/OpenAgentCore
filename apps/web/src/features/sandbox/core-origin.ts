@@ -12,5 +12,11 @@ export function sandboxSetupOrigin(value: string): string | null {
   const origin = sandboxCoreOrigin(value);
   if (!origin) return null;
   const url = new URL(origin);
-  return url.protocol === "https:" && !isLoopbackHostname(url.hostname.replace(/\.$/, "")) ? origin : null;
+  const hostname = url.hostname.replace(/\.$/, "");
+  const mappedIPv4 = /^\[::ffff:([0-9a-f]+):([0-9a-f]+)\]$/.exec(hostname);
+  const mappedHigh = mappedIPv4 ? Number.parseInt(mappedIPv4[1] ?? "", 16) : null;
+  const mappedLow = mappedIPv4 ? Number.parseInt(mappedIPv4[2] ?? "", 16) : null;
+  const unusable = isLoopbackHostname(hostname) || hostname === "0.0.0.0" || hostname === "[::]"
+    || (mappedHigh !== null && (mappedHigh >>> 8 === 127 || (mappedHigh === 0 && mappedLow === 0)));
+  return url.protocol === "https:" && !unusable ? origin : null;
 }
