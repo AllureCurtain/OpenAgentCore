@@ -32,9 +32,14 @@ The Core Web is an administrator console for execution and resource operations;
 business collaboration remains in Parsar. Environment Template management shares
 the Session creation catalog and uses the existing public client operations. Patch
 only edited fields, confirm deletion, and never automatically retry an uncertain
-write. A Core connection change must discard the previous connection's forms,
-pending results and notices. Saving a Template must not allocate a Runtime, call a
-model or imply execution readiness. Keep unsupported advanced profiles explicit.
+write. When Core refuses to delete a busy Session, offer an explicit Cancel work
+and delete action that cancels once, reads until the Session is idle within a
+bounded wait and deletes once; never cancel without that confirmation. When only
+input waiting for its Environment blocks deletion, explain that it must start,
+expire or fail instead, because Core rejects its cancellation. A Core connection
+change must discard the previous connection's forms, pending results and notices.
+Saving a Template must not allocate a Runtime, call a model or imply execution
+readiness. Keep unsupported advanced profiles explicit.
 
 For subsequent alignment and milestone closure batches, the main thread coordinates
 design, shared interface agreements, file ownership, integration and merge. First
@@ -1144,7 +1149,7 @@ direct batches, including cancellation, while successful earlier retries remain
 readable. Promotion commits the original inputs, history, reservation settlement
 and execution claim (`queued` to `in_progress`) together; expiration and targeted
 cancellation retain the terminal identity. Session deletion
-cancels pending input in the same transaction. A terminal reservation retry must not
+is rejected while input is pending and changes nothing. A terminal reservation retry must not
 affect a later reservation or Turn. Evaluate deadlines after acquiring the Session
 lock, and return terminal storage outcomes without rolling their transaction back.
 
@@ -1202,7 +1207,7 @@ An admitted retry returns the original receipts without reclaiming execution; a
 read or uncertain commit never authorizes another Start. A crash after promotion
 but before Start uses existing claimed-Turn reconciliation (`execution_interrupted`),
 including unbound or deleted Sessions, rather than ordinary queued dispatch. Deletion
-after claim requests cancellation under existing active-Turn semantics.
+after claim is rejected like any active Turn.
 The Worker expires at most 32 due reservations on each existing tick, after
 checking ownership and before checking devices or execution slots. The sweep
 requires the leased Store and uses its connection with the existing transaction
@@ -1643,21 +1648,40 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   types. Product adapters live in `server/internal/agentdaemon`. Keep protocol
   frames in `internal/agentdaemon/proto` until the contracts directory migration.
   Store aliases preserve existing callers during this transition.
-- Session deletion uses a durable `sessions.deleted_at` marker, committed with an
-  existing Turn cancellation request under the tenant Session lock. Public reads,
-  metadata changes, event streams and input admission exclude deleted Sessions;
-  admission checks visibility under that lock before retry lookup. Creation keys
-  remain reserved and cannot resurrect deleted Sessions. Missing/repeated deletion
-  locally returns 404 and reuse of a deleted creation identity returns 409; exact
-  hosted errors and overlapping stream timing remain unverified. Existing streams
-  close when removal is observed without a fabricated deletion event.
+- Session deletion uses a durable `sessions.deleted_at` marker. Public deletion
+  accepts only a durably idle or failed Session without required actions: no
+  queued, in-progress or waiting root Turn and no pending input reservation, the
+  same settlement rule as the creation stream. Subagent child Turns and pending
+  Environment file writes are not checked, as before this rule; their official
+  behavior is unobserved. Take that decision and commit the marker
+  under the tenant Session lock that orders Turn and input admission, so either
+  admission commits first and deletion conflicts, or admission observes the
+  deletion. A busy Session returns 409 `conflict_error` with the observed official
+  message and nothing changes: no cancellation, marker, event or cleanup. Callers
+  cancel first (`agent.session.input.cancel`), wait until the Session is idle and
+  delete it. Core admits a Turn synchronously, so it also conflicts right after an
+  `events.create` 202, where the official service was observed to return 200.
+  Deleting a provisioning hosted Session with reserved input used to release its
+  sandbox node placement at once; it now conflicts, and the placement counts
+  toward node capacity until the input is admitted or its five-minute deadline
+  expires. A later allowed deletion releases an unallocated placement.
+  The owner's repeated deletion returns the same 200 confirmation without writing;
+  foreign, missing and malformed identifiers keep the byte-identical 404. Public
+  reads, metadata changes, event streams and input admission exclude deleted
+  Sessions; admission checks visibility under that lock before retry lookup.
+  Creation keys remain reserved and cannot resurrect deleted Sessions; reuse of a
+  deleted creation identity returns 409. Existing streams close when removal is
+  observed without a fabricated deletion event; overlapping stream timing remains
+  unverified. Earlier releases also deleted busy Sessions after requesting
+  cancellation, so upgraded databases can hold markers with hidden work.
   Internal Turn/receipt/finalization and restart reconciliation retain access so
-  hidden work can settle under the existing execution lease. Queued deletion
-  prevents claim; an already claimed execution may complete or receive cancellation.
-  Confirmation does not guarantee native quiescence. Never revoke a shared device,
+  that work settles under the existing execution lease; queued work cannot be
+  claimed, and Runtime cleanup still cancels pending work. Confirmation does not
+  guarantee native quiescence. Never revoke a shared device,
   remove a saved Agent or touch product data as part of Session deletion. Physical
   SQL/native history cleanup remains a separate required implementation gap; these
-  records are retained, not claimed purged. Do not deploy a pre-deletion service
+  records are retained, not claimed purged, and purging may end repeat idempotency.
+  Do not deploy a pre-deletion service
   against a database with deletion markers; migration rollback refuses to remove
   the column while deleted records exist, preventing public resurrection.
 - `services/agents-api` owns its SQL schema, sqlc queries and embedded goose
