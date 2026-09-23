@@ -488,7 +488,7 @@ function targetIds(samples: readonly RuntimeTrendSample[], field: "cpuRatio" | "
   for (const sample of samples) {
     for (const target of sample.targets) {
       const value = target[field];
-      if (value !== null) latest.set(target.seriesId, value);
+      latest.set(target.seriesId, value ?? latest.get(target.seriesId) ?? 0);
     }
   }
   return [...latest.entries()].sort((left, right) => right[1] - left[1]).slice(0, 3).map(([id]) => id);
@@ -522,10 +522,13 @@ export function RuntimeTrendCharts({
       id,
       label: targetLabel(samples, id),
       tone: tones[index] ?? "blue",
-      points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.targets.find((target) => target.seriesId === id)?.cpuRatio ?? null })).map((point) => ({ ...point, value: point.value === null ? null : point.value * 100 })),
+      points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: (sample.targets.find((target) => target.seriesId === id)?.cpuRatio ?? 0) * 100 })),
     }));
-    const memoryUsed = samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.memoryUsageBytes }));
-    const memoryLimit = samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.memoryLimitBytes }));
+    if (cpu.length === 0 && samples.length > 0) {
+      cpu.push({ id: "cpu", label: "usage", tone: "orange", points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: 0 })) });
+    }
+    const memoryUsed = samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.memoryUsageBytes ?? 0 }));
+    const memoryLimit = samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.memoryLimitBytes ?? 0 }));
     const active = activeIds.map((id, index): TrendSeries => ({
       id,
       label: targetLabel(samples, id),
@@ -533,6 +536,9 @@ export function RuntimeTrendCharts({
       stepped: true,
       points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.targets.find((target) => target.seriesId === id)?.runtimeActive ?? 0 })),
     }));
+    if (active.length === 0 && samples.length > 0) {
+      active.push({ id: "activity", label: "Runtime", tone: "blue", stepped: true, points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: 0 })) });
+    }
     const throughput = tokenThroughput(samples);
     return {
       cpu,
@@ -542,8 +548,8 @@ export function RuntimeTrendCharts({
       ] satisfies TrendSeries[],
       active,
       tokens: [
-        { id: "input", label: "input", tone: "orange", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.inputPerMinute })) },
-        { id: "output", label: "output", tone: "green", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.outputPerMinute })) },
+        { id: "input", label: "input", tone: "orange", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.inputPerMinute ?? 0 })) },
+        { id: "output", label: "output", tone: "green", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.outputPerMinute ?? 0 })) },
       ] satisfies TrendSeries[],
     };
   }, [samples]);

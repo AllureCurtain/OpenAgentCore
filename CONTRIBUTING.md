@@ -32,9 +32,14 @@ The Core Web is an administrator console for execution and resource operations;
 business collaboration remains in Parsar. Environment Template management shares
 the Session creation catalog and uses the existing public client operations. Patch
 only edited fields, confirm deletion, and never automatically retry an uncertain
-write. A Core connection change must discard the previous connection's forms,
-pending results and notices. Saving a Template must not allocate a Runtime, call a
-model or imply execution readiness. Keep unsupported advanced profiles explicit.
+write. When Core refuses to delete a busy Session, offer an explicit Cancel work
+and delete action that cancels once, reads until the Session is idle within a
+bounded wait and deletes once; never cancel without that confirmation. When only
+input waiting for its Environment blocks deletion, explain that it must start,
+expire or fail instead, because Core rejects its cancellation. A Core connection
+change must discard the previous connection's forms, pending results and notices.
+Saving a Template must not allocate a Runtime, call a model or imply execution
+readiness. Keep unsupported advanced profiles explicit.
 
 For subsequent alignment and milestone closure batches, the main thread coordinates
 design, shared interface agreements, file ownership, integration and merge. First
@@ -596,6 +601,33 @@ does not qualify its isolation or enable public creation.
 
 ### Hosted sandbox nodes and optional suspension
 
+Default installation includes Core, Web and PostgreSQL but no execution node.
+It always creates a separate deployment administrator credential. Core receives
+only its digest; the paired console server receives the private token and injects
+it only on approved management routes after console login and same-origin checks.
+The browser never receives that token. Node/daemon transport routes instead
+forward their own credentials unchanged to Core. Zero-node Core receives neither the Docker socket nor KVM.
+The Web's first setup selects one provider and public Core origin through the
+admin-only deployment endpoint. The paired console serves only an explicit list
+of non-secret matched distribution artifacts for its node installation command;
+never serve private installation files or arbitrary paths. Node installation
+reuses the existing node process and Provider configuration, verifies downloaded
+files, retains private identity and uses a user service. It performs no SSH
+installation, Session creation or model call. PostgreSQL owns this immutable selection under
+the existing execution lease and deployment lock. Exact retries are idempotent;
+a changed selection conflicts. No provider migration or hot reload is implied.
+
+Web-managed startup claims the stable installation identity and a new owner epoch
+even before provider selection. The existing runtime manager stays present and
+loads one immutable configuration when selection becomes available, before any
+node lifecycle is created. Admission refuses uninitialized hosted work without
+creating Session state. File-managed and Web-managed configuration are mutually
+exclusive. Node registration, observation and daemon bootstrap reuse existing
+contracts. Derive Runtime bootstrap and daemon WebSocket addresses from the saved
+validated origin; never infer them from inbound Host headers. Keep the startup
+configuration API a startup snapshot; use the live deployment endpoint in setup.
+
+
 A Core deployment may run without a sandbox provider. When enabled, exactly one
 sandbox provider is selected at setup: Docker or microsandbox. Keep both adapters but reject multiple provider entries,
 legacy default-provider maps and engine-based placement. Harness selection is
@@ -618,8 +650,8 @@ migrate an existing Session to another provider or recreate a released allocatio
 Fresh adoption of a deployment with unverified retained allocations fails closed.
 
 The [Hosted Sandbox Manager](services/agents-api/HOSTED-SANDBOX-MANAGER.md) is a
-deployment-level admin surface, separate from project credentials. Its Web token
-stays in memory. Node enrollment credentials authorize only registration; durable
+deployment-level admin surface, separate from project credentials. A direct-Core
+Web token stays in memory; the paired console token stays on its server. Node enrollment credentials authorize only registration; durable
 node credentials authorize only node transport. Project keys can read a narrow
 node directory and their own Session placement, never global allocations.
 
@@ -1117,7 +1149,7 @@ direct batches, including cancellation, while successful earlier retries remain
 readable. Promotion commits the original inputs, history, reservation settlement
 and execution claim (`queued` to `in_progress`) together; expiration and targeted
 cancellation retain the terminal identity. Session deletion
-cancels pending input in the same transaction. A terminal reservation retry must not
+is rejected while input is pending and changes nothing. A terminal reservation retry must not
 affect a later reservation or Turn. Evaluate deadlines after acquiring the Session
 lock, and return terminal storage outcomes without rolling their transaction back.
 
@@ -1175,7 +1207,7 @@ An admitted retry returns the original receipts without reclaiming execution; a
 read or uncertain commit never authorizes another Start. A crash after promotion
 but before Start uses existing claimed-Turn reconciliation (`execution_interrupted`),
 including unbound or deleted Sessions, rather than ordinary queued dispatch. Deletion
-after claim requests cancellation under existing active-Turn semantics.
+after claim is rejected like any active Turn.
 The Worker expires at most 32 due reservations on each existing tick, after
 checking ownership and before checking devices or execution slots. The sweep
 requires the leased Store and uses its connection with the existing transaction
@@ -1544,8 +1576,8 @@ guide in each artifact checksum list so extracted documentation matches its buil
 The distribution includes the sandbox-node binary. An enabled local node uses a
 persistent private state directory, explicitly separate from read-only configuration.
 Docker grants Core write access only to that node-state mount; native Core uses the
-same installation-owned directory. Zero-node installs create neither node identity
-state nor sandbox administrator credentials.
+same installation-owned directory. Zero-node installs create no node identity
+state, but retain the paired administrator credential for first setup.
 
 One Runtime image contains the existing daemon, shared helpers and three native
 harness packages. Their differences remain in the adapters. Core keeps exclusive
@@ -1559,14 +1591,23 @@ must not change on a repeated install.
 
 `services/core-console` serves the production Web build and forwards public `/v1`
 requests to one configured Core using its project bearer, after console Basic
-authentication. Its explicit sandbox administration routes instead require a
-unique browser-supplied Bearer credential and forward it unchanged for Core to
-verify; console Basic access does not confer deployment administration. Never
-substitute the project bearer on those routes or give the console a shared admin
-credential. The installer keeps the administrator key and digests separate from
-project configuration and exposes only the digest file to Core. The Web keeps an
-entered administrator credential in memory. Node registration, identity and
-WebSocket transport are not console routes; nodes connect directly to Core.
+authentication. The paired console uses the same login for allowlisted sandbox
+management routes and supplies its private server-side administrator token from
+`CORE_CONSOLE_SANDBOX_ADMIN_TOKEN_FILE`. The browser receives only capability
+flags through `/console/config`, never the deployment bearer. Project API keys
+retain their separate authority. The installer mounts only the administrator
+key file into Web and only its digest file into Core. Node/daemon transport uses
+its own authenticated finite routes and credentials, never that admin token.
+
+The Web manager offers no manual administrator-key fallback. A console without
+paired management configuration shows setup guidance; direct remote project API
+connections do not silently administer the console's configured deployment.
+Chinese/English sandbox text, status and diagnostic formatting live in the shared
+`apps/web/src/lib/` locale modules. A persisted explicit language preference wins
+before the first browser language; unrelated product surfaces are outside this
+translation scope. Preserve zero-node setup and node installation behavior when
+localizing their controls.
+
 Both proxy paths retain fixed-origin, cross-site, safe-path, redirect and Upgrade
 restrictions through the standard Go reverse proxy with streaming/cancellation.
 The console implements no product identity, resource semantics, Runtime discovery
@@ -1607,21 +1648,40 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   types. Product adapters live in `server/internal/agentdaemon`. Keep protocol
   frames in `internal/agentdaemon/proto` until the contracts directory migration.
   Store aliases preserve existing callers during this transition.
-- Session deletion uses a durable `sessions.deleted_at` marker, committed with an
-  existing Turn cancellation request under the tenant Session lock. Public reads,
-  metadata changes, event streams and input admission exclude deleted Sessions;
-  admission checks visibility under that lock before retry lookup. Creation keys
-  remain reserved and cannot resurrect deleted Sessions. Missing/repeated deletion
-  locally returns 404 and reuse of a deleted creation identity returns 409; exact
-  hosted errors and overlapping stream timing remain unverified. Existing streams
-  close when removal is observed without a fabricated deletion event.
+- Session deletion uses a durable `sessions.deleted_at` marker. Public deletion
+  accepts only a durably idle or failed Session without required actions: no
+  queued, in-progress or waiting root Turn and no pending input reservation, the
+  same settlement rule as the creation stream. Subagent child Turns and pending
+  Environment file writes are not checked, as before this rule; their official
+  behavior is unobserved. Take that decision and commit the marker
+  under the tenant Session lock that orders Turn and input admission, so either
+  admission commits first and deletion conflicts, or admission observes the
+  deletion. A busy Session returns 409 `conflict_error` with the observed official
+  message and nothing changes: no cancellation, marker, event or cleanup. Callers
+  cancel first (`agent.session.input.cancel`), wait until the Session is idle and
+  delete it. Core admits a Turn synchronously, so it also conflicts right after an
+  `events.create` 202, where the official service was observed to return 200.
+  Deleting a provisioning hosted Session with reserved input used to release its
+  sandbox node placement at once; it now conflicts, and the placement counts
+  toward node capacity until the input is admitted or its five-minute deadline
+  expires. A later allowed deletion releases an unallocated placement.
+  The owner's repeated deletion returns the same 200 confirmation without writing;
+  foreign, missing and malformed identifiers keep the byte-identical 404. Public
+  reads, metadata changes, event streams and input admission exclude deleted
+  Sessions; admission checks visibility under that lock before retry lookup.
+  Creation keys remain reserved and cannot resurrect deleted Sessions; reuse of a
+  deleted creation identity returns 409. Existing streams close when removal is
+  observed without a fabricated deletion event; overlapping stream timing remains
+  unverified. Earlier releases also deleted busy Sessions after requesting
+  cancellation, so upgraded databases can hold markers with hidden work.
   Internal Turn/receipt/finalization and restart reconciliation retain access so
-  hidden work can settle under the existing execution lease. Queued deletion
-  prevents claim; an already claimed execution may complete or receive cancellation.
-  Confirmation does not guarantee native quiescence. Never revoke a shared device,
+  that work settles under the existing execution lease; queued work cannot be
+  claimed, and Runtime cleanup still cancels pending work. Confirmation does not
+  guarantee native quiescence. Never revoke a shared device,
   remove a saved Agent or touch product data as part of Session deletion. Physical
   SQL/native history cleanup remains a separate required implementation gap; these
-  records are retained, not claimed purged. Do not deploy a pre-deletion service
+  records are retained, not claimed purged, and purging may end repeat idempotency.
+  Do not deploy a pre-deletion service
   against a database with deletion markers; migration rollback refuses to remove
   the column while deleted records exist, preventing public resurrection.
 - `services/agents-api` owns its SQL schema, sqlc queries and embedded goose
