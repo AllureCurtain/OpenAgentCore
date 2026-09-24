@@ -23,7 +23,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"os"
@@ -54,21 +53,9 @@ func main() {
 }
 
 func run() error {
-	databaseURL, keysFile := os.Getenv("AGENTS_API_DATABASE_URL"), os.Getenv("AGENTS_API_KEYS_FILE")
-	if databaseURL == "" || keysFile == "" {
-		return errors.New("AGENTS_API_DATABASE_URL and AGENTS_API_KEYS_FILE are required")
-	}
-	content, err := os.ReadFile(keysFile)
-	if err != nil {
-		return errors.New("cannot read AGENTS_API_KEYS_FILE")
-	}
-	var keys []api.APIKey
-	if err := json.Unmarshal(content, &keys); err != nil {
-		return errors.New("AGENTS_API_KEYS_FILE must contain an array of API key bindings")
-	}
-	auth, err := api.NewAuthenticator(keys)
-	if err != nil {
-		return err
+	databaseURL := os.Getenv("AGENTS_API_DATABASE_URL")
+	if databaseURL == "" {
+		return errors.New("AGENTS_API_DATABASE_URL is required")
 	}
 	credentialKey, err := credentialCipher()
 	if err != nil {
@@ -103,7 +90,8 @@ func run() error {
 		return err
 	}
 	executionStore := store.NewWithCredentialCipherAndOAuthRefresh(pool, credentialKey, oauthClient)
-	if err := executionStore.EnsureProjectScopes(ready, auth.ProjectScopes()); err != nil {
+	auth, err := api.NewDatabaseAuthenticator(executionStore)
+	if err != nil {
 		return err
 	}
 	auditRetention, err := writeAuditRetention()
@@ -186,7 +174,10 @@ func run() error {
 			return err
 		}
 	}
-	options = append(options, api.WithProjectAPIKeys(executionStore, keyAdmin), api.WithWriteAudit(executionStore, keyAdmin))
+	if err := api.ValidateCredentialSeparation(ctx, keyAdmin, executionStore); err != nil {
+		return err
+	}
+	options = append(options, api.WithProjectAPIKeys(executionStore, keyAdmin), api.WithWriteAudit(executionStore, keyAdmin), api.WithAdminManagement(executionStore))
 	if history.Reader != nil {
 		historyResolver, resolverErr := historystoreresolver.NewResolver(executionStore)
 		if resolverErr != nil {
