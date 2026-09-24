@@ -271,7 +271,9 @@ The basic `openai_hosted` profiles for Codex, Claude Code and MiniMax Code requi
 explicit operator configuration. Select the qualified native image using the
 [engine profile guides](../../contracts/agents-api/README.md#public-engine-profiles),
 then follow the [Docker setup](deploy/codex/README.md#standalone-operator-configuration).
-Core manages Docker only. For user-managed E2B, see
+Core-managed hosting supports deployment-selected E2B, Docker or microsandbox;
+see [Hosted Sandbox Manager](HOSTED-SANDBOX-MANAGER.md). For the separate
+user-managed E2B path, see
 [E2B Runtime packaging](deploy/e2b/README.md).
 Core remains independently deployed with its own database. Public idle and initial
 text Sessions share the existing preparation, execution, Files and recovery paths.
@@ -472,10 +474,10 @@ an official SSE replay mechanism.
 ## User-managed Runtime enrollment
 
 V1 uses our daemon as the user-side executor. Deploy daemon, selected harness,
-local tools and protected `/workspace` together using the shared Runtime. Core
-manages Docker-hosted compute only. The user owns local or E2B allocation, renewal
+local tools and protected `/workspace` together using the shared Runtime. For this caller-managed path, the user owns local or E2B allocation, renewal
 and destruction; use the official E2B SDK through the
-[E2B guide](deploy/e2b/README.md), not a Core E2B Provider.
+[E2B guide](deploy/e2b/README.md). Deployment-managed E2B, Docker and microsandbox
+are separate hosted choices in [Hosted Sandbox Manager](HOSTED-SANDBOX-MANAGER.md).
 
 Create a Session with `environment={"type":"self_hosted",
 "workspace_directory":"/workspace"}` and empty/default capability directories.
