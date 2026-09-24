@@ -30,8 +30,7 @@ import { ConnectionModal } from "./components/ConnectionModal";
 import { CreateMenu } from "./components/CreateMenu";
 import { ProductNavigation, type ProductView } from "./components/ProductNavigation";
 import { StatusIcon } from "./components/StatusIcon";
-import { ThemeMenu } from "./components/ThemeMenu";
-import { LanguageMenu } from "./components/LanguageMenu";
+import { AppearanceMenu } from "./components/AppearanceMenu";
 import { useToast } from "./components/Toast";
 import { AgentsView } from "./features/agents/AgentsView";
 import {
@@ -2323,8 +2322,7 @@ export function App() {
           </button>
           <ConsoleAccountMenu />
           <div className="sidebar-preferences">
-            <LanguageMenu />
-            <ThemeMenu />
+            <AppearanceMenu />
           </div>
         </div>
       </aside>

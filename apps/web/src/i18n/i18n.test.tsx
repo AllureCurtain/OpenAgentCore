@@ -1,7 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { LanguageMenu } from "../components/LanguageMenu";
+import { AppearanceMenu } from "../components/AppearanceMenu";
+import { ThemeContext } from "../lib/theme";
 import i18n, { resolveLanguage } from ".";
 import { resources } from "./resources";
 
@@ -24,10 +25,10 @@ describe("Web internationalization", () => {
 
   it("renders the language control in the active language", async () => {
     await i18n.changeLanguage("zh-CN");
-    const html = renderToStaticMarkup(<LanguageMenu />);
-    expect(html).toContain('aria-label="切换到英文"');
-    expect(html).toContain('<span>EN</span>');
-    expect(html).toContain('<span class="active">中</span>');
+    const html = renderToStaticMarkup(<ThemeContext.Provider value={{ preference: "light", resolvedTheme: "light", setPreference: () => undefined }}><AppearanceMenu /></ThemeContext.Provider>);
+    expect(html).toContain('aria-label="语言和外观"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain('<span>中</span>');
   });
 
   it("honors a saved choice and otherwise selects the first supported browser preference", () => {

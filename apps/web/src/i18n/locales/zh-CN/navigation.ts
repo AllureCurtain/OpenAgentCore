@@ -23,4 +23,5 @@ export const navigation = {
   chinese: "简体中文",
   switchToChinese: "切换到简体中文",
   switchToEnglish: "切换到英文",
+  appearanceSettings: "语言和外观",
 } as const;
