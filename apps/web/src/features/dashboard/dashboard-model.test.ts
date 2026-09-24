@@ -246,6 +246,7 @@ describe("Dashboard loaded-snapshot model", () => {
       mode: "openai_hosted",
       provider_type: "docker",
       instance: { kind: "managed_allocation", allocation_id: "44444444-4444-4444-8444-444444444444", device_id: null, connection_generation: null },
+      lifecycle_state: "active",
       status: "observed",
       reason: null,
       allocation_created_at: 100,
@@ -262,6 +263,7 @@ describe("Dashboard loaded-snapshot model", () => {
       mode: "none",
       provider_type: null,
       instance: { kind: "none", allocation_id: null, device_id: null, connection_generation: null },
+      lifecycle_state: null,
       status: "unsupported",
       reason: "runtime_mode_not_observable",
       allocation_created_at: null,
@@ -276,6 +278,11 @@ describe("Dashboard loaded-snapshot model", () => {
     expect(model.summary).toMatchObject({
       sessionCount: 2,
       managedRuntimeCount: 1,
+      sandboxTotalCount: 1,
+      activeSandboxCount: 1,
+      sleepingSandboxCount: 0,
+      transitioningSandboxCount: 0,
+      pendingSandboxCount: 0,
       observedRuntimeCount: 1,
       unavailableRuntimeCount: 0,
       unsupportedRuntimeCount: 1,
@@ -297,6 +304,59 @@ describe("Dashboard loaded-snapshot model", () => {
     expect(formatDashboardDuration(90)).toBe("1m 30s");
   });
 
+  it("counts a shared managed allocation once while retaining both Session rows", () => {
+    const first = session("11111111-1111-4111-8111-111111111111", { usage: usage(21) });
+    const second = session("22222222-2222-4222-8222-222222222222", { usage: usage(5) });
+    const allocationId = "44444444-4444-4444-8444-444444444444";
+    const firstObservation: RuntimeObservation = {
+      id: first.id,
+      object: "agent.runtime_observation",
+      session_id: first.id,
+      environment_id: "33333333-3333-4333-8333-333333333333",
+      mode: "openai_hosted",
+      provider_type: "docker",
+      instance: { kind: "managed_allocation", allocation_id: allocationId, device_id: null, connection_generation: null },
+      lifecycle_state: "active",
+      status: "observed",
+      reason: null,
+      allocation_created_at: 100,
+      resolved_at: 220,
+      observed_at: 210,
+      started_at: 150,
+      cpu: { usage_seconds_total: 3.5, capacity_cores: 2, usage_cores: null, utilization_ratio: null },
+      memory: { usage_bytes: 512, limit_bytes: 2048 },
+    };
+    const secondObservation: RuntimeObservation = {
+      ...firstObservation,
+      id: second.id,
+      session_id: second.id,
+      environment_id: "55555555-5555-4555-8555-555555555555",
+      resolved_at: 221,
+      observed_at: 211,
+      cpu: { usage_seconds_total: 4.5, capacity_cores: 2, usage_cores: null, utilization_ratio: null },
+      memory: { usage_bytes: 768, limit_bytes: 2048 },
+    };
+
+    const model = buildRuntimeDashboardModel([first, second], [firstObservation, secondObservation]);
+
+    expect(model.rows).toHaveLength(2);
+    expect(model.summary).toMatchObject({
+      sessionCount: 2,
+      managedRuntimeCount: 1,
+      sandboxTotalCount: 1,
+      activeSandboxCount: 1,
+      observedRuntimeCount: 1,
+      cpuUsageSecondsTotal: 4.5,
+      cpuCapacityCores: 2,
+      cpuCoverageCount: 1,
+      memoryUsageBytes: 768,
+      memoryLimitBytes: 2048,
+      memoryCoverageCount: 1,
+      totalTokens: 26,
+      tokenCoverageCount: 2,
+    });
+  });
+
   it("holds each Session's last reported tokens in the summary while public usage is null", () => {
     const running = session("11111111-1111-4111-8111-111111111111", { usage: usage(21) });
     const other = session("22222222-2222-4222-8222-222222222222", { usage: usage(5) });
@@ -308,6 +368,7 @@ describe("Dashboard loaded-snapshot model", () => {
       mode: "none",
       provider_type: null,
       instance: { kind: "none", allocation_id: null, device_id: null, connection_generation: null },
+      lifecycle_state: null,
       status: "unsupported",
       reason: "runtime_mode_not_observable",
       allocation_created_at: null,
@@ -350,6 +411,7 @@ describe("Dashboard loaded-snapshot model", () => {
         device_id: null,
         connection_generation: null,
       },
+      lifecycle_state: "stopped",
       status: "unavailable",
       reason: "runtime_not_running",
       allocation_created_at: 100,
@@ -360,7 +422,9 @@ describe("Dashboard loaded-snapshot model", () => {
       memory: null,
     };
 
-    expect(buildRuntimeDashboardModel([stopped], [observation]).rows[0]?.allocationAgeSeconds).toBeNull();
+    const model = buildRuntimeDashboardModel([stopped], [observation]);
+    expect(model.rows[0]?.allocationAgeSeconds).toBeNull();
+    expect(model.summary).toMatchObject({ sandboxTotalCount: 0, activeSandboxCount: 0, sleepingSandboxCount: 0 });
   });
 
   it("does not count capacity-only or limit-only samples as usage coverage", () => {
@@ -389,6 +453,7 @@ describe("Dashboard loaded-snapshot model", () => {
         device_id: null,
         connection_generation: null,
       },
+      lifecycle_state: "active",
       status: "observed",
       reason: null,
       allocation_created_at: null,

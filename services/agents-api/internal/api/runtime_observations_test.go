@@ -94,12 +94,35 @@ func TestRuntimeObservationResponsePreservesObservedZero(t *testing.T) {
 	now := time.Date(2026, 9, 22, 8, 0, 0, 0, time.UTC)
 	sessionID, environmentID := uuid.NewString(), uuid.NewString()
 	value, err := runtimeObservationResponse(runtimeobs.Observation{
-		Target: runtimeobs.Target{SessionID: sessionID, EnvironmentID: environmentID, Mode: runtimeobs.ModeManaged, Instance: runtimeobs.Instance{AllocationID: uuid.NewString(), DeviceID: uuid.NewString(), AllocationCreatedAt: now.Add(-time.Hour)}},
+		Target: runtimeobs.Target{SessionID: sessionID, EnvironmentID: environmentID, Mode: runtimeobs.ModeManaged, Instance: runtimeobs.Instance{AllocationID: uuid.NewString(), DeviceID: uuid.NewString(), AllocationState: "running", ComputePhase: "running", AllocationCreatedAt: now.Add(-time.Hour)}},
 		Status: runtimeobs.StatusObserved, ProviderType: "docker", ResolvedAt: now,
 		Sample: &runtimeobs.Sample{ObservedAt: now, CPUUsageSecondsTotal: &zeroCPU, MemoryUsageBytes: &zeroMemory},
 	})
-	if err != nil || value.CPU == nil || value.CPU.UsageSecondsTotal == nil || *value.CPU.UsageSecondsTotal != 0 || value.Memory == nil || value.Memory.UsageBytes == nil || *value.Memory.UsageBytes != 0 {
+	if err != nil || value.LifecycleState == nil || *value.LifecycleState != "active" || value.CPU == nil || value.CPU.UsageSecondsTotal == nil || *value.CPU.UsageSecondsTotal != 0 || value.Memory == nil || value.Memory.UsageBytes == nil || *value.Memory.UsageBytes != 0 {
 		t.Fatalf("observed zero was lost: %+v %v", value, err)
+	}
+}
+
+func TestRuntimeLifecycleStateProjectsProviderNeutralPhases(t *testing.T) {
+	for _, item := range []struct {
+		state, phase, want string
+	}{
+		{state: "", phase: "", want: "pending"},
+		{state: "creating", phase: "disabled", want: "pending"},
+		{state: "running", phase: "disabled", want: "active"},
+		{state: "running", phase: "running", want: "active"},
+		{state: "running", phase: "quiescing", want: "transitioning"},
+		{state: "running", phase: "suspending", want: "transitioning"},
+		{state: "running", phase: "suspended", want: "sleeping"},
+		{state: "running", phase: "restoring", want: "transitioning"},
+		{state: "running", phase: "waking", want: "transitioning"},
+		{state: "cleanup_pending", phase: "disabled", want: "stopped"},
+		{state: "released", phase: "disabled", want: "stopped"},
+	} {
+		got, err := runtimeLifecycleState(runtimeobs.Instance{AllocationState: item.state, ComputePhase: item.phase})
+		if err != nil || got != item.want {
+			t.Fatalf("state=%s phase=%s got=%s want=%s err=%v", item.state, item.phase, got, item.want, err)
+		}
 	}
 }
 

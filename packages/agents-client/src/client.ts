@@ -343,7 +343,7 @@ const unsafeUnknownEventFields = new Set([
 ]);
 const runtimeObservationFields = new Set([
   "id", "object", "session_id", "environment_id", "mode", "provider_type", "instance", "status", "reason",
-  "allocation_created_at", "resolved_at", "observed_at", "started_at", "cpu", "memory",
+  "lifecycle_state", "allocation_created_at", "resolved_at", "observed_at", "started_at", "cpu", "memory",
 ]);
 const runtimeInstanceFields = new Set(["kind", "allocation_id", "device_id", "connection_generation"]);
 const runtimeCPUFields = new Set(["usage_seconds_total", "capacity_cores", "usage_cores", "utilization_ratio"]);
@@ -353,6 +353,7 @@ const runtimeObservationReasons = new Set([
   "source_not_configured", "sample_timeout", "sample_unavailable",
 ]);
 const runtimeProviderTypePattern = /^[a-z][a-z0-9_]{0,31}$/;
+const runtimeLifecycleStates = new Set(["active", "sleeping", "transitioning", "pending", "stopped"]);
 function utf8Length(value: string): number {
   return new TextEncoder().encode(value).length;
 }
@@ -1124,14 +1125,16 @@ function projectRuntimeObservation(value: unknown, expectedSessionId?: string): 
   if (
     (isNone && (
       value.instance.kind !== "none" || environmentId !== null || value.provider_type !== null ||
-      allocationId !== null || deviceId !== null || connectionGeneration !== null || allocationCreatedAt !== null
+      allocationId !== null || deviceId !== null || connectionGeneration !== null || allocationCreatedAt !== null ||
+      value.lifecycle_state !== null
     )) ||
     (isSelfHosted && (
       value.instance.kind !== "self_hosted_connection" || environmentId === null ||
-      allocationId !== null || allocationCreatedAt !== null
+      allocationId !== null || allocationCreatedAt !== null || value.lifecycle_state !== null
     )) ||
     (isManaged && (
       value.instance.kind !== "managed_allocation" || environmentId === null || connectionGeneration !== null ||
+      !runtimeLifecycleStates.has(String(value.lifecycle_state)) ||
       (allocationId === null && (deviceId !== null || allocationCreatedAt !== null))
     ))
   ) return invalidRuntimeObservation();
@@ -1194,6 +1197,7 @@ function projectRuntimeObservation(value: unknown, expectedSessionId?: string): 
       allocation_id: allocationId, device_id: deviceId, connection_generation: connectionGeneration,
     },
     status: value.status, reason: value.reason as RuntimeObservation["reason"],
+    lifecycle_state: value.lifecycle_state as RuntimeObservation["lifecycle_state"],
     allocation_created_at: allocationCreatedAt, resolved_at: value.resolved_at,
     observed_at: observedAt, started_at: startedAt, cpu, memory,
   } as RuntimeObservation;

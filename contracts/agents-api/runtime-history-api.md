@@ -176,3 +176,9 @@ or malformed data reject the entire response with a 502 client projection error.
 Compute uptime is available from current observations only. Retained allocation
 series can span compute restarts and unavailable intervals; their earliest start
 is not a per-bucket compute start and must not be used to draw an uptime history.
+Clients may project a Dashboard active-Sandbox count by counting distinct
+allocation identities with `observed_count > 0` in each bucket and deduplicating
+the same allocation across Session histories. The single-Session presentation
+collapses any positive count to `1`; a missing or unavailable bucket is currently
+rendered as `0`. This temporary zero-fill policy does not distinguish a sleeping
+Runtime from missing collection coverage.

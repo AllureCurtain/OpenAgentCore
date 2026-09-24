@@ -80,7 +80,9 @@ async function mapBounded<T, R>(
 
 interface MutableBucket {
   sampledAt: number;
+  hasObservationCoverage: boolean;
   targets: Map<string, RuntimeTrendTarget>;
+  activeSandboxes: Map<string, { observedAt: number }>;
   memory: Map<string, { observedAt: number; usage: number; limit: number }>;
   tokens: Map<string, { sampledAt: number; inputTokens: number; outputTokens: number }>;
 }
@@ -94,7 +96,7 @@ export function runtimeDurableTrendSamples(
   const bucket = (sampledAt: number): MutableBucket => {
     let value = buckets.get(sampledAt);
     if (!value) {
-      value = { sampledAt, targets: new Map(), memory: new Map(), tokens: new Map() };
+      value = { sampledAt, hasObservationCoverage: false, targets: new Map(), activeSandboxes: new Map(), memory: new Map(), tokens: new Map() };
       buckets.set(sampledAt, value);
     }
     return value;
@@ -103,9 +105,13 @@ export function runtimeDurableTrendSamples(
   for (const history of histories) {
     const { start, end } = history.requested_range;
     for (let bucketStart = start; bucketStart < end; bucketStart += history.resolution_seconds) {
-      bucket(Math.min(bucketStart + history.resolution_seconds, end) * 1_000);
+      const bucketEnd = Math.min(bucketStart + history.resolution_seconds, end);
+      bucket(bucketEnd * 1_000);
     }
-    for (const coverage of history.coverage.buckets) bucket(coverage.end * 1_000);
+    for (const coverage of history.coverage.buckets) {
+      const value = bucket(coverage.end * 1_000);
+      value.hasObservationCoverage ||= coverage.observation_count > 0;
+    }
     for (const usage of history.token_usage) {
       bucket(usage.end * 1_000).tokens.set(history.session_id, {
         sampledAt: usage.sampled_at * 1_000,
@@ -118,19 +124,25 @@ export function runtimeDurableTrendSamples(
       const label = titles.get(history.session_id) ?? "Runtime";
       for (const point of series.points) {
         const value = bucket(point.end * 1_000);
+        value.hasObservationCoverage ||= point.observation_count > 0;
         const observedAt = point.last_observed_at;
         value.targets.set(targetID, {
           seriesId: targetID,
           label,
           cpuRatio: point.cpu?.utilization_ratio ?? null,
-          uptimeSeconds: null,
         });
+        if (observedAt !== null && point.observed_count > 0) {
+          const previous = value.activeSandboxes.get(series.allocation_id);
+          if (!previous || observedAt >= previous.observedAt) {
+            value.activeSandboxes.set(series.allocation_id, { observedAt });
+          }
+        }
         const usage = point.memory?.usage_bytes;
         const limit = point.memory?.limit_bytes;
         if (observedAt !== null && usage != null && limit != null) {
-          const previous = value.memory.get(history.session_id);
+          const previous = value.memory.get(series.allocation_id);
           if (!previous || observedAt >= previous.observedAt) {
-            value.memory.set(history.session_id, { observedAt, usage, limit });
+            value.memory.set(series.allocation_id, { observedAt, usage, limit });
           }
         }
       }
@@ -138,16 +150,17 @@ export function runtimeDurableTrendSamples(
   }
 
   const samples = [...buckets.values()].sort((left, right) => left.sampledAt - right.sampledAt).map((value) => {
-    const completeMemory = sessions.length > 0 && value.memory.size === sessions.length;
+    const observedMemory = [...value.memory.values()];
     return {
       sampledAt: value.sampledAt,
+      activeSandboxCount: value.hasObservationCoverage ? value.activeSandboxes.size : null,
       targets: [...value.targets.values()],
       cpuCandidates: [],
-      memoryUsageBytes: completeMemory
-        ? [...value.memory.values()].reduce((total, current) => total + current.usage, 0)
+      memoryUsageBytes: observedMemory.length > 0
+        ? observedMemory.reduce((total, current) => total + current.usage, 0)
         : null,
-      memoryLimitBytes: completeMemory
-        ? [...value.memory.values()].reduce((total, current) => total + current.limit, 0)
+      memoryLimitBytes: observedMemory.length > 0
+        ? observedMemory.reduce((total, current) => total + current.limit, 0)
         : null,
       tokenTotals: value.tokens.size === sessions.length
         ? [...value.tokens.entries()].map(([sessionId, usage]) => ({ sessionId, ...usage }))

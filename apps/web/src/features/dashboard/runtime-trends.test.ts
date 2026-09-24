@@ -9,6 +9,7 @@ import {
   runtimeTrendRange,
   runtimeTrendSample,
   tokenThroughput,
+  type RuntimeTrendSample,
 } from "./runtime-trends";
 
 function snapshot(at: number, options: {
@@ -72,6 +73,7 @@ function snapshot(at: number, options: {
       device_id: null,
       connection_generation: null,
     },
+    lifecycle_state: "active",
     allocation_created_at: observedAt - 180,
     resolved_at: observedAt,
     observed_at: observedAt,
@@ -88,10 +90,13 @@ function snapshot(at: number, options: {
 }
 
 describe("Runtime live-window trends", () => {
+  const cpuTarget = (sample: RuntimeTrendSample | undefined) => sample?.targets[0];
+
   it("projects only honest point-in-time and cumulative Session values", () => {
     const sample = runtimeTrendSample(snapshot(120_000));
     expect(sample).toMatchObject({
       sampledAt: 120_000,
+      activeSandboxCount: 1,
       tokenTotals: [{
         sessionId: "11111111-1111-4111-8111-111111111111",
         inputTokens: 100,
@@ -103,8 +108,68 @@ describe("Runtime live-window trends", () => {
     expect(sample.targets).toEqual([expect.objectContaining({
       label: "Runtime worker",
       cpuRatio: .25,
-      uptimeSeconds: 120,
     })]);
+  });
+
+  it("projects a managed Session without an allocation as inactive", () => {
+    const pending = snapshot(120_000);
+    pending.observations = [{
+      ...pending.observations[0]!,
+      instance: { kind: "managed_allocation", allocation_id: null, device_id: null, connection_generation: null },
+      lifecycle_state: "pending",
+      status: "unavailable",
+      reason: "allocation_pending",
+      allocation_created_at: null,
+      observed_at: null,
+      started_at: null,
+      cpu: null,
+      memory: null,
+    } as RuntimeObservation];
+
+    expect(runtimeTrendSample(pending)).toMatchObject({ activeSandboxCount: 0, targets: [] });
+  });
+
+  it("deduplicates live aggregate count and memory by Runtime allocation identity", () => {
+    const duplicate = snapshot(120_000);
+    const secondSession = {
+      ...duplicate.sessions[0]!,
+      id: "44444444-4444-4444-8444-444444444444",
+    } as AgentSession;
+    const secondObservation = {
+      ...duplicate.observations[0]!,
+      id: secondSession.id,
+      session_id: secondSession.id,
+      observed_at: (duplicate.observations[0]!.observed_at ?? 0) + 1,
+      memory: { usage_bytes: 128, limit_bytes: 256 },
+    } as RuntimeObservation;
+    duplicate.sessions.push(secondSession);
+    duplicate.observations.push(secondObservation);
+
+    expect(runtimeTrendSample(duplicate)).toMatchObject({
+      activeSandboxCount: 1,
+      memoryUsageBytes: 128,
+      memoryLimitBytes: 256,
+    });
+  });
+
+  it("keeps lifecycle-active allocation count when resource metrics are unavailable", () => {
+    const unavailable = snapshot(180_000);
+    unavailable.observations[0] = {
+      ...unavailable.observations[0]!,
+      status: "unavailable",
+      reason: "runtime_not_running",
+      observed_at: null,
+      started_at: null,
+      cpu: null,
+      memory: null,
+    } as RuntimeObservation;
+
+    expect(runtimeTrendSample(unavailable)).toMatchObject({
+      activeSandboxCount: 1,
+      memoryUsageBytes: null,
+      memoryLimitBytes: null,
+      targets: [],
+    });
   });
 
   it("deduplicates refreshes and bounds the rolling window", () => {
@@ -151,7 +216,7 @@ describe("Runtime live-window trends", () => {
     let samples = appendRuntimeTrendSample([], cumulative(60_000, 10));
     samples = appendRuntimeTrendSample(samples, cumulative(120_000, 70));
     samples = appendRuntimeTrendSample(samples, cumulative(180_000, 130));
-    expect(samples.map((sample) => sample.targets[0]?.cpuRatio ?? null)).toEqual([null, .5, .5]);
+    expect(samples.map((sample) => cpuTarget(sample)?.cpuRatio ?? null)).toEqual([null, .5, .5]);
   });
 
   it("uses allocation identity for Live chart series while ignoring start-time jitter", () => {
@@ -162,8 +227,8 @@ describe("Runtime live-window trends", () => {
       startedAt: 1,
       allocationId: "44444444-4444-4444-8444-444444444444",
     }));
-    expect(first.targets[0]?.seriesId).toBe(jittered.targets[0]?.seriesId);
-    expect(replaced.targets[0]?.seriesId).not.toBe(first.targets[0]?.seriesId);
+    expect(cpuTarget(first)?.seriesId).toBe(cpuTarget(jittered)?.seriesId);
+    expect(cpuTarget(replaced)?.seriesId).not.toBe(cpuTarget(first)?.seriesId);
   });
 
   it("resets cumulative CPU on start changes, allocation changes or counter regressions", () => {
@@ -173,14 +238,13 @@ describe("Runtime live-window trends", () => {
     const continued = appendRuntimeTrendSample(appendRuntimeTrendSample([], base), snapshot(120_000, {
       cpuRatio: null, cpuUsageCores: null, cpuUsageSecondsTotal: 160, startedAt: 1,
     }));
-    expect(continued.at(-1)?.targets[0]?.cpuRatio ?? null).toBeNull();
-    expect(continued[1]?.targets[0]?.seriesId).toBe(continued[0]?.targets[0]?.seriesId);
+    expect(cpuTarget(continued.at(-1))?.cpuRatio ?? null).toBeNull();
     for (const next of [
       snapshot(120_000, { cpuRatio: null, cpuUsageCores: null, cpuUsageSecondsTotal: 160, startedAt: 0, allocationId: "44444444-4444-4444-8444-444444444444" }),
       snapshot(120_000, { cpuRatio: null, cpuUsageCores: null, cpuUsageSecondsTotal: 10, startedAt: 0 }),
     ]) {
       const samples = appendRuntimeTrendSample(appendRuntimeTrendSample([], base), next);
-      expect(samples.at(-1)?.targets[0]?.cpuRatio ?? null).toBeNull();
+      expect(cpuTarget(samples.at(-1))?.cpuRatio ?? null).toBeNull();
     }
   });
 
@@ -191,26 +255,25 @@ describe("Runtime live-window trends", () => {
     let samples = appendRuntimeTrendSample([], cumulative(60_000, 1, 0));
     samples = appendRuntimeTrendSample(samples, cumulative(90_000, 20, 65));
     samples = appendRuntimeTrendSample(samples, cumulative(120_000, 50, 65));
-    expect(samples.map((sample) => sample.targets[0]?.cpuRatio ?? null)).toEqual([null, null, .5]);
-    expect(new Set(samples.map((sample) => sample.targets[0]?.seriesId)).size).toBe(1);
+    expect(samples.map((sample) => cpuTarget(sample)?.cpuRatio ?? null)).toEqual([null, null, .5]);
     for (const [priorStart, nextStart] of [[null, 0], [0, null], [null, null]] as const) {
       const missingFence = appendRuntimeTrendSample(
         appendRuntimeTrendSample([], cumulative(60_000, 1, priorStart)),
         cumulative(90_000, 20, nextStart),
       );
-      expect(missingFence.at(-1)?.targets[0]?.cpuRatio ?? null).toBeNull();
+      expect(cpuTarget(missingFence.at(-1))?.cpuRatio ?? null).toBeNull();
     }
   });
 
   it("keeps directly reported CPU continuous across start changes but not stale observations", () => {
     const base = snapshot(60_000, { cpuRatio: .25, startedAt: 0 });
     const continued = appendRuntimeTrendSample(appendRuntimeTrendSample([], base), snapshot(120_000, { cpuRatio: .5, startedAt: 1 }));
-    expect(continued.at(-1)?.targets[0]?.cpuRatio ?? null).toBe(.5);
+    expect(cpuTarget(continued.at(-1))?.cpuRatio ?? null).toBe(.5);
     const stale = appendRuntimeTrendSample(
       appendRuntimeTrendSample([], base),
       snapshot(120_000, { cpuRatio: .5, startedAt: 0, observedAt: 60 }),
     );
-    expect(stale.at(-1)?.targets[0]?.cpuRatio ?? null).toBeNull();
+    expect(cpuTarget(stale.at(-1))?.cpuRatio ?? null).toBeNull();
   });
 
   it("rejects non-finite CPU ratios produced by finite provider inputs", () => {
@@ -219,7 +282,7 @@ describe("Runtime live-window trends", () => {
       cpuUsageCores: Number.MAX_VALUE,
       cpuCapacity: Number.MIN_VALUE,
     }));
-    expect(direct.targets[0]?.cpuRatio ?? null).toBeNull();
+    expect(cpuTarget(direct)?.cpuRatio ?? null).toBeNull();
 
     const cumulative = (at: number, usage: number) => snapshot(at, {
       cpuRatio: null,
@@ -232,7 +295,7 @@ describe("Runtime live-window trends", () => {
       appendRuntimeTrendSample([], cumulative(60_000, 0)),
       cumulative(120_000, Number.MAX_VALUE),
     );
-    expect(samples.at(-1)?.targets[0]?.cpuRatio ?? null).toBeNull();
+    expect(cpuTarget(samples.at(-1))?.cpuRatio ?? null).toBeNull();
   });
 
   it("leaves a gap while a Session's public usage is null and spreads the next report", () => {
@@ -290,6 +353,7 @@ describe("Runtime live-window trends", () => {
       ...many.observations[0]!,
       id: session.id,
       session_id: session.id,
+      instance: { ...many.observations[0]!.instance, allocation_id: `allocation-${index}` },
       cpu: { ...many.observations[0]!.cpu!, utilization_ratio: index / 10 },
       started_at: 60 - index,
     } as RuntimeObservation));

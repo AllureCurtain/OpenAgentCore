@@ -10,7 +10,7 @@ export const dashboard = {
     status: { observed: "已观测", unsupported: "不支持", allocation_pending: "等待分配", runtime_not_running: "未运行", source_not_configured: "数据源不可用", sample_timeout: "采样超时", sample_unavailable: "采样不可用", idle: "空闲", in_progress: "进行中", requires_action: "需要操作", failed: "失败", unknown: "不可用" },
     managedProvider: "托管 {{provider}}", managed: "托管", cores: "{{value}} 核", capacityUnknown: "容量未知",
     limitUnknown: "上限未知", ofLimit: "上限 {{limit}}", memoryUsed: "已使用 {{percent}}% 内存", allocationUnknown: "分配时间未知", allocated: "已分配 {{duration}}", notReported: "未报告", sessionReported: "会话已报告",
-    metrics: { active: "活动 Runtime", activeDetail: "{{managed}} 个托管 · {{unavailable}} 个不可用", cpu: "累计 CPU / 容量", cpuDetail: "{{covered}}/{{total}} 个已观测 Runtime 报告了 CPU 时间", memory: "当前内存", memoryDetail: "{{covered}}/{{total}} 个已观测 Runtime 报告了用量", tokens: "已报告 Token", tokenDetail: "{{covered}}/{{total}} 个会话报告了用量", noSample: "无当前采样" },
+    metrics: { sandboxState: "Sandbox 状态", sandboxStateValue: "{{active}} 个活动 · {{sleeping}} 个休眠", sandboxStateDetail: "共 {{total}} 个 · {{transitioning}} 个正在转换或等待", cpu: "累计 CPU / 容量", cpuDetail: "{{covered}}/{{total}} 个已观测 Runtime 报告了 CPU 时间", memory: "当前内存", memoryDetail: "{{covered}}/{{total}} 个已观测 Runtime 报告了用量", tokens: "已报告 Token", tokenDetail: "{{covered}}/{{total}} 个会话报告了用量", noSample: "无当前采样" },
     explorerHint: "搜索并检查准确观测值 · 未知始终保持未知，不会视为零", targetCount: "{{value}} 个目标 · {{snapshot}}", retainedSnapshot: "保留快照", currentSnapshot: "当前快照",
   },
   trends: {
@@ -27,8 +27,8 @@ export const dashboard = {
     pinned: "已固定", hover: "悬停", unavailable: "不可用", allHidden: "已隐藏所有序列", sparse: "采样稀疏", showLegend: "使用图例显示序列", sparseDetail: "{{count}} 个有效点 · 绘制连线需要连续时间桶", emptyDetail: "{{valid}}/2 个有效点 · {{count}} 个快照 · 不会合成历史数据",
     table: { series: "序列", latest: "最新值", missing: "缺失采样" }, runtime: "Runtime", usage: "使用率", used: "已使用", configuredLimit: "配置上限", input: "输入", output: "输出", gridDurable: "Runtime 持久历史图表", gridLive: "Runtime 实时窗口图表",
     cpu: { title: "CPU 使用率", durable: "按时间桶聚合的累计差值使用率 · 持久历史", live: "已报告或累计差值使用率 · 实时窗口", empty: "无保留的 CPU 采样" },
-    memory: { title: "内存使用", durable: "完整目标聚合 / 配置上限 · 持久历史", live: "工作集 / 配置上限 · 实时窗口", empty: "无完整的保留内存采样" },
-    uptime: { title: "计算运行时长", durable: "当前 Runtime 测量 · 持久历史不保留", live: "Provider started_at → observed_at · 分配序列", empty: "仅实时指标", detail: "选择“实时”以检查当前 Runtime 运行时长" },
+    memory: { title: "内存使用", durable: "已观测 Sandbox 聚合 / 配置上限 · 持久历史", live: "已观测 Sandbox 工作集 / 配置上限 · 实时窗口", empty: "无保留的已观测内存采样" },
+    active: { series: "活动", sandboxTitle: "活动 Sandbox", runtimeTitle: "Runtime 活动状态", sumDurable: "每个保留时间桶中的已观测分配数 · 持久历史", sumLive: "每个快照中生命周期状态为活动的分配数 · 实时窗口", binaryDurable: "保留时间桶中存在已观测分配 · 1 活动 / 0 非活动", binaryLive: "生命周期状态为活动 · 1 活动 / 0 非活动", active: "活动", inactive: "非活动", empty: "无保留的活动 Sandbox 采样" },
     tokens: { title: "Token 吞吐量", durable: "规范会话用量差值 · 持久历史", live: "会话用量差值 · 排除缺失用量", empty: "无保留的 Token 采样", perMinute: "{{value}}/分钟" },
   },
 } as const;

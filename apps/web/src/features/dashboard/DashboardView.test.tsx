@@ -228,6 +228,7 @@ describe("Dashboard loaded-result presentation", () => {
         device_id: null,
         connection_generation: null,
       },
+      lifecycle_state: "active",
       status: "observed",
       reason: null,
       allocation_created_at: 1_700_000_000,
@@ -256,7 +257,8 @@ describe("Dashboard loaded-result presentation", () => {
     expect(html).toContain('aria-pressed="true">1h</button>');
     expect(html).toContain("CPU usage");
     expect(html).toContain("Memory usage");
-    expect(html).toContain("Compute uptime");
+    expect(html).not.toContain("Compute uptime");
+    expect(html).toContain("Active sandboxes");
     expect(html).toContain("Token throughput");
     expect(html).not.toContain("No retained CPU samples");
     expect(html).toContain("Latest value");
@@ -342,6 +344,7 @@ describe("Dashboard loaded-result presentation", () => {
       mode: "openai_hosted",
       provider_type: "docker",
       instance: { kind: "managed_allocation", allocation_id: "33333333-3333-4333-8333-333333333333", device_id: null, connection_generation: null },
+      lifecycle_state: "active",
       status: "observed",
       reason: null,
       allocation_created_at: 1_700_000_000,

@@ -56,6 +56,11 @@ export interface RuntimeDashboardRow {
 export interface RuntimeDashboardSummary {
   sessionCount: number;
   managedRuntimeCount: number;
+  sandboxTotalCount: number;
+  activeSandboxCount: number;
+  sleepingSandboxCount: number;
+  transitioningSandboxCount: number;
+  pendingSandboxCount: number;
   observedRuntimeCount: number;
   unavailableRuntimeCount: number;
   unsupportedRuntimeCount: number;
@@ -299,6 +304,11 @@ export function buildRuntimeDashboardModel(
   const sessionsById = new Map(sessions.map((session) => [session.id, session]));
   const rows: RuntimeDashboardRow[] = [];
   let managedRuntimeCount = 0;
+  let sandboxTotalCount = 0;
+  let activeSandboxCount = 0;
+  let sleepingSandboxCount = 0;
+  let transitioningSandboxCount = 0;
+  let pendingSandboxCount = 0;
   let observedRuntimeCount = 0;
   let unavailableRuntimeCount = 0;
   let unsupportedRuntimeCount = 0;
@@ -322,6 +332,9 @@ export function buildRuntimeDashboardModel(
   let tokenCoverageCount = 0;
   let oldestResolvedAt: number | null = null;
   let newestResolvedAt: number | null = null;
+  const latestManagedByAllocation = new Map<string, RuntimeObservation>();
+  const managedWithoutAllocation: RuntimeObservation[] = [];
+  const latestObservedByAllocation = new Map<string, RuntimeObservation>();
 
   for (const observation of observations) {
     const session = sessionsById.get(observation.session_id);
@@ -332,9 +345,67 @@ export function buildRuntimeDashboardModel(
       oldestResolvedAt = oldestResolvedAt === null ? resolvedAt : Math.min(oldestResolvedAt, resolvedAt);
       newestResolvedAt = newestResolvedAt === null ? resolvedAt : Math.max(newestResolvedAt, resolvedAt);
     }
-    if (observation.mode === "openai_hosted") managedRuntimeCount += 1;
-    if (observation.status === "observed") {
-      observedRuntimeCount += 1;
+    if (observation.mode === "openai_hosted") {
+      const allocationId = observation.instance.allocation_id;
+      if (allocationId === null || allocationId.length === 0) {
+        managedWithoutAllocation.push(observation);
+      } else {
+        const previous = latestManagedByAllocation.get(allocationId);
+        if (!previous || observation.resolved_at >= previous.resolved_at) {
+          latestManagedByAllocation.set(allocationId, observation);
+        }
+        if (observation.status === "observed") {
+          const previousObserved = latestObservedByAllocation.get(allocationId);
+          if (!previousObserved || (
+            observation.observed_at ?? -1
+          ) >= (previousObserved.observed_at ?? -1)) {
+            latestObservedByAllocation.set(allocationId, observation);
+          }
+        }
+      }
+    }
+    if (observation.status === "unavailable") {
+      unavailableRuntimeCount += 1;
+    } else if (observation.status === "unsupported") {
+      unsupportedRuntimeCount += 1;
+    }
+
+    const sessionTokens = sessionRow.totalTokens ?? heldTokens.get(session.id) ?? null;
+    if (sessionTokens !== null) {
+      const next = safeAdd(totalTokens, sessionTokens);
+      if (next !== null) {
+        totalTokens = next;
+        tokensKnown = true;
+      } else tokensSafe = false;
+      tokenCoverageCount += 1;
+    }
+    rows.push({
+      session: sessionRow,
+      observation,
+      computeUptimeSeconds: observation.status === "observed"
+        ? elapsedSeconds(canonicalTimestamp(observation.started_at), canonicalTimestamp(observation.observed_at))
+        : null,
+      allocationAgeSeconds: observation.mode === "openai_hosted" && observation.reason !== "runtime_not_running"
+        ? elapsedSeconds(canonicalTimestamp(observation.allocation_created_at), resolvedAt)
+        : null,
+    });
+  }
+
+  const managedRuntimes = [...latestManagedByAllocation.values(), ...managedWithoutAllocation];
+  managedRuntimeCount = managedRuntimes.length;
+  for (const observation of managedRuntimes) {
+    switch (observation.lifecycle_state) {
+      case "active": activeSandboxCount += 1; sandboxTotalCount += 1; break;
+      case "sleeping": sleepingSandboxCount += 1; sandboxTotalCount += 1; break;
+      case "transitioning": transitioningSandboxCount += 1; sandboxTotalCount += 1; break;
+      case "pending": pendingSandboxCount += 1; sandboxTotalCount += 1; break;
+      case "stopped": break;
+    }
+  }
+
+  const observedRuntimes = [...latestObservedByAllocation.values()];
+  observedRuntimeCount = observedRuntimes.length;
+  for (const observation of observedRuntimes) {
       const cpuUsage = safeFiniteNonNegative(observation.cpu?.usage_seconds_total);
       const cpuCapacity = safeFiniteNonNegative(observation.cpu?.capacity_cores);
       if (cpuUsage !== null) {
@@ -370,31 +441,6 @@ export function buildRuntimeDashboardModel(
         } else memoryLimitSafe = false;
       }
       if (memoryUsage !== null) memoryCoverageCount += 1;
-    } else if (observation.status === "unavailable") {
-      unavailableRuntimeCount += 1;
-    } else {
-      unsupportedRuntimeCount += 1;
-    }
-
-    const sessionTokens = sessionRow.totalTokens ?? heldTokens.get(session.id) ?? null;
-    if (sessionTokens !== null) {
-      const next = safeAdd(totalTokens, sessionTokens);
-      if (next !== null) {
-        totalTokens = next;
-        tokensKnown = true;
-      } else tokensSafe = false;
-      tokenCoverageCount += 1;
-    }
-    rows.push({
-      session: sessionRow,
-      observation,
-      computeUptimeSeconds: observation.status === "observed"
-        ? elapsedSeconds(canonicalTimestamp(observation.started_at), canonicalTimestamp(observation.observed_at))
-        : null,
-      allocationAgeSeconds: observation.mode === "openai_hosted" && observation.reason !== "runtime_not_running"
-        ? elapsedSeconds(canonicalTimestamp(observation.allocation_created_at), resolvedAt)
-        : null,
-    });
   }
 
   const statusOrder = { observed: 0, unavailable: 1, unsupported: 2 } as const;
@@ -406,6 +452,11 @@ export function buildRuntimeDashboardModel(
     summary: {
       sessionCount: rows.length,
       managedRuntimeCount,
+      sandboxTotalCount,
+      activeSandboxCount,
+      sleepingSandboxCount,
+      transitioningSandboxCount,
+      pendingSandboxCount,
       observedRuntimeCount,
       unavailableRuntimeCount,
       unsupportedRuntimeCount,

@@ -8,6 +8,7 @@ type RuntimeObservation struct {
 	Mode                string                    `json:"mode" enums:"none,self_hosted,openai_hosted" binding:"required"`
 	ProviderType        *string                   `json:"provider_type" extensions:"x-nullable" binding:"required" pattern:"^[a-z][a-z0-9_]{0,31}$"`
 	Instance            RuntimeInstance           `json:"instance" binding:"required"`
+	LifecycleState      *string                   `json:"lifecycle_state" extensions:"x-nullable" binding:"required" enums:"active,sleeping,transitioning,pending,stopped"`
 	Status              string                    `json:"status" enums:"observed,unsupported,unavailable" binding:"required"`
 	Reason              *string                   `json:"reason" extensions:"x-nullable" binding:"required" enums:"runtime_mode_not_observable,allocation_pending,runtime_not_running,source_not_configured,sample_timeout,sample_unavailable"`
 	AllocationCreatedAt *int64                    `json:"allocation_created_at" extensions:"x-nullable" binding:"required" minimum:"0"`

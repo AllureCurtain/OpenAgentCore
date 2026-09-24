@@ -956,8 +956,8 @@ export function SessionsView({
                     loadRuntimeHistory={loadRuntimeHistory}
                     headingId={`session-runtime-trends-heading-${sessionId}`}
                     title={t("metrics.resourceTrends")}
-                    showDurableUptimePlaceholder
                     allowSourceSelection
+                    activeDisplay="binary"
                   />
                 </div>
               ) : null;

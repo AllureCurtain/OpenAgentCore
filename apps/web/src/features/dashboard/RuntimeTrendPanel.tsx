@@ -30,16 +30,16 @@ export function RuntimeTrendPanel({
   loadRuntimeHistory,
   headingId = "dashboard-runtime-live-heading",
   title,
-  showDurableUptimePlaceholder = false,
   allowSourceSelection = false,
+  activeDisplay = "sum",
 }: {
   snapshot: RuntimeDashboardSnapshot;
   stale: boolean;
   loadRuntimeHistory: RuntimeHistoryLoader;
   headingId?: string;
   title?: string;
-  showDurableUptimePlaceholder?: boolean;
   allowSourceSelection?: boolean;
+  activeDisplay?: "sum" | "binary";
 }) {
   const { t, i18n } = useTranslation("dashboard");
   const locale = i18n.resolvedLanguage;
@@ -178,7 +178,7 @@ export function RuntimeTrendPanel({
       </header>
       {durableState === "failed" && durableError ? <p className="dashboard-runtime-history-error" role="status">{t("trends.refreshFailed", { error: durableError })}</p> : null}
       {durableState === "unavailable" ? <p className="dashboard-runtime-history-note">{t("trends.notConfigured")}</p> : null}
-      <RuntimeTrendCharts samples={selectedSamples} source={source} rangeStart={rangeStart} rangeEnd={rangeEnd} showDurableUptimePlaceholder={showDurableUptimePlaceholder} />
+      <RuntimeTrendCharts samples={selectedSamples} source={source} rangeStart={rangeStart} rangeEnd={rangeEnd} activeDisplay={activeDisplay} />
     </section>
   );
 }

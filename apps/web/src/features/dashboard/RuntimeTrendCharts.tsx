@@ -10,7 +10,7 @@ import { useTranslation } from "react-i18next";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
-import { formatDashboardBytes, formatDashboardDuration, formatDashboardTokens } from "./dashboard-model";
+import { formatDashboardBytes, formatDashboardTokens } from "./dashboard-model";
 import { tokenThroughput, type RuntimeTrendSample } from "./runtime-trends";
 
 interface TrendPoint {
@@ -23,6 +23,7 @@ interface TrendSeries {
   label: string;
   tone: "orange" | "green" | "blue" | "purple";
   points: TrendPoint[];
+  stepped?: boolean;
 }
 
 interface TrendBand {
@@ -257,6 +258,7 @@ function TrendChart({
           stroke: toneColors[entry.tone],
           width: 2,
           spanGaps: false,
+          paths: entry.stepped ? uPlot.paths.stepped!({ align: 1 }) : undefined,
           points: {
             show: (plot, seriesIndex, first, last) => runtimeChartShowsSparsePoints(
               Array.from(plot.data[seriesIndex] ?? []).slice(first, last + 1),
@@ -485,12 +487,12 @@ function TrendChart({
   );
 }
 
-function targetIds(samples: readonly RuntimeTrendSample[], field: "cpuRatio" | "uptimeSeconds"): string[] {
+function targetIds(samples: readonly RuntimeTrendSample[], field: "cpuRatio"): string[] {
   const latest = new Map<string, number>();
   for (const sample of samples) {
     for (const target of sample.targets) {
       const value = target[field];
-      latest.set(target.seriesId, value ?? latest.get(target.seriesId) ?? 0);
+      if (value !== null) latest.set(target.seriesId, value);
     }
   }
   return [...latest.entries()].sort((left, right) => right[1] - left[1]).slice(0, 3).map(([id]) => id);
@@ -506,24 +508,31 @@ function targetLabel(samples: readonly RuntimeTrendSample[], id: string): string
 
 const tones: TrendSeries["tone"][] = ["orange", "green", "blue"];
 
+export function integerTickRatios(maximum: number): number[] {
+  const integerMaximum = Math.max(1, Math.ceil(maximum));
+  const values = integerMaximum <= 4
+    ? Array.from({ length: integerMaximum + 1 }, (_, index) => integerMaximum - index)
+    : [integerMaximum, Math.round(integerMaximum * 2 / 3), Math.round(integerMaximum / 3), 0];
+  return [...new Set(values)].map((value) => value / integerMaximum);
+}
+
 export function RuntimeTrendCharts({
   samples,
   source = "live",
   rangeStart,
   rangeEnd,
-  showDurableUptimePlaceholder = false,
+  activeDisplay = "sum",
 }: {
   samples: readonly RuntimeTrendSample[];
   source?: RuntimeTrendSource;
   rangeStart?: number;
   rangeEnd?: number;
-  showDurableUptimePlaceholder?: boolean;
+  activeDisplay?: "sum" | "binary";
 }) {
   const { t, i18n } = useTranslation("dashboard");
   const locale = i18n.resolvedLanguage ?? "en";
   const charts = useMemo(() => {
     const cpuIds = targetIds(samples, "cpuRatio");
-    const uptimeIds = targetIds(samples, "uptimeSeconds");
     const cpu = cpuIds.map((id, index): TrendSeries => ({
       id,
       label: targetLabel(samples, id),
@@ -535,15 +544,18 @@ export function RuntimeTrendCharts({
     }
     const memoryUsed = samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.memoryUsageBytes ?? 0 }));
     const memoryLimit = samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.memoryLimitBytes ?? 0 }));
-    const uptime = uptimeIds.map((id, index): TrendSeries => ({
-      id,
-      label: targetLabel(samples, id),
-      tone: tones[(index + 2) % tones.length] ?? "blue",
-      points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.targets.find((target) => target.seriesId === id)?.uptimeSeconds ?? 0 })),
-    }));
-    if (uptime.length === 0 && samples.length > 0) {
-      uptime.push({ id: "uptime", label: t("charts.runtime"), tone: "blue", points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: 0 })) });
-    }
+    const active = [{
+      id: "active",
+      label: t(activeDisplay === "binary" ? "charts.runtime" : "charts.active.series"),
+      tone: "green",
+      stepped: true,
+      points: samples.map((sample) => ({
+        sampledAt: sample.sampledAt,
+        value: activeDisplay === "binary"
+          ? (sample.activeSandboxCount ?? 0) > 0 ? 1 : 0
+          : sample.activeSandboxCount ?? 0,
+      })),
+    }] satisfies TrendSeries[];
     const throughput = tokenThroughput(samples);
     return {
       cpu,
@@ -551,26 +563,35 @@ export function RuntimeTrendCharts({
         { id: "used", label: t("charts.used"), tone: "purple", points: memoryUsed },
         { id: "limit", label: t("charts.configuredLimit"), tone: "green", points: memoryLimit },
       ] satisfies TrendSeries[],
-      uptime,
+      active,
       tokens: [
         { id: "input", label: t("charts.input"), tone: "orange", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.inputPerMinute ?? 0 })) },
         { id: "output", label: t("charts.output"), tone: "green", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.outputPerMinute ?? 0 })) },
       ] satisfies TrendSeries[],
     };
-  }, [samples, t]);
+  }, [activeDisplay, samples, t]);
   const cpuMaximum = Math.max(100, ...finite(charts.cpu.flatMap((series) => series.points.map((point) => point.value))));
   const memoryMaximum = Math.max(1, ...finite(charts.memory.flatMap((series) => series.points.map((point) => point.value))));
-  const uptimeMaximum = Math.max(1, ...finite(charts.uptime.flatMap((series) => series.points.map((point) => point.value))));
+  const activeMaximum = Math.max(1, ...finite(charts.active.flatMap((series) => series.points.map((point) => point.value))));
+  const activeTicks = integerTickRatios(activeMaximum);
   const tokenMaximum = Math.max(1, ...finite(charts.tokens.flatMap((series) => series.points.map((point) => point.value))));
   const newest = rangeEnd ?? samples.at(-1)?.sampledAt ?? Date.now();
   const oldest = rangeStart ?? samples[0]?.sampledAt ?? newest - 60 * 60 * 1_000;
   const durable = source === "durable";
+  const binaryActive = activeDisplay === "binary";
+  const activeTitle = t(binaryActive ? "charts.active.runtimeTitle" : "charts.active.sandboxTitle");
+  const activeSubtitle = t(binaryActive
+    ? durable ? "charts.active.binaryDurable" : "charts.active.binaryLive"
+    : durable ? "charts.active.sumDurable" : "charts.active.sumLive");
+  const formatActive = binaryActive
+    ? (value: number) => t(value >= .5 ? "charts.active.active" : "charts.active.inactive")
+    : (value: number) => `${Math.round(value)}`;
 
   return (
     <div className="dashboard-runtime-trend-grid" aria-label={t(durable ? "charts.gridDurable" : "charts.gridLive")}>
       <TrendChart title={t("charts.cpu.title")} subtitle={t(durable ? "charts.cpu.durable" : "charts.cpu.live")} samples={samples} series={charts.cpu} maximum={cpuMaximum} formatValue={(value) => `${Math.round(value)}%`} rangeStart={oldest} rangeEnd={newest} source={source} bands={[{ from: 0, to: 30, tone: "safe" }, { from: 30, to: 70, tone: "warning" }, { from: 70, to: 100, tone: "danger" }]} ticks={[1, .7, .3, 0]} emptyMessage={durable ? t("charts.cpu.empty") : undefined} />
       <TrendChart title={t("charts.memory.title")} subtitle={t(durable ? "charts.memory.durable" : "charts.memory.live")} samples={samples} series={charts.memory} maximum={memoryMaximum} formatValue={(value) => formatDashboardBytes(Math.round(value))} rangeStart={oldest} rangeEnd={newest} source={source} emptyMessage={durable ? t("charts.memory.empty") : undefined} />
-      {!durable || showDurableUptimePlaceholder ? <TrendChart title={t("charts.uptime.title")} subtitle={t(durable ? "charts.uptime.durable" : "charts.uptime.live")} samples={samples} series={durable ? [] : charts.uptime} maximum={uptimeMaximum} formatValue={(value) => formatDashboardDuration(value)} rangeStart={oldest} rangeEnd={newest} source={source} emptyMessage={durable ? t("charts.uptime.empty") : undefined} emptyDetail={durable ? t("charts.uptime.detail") : undefined} /> : null}
+      <TrendChart title={activeTitle} subtitle={activeSubtitle} samples={samples} series={charts.active} maximum={binaryActive ? 1 : activeMaximum} formatValue={formatActive} rangeStart={oldest} rangeEnd={newest} source={source} ticks={binaryActive ? [1, 0] : activeTicks} emptyMessage={durable ? t("charts.active.empty") : undefined} />
       <TrendChart title={t("charts.tokens.title")} subtitle={t(durable ? "charts.tokens.durable" : "charts.tokens.live")} samples={samples} series={charts.tokens} maximum={tokenMaximum} formatValue={(value) => t("charts.tokens.perMinute", { value: formatDashboardTokens(Math.round(value), locale) })} rangeStart={oldest} rangeEnd={newest} source={source} emptyMessage={durable ? t("charts.tokens.empty") : undefined} />
     </div>
   );

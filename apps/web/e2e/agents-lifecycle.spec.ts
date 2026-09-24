@@ -2462,8 +2462,9 @@ test("presents Dashboard page-chain results and System boundaries without extra 
   await page.getByRole("button", { name: "Dashboard", exact: true }).click();
 
   await dashboard.getByRole("table", { name: "Recent Sessions" }).getByRole("button", { name: "Lifecycle Agent" }).click();
-  await expect(page.locator(".session-page")).toBeVisible();
-  await expect(page.getByText("Lifecycle Agent", { exact: true }).first()).toBeVisible();
+  const sessionPage = page.locator(".session-page");
+  await expect(sessionPage).toBeVisible();
+  await expect(sessionPage.getByText("Lifecycle Agent", { exact: true }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "System", exact: true }).click();
   const system = page.locator(".system-page");
@@ -2656,6 +2657,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
           device_id: null,
           connection_generation: null,
         },
+        lifecycle_state: "active",
         status: "observed",
         reason: null,
         allocation_created_at: baseline - 8_500,
@@ -2680,7 +2682,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   await expect(dashboard.locator(".dashboard-runtime-sample-count")).toContainText("1 sample ·");
   await expect(dashboard.getByRole("heading", { name: "CPU usage" })).toBeVisible();
   await expect(dashboard.getByRole("heading", { name: "Memory usage" })).toBeVisible();
-  await expect(dashboard.getByRole("heading", { name: "Compute uptime" })).toBeVisible();
+  await expect(dashboard.getByRole("heading", { name: "Active sandboxes" })).toBeVisible();
   await expect(dashboard.getByRole("heading", { name: "Token throughput" })).toBeVisible();
   await expect(dashboard.getByLabel("Live Runtime sampling every 30 seconds")).toBeVisible();
   const liveRange = dashboard.getByRole("group", { name: "Runtime live range" });
@@ -2692,7 +2694,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   await refresh.click();
   await expect(dashboard.getByLabel("CPU usage: 3 live samples")).toBeVisible();
   await expect(dashboard.getByLabel("Memory usage: 3 live samples")).toBeVisible();
-  await expect(dashboard.getByLabel("Compute uptime: 3 live samples")).toBeVisible();
+  await expect(dashboard.getByLabel("Active sandboxes: 3 live samples")).toBeVisible();
   await expect(dashboard.getByLabel("Token throughput: 3 live samples")).toBeVisible();
   await expect(dashboard.locator(".dashboard-runtime-sample-count")).toContainText("3 samples");
   await expect(dashboard.getByText("CPU usage live trend available")).toBeAttached();
@@ -2728,7 +2730,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   await expect(cpuCard.locator(".dashboard-runtime-trend-tooltip")).toBeVisible();
   await cpuChart.click({ position: { x: 260, y: 90 } });
   await expect(cpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("Pinned");
-  await expect(cpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("Unavailable");
+  await expect(cpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("10%");
   await cpuChart.focus();
   await cpuChart.press("ArrowRight");
   await expect(cpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("Pinned");
@@ -2760,7 +2762,7 @@ test("renders Runtime telemetry as visual snapshot panels with details on demand
   const keyboardSelectedAt = Number(await cpuChart.getAttribute("data-selected-at"));
   expect(keyboardSelectedAt).toBeGreaterThanOrEqual(zoomedViewStart);
   expect(keyboardSelectedAt).toBeLessThanOrEqual(zoomedViewEnd);
-  for (const chartName of ["Memory usage", "Compute uptime", "Token throughput"]) {
+  for (const chartName of ["Memory usage", "Active sandboxes", "Token throughput"]) {
     await expect(dashboard.getByLabel(`${chartName}: 3 live samples`)).toHaveAttribute("data-view-start", String(initialViewStart));
     await expect(dashboard.getByLabel(`${chartName}: 3 live samples`)).toHaveAttribute("data-view-end", String(initialViewEnd));
   }
@@ -2838,6 +2840,7 @@ test("restores retained Runtime history after a Dashboard reload", async ({ page
         id: sessionId, object: "agent.runtime_observation", session_id: sessionId, environment_id: environmentId,
         mode: "openai_hosted", provider_type: "docker",
         instance: { kind: "managed_allocation", allocation_id: allocationId, device_id: null, connection_generation: null },
+        lifecycle_state: "active",
         status: "observed", reason: null, allocation_created_at: now - 600, resolved_at: now,
         observed_at: now - 1, started_at: now - 600,
         cpu: { usage_seconds_total: 120, capacity_cores: 2, usage_cores: null, utilization_ratio: null },
@@ -2910,19 +2913,21 @@ test("restores retained Runtime history after a Dashboard reload", async ({ page
   await expect(dashboard.getByLabel(/Durable · 30s; 1 Runtime targets/)).toBeVisible();
   await expect(dashboard.getByLabel("Runtime durable-history charts")).toBeVisible();
   await expect(dashboard.getByRole("heading", { name: "Compute uptime", exact: true })).toHaveCount(0);
-  await expect(dashboard.locator('[data-chart-engine="uplot"]')).toHaveCount(3);
+  await expect(dashboard.getByRole("heading", { name: "Active sandboxes", exact: true })).toBeVisible();
+  await expect(dashboard.locator('[data-chart-engine="uplot"]')).toHaveCount(4);
   await expect(dashboard.getByText("CPU usage durable trend available")).toBeAttached();
   await expect(dashboard).toContainText("120 buckets");
   await expect(dashboard).toContainText("119/120 observations");
+  await expect(dashboard.getByText("Active sandboxes durable trend available")).toBeAttached();
   await expect(dashboard.getByText("Token throughput durable trend available")).toBeAttached();
   const durableCpuChart = dashboard.getByLabel("CPU usage: 120 retained buckets");
   await expect(dashboard.getByRole("region", { name: "CPU usage durable history chart" })).toBeVisible();
   const durableCpuCard = durableCpuChart.locator("xpath=ancestor::section[contains(@class, 'dashboard-runtime-trend-card')]");
   await durableCpuChart.focus();
   await durableCpuChart.press("ArrowLeft");
-  await expect(durableCpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("Unavailable");
+  await expect(durableCpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("0%");
   await durableCpuChart.press("ArrowLeft");
-  await expect(durableCpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("Unavailable");
+  await expect(durableCpuCard.locator(".dashboard-runtime-trend-tooltip")).toContainText("0%");
   const durableMemoryCard = dashboard.getByRole("region", { name: "Memory usage durable history chart" });
   const durableMemorySpan = await durableMemoryCard.locator("canvas").evaluate((canvas: HTMLCanvasElement) => {
     const context = canvas.getContext("2d");
@@ -3037,16 +3042,14 @@ test("publishes Dashboard counts only after every top-level Agent and Session pa
   await expect(dashboard.locator(".dashboard-source-badge").filter({ hasText: "Runtime" })).toContainText("Unavailable");
   expect(sessionAfters).toEqual([null, "session_snapshot", null, "session_snapshot"]);
   await page.getByRole("button", { name: "Sessions", exact: true }).click();
-  await expect.poll(() => sessionAfters.length).toBe(6);
+  await expect.poll(() => sessionAfters.length).toBe(4);
   await page.getByRole("button", { name: "Dashboard", exact: true }).click();
   await expect(dashboard.locator(".dashboard-summary > div").filter({ hasText: "Agents" })).toContainText("3");
   await expect(dashboard.locator(".dashboard-summary > div").filter({ hasText: "Sessions" })).toContainText("2");
   expect(agentAfters).toEqual([null, "agent_b"]);
-  // Session collection loads once; the unavailable Runtime snapshot is retried
-  // on entry to Sessions and again on return to Dashboard. Each reads both pages.
+  // The cached Dashboard and shared Session collection stay mounted across
+  // navigation, so no extra page-chain read occurs on either transition.
   await expect.poll(() => sessionAfters).toEqual([
-    null, "session_snapshot",
-    null, "session_snapshot",
     null, "session_snapshot",
     null, "session_snapshot",
   ]);
