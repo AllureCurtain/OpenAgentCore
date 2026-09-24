@@ -158,7 +158,12 @@ function environmentTrigger(page: Page) {
 }
 
 function connectedLiveEvents(page: Page) {
-  return page.getByRole("status", { name: "Session live events: connected" });
+  return page.getByRole("status", { name: "Session live events: Live events" });
+}
+
+async function setDarkTheme(page: Page) {
+  await page.getByRole("button", { name: "Language and appearance" }).click();
+  await page.getByRole("menuitemradio", { name: "Dark theme" }).click();
 }
 
 async function openEnvironmentDialog(page: Page) {
@@ -976,7 +981,7 @@ test("saves a reusable Environment Template and references it from a managed Ses
   await expect(templateSelect).toBeDisabled();
   await expect(dialog).toContainText("This Core exposes no saved Templates");
 
-  await dialog.getByRole("button", { name: "New Template" }).click();
+  await dialog.getByRole("button", { name: "New Environment Template" }).click();
   await dialog.getByLabel("Template name").fill("Restricted outbound access");
   await dialog.getByLabel("Template network access").selectOption("disabled");
   await dialog.getByRole("button", { name: "Save Template" }).click();
@@ -985,7 +990,7 @@ test("saves a reusable Environment Template and references it from a managed Ses
   await expect(templateSelect).toHaveValue(/^4/);
   const selectedTemplateId = await templateSelect.inputValue();
   await expect(dialog.getByLabel("Managed Environment network access"))
-    .toContainText("Inherit from Template (disabled)");
+    .toContainText("Inherit from Template (Disabled)");
 
   const templateCreates = (await fixtureRequests(request)).filter((entry) => (
     entry.method === "POST" && entry.path === "/v1/agents/environments/templates"
@@ -1029,7 +1034,7 @@ test("hides Template selection when the connected Core lacks the resource", asyn
 
   await expect(dialog).toContainText("does not expose the Environment Template resource");
   await expect(dialog.getByLabel("Reusable Environment Template")).toBeDisabled();
-  await expect(dialog.getByRole("button", { name: "New Template" })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "New Environment Template" })).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: "Create Session" })).toBeEnabled();
 });
 
@@ -1184,9 +1189,9 @@ test("keeps managed Environment resource and terminal event states fail-closed",
   await controlFixture(request, { environmentScenario: 8, environmentResourceStatus: "expired" });
   await openSessionsFromHome(page);
   let trigger = environmentTrigger(page);
-  await expect(trigger).toContainText("Managed Environment expired");
+  await expect(trigger).toContainText("Environment: Expired");
   let opened = await openEnvironmentDialog(page);
-  await expect(opened.panel).toContainText("Managed Environment expired");
+  await expect(opened.panel).toContainText("Managed Environment Expired");
   await expect(opened.panel.getByText("Add inline Workspace file", { exact: true })).toHaveCount(0);
   await expect(opened.panel).not.toContainText("Connect Environment");
   await opened.dialog.getByRole("button", { name: "Done" }).click();
@@ -1195,9 +1200,9 @@ test("keeps managed Environment resource and terminal event states fail-closed",
   await expect(page.getByRole("table", { name: "Recent Sessions" })).toContainText("Managed hosted");
   await page.getByRole("button", { name: "Sessions", exact: true }).click();
   await controlFixture(request, { environmentResourceStatus: "pending", environmentResourceVariant: "wrong_type" });
-  await page.getByRole("button", { name: "Recover durable state" }).click();
+  await page.getByRole("button", { name: "Refresh Sessions" }).click();
   trigger = environmentTrigger(page);
-  await expect(trigger).toContainText("Managed Environment unavailable");
+  await expect(trigger).toContainText("Environment: Unavailable");
   opened = await openEnvironmentDialog(page);
   await expect(opened.panel).toContainText("Durable managed Environment status is unavailable");
   await expect(opened.panel.getByText("Add inline Workspace file", { exact: true })).toHaveCount(0);
@@ -1209,9 +1214,9 @@ test("keeps managed Environment resource and terminal event states fail-closed",
     environmentEventCount: 1,
   });
   await page.reload();
-  await expect(environmentTrigger(page)).toContainText("Managed Environment failed");
+  await expect(environmentTrigger(page)).toContainText("Environment: Failed");
   opened = await openEnvironmentDialog(page);
-  await expect(opened.panel).toContainText("Managed Environment failed");
+  await expect(opened.panel).toContainText("Managed Environment Failed");
   await expect(opened.panel.getByText("Add inline Workspace file", { exact: true })).toHaveCount(0);
   await expect(opened.panel).not.toContainText("Connect Environment");
 
@@ -1227,7 +1232,7 @@ test("keeps managed Environment resource and terminal event states fail-closed",
   await expect(page.getByText('Failed to provision environment: script "setup_commands[0]" failed with exit code 3', { exact: true })).toBeVisible();
   await expect(page.getByLabel("Message the Agent")).toBeDisabled();
   opened = await openEnvironmentDialog(page);
-  await expect(opened.panel).toContainText("Managed Environment failed");
+  await expect(opened.panel).toContainText("Managed Environment Failed");
   await expect(opened.panel.getByText("Add inline Workspace file", { exact: true })).toHaveCount(0);
   await expect(opened.panel).not.toContainText("Connect Environment");
 
@@ -1407,7 +1412,7 @@ test("requires delete confirmation, preserves failures, and keeps Session snapsh
   await expect(page.getByRole("button", { name: /^Edit Lifecycle Agent/ })).toHaveCount(0);
 
   await page.getByRole("button", { name: "Sessions" }).click();
-  await expect(page.getByRole("button", { name: /idle Lifecycle Agent/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Idle Lifecycle Agent/ })).toBeVisible();
   requests = await fixtureRequests(request);
   expect(requests.filter((entry) => entry.method === "DELETE" && entry.path === "/v1/agents/agent_a")).toHaveLength(2);
 });
@@ -1498,7 +1503,7 @@ test("keeps the Agent card grid, setup, and delete confirmation usable at 390 px
   await page.getByRole("button", { name: "Back to Agents" }).click();
   await expect(globalCreate).toBeFocused();
 
-  await page.getByRole("button", { name: "Dark theme" }).click();
+  await setDarkTheme(page);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await page.getByRole("button", { name: /^Edit Lifecycle Agent/ }).click();
   const editSetup = page.locator(".agent-setup-page");
@@ -1696,7 +1701,7 @@ test("fences the filtered workspace across loading, errors, unavailable Agents, 
   await expect(page.locator(".conversation-header h2")).toHaveText("Second Agent");
   const deletedAgent = await request.delete(`${fixtureBaseUrl}/v1/agents/agent_b`);
   expect(deletedAgent.ok()).toBe(true);
-  await page.getByRole("button", { name: "Recover durable state" }).click();
+  await page.getByRole("button", { name: "Refresh Sessions" }).click();
   await expect(filter).toHaveValue("agent_b");
   await expect(filter.locator("option:checked")).toHaveText("Unavailable Agent (not loaded)");
   await expect(page.locator(".conversation-header h2")).toHaveText("Second Agent");
@@ -2270,7 +2275,7 @@ test("aborts a pending manual recovery read after deleting the selected Session"
   await controlFixture(request, { sessionRetrieveDelayMs: 5_000 });
 
   await expectSelectedDeleteAbortsSessionRead(page, request, () => (
-    page.getByRole("button", { name: "Recover durable state" }).click()
+    page.getByRole("button", { name: "Refresh Sessions" }).click()
   ));
 });
 
@@ -2279,7 +2284,7 @@ test("aborts a pending detail retry read after deleting the selected Session", a
   await openSessionsFromHome(page);
   await expect(connectedLiveEvents(page)).toBeVisible();
   await controlFixture(request, { sessionRetrieveStatus: 503 });
-  await page.getByRole("button", { name: "Recover durable state" }).click();
+  await page.getByRole("button", { name: "Refresh Sessions" }).click();
   const detailError = page.locator(".session-detail-error");
   await expect(detailError).toBeVisible();
   await controlFixture(request, { sessionRetrieveDelayMs: 5_000 });
@@ -2326,7 +2331,7 @@ test("keeps Session actions accessible and contained at 390 px in dark mode", as
   await resetFixture(request);
   await openSessionsFromHome(page);
   await expect(connectedLiveEvents(page)).toBeVisible();
-  await page.getByRole("button", { name: "Dark theme" }).click();
+  await setDarkTheme(page);
   const manage = page.locator(".conversation-session-action");
   await manage.focus();
   await page.keyboard.press("Enter");
@@ -3119,7 +3124,7 @@ test("renders self-hosted Environment and Workspace state safely across reconnec
   await expect(connectedLiveEvents(page)).toBeVisible();
 
   const { dialog, panel, trigger } = await openEnvironmentDialog(page);
-  await expect(trigger).toHaveAccessibleName("Environment pending");
+  await expect(trigger).toHaveAccessibleName("Environment: Pending");
   await expect(panel).toContainText("Self-hosted Environment");
   await expect(panel).toContainText("Pending");
   await expect(panel).toContainText("environment_fixture");
@@ -3148,7 +3153,7 @@ test("renders self-hosted Environment and Workspace state safely across reconnec
   await expect(dialog).toHaveCount(0);
   await expect(trigger).toBeFocused();
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Dark theme" }).click();
+  await setDarkTheme(page);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   const { panel: narrowPanel } = await openEnvironmentDialog(page);
   const widths = await narrowPanel.evaluate((element) => {
@@ -3174,7 +3179,7 @@ test("renders self-hosted Environment and Workspace state safely across reconnec
   await controlFixture(request, { environmentScenario: 2, environmentEventStatus: 0 });
   await page.reload();
   const { panel: unknown, trigger: unknownTrigger } = await openEnvironmentDialog(page);
-  await expect(unknownTrigger).toHaveAccessibleName("Environment unavailable");
+  await expect(unknownTrigger).toHaveAccessibleName("Environment: Unavailable");
   await expect(unknown).toContainText("Environment unavailable");
   await expect(unknown).toContainText("Unknown type");
   await expect(unknown).not.toContainText("/must-not-render");
@@ -3235,7 +3240,7 @@ test("lists Workspace file metadata explicitly, paginates, fails closed, and fen
     await fixtureRequests(request)
   ).filter((entry) => entry.path.endsWith("/files")).length).toBeGreaterThan(reads.length + 1);
   await controlFixture(request, { environmentScenario: 2 });
-  await page.getByRole("button", { name: "Recover durable state" }).evaluate((button) => (
+  await page.getByRole("button", { name: "Refresh Sessions" }).evaluate((button) => (
     button as HTMLButtonElement
   ).click());
   await expect(page.getByRole("region", { name: "Workspace files" })).toHaveCount(0);
@@ -3253,7 +3258,7 @@ test("hydrates durable expired and unavailable Environment states without a writ
   await expect(connectedLiveEvents(page)).toBeVisible();
 
   let { panel, trigger } = await openEnvironmentDialog(page);
-  await expect(trigger).toHaveAccessibleName("Environment expired");
+  await expect(trigger).toHaveAccessibleName("Environment: Expired");
   await expect(panel).toContainText("Expired");
   await expect(panel).toContainText("Environment expired");
   await expect(panel).toContainText("no API-managed files, plugins, or skills");
@@ -3278,7 +3283,7 @@ test("hydrates durable expired and unavailable Environment states without a writ
   await controlFixture(request, { environmentRetrieveStatus: 503 });
   await page.reload();
   ({ panel, trigger } = await openEnvironmentDialog(page));
-  await expect(trigger).toHaveAccessibleName("Environment unavailable");
+  await expect(trigger).toHaveAccessibleName("Environment: Unavailable");
   await expect(panel).toContainText("Unavailable");
   await expect(panel).toContainText("conversation remains usable");
   await expect(panel).not.toContainText("Expired");
@@ -3291,7 +3296,7 @@ test("hydrates durable expired and unavailable Environment states without a writ
   });
   await page.reload();
   ({ panel, trigger } = await openEnvironmentDialog(page));
-  await expect(trigger).toHaveAccessibleName("Environment unavailable");
+  await expect(trigger).toHaveAccessibleName("Environment: Unavailable");
   await expect(panel).toContainText("Unavailable");
   await expect(page.getByLabel("Message the Agent")).toBeVisible();
 
@@ -3311,7 +3316,7 @@ test("hydrates durable Environment state even when the live stream is rejected",
   await openSessionsFromHome(page);
 
   const { panel, trigger } = await openEnvironmentDialog(page);
-  await expect(trigger).toHaveAccessibleName("Environment expired");
+  await expect(trigger).toHaveAccessibleName("Environment: Expired");
   await expect(panel).toContainText("Expired");
   await expect(panel).toContainText("Status comes from the durable Environment resource");
   await expect(page.getByText("Events unavailable", { exact: true })).toBeVisible();
@@ -3334,7 +3339,7 @@ test("keeps canonical Environment UUID identity across Session and resource proj
   await openSessionsFromHome(page);
 
   const { panel, trigger } = await openEnvironmentDialog(page);
-  await expect(trigger).toHaveAccessibleName("Environment connected");
+  await expect(trigger).toHaveAccessibleName("Environment: Connected");
   await expect(panel).toContainText("Connected");
   await expect(panel).toContainText("Status comes from the durable Environment resource");
   await expect(panel).not.toContainText("Durable Environment status is unavailable");
@@ -3359,7 +3364,7 @@ test("applies a buffered live Environment event after an earlier durable snapsho
   });
   await openSessionsFromHome(page);
 
-  await expect(environmentTrigger(page)).toHaveAccessibleName("Environment pending");
+  await expect(environmentTrigger(page)).toHaveAccessibleName("Environment: Pending");
   const streamError = page.locator(".session-stream-error");
   await expect(streamError.getByText("Couldn’t open live events")).toBeVisible();
 
@@ -3372,7 +3377,7 @@ test("applies a buffered live Environment event after an earlier durable snapsho
   await streamError.getByRole("button", { name: "Retry" }).click();
 
   const { panel, trigger } = await openEnvironmentDialog(page);
-  await expect(trigger).toHaveAccessibleName("Environment connected");
+  await expect(trigger).toHaveAccessibleName("Environment: Connected");
   await expect(panel).toContainText("Connected");
   await expect(panel).toContainText("last supported live event observed after the durable Environment snapshot");
   await expect(panel).not.toContainText("Pending");
@@ -3431,7 +3436,7 @@ test("loads every Turn page, reconciles terminal events, and keeps diagnostics o
   ).filter((entry) => entry.method === "GET" && entry.path.endsWith("/turns")).length).toBeGreaterThan(readsBeforeTerminal.length);
 
   await controlFixture(request, { turnsRetrieveStatus: 503 });
-  await page.getByRole("button", { name: "Recover durable state" }).click();
+  await page.getByRole("button", { name: "Refresh Sessions" }).click();
   await expect(trace.locator(".trace-load-error").filter({ hasText: "Turn history is incomplete" })).toBeVisible();
   await expect(timeline.locator(".turn-timeline-failure")).toContainText("Couldn’t load Turn history");
   await expect(timeline).toContainText("last observed Turn timeline remains visible");
@@ -3655,7 +3660,7 @@ test("renders Parsar patches as accessible read-only diffs in desktop and narrow
   await attachScreenshot(page, testInfo, "desktop-light-parsar-diff");
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole("button", { name: "Dark theme" }).click();
+  await setDarkTheme(page);
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   const widths = await viewer.evaluate((element) => {
     const box = element.getBoundingClientRect();
