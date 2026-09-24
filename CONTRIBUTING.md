@@ -86,6 +86,16 @@ that family. Record uncertain range/lookup behavior separately; do not reproduce
 observed upstream server failures as compatibility behavior. See
 `contracts/agents-api/list-query-semantics.md` for the bounded evidence.
 
+Every Agents API JSON route reads its body through the shared gate
+(`readJSONObject`) before route decoding, validation or lookup. It requires a JSON
+Content-Type, applies the route's body limit and rejects invalid UTF-8, malformed
+JSON (including unpaired surrogate escapes), repeated keys and non-object roots
+with the official messages; an empty body or null becomes `{}`. DELETE, multipart,
+Core extension and internal routes keep their own readers. Member names match
+exactly: decode request objects with `decodeInputObject`, or check
+`inexactMember` before another decoder, so that encoding/json never matches
+a case variant to a field. See
+`contracts/agents-api/official-semantics-alignment.md#request-body-parsing--september-23`.
 Report validation failures with official evidence through the typed field error,
 which emits `invalid_request_error` with the observed param and message; keep
 other local codes until their official fields are sampled. Every 409 has type
@@ -107,6 +117,26 @@ error. Foreign and missing cursors stay identical; see
 explicitly with its `metadata.<key>` param; other stored strings rely on the
 PostgreSQL error mapping, so keep each request's writes in one transaction. See
 `contracts/agents-api/official-semantics-alignment.md`.
+
+Serve requests on their canonical path and never redirect. `api.CanonicalPaths`
+wraps the complete server handler in both configurations (the daemon ServeMux and
+the API router alone), so every route group, middleware, authentication check and
+handler sees one path. It starts from the request's own spelling, never a path
+re-escaped from its decoded form: invalid bytes are percent-encoded, unreserved
+escapes decoded, empty and dot segments resolved with ServeMux semantics, the
+trailing slash kept, and other escapes such as `%2F` and `%5C` left encoded;
+`Path` and `RawPath` are set consistently for chi and the ServeMux. Do not route
+or authorize on a path outside that wrapper. On the Beta
+group the constant OpenAI-Beta check (exactly one `agents=v1` value) runs before
+authentication, and authentication still precedes every Beta handler, 404 and 405.
+Every Agents API 401 has type `invalid_request_error`: null code on Beta routes; on Files,
+Skills and Core project extensions `invalid_api_key` only for a rejected Bearer
+credential. Agents API responses carry a fresh `X-Request-Id` (also in the log
+context), `OpenAI-Version`, `OpenAI-Processing-Ms` and nosniff through the API
+router's own middleware, not the shared log middleware. HEAD runs GET routes;
+streaming, content-download, live directory, Runtime observation and Runtime
+history routes register an explicit HEAD 405 instead. Every 405 of the API router, unknown methods included, has the JSON
+body and lists the route's methods in `Allow`.
 
 Keep runtime state, test artifacts and build output under `~/.parsar/`. Require
 absolute user-supplied working directories. Keep credentials out of source and
@@ -440,6 +470,15 @@ This bounds extra maintenance work but does not bypass capacity, a busy lifecycl
 gate or multi-page scheduling, and does not guarantee a resume deadline.
 
 A recovered or uncertain running installation fails and uses existing cleanup, without replaying writes.
+A hosted provisioning failure is terminal for its Session. The allocation's cleanup
+transaction stores a safe reason with the failed Environment and records
+`environment.failed`, `error` and one `agent.session.failed`; Session reads derive
+`failed`, that reason and the failure time from the same record, and live streams end
+after the failed event. The initializer reports only the integer exit status of a
+failed sandboxed step. Core composes the reason from a fixed step label and that status,
+never from command, package-manager or file output; unknown effects, timeouts and
+receipts without a status keep a generic reason. New input then gets the observed 409
+`conflict_error`; expiry and pending-input settlement keep their behavior.
 Completed environments never reinstall initial files on reconnect or native recovery.
 Provider RunCommand carries bounded stdin, not confidential argv. Only fixed trusted
 initializers may run with Runtime authority. User setup and package install hooks
@@ -1266,8 +1305,9 @@ admission deadline plus response grace. Request/observer disconnect stops waitin
 not the durable reservation or execution; retries keep the original identity and
 deadline. The Worker remains the readiness, promotion and Start owner. Local failure
 mapping uses 409 `environment_input_expired` / `environment_input_cancelled`, 503
-`execution_unavailable` for ownership loss, and existing 404 for deletion. Exact
-hosted failure status/body and pending-input crash recovery remain unverified.
+`execution_unavailable` for ownership loss, and existing 404 for deletion. New input
+after a hosted provisioning failure returns the observed 409 `conflict_error`; other
+exact hosted failure statuses/bodies and pending-input crash recovery remain unverified.
 Principal acceptance must use public Session creation and input against the built
 standalone service, including a wait exceeding its ordinary 30-second write timeout,
 real remote commands/files and a second native-history Turn. Private provisioning
@@ -1984,8 +2024,10 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   snapshots; per-Session tools replace the whole field. The initial profile admits
   HTTP(S), boolean `required` (default false), empty/null metadata and empty/null headers.
   Static and OAuth bearer authentication require HTTPS and the attached-Vault rules below.
-  Inline authorization, URL userinfo/query/fragment,
-  other origins and stdio remain explicitly unsupported.
+  An omitted/null `connection_origin` on HTTP transport is stored as `service`
+  before the other checks, identical to an explicit declaration, as observed
+  officially. Inline authorization, URL userinfo/query/fragment, the `environment`
+  origin and stdio remain explicitly unsupported.
 - Codex required MCP initialization additionally needs `mcp_http_required`, advertised
   only for the verified native pin and checked during selection, final preclaim
   and daemon dispatch/preparation. Preserve the boolean through typed messages,
@@ -2025,22 +2067,28 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   storage. Core-managed OAuth uses this same access-token path; native OAuth
   login/refresh and hosted redirect/error equivalence remain separate work.
 - Session `vault_ids` omission/null/empty means `[]`; nonempty attachments must all
-  belong to the authenticated tenant. Preserve caller order and public MCP
+  belong to the authenticated tenant. Preserve caller order and the stored caller
   `credential_id`. Saved Agents may store a nullable/nonempty credential reference
   without authorizing its use. Session admission resolves an explicit credential
   only inside attached Vaults for the exact declared URL, or selects the unique
   matching static or OAuth credential when the ID is omitted/null. No match remains
-  anonymous; ambiguity is a local 400 and unavailable references use the same 404.
-  Resolve before any Session, initial input or event write. Freeze safe bindings,
-  including anonymous decisions, in private Session configuration; never populate
-  the public credential field from implicit resolution. At actual dispatch, recheck
+  anonymous. Selection errors use the observed official messages with a null param:
+  a reference without attachments, one outside the attached Vaults and one for
+  another URL are 400 `invalid_request_error`; several implicit matches are 409
+  `conflict_error`. Missing, foreign-tenant, unattached and malformed references
+  share one message; echo caller values only within `internal/echotext`. Unknown
+  or foreign Vaults keep the same 404. Resolve after the input requirement and
+  before any Session, initial input or event write. Freeze safe bindings,
+  including anonymous decisions, in private Session configuration. Session
+  projections, never the stored configuration, show an implicitly selected ID in a
+  null/omitted public `credential_id`, also after deletion. At actual dispatch, recheck
   tenant, attached Vault, selected ID, frozen auth type and exact URL before scoped
   decryption. Metadata queries select no ciphertext; tokens enter only the existing
   transient daemon request. Selected authentication requires `mcp_http_bearer_auth`
   during device selection and the final preclaim check. Missing/wrong keys or
   binding failures never fall back to anonymous execution. Exact URL equality,
-  immutable selection timing, implicit response population and hosted error/redirect
-  semantics remain local decisions or unverified gaps. No new MCP loop is permitted.
+  immutable selection timing and hosted redirect semantics remain local decisions
+  or unverified gaps. No new MCP loop is permitted.
 - Saved Agent execution defaults use separate input and safe-output Core extensions.
   Keep model-provider bundles whole at every replacement boundary: endpoint, key,
   protocol and limits must never be independently inherited. Ordinary Agent JSON
@@ -2536,7 +2584,10 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   connection comment and ends at once, admitting nothing and following no work,
   because official same-key requests create distinct Sessions. Retry the same
   request/key with `stream=false`, or use the GET events stream, to recover. GET
-  event streams keep their live-only start and never end on settlement.
+  event streams keep their live-only start and never end on settlement or a Turn
+  failure; the only server-side end is the terminal `agent.session.failed` of a
+  hosted provisioning failure (and Session deletion), since that Session can
+  never run again.
   Disconnect never cancels admitted work. Official observations cover `none`
   creation; self-hosted, hosted and no-input stream lifetimes and the retry
   behavior are local choices, and the separate SDK one-Turn helper does not

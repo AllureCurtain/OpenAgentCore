@@ -70,7 +70,7 @@ export const connection = {
     invalidTitle: "Core URL blocked",
     invalidDetail: "Remote Core URLs must use HTTPS. Plain HTTP is allowed only for an explicit loopback host.",
     unauthorizedTitle: "Authentication failed",
-    unauthorizedDetail: "Core returned 401 invalid_api_key. Check the server-managed caller key or current-tab token.",
+    unauthorizedDetail: "Core rejected the caller key (HTTP 401). Check the server-managed caller key or current-tab token.",
     mismatchTitle: "Agents API protocol mismatch",
     mismatchDetail: "The endpoint did not accept the tested /v1/agents GET contract and OpenAI-Beta: agents=v1 header.",
     httpTitle: "Core returned HTTP {{status}}",

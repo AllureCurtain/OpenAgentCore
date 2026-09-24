@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"slices"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
@@ -61,6 +62,11 @@ func decodeInputObject(raw json.RawMessage, value any, allowed ...string) error 
 		if !slices.Contains(allowed, field) {
 			return store.ErrInvalidInput
 		}
+	}
+	// Nested members match exactly too; see inexactMember. The raw value is
+	// valid JSON here, as Unmarshal accepted it.
+	if inexactMember(raw, reflect.TypeOf(value)) {
+		return store.ErrInvalidInput
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()

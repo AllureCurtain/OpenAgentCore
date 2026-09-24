@@ -337,7 +337,8 @@ upgrade the protocol.
   stays unresolved rather than being populated from a guessed model default. An
   explicit effort/summary is retained. Omitted/null service tier currently follows
   the service's `auto` policy; complete upstream-default/error/retry conformance is
-  unverified. HTTP MCP with explicit `service` origin and
+  unverified. HTTP MCP with `service` origin (omitted or null on HTTP transport is
+  saved as `service`) and
   boolean `required` (default false) supports saved configuration and Codex `none` execution,
   with Claude SDK
   also supporting its qualified `none` subset. V1 `self_hosted` explicitly rejects
@@ -351,11 +352,14 @@ upgrade the protocol.
   headers. Omitted/null `allowed_tools` is unrestricted; `[]` denies all tools.
   Session `vault_ids` attaches tenant-owned Vaults. Explicit `credential_id` must
   belong to an attached Vault and match the exact HTTPS URL; omission/null selects
-  one matching static or OAuth credential, zero stays anonymous and ambiguity fails. Private
-  immutable selections do not populate the public credential field. Scope is
+  one matching static or OAuth credential, zero stays anonymous and ambiguity is a
+  409 `conflict_error`. Selection errors use the observed official messages, with
+  one message for missing, foreign and unattached references. Session projections
+  show an implicitly selected credential ID in the public field; the immutable
+  stored selection and caller intent are unchanged. Scope is
   rechecked before dispatch-only decryption; authenticated execution requires the
   separate bearer capability and never downgrades on failure. Exact URL/selection
-  timing, implicit response population and hosted errors remain local or unverified.
+  timing and hosted redirect behavior remain local or unverified.
   Other MCP variants and enabled web-search execution remain gaps, not changes to the pinned target
   or claims of complete resource coverage.
 
@@ -817,7 +821,10 @@ reservation expires or fails. A creation that admitted nothing ends right after
 `created`. A settlement that records no event ends the stream after the events
 up to the cursor read with a settled projection in one snapshot; another client's
 work drained before that read can still be sent. Observe later Turns with the GET
-event stream, which never ends on its own. Terminal Turn events carry the Turn
+event stream, which does not end on settlement or a Turn failure; it ends only
+after the terminal `agent.session.failed` of a hosted provisioning failure, as
+officially observed ([initialization failure](environment-templates.md#initialization-failure--september-23)),
+or when the Session is deleted. Terminal Turn events carry the Turn
 snapshot's `usage` at the top level, null when unknown.
 
 The local `Idempotency-Key` creation extension shares identity across response
@@ -870,8 +877,11 @@ Caller keys now resolve an explicitly configured organization/project and typed
 user/service-account identity. An immutable project-to-tenant mapping is verified
 against PostgreSQL before startup. Optional official organization/project headers
 must match the key's authorized scope; ambiguous or conflicting headers use the
-existing `401 invalid_api_key` response. This error policy is an implementation
-choice, not verified hosted error parity. Project resource access remains shared
+existing 401 response. Every Agents API 401 has type `invalid_request_error`, as observed
+officially; Beta routes report a null code, while Files, Skills and Core project
+extensions report `invalid_api_key` for a rejected Bearer credential and a null
+code without one. This scope-header policy is an implementation choice, not
+verified hosted error parity. Project resource access remains shared
 within the authorized project. New Sessions persist immutable creator kind/ID from
 the authenticated principal; ordinary and streaming creation retries require the
 same typed subject, including when recovering before saved-Agent lookup. Rotated

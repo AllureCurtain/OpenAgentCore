@@ -21,12 +21,12 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 // writeError reports every 409 with type conflict_error, as every observed
 // official conflict does (ERR-27); Core-only conflicts keep their own code.
+// Every 401 has type invalid_request_error, as every observed official 401
+// does (HP-07); an empty code serializes as null.
 func writeError(w http.ResponseWriter, status int, code, message string, param ...string) {
 	kind := "invalid_request_error"
 	if status >= 500 {
 		kind = "server_error"
-	} else if status == http.StatusUnauthorized {
-		kind = "authentication_error"
 	} else if status == http.StatusConflict {
 		kind = "conflict_error"
 	} else if code == "not_found_error" || code == "invalid_beta" {
@@ -84,6 +84,7 @@ func writeFieldError(w http.ResponseWriter, err error) bool {
 
 func writeStoreError(w http.ResponseWriter, r *http.Request, err error, notFoundParam ...string) {
 	var cursor *store.InvalidCursorError
+	var selection *store.MCPCredentialSelectionError
 	switch {
 	case errors.Is(err, store.ErrProjectAPIKeyExists):
 		writeError(w, http.StatusConflict, "project_api_key_exists", "This API key ID already exists. List its metadata and revoke it explicitly if the secret was not saved.")
@@ -106,6 +107,9 @@ func writeStoreError(w http.ResponseWriter, r *http.Request, err error, notFound
 		writeError(w, http.StatusRequestEntityTooLarge, "request_too_large", "File exceeds this operation's content limit.")
 	case errors.Is(err, store.ErrCredentialStorageUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "credential_storage_unavailable", "Credential encryption is not configured on this service.")
+	case errors.Is(err, store.ErrHostedEnvironmentFailed):
+		// Observed official status, type, code, null param and message.
+		writeError(w, http.StatusConflict, "conflict_error", "the hosted environment failed to provision")
 	case errors.Is(err, store.ErrEnvironmentUnavailable):
 		writeError(w, http.StatusConflict, "environment_unavailable", "The environment is no longer available for new input.")
 	case errors.Is(err, execution.ErrEnvironmentInputExpired):
@@ -123,6 +127,14 @@ func writeStoreError(w http.ResponseWriter, r *http.Request, err error, notFound
 			writeError(w, http.StatusBadRequest, "invalid_value", cursor.Message, "after")
 		} else {
 			writeError(w, http.StatusBadRequest, "invalid_request_error", cursor.Message)
+		}
+	case errors.As(err, &selection):
+		// Observed official fields for Session MCP credential selection (MV-03),
+		// all with a null param.
+		if selection.Conflict {
+			writeError(w, http.StatusConflict, "conflict_error", selection.Message)
+		} else {
+			writeError(w, http.StatusBadRequest, "invalid_request_error", selection.Message)
 		}
 	case errors.Is(err, store.ErrNotFound):
 		code := "not_found_error"

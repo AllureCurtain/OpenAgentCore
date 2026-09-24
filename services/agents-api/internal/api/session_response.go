@@ -32,7 +32,7 @@ func sessionResponse(session store.Session, executorURL string) (v1.Session, err
 			return v1.Session{}, errors.New("unsupported stored tool configuration")
 		}
 		if tool.Type != "tool_search" {
-			tools = append(tools, raw)
+			tools = append(tools, projectedMCPCredential(raw, cfg))
 		}
 	}
 	cfg.Agent.Tools = tools
@@ -92,6 +92,16 @@ func sessionResponse(session store.Session, executorURL string) (v1.Session, err
 			}
 			response.RequiredActions = append(response.RequiredActions, v1.RequiredAction{Type: "environment_connection", EnvironmentID: activity.EnvironmentID})
 		}
+	}
+	// A hosted provisioning failure is terminal and supersedes the settled input
+	// activity: the Session reports its safe reason and failure time.
+	if failure := session.EnvironmentFailure; failure != nil {
+		if cfg.Environment.Type != "openai_hosted" {
+			return v1.Session{}, errors.New("unsupported stored environment failure")
+		}
+		reason := failure.Reason
+		response.Status, response.Error, response.LastActiveAt = "failed", &reason, failure.FailedAt.Unix()
+		response.RequiredActions = []v1.RequiredAction{}
 	}
 	return response, nil
 }

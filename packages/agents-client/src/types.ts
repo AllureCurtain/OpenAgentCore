@@ -64,7 +64,8 @@ export interface ServiceHttpMcpToolInput {
   };
   /** null or omitted permits every advertised tool; [] permits none. */
   allowed_tools?: string[] | null;
-  connection_origin: "service";
+  /** null or omitted is saved as "service", as the official service does. */
+  connection_origin?: "service" | null;
   /** Saving a reference does not authorize it; Session vault_ids must attach its owner. */
   credential_id?: string | null;
   required?: boolean;
@@ -628,6 +629,8 @@ export interface StreamError {
   code: string;
   type: string;
   message: string;
+  /** Present on Session error events (null when unset); Environment state errors and older or interruption frames omit it. */
+  param?: string | null;
 }
 
 export type SessionEnvironmentStatus = "pending" | "ready" | "connected" | "disconnected" | "failed";
@@ -699,7 +702,19 @@ export interface UnknownSessionEvent extends SessionEventBase {
   [key: string]: unknown;
 }
 
-export type SessionEvent = AgentSessionEnvironmentEvent | KnownSessionEvent | UnknownSessionEvent;
+/**
+ * A Session failure reported in the event stream, such as a hosted Environment
+ * that failed to provision (type environment_error, code sandbox_error). The
+ * agent.session.failed snapshot follows it. Core's own stream interruption is
+ * raised as an AgentCoreError instead.
+ */
+export interface AgentSessionErrorEvent extends SessionEventBase {
+  type: "error";
+  session_id: string;
+  error: StreamError;
+}
+
+export type SessionEvent = AgentSessionEnvironmentEvent | AgentSessionErrorEvent | KnownSessionEvent | UnknownSessionEvent;
 
 export interface AgentDeleted {
   id: string;
