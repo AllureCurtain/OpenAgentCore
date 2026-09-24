@@ -372,8 +372,7 @@ html[data-theme="dark"] .brand-mark-dark {
   gap: 6px;
 }
 
-.theme-menu,
-.language-menu {
+.theme-menu {
   display: inline-flex;
   align-items: center;
   flex: 0 0 auto;
@@ -383,8 +382,7 @@ html[data-theme="dark"] .brand-mark-dark {
   border-radius: 6px;
 }
 
-.theme-menu button,
-.language-menu button {
+.theme-menu button {
   display: inline-flex;
   width: 26px;
   min-width: 26px;
@@ -399,41 +397,48 @@ html[data-theme="dark"] .brand-mark-dark {
 }
 
 .language-menu {
-  padding-left: 5px;
-}
-
-.language-menu > svg {
+  display: inline-flex;
+  min-width: 58px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 0 9px;
   color: var(--fg-muted);
-  margin-right: 2px;
-}
-
-.language-menu button {
-  width: auto;
-  min-width: 28px;
-  padding: 0 4px;
-  font-size: 10px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 11px;
   font-weight: 600;
 }
 
-.theme-menu button:hover,
-.language-menu button:hover {
+.language-menu .active {
   color: var(--fg);
 }
 
-.theme-menu button.active,
-.language-menu button.active {
+.language-menu-divider {
+  color: var(--line-strong);
+  font-weight: 400;
+}
+
+.theme-menu button:hover,
+.language-menu:hover {
+  color: var(--fg);
+}
+
+.theme-menu button.active {
   color: var(--fg);
   background: var(--surface);
   box-shadow: var(--shadow-control);
 }
 
 .theme-menu button:active,
-.language-menu button:active {
+.language-menu:active {
   transform: scale(0.97);
 }
 
 .theme-menu button:focus-visible,
-.language-menu button:focus-visible {
+.language-menu:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 40%, transparent);
   outline-offset: 0;
 }
@@ -4453,12 +4458,8 @@ button.trace-step-row:hover {
   }
 
   .language-menu {
-    flex-direction: column;
-    padding-left: 2px;
-  }
-
-  .language-menu > svg {
-    margin: 2px 0;
+    min-width: 42px;
+    padding: 0 5px;
   }
 
   .agents-page .page-header {

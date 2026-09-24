@@ -25,9 +25,9 @@ describe("Web internationalization", () => {
   it("renders the language control in the active language", async () => {
     await i18n.changeLanguage("zh-CN");
     const html = renderToStaticMarkup(<LanguageMenu />);
-    expect(html).toContain('aria-label="语言"');
-    expect(html).toContain('aria-label="简体中文"');
-    expect(html).toContain('aria-pressed="true"');
+    expect(html).toContain('aria-label="切换到英文"');
+    expect(html).toContain('<span>EN</span>');
+    expect(html).toContain('<span class="active">中</span>');
   });
 
   it("honors a saved choice and otherwise selects the first supported browser preference", () => {
