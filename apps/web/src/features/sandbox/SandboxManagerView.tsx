@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SandboxAdminClient, type InitializeSandboxDeployment, type SandboxAllocation, type SandboxDeployment, type SandboxNode } from "@agents-core-web/agents-client";
 import { RefreshCw, Server } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { isLocalProxyBaseUrl } from "../../lib/connection";
-import { useLocale } from "../../lib/LocaleProvider";
 import { sandboxRequestError } from "../../lib/sandbox-labels";
 import { SandboxTopology } from "./SandboxTopology";
 import { SandboxNodeCard } from "./SandboxNodeCard";
@@ -12,14 +12,15 @@ import { NodeEnrollment } from "./NodeEnrollment";
 import "./SandboxManagerView.css";
 
 export function SandboxManagerView({ coreBaseUrl, presentation = "manager" }: { coreBaseUrl: string; presentation?: "manager" | "home" }) {
-  const { t, locale } = useLocale();
+  const { t, i18n } = useTranslation("sandbox");
+  const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
   return <section className="sandbox-manager" lang={locale}>
     {isLocalProxyBaseUrl(coreBaseUrl) ? <SandboxAccess key={coreBaseUrl} presentation={presentation} /> : <p role="status">{t("Sandbox management is available through the signed-in console connection. Switch the Core connection to /v1 to manage this deployment.")}</p>}
   </section>;
 }
 
 function SandboxAccess({ presentation }: { presentation: "manager" | "home" }) {
-  const { t } = useLocale();
+  const { t } = useTranslation("sandbox");
   const [config, setConfig] = useState<SandboxConsoleConfig | null>(null);
   const [checking, setChecking] = useState(true);
   const [revision, setRevision] = useState(0);
@@ -37,7 +38,8 @@ function SandboxAccess({ presentation }: { presentation: "manager" | "home" }) {
 }
 
 function SandboxManager({ consoleConfig, presentation }: { consoleConfig: SandboxConsoleConfig; presentation: "manager" | "home" }) {
-  const { t, locale } = useLocale();
+  const { t, i18n } = useTranslation("sandbox");
+  const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
   const client = useMemo(() => new SandboxAdminClient({ baseUrl: "/core/v1/sandbox" }), []);
   const [snapshot, setSnapshot] = useState<{ deployment: SandboxDeployment; nodes: SandboxNode[]; allocations: SandboxAllocation[] } | null>(null);
   const [error, setError] = useState<unknown>(null);

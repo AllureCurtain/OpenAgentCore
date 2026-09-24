@@ -185,7 +185,7 @@ describe("Dashboard loaded-result presentation", () => {
     expect(html).toContain('aria-label="Recent Sessions"');
     expect(html).toContain("Needs a result");
     expect(html).toContain("Waiting");
-    expect(html).toContain("2023-11-14 22:16 UTC");
+    expect(html).toContain("Nov 14, 2023, 10:16 PM");
     expect(html).toContain("Create agent");
     expect(html).toContain("Start session");
     expect(html).not.toContain("Reported aggregate tokens");

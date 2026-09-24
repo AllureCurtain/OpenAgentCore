@@ -1,4 +1,7 @@
 import type { InputMessage } from "@agents-core-web/agents-client";
+import i18n from "../../../i18n";
+
+const ts = (key: string, options?: Record<string, unknown>) => i18n.t(key as never, { ns: "sessions", ...options });
 
 export type SessionInitialInputMode = "text" | "messages";
 
@@ -166,10 +169,10 @@ export function sessionInitialInputDraftReducer(
 /** Checks the finite text-only Web profile before Session creation. */
 export function sessionInitialInputError(input: unknown, environmentType: string): string | null {
   if (input == null) {
-    return environmentType === "none" ? "A first message is required without an Environment." : null;
+    return environmentType === "none" ? ts("validation.firstMessageRequired") : null;
   }
-  if (typeof input === "string") return isBlank(input) ? "Enter a nonblank first message." : null;
-  if (!Array.isArray(input) || input.length === 0) return "Add at least one user message.";
+  if (typeof input === "string") return isBlank(input) ? ts("validation.nonblankFirstMessage") : null;
+  if (!Array.isArray(input) || input.length === 0) return ts("validation.addUserMessage");
   for (const [index, message] of input.entries()) {
     if (
       !message || typeof message !== "object" || Array.isArray(message)
@@ -181,9 +184,9 @@ export function sessionInitialInputError(input: unknown, environmentType: string
         || Object.keys(part).some((key) => !["type", "text"].includes(key))
         || !("type" in part) || part.type !== "input_text" || !("text" in part) || typeof part.text !== "string"
       ))
-    ) return `User message ${index + 1} must contain supported text parts.`;
+    ) return ts("validation.supportedTextParts", { number: index + 1 });
     if (isBlank(message.content.map((part: { text: string }) => part.text).join(""))) {
-      return `User message ${index + 1} needs nonblank text across its parts.`;
+      return ts("validation.nonblankTextParts", { number: index + 1 });
     }
   }
   return null;
@@ -201,20 +204,20 @@ export function projectSessionInitialInput(
   }
 
   if (draft.messages.length === 0) {
-    return { ok: false, error: "Add at least one user message." };
+    return { ok: false, error: ts("validation.addUserMessage") };
   }
 
   for (const [messageIndex, message] of draft.messages.entries()) {
     if (message.parts.length === 0) {
       return {
         ok: false,
-        error: `User message ${messageIndex + 1} needs at least one text part.`,
+        error: ts("validation.atLeastOneTextPart", { number: messageIndex + 1 }),
       };
     }
     if (isBlank(message.parts.map((part) => part.text).join(""))) {
       return {
         ok: false,
-        error: `User message ${messageIndex + 1} needs nonblank text across its parts.`,
+        error: ts("validation.nonblankTextParts", { number: messageIndex + 1 }),
       };
     }
   }

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   AgentCoreError,
@@ -148,6 +149,7 @@ export function SessionStartDialog({
   onCreateEnvironmentTemplate,
   onSubmit,
 }: SessionStartDialogProps) {
+  const { t } = useTranslation("sessions");
   const formId = useId();
   const environmentName = useId();
   const agentModeName = useId();
@@ -405,7 +407,7 @@ export function SessionStartDialog({
     if (!onCreateEnvironmentTemplate || templateSaving) return;
     const name = templateName.trim();
     if ([...name].length > 256) {
-      setTemplateError("A Template name accepts at most 256 characters.");
+      setTemplateError(t("start.templateNameTooLong"));
       return;
     }
     setTemplateSaving(true);
@@ -422,7 +424,7 @@ export function SessionStartDialog({
     } catch (error) {
       setTemplateError(error instanceof AgentCoreError && error.message.trim()
         ? error.message
-        : "Agent Core could not save this Environment Template.");
+        : t("start.templateSaveFailed"));
     } finally {
       setTemplateSaving(false);
     }
@@ -445,12 +447,12 @@ export function SessionStartDialog({
     <Modal
       open={open}
       onClose={onClose}
-      title="Create a Session"
+      title={t("start.title")}
       footer={(
         <>
-          <button className="button outline" type="button" onClick={onClose}>Cancel</button>
+          <button className="button outline" type="button" onClick={onClose}>{t("common.cancel")}</button>
           <button className="button primary" type="submit" form={formId} disabled={!canSubmit}>
-            {submitting ? "Creating…" : "Create Session"}
+            {submitting ? t("start.creating") : t("start.create")}
           </button>
         </>
       )}
@@ -458,17 +460,17 @@ export function SessionStartDialog({
       <form id={formId} className="form-stack session-start-form" onSubmit={(event) => void submit(event)} noValidate>
         {requestError ? (
           <div className="session-action-error" role="alert">
-            <strong>Session wasn’t created</strong>
+            <strong>{t("start.notCreated")}</strong>
             <span>{requestError}</span>
-            <small>Retrying this unchanged request reuses the original idempotency key.</small>
+            <small>{t("start.retryIdempotency")}</small>
           </div>
         ) : null}
 
         {agentMode === "saved" ? (
           <label className="field">
-            <span>Agent</span>
+            <span>{t("common.agent")}</span>
             <select
-              aria-label="Saved Agent"
+              aria-label={t("start.savedAgent")}
               value={agentId}
               onChange={(event) => {
                 const nextAgentId = event.target.value;
@@ -484,26 +486,26 @@ export function SessionStartDialog({
               disabled={formDisabled}
               required
             >
-              {!agents.length ? <option value="">No saved Agents</option> : null}
+              {!agents.length ? <option value="">{t("start.noSavedAgents")}</option> : null}
               {agents.map((agent) => (
                 <option value={agent.id} key={agent.id}>{agent.name || agent.id} · {agent.model}</option>
               ))}
             </select>
-            <small>This Session snapshots the selected Agent. The saved Agent is never modified.</small>
+            <small>{t("start.savedAgentHint")}</small>
           </label>
         ) : (
-          <section className="form-stack" aria-label="Inline Agent">
+          <section className="form-stack" aria-label={t("start.inlineAgent")}>
             <label className="field">
-              <span>Inline model</span>
+              <span>{t("start.inlineModel")}</span>
               <input value={details.inlineModel} onChange={(event) => updateDetails("inlineModel", event.target.value)} disabled={formDisabled} spellCheck={false} required />
-              <small>Required. This is sent inside <code>agent</code>; no <code>agent_id</code> is sent.</small>
+              <small>{t("start.inlineModelRequired")} <code>agent</code>{t("start.inlineModelNoId")} <code>agent_id</code>{t("start.inlineModelEnd")}</small>
             </label>
             <label className="field">
-              <span>Inline instructions</span>
+              <span>{t("start.inlineInstructions")}</span>
               <textarea value={details.inlineInstructions} onChange={(event) => updateDetails("inlineInstructions", event.target.value)} disabled={formDisabled} rows={4} />
-              <small>Optional. Blank instructions are omitted so Core applies the inline default.</small>
+              <small>{t("start.inlineInstructionsHint")}</small>
             </label>
-            <SessionToolsEditor label="Inline tools" tools={details.inlineTools} catalog={vaultCatalog} disabled={formDisabled} onChange={(tools) => updateDetails("inlineTools", tools)} />
+            <SessionToolsEditor label={t("start.inlineTools")} tools={details.inlineTools} catalog={vaultCatalog} disabled={formDisabled} onChange={(tools) => updateDetails("inlineTools", tools)} />
           </section>
         )}
 
@@ -512,55 +514,55 @@ export function SessionStartDialog({
         ) : null}
 
         <label className="field">
-          <span>Title</span>
-          <input value={details.title} onChange={(event) => { updateDetails("title", event.target.value); setMetadataError(null); }} placeholder={selectedAgent?.name || "Untitled Session"} aria-describedby={`${formId}-title-help${metadataError ? ` ${formId}-title-error` : ""}`} aria-invalid={Boolean(metadataError)} maxLength={512} disabled={formDisabled} />
-          <small id={`${formId}-title-help`}>Optional, up to 512 characters. A blank title falls back to Core’s durable Agent snapshot naming.</small>
+          <span>{t("actions.title")}</span>
+          <input value={details.title} onChange={(event) => { updateDetails("title", event.target.value); setMetadataError(null); }} placeholder={selectedAgent?.name || t("common.untitledSession")} aria-describedby={`${formId}-title-help${metadataError ? ` ${formId}-title-error` : ""}`} aria-invalid={Boolean(metadataError)} maxLength={512} disabled={formDisabled} />
+          <small id={`${formId}-title-help`}>{t("start.titleHint")}</small>
           {metadataError ? <small className="field-error" id={`${formId}-title-error`} role="alert">{metadataError}</small> : null}
         </label>
 
         <div className="field session-first-message">
-          <span id={`${formId}-first-message-label`}>First message</span>
+          <span id={`${formId}-first-message-label`}>{t("initialInput.firstMessage")}</span>
           {details.initialInput.mode === "text" ? (
             <textarea
               aria-labelledby={`${formId}-first-message-label`}
               value={details.initialInput.text}
               onChange={(event) => updateInitialText(event.target.value)}
               rows={4}
-              placeholder={environmentType === "none" ? "Write the first message…" : "Optional first message…"}
+              placeholder={environmentType === "none" ? t("initialInput.requiredPlaceholder") : t("initialInput.optionalPlaceholder")}
               aria-required={environmentType === "none"}
               aria-describedby={`${formId}-first-message-help`}
               disabled={formDisabled}
             />
           ) : (
             <span className="session-structured-input-summary">
-              <span>{details.initialInput.messages.length} ordered user {details.initialInput.messages.length === 1 ? "message" : "messages"} configured</span>
-              <button className="button outline" type="button" onClick={() => setAdvancedOpen(true)} disabled={formDisabled}>Edit messages</button>
+              <span>{t("start.orderedMessagesConfigured", { count: details.initialInput.messages.length })}</span>
+              <button className="button outline" type="button" onClick={() => setAdvancedOpen(true)} disabled={formDisabled}>{t("start.editMessages")}</button>
             </span>
           )}
-          <small id={`${formId}-first-message-help`}>{environmentType === "none" ? "Required without an Environment. " : "Optional. "}A nonblank message starts the first Turn during Session creation.</small>
+          <small id={`${formId}-first-message-help`}>{environmentType === "none" ? t("initialInput.requiredPrefix") : t("initialInput.optionalPrefix")}{t("start.firstMessageHint")}</small>
         </div>
 
         <fieldset className="session-environment-options" disabled={formDisabled}>
-          <legend>Execution environment</legend>
-          <label className="session-environment-option"><input type="radio" name={environmentName} value="none" checked={environmentType === "none"} onChange={() => { setEnvironmentType("none"); setRequestError(null); }} /><span><strong>No environment</strong><small>Create a normal chat Session without a Workspace executor.</small></span></label>
-          {selfHostedEnabled ? <label className="session-environment-option"><input type="radio" name={environmentName} value="self_hosted" checked={environmentType === "self_hosted"} onChange={() => { setEnvironmentType("self_hosted"); setRequestError(null); }} /><span><strong>Self-hosted</strong><small>Connect an operator-managed Linux executor and its existing Workspace.</small></span></label> : null}
-          {openAIHostedEnabled ? <label className="session-environment-option"><input type="radio" name={environmentName} value="openai_hosted" checked={environmentType === "openai_hosted"} onChange={() => { setEnvironmentType("openai_hosted"); setRequestError(null); }} /><span><strong>Managed hosted</strong><small>Ask an operator-qualified Core to provision an isolated managed Runtime and Workspace.</small></span></label> : null}
+          <legend>{t("start.executionEnvironment")}</legend>
+          <label className="session-environment-option"><input type="radio" name={environmentName} value="none" checked={environmentType === "none"} onChange={() => { setEnvironmentType("none"); setRequestError(null); }} /><span><strong>{t("start.noEnvironment")}</strong><small>{t("start.noEnvironmentHint")}</small></span></label>
+          {selfHostedEnabled ? <label className="session-environment-option"><input type="radio" name={environmentName} value="self_hosted" checked={environmentType === "self_hosted"} onChange={() => { setEnvironmentType("self_hosted"); setRequestError(null); }} /><span><strong>{t("start.selfHosted")}</strong><small>{t("start.selfHostedHint")}</small></span></label> : null}
+          {openAIHostedEnabled ? <label className="session-environment-option"><input type="radio" name={environmentName} value="openai_hosted" checked={environmentType === "openai_hosted"} onChange={() => { setEnvironmentType("openai_hosted"); setRequestError(null); }} /><span><strong>{t("start.managedHosted")}</strong><small>{t("start.managedHostedHint")}</small></span></label> : null}
         </fieldset>
 
         {selfHostedEnabled && environmentType === "self_hosted" ? (
-          <label className="field"><span>Workspace directory</span><input value={workspaceDirectory} onChange={(event) => { setWorkspaceDirectory(event.target.value); setRequestError(null); }} placeholder="/workspace" aria-describedby={`${formId}-workspace-help${workspaceError ? ` ${formId}-workspace-error` : ""}`} aria-invalid={Boolean(workspaceError)} disabled={formDisabled} required /><small id={`${formId}-workspace-help`}>Absolute path inside the executor host or container. This Web never receives its Environment key.</small>{workspaceError ? <small className="field-error" id={`${formId}-workspace-error`} role="alert">{workspaceError}</small> : null}</label>
+          <label className="field"><span>{t("environment.workspaceDirectory")}</span><input value={workspaceDirectory} onChange={(event) => { setWorkspaceDirectory(event.target.value); setRequestError(null); }} placeholder="/workspace" aria-describedby={`${formId}-workspace-help${workspaceError ? ` ${formId}-workspace-error` : ""}`} aria-invalid={Boolean(workspaceError)} disabled={formDisabled} required /><small id={`${formId}-workspace-help`}>{t("start.workspaceHint")}</small>{workspaceError ? <small className="field-error" id={`${formId}-workspace-error`} role="alert">{workspaceError}</small> : null}</label>
         ) : null}
         {openAIHostedEnabled && environmentType === "openai_hosted" ? (
           <>
             <label className="field">
-              <span>Environment Template</span>
+              <span>{t("start.environmentTemplate")}</span>
               <select
-                aria-label="Reusable Environment Template"
+                aria-label={t("start.reusableTemplate")}
                 value={templateId}
                 onChange={(event) => { setTemplateId(event.target.value); setRequestError(null); }}
                 disabled={formDisabled || environmentTemplates?.state !== "ready" || availableTemplates.length === 0}
               >
-                <option value="">Inline configuration (no Template)</option>
+                <option value="">{t("start.inlineConfiguration")}</option>
                 {availableTemplates.map((template) => (
                   <option value={template.id} key={template.id}>{environmentTemplateLabel(template)}</option>
                 ))}
@@ -568,69 +570,69 @@ export function SessionStartDialog({
               <small>
                 {environmentTemplates?.state === "ready"
                   ? availableTemplates.length
-                    ? "Core resolves the referenced configuration once and freezes it into this Session. The Template ID is never sent to execution, and a later Template change or deletion does not affect this Session."
-                    : "This Core exposes no saved Templates. The Session uses inline configuration."
+                    ? t("start.templateFreezeHint")
+                    : t("start.noTemplates")
                   : environmentTemplates?.state === "unsupported"
-                    ? "The connected Core does not expose the Environment Template resource. Only inline configuration is available."
+                    ? t("start.templatesUnsupported")
                     : environmentTemplates?.state === "failed"
-                      ? `Template selection is unavailable: ${environmentTemplates.message}`
-                      : "Template availability has not been confirmed for this Core."}
+                      ? t("start.templateSelectionUnavailable", { message: environmentTemplates.message })
+                      : t("start.templateNotConfirmed")}
               </small>
             </label>
             {onCreateEnvironmentTemplate && environmentTemplates?.state === "ready" ? (
               templateFormOpen ? (
-                <section className="form-stack" aria-label="New Environment Template">
+                <section className="form-stack" aria-label={t("start.newTemplate")}>
                   <label className="field">
-                    <span>Template name</span>
+                    <span>{t("start.templateName")}</span>
                     <input
                       value={templateName}
                       onChange={(event) => { setTemplateName(event.target.value); setTemplateError(null); }}
-                      placeholder="Restricted outbound access"
+                      placeholder={t("start.templateNamePlaceholder")}
                       disabled={formDisabled || templateSaving}
                       maxLength={256}
                     />
-                    <small>Optional. Core preserves this name verbatim, up to 256 characters.</small>
+                    <small>{t("start.templateNameHint")}</small>
                   </label>
                   <label className="field">
-                    <span>Template network access</span>
+                    <span>{t("start.templateNetworkAccess")}</span>
                     <select
-                      aria-label="Template network access"
+                      aria-label={t("start.templateNetworkAccess")}
                       value={templateNetwork}
                       onChange={(event) => setTemplateNetwork(event.target.value as OpenAIHostedNetworkAccess)}
                       disabled={formDisabled || templateSaving}
                     >
-                      <option value="enabled">Enabled</option>
-                      <option value="disabled">Disabled</option>
+                      <option value="enabled">{t("common.enabled")}</option>
+                      <option value="disabled">{t("common.disabled")}</option>
                     </select>
-                    <small>Only enabled and disabled are supported. Packages, files, skills, plugins, environment variables, and setup commands are not.</small>
+                    <small>{t("start.templateNetworkHint")}</small>
                   </label>
                   {templateError ? <div className="notice warning" role="alert">{templateError}</div> : null}
                   <span className="session-structured-input-summary">
-                    <span>Saving creates durable configuration only. No Runtime is allocated.</span>
-                    <button className="button outline" type="button" onClick={() => { setTemplateFormOpen(false); setTemplateError(null); }} disabled={templateSaving}>Cancel</button>
+                    <span>{t("start.templateSavingHint")}</span>
+                    <button className="button outline" type="button" onClick={() => { setTemplateFormOpen(false); setTemplateError(null); }} disabled={templateSaving}>{t("common.cancel")}</button>
                     <button className="button primary" type="button" onClick={() => void saveTemplate()} disabled={formDisabled || templateSaving}>
-                      {templateSaving ? "Saving…" : "Save Template"}
+                      {templateSaving ? t("actions.saving") : t("start.saveTemplate")}
                     </button>
                   </span>
                 </section>
               ) : (
                 <span className="session-structured-input-summary">
-                  <span>Reuse one network policy across managed Sessions.</span>
-                  <button className="button outline" type="button" onClick={() => setTemplateFormOpen(true)} disabled={formDisabled}>New Template</button>
+                  <span>{t("start.reusePolicy")}</span>
+                  <button className="button outline" type="button" onClick={() => setTemplateFormOpen(true)} disabled={formDisabled}>{t("start.newTemplate")}</button>
                 </span>
               )
             ) : null}
             <label className="field">
-              <span>Network access</span>
-              <select aria-label="Managed Environment network access" value={hostedNetwork} onChange={(event) => { setHostedNetwork(event.target.value as HostedNetworkChoice); setRequestError(null); }} disabled={formDisabled}>
-                <option value="default">{selectedTemplate ? `Inherit from Template (${selectedTemplate.network.access})` : "Core default (enabled)"}</option>
-                <option value="enabled">Enabled</option>
-                <option value="disabled">Disabled</option>
+              <span>{t("environment.networkAccess")}</span>
+              <select aria-label={t("start.managedNetworkAccess")} value={hostedNetwork} onChange={(event) => { setHostedNetwork(event.target.value as HostedNetworkChoice); setRequestError(null); }} disabled={formDisabled}>
+                <option value="default">{selectedTemplate ? t("start.inheritTemplate", { access: t(`common.${selectedTemplate.network.access}` as never) }) : t("start.coreDefaultEnabled")}</option>
+                <option value="enabled">{t("common.enabled")}</option>
+                <option value="disabled">{t("common.disabled")}</option>
               </select>
-              <small>Disabled confines native tools while trusted model and Core connectivity remain operator-owned. Restricted domains are not supported.</small>
+              <small>{t("start.networkHint")}</small>
             </label>
             <p className="session-environment-note">
-              A managed Runtime is provisioned by the connected Core. Core selects a sandbox node automatically, or you can choose an available node in Advanced settings. Local nodes run on the Core server. Provisioning success is not execution readiness, and a lost or expired Runtime destroys its Workspace without an automatic replacement.
+              {t("start.managedRuntimeNote")}
             </p>
           </>
         ) : null}
@@ -649,24 +651,24 @@ export function SessionStartDialog({
             disabled={formDisabled}
           >
             <span>
-              <strong>Advanced settings</strong>
-              <small>Agent source and overrides, Tools &amp; Vaults, and structured input.</small>
+              <strong>{t("start.advanced")}</strong>
+              <small>{t("start.advancedHint")}</small>
             </span>
-            <span className="session-start-advanced-state">{advancedNeedsAttention ? "Needs attention" : advancedOpen ? "Hide" : "Show"}</span>
+            <span className="session-start-advanced-state">{advancedNeedsAttention ? t("start.needsAttention") : advancedOpen ? t("common.hide") : t("common.show")}</span>
           </button>
 
           {advancedOpen ? (
-            <section id={`${formId}-advanced-settings`} className="session-start-advanced-body form-stack" aria-label="Advanced Session settings">
+            <section id={`${formId}-advanced-settings`} className="session-start-advanced-body form-stack" aria-label={t("start.advancedAria")}>
               {environmentType === "openai_hosted" ? <SandboxNodeSelector value={sandboxNodeId} onChange={setSandboxNodeId} disabled={formDisabled} /> : null}
               <fieldset className="session-agent-source-options" disabled={formDisabled}>
-                <legend>Agent source</legend>
+                <legend>{t("start.agentSource")}</legend>
                 <label>
                   <input type="radio" name={agentModeName} value="saved" checked={agentMode === "saved"} onChange={() => setMode("saved")} disabled={!agents.length} />
-                  Use Saved Agent
+                  {t("start.useSavedAgent")}
                 </label>
                 <label>
                   <input type="radio" name={agentModeName} value="inline" checked={agentMode === "inline"} onChange={() => setMode("inline")} />
-                  Use Inline Agent
+                  {t("start.useInlineAgent")}
                 </label>
               </fieldset>
 
@@ -674,31 +676,31 @@ export function SessionStartDialog({
                 <>
                   <label className="session-environment-option">
                     <input type="checkbox" checked={details.overridesEnabled} onChange={(event) => updateDetails("overridesEnabled", event.target.checked)} disabled={formDisabled || !selectedAgent} />
-                    <span><strong>Configure Session-only overrides</strong><small>Replace supported fields for this Session without editing the saved Agent.</small></span>
+                    <span><strong>{t("start.configureOverrides")}</strong><small>{t("start.configureOverridesHint")}</small></span>
                   </label>
 
                   {details.overridesEnabled ? (
-                    <section className="form-stack session-agent-overrides" aria-label="Session-only Agent overrides">
-                      <label className="agent-mcp-required"><input type="checkbox" checked={details.overrideModelEnabled} onChange={(event) => updateDetails("overrideModelEnabled", event.target.checked)} disabled={formDisabled} /> Replace model</label>
-                      {details.overrideModelEnabled ? <label className="field"><span>Session model</span><input value={details.overrideModel} onChange={(event) => updateDetails("overrideModel", event.target.value)} disabled={formDisabled} spellCheck={false} required /></label> : null}
+                    <section className="form-stack session-agent-overrides" aria-label={t("start.overridesAria")}>
+                      <label className="agent-mcp-required"><input type="checkbox" checked={details.overrideModelEnabled} onChange={(event) => updateDetails("overrideModelEnabled", event.target.checked)} disabled={formDisabled} /> {t("start.replaceModel")}</label>
+                      {details.overrideModelEnabled ? <label className="field"><span>{t("start.sessionModel")}</span><input value={details.overrideModel} onChange={(event) => updateDetails("overrideModel", event.target.value)} disabled={formDisabled} spellCheck={false} required /></label> : null}
 
-                      <label className="agent-mcp-required"><input type="checkbox" checked={details.overrideInstructionsEnabled} onChange={(event) => updateDetails("overrideInstructionsEnabled", event.target.checked)} disabled={formDisabled} /> Replace instructions</label>
-                      {details.overrideInstructionsEnabled ? <label className="field"><span>Session instructions</span><textarea value={details.overrideInstructions} onChange={(event) => updateDetails("overrideInstructions", event.target.value)} disabled={formDisabled} rows={4} /><small>Blank clears the inherited instructions with explicit null.</small></label> : null}
+                      <label className="agent-mcp-required"><input type="checkbox" checked={details.overrideInstructionsEnabled} onChange={(event) => updateDetails("overrideInstructionsEnabled", event.target.checked)} disabled={formDisabled} /> {t("start.replaceInstructions")}</label>
+                      {details.overrideInstructionsEnabled ? <label className="field"><span>{t("start.sessionInstructions")}</span><textarea value={details.overrideInstructions} onChange={(event) => updateDetails("overrideInstructions", event.target.value)} disabled={formDisabled} rows={4} /><small>{t("start.blankClearsInstructions")}</small></label> : null}
 
-                      <label className="agent-mcp-required"><input type="checkbox" checked={details.overrideTextEnabled} onChange={(event) => updateDetails("overrideTextEnabled", event.target.checked)} disabled={formDisabled} /> Replace text configuration and reset format to text</label>
-                      {details.overrideTextEnabled ? <label className="field"><span>Text verbosity</span><select value={details.overrideTextVerbosity} onChange={(event) => updateDetails("overrideTextVerbosity", event.target.value as SessionStartDetailsValues["overrideTextVerbosity"])} disabled={formDisabled}><option value="low">low</option><option value="medium">medium</option><option value="high">high</option></select><small>JSON schema is never copied into an executable Session override.</small></label> : null}
+                      <label className="agent-mcp-required"><input type="checkbox" checked={details.overrideTextEnabled} onChange={(event) => updateDetails("overrideTextEnabled", event.target.checked)} disabled={formDisabled} /> {t("start.replaceText")}</label>
+                      {details.overrideTextEnabled ? <label className="field"><span>{t("start.textVerbosity")}</span><select value={details.overrideTextVerbosity} onChange={(event) => updateDetails("overrideTextVerbosity", event.target.value as SessionStartDetailsValues["overrideTextVerbosity"])} disabled={formDisabled}><option value="low">{t("start.low")}</option><option value="medium">{t("start.medium")}</option><option value="high">{t("start.high")}</option></select><small>{t("start.schemaNotCopied")}</small></label> : null}
 
-                      <label className="agent-mcp-required"><input type="checkbox" checked={details.resetMultiAgent} onChange={(event) => updateDetails("resetMultiAgent", event.target.checked)} disabled={formDisabled} /> Reset multi-agent to disabled</label>
-                      <label className="agent-mcp-required"><input type="checkbox" checked={details.resetReasoning} onChange={(event) => updateDetails("resetReasoning", event.target.checked)} disabled={formDisabled} /> Reset reasoning to Core defaults</label>
-                      <label className="agent-mcp-required"><input type="checkbox" checked={details.resetServiceTier} onChange={(event) => updateDetails("resetServiceTier", event.target.checked)} disabled={formDisabled} /> Reset service tier to auto</label>
+                      <label className="agent-mcp-required"><input type="checkbox" checked={details.resetMultiAgent} onChange={(event) => updateDetails("resetMultiAgent", event.target.checked)} disabled={formDisabled} /> {t("start.resetMultiAgent")}</label>
+                      <label className="agent-mcp-required"><input type="checkbox" checked={details.resetReasoning} onChange={(event) => updateDetails("resetReasoning", event.target.checked)} disabled={formDisabled} /> {t("start.resetReasoning")}</label>
+                      <label className="agent-mcp-required"><input type="checkbox" checked={details.resetServiceTier} onChange={(event) => updateDetails("resetServiceTier", event.target.checked)} disabled={formDisabled} /> {t("start.resetServiceTier")}</label>
 
                       <fieldset className="session-initial-input-modes" disabled={formDisabled}>
-                        <legend>Tools whole-field behavior</legend>
-                        <label><input type="radio" checked={details.toolsMode === "inherit"} onChange={() => updateDetails("toolsMode", "inherit")} /> Inherit</label>
-                        <label><input type="radio" checked={details.toolsMode === "clear"} onChange={() => updateDetails("toolsMode", "clear")} /> Clear all</label>
-                        <label><input type="radio" checked={details.toolsMode === "replace"} onChange={() => updateDetails("toolsMode", "replace")} /> Replace</label>
+                        <legend>{t("start.toolsBehavior")}</legend>
+                        <label><input type="radio" checked={details.toolsMode === "inherit"} onChange={() => updateDetails("toolsMode", "inherit")} /> {t("start.inherit")}</label>
+                        <label><input type="radio" checked={details.toolsMode === "clear"} onChange={() => updateDetails("toolsMode", "clear")} /> {t("start.clearAll")}</label>
+                        <label><input type="radio" checked={details.toolsMode === "replace"} onChange={() => updateDetails("toolsMode", "replace")} /> {t("common.replace")}</label>
                       </fieldset>
-                      {details.toolsMode === "replace" ? <SessionToolsEditor label="Replacement tools" tools={details.overrideTools} catalog={vaultCatalog} disabled={formDisabled} onChange={(tools) => updateDetails("overrideTools", tools)} /> : null}
+                      {details.toolsMode === "replace" ? <SessionToolsEditor label={t("start.replacementTools")} tools={details.overrideTools} catalog={vaultCatalog} disabled={formDisabled} onChange={(tools) => updateDetails("overrideTools", tools)} /> : null}
                     </section>
                   ) : null}
                 </>
@@ -706,8 +708,8 @@ export function SessionStartDialog({
 
               {showVaultAttachments ? (
                 <section className="session-vault-plan" aria-labelledby={`${formId}-vault-plan-title`}>
-                  <h3 id={`${formId}-vault-plan-title`}>Tools &amp; Vaults</h3>
-                  <p>Attach Vaults only when an anonymous MCP should use a matching Credential. Explicit Credentials attach their owning Vault automatically.</p>
+                  <h3 id={`${formId}-vault-plan-title`}>{t("start.toolsVaults")}</h3>
+                  <p>{t("start.vaultHint")}</p>
                   {vaultCatalog ? vaultCatalog.vaults.length ? (
                     <div className="form-stack">
                       {vaultCatalog.vaults.map((vault) => {
@@ -716,25 +718,25 @@ export function SessionStartDialog({
                         return (
                           <label className="agent-mcp-required" key={vault.id}>
                             <input type="checkbox" checked={checked} disabled={formDisabled || required} onChange={(event) => toggleManualVault(vault.id, event.target.checked)} />
-                            {vault.name ?? "Unnamed Vault"}{required ? " · attached automatically" : ""}
+                            {vault.name ?? t("start.unnamedVault")}{required ? ` · ${t("start.attachedAutomatically")}` : ""}
                           </label>
                         );
                       })}
                     </div>
-                  ) : <small>No Vaults are available. MCP tools without an explicit Credential remain anonymous.</small> : (
-                    <small>The complete Vault metadata catalog is unavailable. Credential-backed Session creation stays blocked.</small>
+                  ) : <small>{t("start.noVaults")}</small> : (
+                    <small>{t("start.vaultCatalogUnavailable")}</small>
                   )}
                   {vaultPlan?.resolutions.length ? (
                     <ul>
                       {vaultPlan.resolutions.map((resolution, index) => (
                         <li key={`${resolution.serverLabel}:${index}`}>
                           <code>{resolution.serverLabel}</code>
-                          <span>{resolution.kind === "anonymous" ? "Anonymous for this Session" : `${resolution.kind === "explicit" ? "Explicit" : "Implicit unique match"} · ${resolution.credential?.name} · ${resolution.vault?.name ?? "Unnamed Vault"}`}</span>
+                          <span>{resolution.kind === "anonymous" ? t("start.anonymousSession") : `${resolution.kind === "explicit" ? t("start.explicit") : t("start.implicitMatch")} · ${resolution.credential?.name} · ${resolution.vault?.name ?? t("start.unnamedVault")}`}</span>
                         </li>
                       ))}
                     </ul>
                   ) : null}
-                  <small>Web previews metadata only and never reads Credential tokens.</small>
+                  <small>{t("start.vaultBoundary")}</small>
                 </section>
               ) : null}
 

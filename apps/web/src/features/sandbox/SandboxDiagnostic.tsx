@@ -1,9 +1,10 @@
 import { sandboxDiagnosticMessage } from "../../lib/sandbox-diagnostic";
 
-import { useLocale } from "../../lib/LocaleProvider";
+import { useTranslation } from "react-i18next";
 
 export function SandboxDiagnostic({ diagnostic }: { diagnostic?: string }) {
-  const { locale } = useLocale();
+  const { i18n } = useTranslation("sandbox");
+  const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
   const message = sandboxDiagnosticMessage(diagnostic, locale);
   if (!message) return null;
   return <div className="sandbox-diagnostic" role="status">

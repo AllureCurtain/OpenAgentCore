@@ -6,6 +6,9 @@ import type {
 } from "@agents-core-web/agents-client";
 
 import { listAllCollectionPages } from "../../lib/collection-pagination";
+import i18n from "../../i18n";
+
+const tv = (key: string, options?: Record<string, unknown>) => i18n.t(key as never, { ns: "vaults", ...options });
 
 export interface VaultCatalog {
   vaults: Vault[];
@@ -118,12 +121,12 @@ export function deriveSessionVaultPlan(
     vaultIds: [],
   });
   if (new Set(manualVaultIds).size !== manualVaultIds.length) {
-    return empty("Vault attachments must be unique.");
+    return empty(tv("errors.uniqueAttachments"));
   }
   if (!catalog && (credentialed.length > 0 || manualVaultIds.length > 0)) {
     return {
-      ...empty("Credential metadata is not fully loaded from this Core."),
-      blocker: "Credential metadata is not fully loaded from this Core.",
+      ...empty(tv("errors.catalogIncomplete")),
+      blocker: tv("errors.catalogIncomplete"),
     };
   }
 
@@ -144,7 +147,7 @@ export function deriveSessionVaultPlan(
   const requiredVaultIds = new Set<string>();
   for (const vaultId of manualVaultIds) {
     if (!vaults.has(vaultId)) {
-      return empty("A selected Vault is no longer available in the current catalog.");
+      return empty(tv("errors.vaultMissing"));
     }
   }
   for (const tool of credentialed) {
@@ -152,7 +155,7 @@ export function deriveSessionVaultPlan(
     if (!credential || credential.auth.mcp_server_url !== tool.serverURL) {
       return {
         bindings: [],
-        blocker: `MCP server ${tool.serverLabel} references an unavailable or URL-mismatched Credential.`,
+        blocker: tv("errors.credentialMismatch", { server: tool.serverLabel }),
         requiredVaultIds: [],
         resolutions: [],
         vaultIds: [],
@@ -162,7 +165,7 @@ export function deriveSessionVaultPlan(
     if (!vault) {
       return {
         bindings: [],
-        blocker: `MCP server ${tool.serverLabel} references a Credential whose Vault is unavailable.`,
+        blocker: tv("errors.credentialVaultMissing", { server: tool.serverLabel }),
         requiredVaultIds: [],
         resolutions: [],
         vaultIds: [],
@@ -194,7 +197,7 @@ export function deriveSessionVaultPlan(
     if (matches.length > 1) {
       return {
         bindings,
-        blocker: `Anonymous MCP server ${tool.serverLabel} matches multiple Credentials in the selected Vaults. Select a single matching Vault or configure one Credential explicitly.`,
+        blocker: tv("errors.multipleCredentials", { server: tool.serverLabel }),
         requiredVaultIds: [...requiredVaultIds].sort(),
         resolutions,
         vaultIds,
@@ -209,7 +212,7 @@ export function deriveSessionVaultPlan(
     if (!vault) {
       return {
         bindings,
-        blocker: `MCP server ${tool.serverLabel} matched a Credential whose Vault is unavailable.`,
+        blocker: tv("errors.matchedVaultMissing", { server: tool.serverLabel }),
         requiredVaultIds: [...requiredVaultIds].sort(),
         resolutions,
         vaultIds,
@@ -241,7 +244,7 @@ export function deriveSessionVaultPlan(
 }
 
 export function vaultName(vault: Vault): string {
-  return vault.name ?? "Unnamed Vault";
+  return vault.name ?? tv("unnamed");
 }
 
 export function matchingCredentials(catalog: VaultCatalog | null, serverURL: string): VaultCredential[] {

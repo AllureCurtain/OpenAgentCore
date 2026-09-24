@@ -1,5 +1,6 @@
 import { Settings2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { AgentCoreError } from "@agents-core-web/agents-client";
 import type {
@@ -22,7 +23,6 @@ import { ApiKeyPanel } from "./features/api-keys/ApiKeyPanel";
 import { FirstRunHome } from "./features/first-run/FirstRunHome";
 import { ConsoleAccountMenu } from "./features/first-run/ConsoleAccess";
 import { useIntroduction } from "./features/first-run/useIntroduction";
-import { useLocale } from "./lib/LocaleProvider";
 import { SandboxManagerView } from "./features/sandbox/SandboxManagerView";
 import { SandboxProvider } from "./features/sandbox/SandboxContext";
 import { SystemNavigation } from "./components/SystemNavigation";
@@ -30,7 +30,7 @@ import { ConnectionModal } from "./components/ConnectionModal";
 import { CreateMenu } from "./components/CreateMenu";
 import { ProductNavigation, type ProductView } from "./components/ProductNavigation";
 import { StatusIcon } from "./components/StatusIcon";
-import { ThemeMenu } from "./components/ThemeMenu";
+import { AppearanceMenu } from "./components/AppearanceMenu";
 import { useToast } from "./components/Toast";
 import { AgentsView } from "./features/agents/AgentsView";
 import {
@@ -254,12 +254,12 @@ function projectTextEvent(current: SessionItem[], event: SessionEvent): SessionI
 }
 
 export function App() {
+  const { t } = useTranslation(["navigation", "app", "firstRun"]);
   const { show: showToast } = useToast();
   const [view, setView] = useState<View>(viewFromLocation);
   const [connection, setConnection] = useState<CoreConnection>(() => loadConnection());
   const [connectionOpen, setConnectionOpen] = useState(false);
   const introduction = useIntroduction(connection.baseUrl);
-  const { t } = useLocale();
   const showIntroduction = introduction.available && introduction.visible && view === "dashboard";
   const [introductionAgentId, setIntroductionAgentId] = useState<string | undefined>();
 
@@ -463,7 +463,7 @@ export function App() {
         return false;
       }
       if (result.value === null) {
-        const message = "Agent data changed while the collection was loading. Refresh again to reconcile all loaded pages.";
+        const message = t("errors.agentChanged", { ns: "app" });
         setAgentCollectionState("failed");
         setAgentCollectionError(message);
         notify(message, "error");
@@ -476,7 +476,7 @@ export function App() {
     } finally {
       if (agentCollectionAbortRef.current === controller) agentCollectionAbortRef.current = null;
     }
-  }, [core, coreGeneration, notify]);
+  }, [core, coreGeneration, notify, t]);
 
   const refreshSessions = useCallback(async () => {
     if (coreGeneration !== connectionGenerationRef.current) return false;
@@ -507,7 +507,7 @@ export function App() {
         return false;
       }
       if (result.value === null) {
-        const message = "Session data changed while the collection was loading. Refresh again to reconcile all loaded pages.";
+        const message = t("errors.sessionChanged", { ns: "app" });
         setSessionCollectionState("failed");
         setSessionCollectionError(message);
         notify(message, "error");
@@ -563,7 +563,7 @@ export function App() {
     } finally {
       if (sessionCollectionAbortRef.current === controller) sessionCollectionAbortRef.current = null;
     }
-  }, [core, coreGeneration, notify]);
+  }, [core, coreGeneration, notify, t]);
 
   const refreshRuntimeSnapshot = useCallback(async () => {
     if (coreGeneration !== connectionGenerationRef.current) return false;
@@ -591,7 +591,7 @@ export function App() {
       if (result.status === "rejected") {
         if (isAbort(result.reason) && !timedOut) return false;
         const message = timedOut
-          ? "Runtime snapshot exceeded the 15 second Web refresh budget."
+          ? t("errors.runtimeBudget", { ns: "app" })
           : errorMessage(result.reason);
         setRuntimeCollectionState("failed");
         setRuntimeCollectionError(message);
@@ -599,7 +599,7 @@ export function App() {
       }
       if (result.value === null) {
         setRuntimeCollectionState("failed");
-        setRuntimeCollectionError("Session data changed while Runtime observations were loading. The previous complete snapshot was retained.");
+        setRuntimeCollectionError(t("errors.runtimeChanged", { ns: "app" }));
         return false;
       }
       setRuntimeSnapshot(result.value);
@@ -611,7 +611,7 @@ export function App() {
       window.clearTimeout(timeout);
       if (runtimeCollectionAbortRef.current === controller) runtimeCollectionAbortRef.current = null;
     }
-  }, [core, coreGeneration]);
+  }, [core, coreGeneration, t]);
 
   const refreshFilteredSessions = useCallback(async (agentId: string) => {
     if (
@@ -646,7 +646,7 @@ export function App() {
         return false;
       }
       if (result.value === null) {
-        const message = "Filtered Session data changed while the collection was loading. Refresh again to reconcile all loaded pages.";
+        const message = t("errors.filteredChanged", { ns: "app" });
         setFilteredSessionCollectionState("failed");
         setFilteredSessionCollectionError(message);
         notify(message, "error");
@@ -654,7 +654,7 @@ export function App() {
       }
       const stableFilteredSessions = result.value;
       if (stableFilteredSessions.some((session) => session.agent.id !== agentId)) {
-        const message = "Agent Core returned a Session outside the requested Agent filter.";
+        const message = t("errors.outsideFilter", { ns: "app" });
         setFilteredSessionCollectionState("failed");
         setFilteredSessionCollectionError(message);
         notify(message, "error");
@@ -676,7 +676,7 @@ export function App() {
         filteredSessionCollectionAbortRef.current = null;
       }
     }
-  }, [core, coreGeneration, notify]);
+  }, [core, coreGeneration, notify, t]);
 
   const refreshVaults = useCallback(async () => {
     if (coreGeneration !== connectionGenerationRef.current) return false;
@@ -1424,10 +1424,7 @@ export function App() {
           if (!shouldRetryStreamError(error)) {
             setCurrentStreamState("failed", errorMessage(error));
             const status = error instanceof AgentCoreError ? ` (${error.status})` : "";
-            notify(
-              `Live event stream was rejected by Agent Core${status}. Check the Core connection settings.`,
-              "error",
-            );
+            notify(t("errors.streamRejected", { ns: "app", status }), "error");
             return;
           }
         }
@@ -1453,7 +1450,7 @@ export function App() {
       controller.abort();
       if (selectedStreamAbortRef.current === controller) selectedStreamAbortRef.current = null;
     };
-  }, [applyLiveSessionEvent, core, coreGeneration, notify, refreshSession, selectedId, streamRetryRevision]);
+  }, [applyLiveSessionEvent, core, coreGeneration, notify, refreshSession, selectedId, streamRetryRevision, t]);
 
   const retryCurrentStream = useCallback(() => {
     requestCurrentStreamRetry(selectedIdRef.current, (sessionId) => {
@@ -1485,7 +1482,7 @@ export function App() {
   };
 
   const createAgent = async (input: CreateAgentInput) => {
-    const agent = await run(() => core.createAgent(input), "Agent created.");
+    const agent = await run(() => core.createAgent(input), t("success.agentCreated", { ns: "app" }));
     if (!agent || coreGeneration !== connectionGenerationRef.current) return undefined;
     agentCollectionRevisionRef.current += 1;
     setAgents((current) => [agent, ...current]);
@@ -1497,7 +1494,7 @@ export function App() {
   };
 
   const updateAgent = async (agentId: string, input: UpdateAgentInput) => {
-    const agent = await run(() => requestAgentUpdate(core, agentId, input), "Agent updated.");
+    const agent = await run(() => requestAgentUpdate(core, agentId, input), t("success.agentUpdated", { ns: "app" }));
     if (!agent || coreGeneration !== connectionGenerationRef.current) return undefined;
     agentCollectionRevisionRef.current += 1;
     setAgents((current) => replaceSavedAgent(current, agent));
@@ -1505,7 +1502,7 @@ export function App() {
   };
 
   const deleteAgent = async (agentId: string) => {
-    const deleted = await run(() => requestAgentDelete(core, agentId), "Agent deleted.");
+    const deleted = await run(() => requestAgentDelete(core, agentId), t("success.agentDeleted", { ns: "app" }));
     if (!deleted || coreGeneration !== connectionGenerationRef.current) return;
     agentCollectionRevisionRef.current += 1;
     setAgents((current) => removeSavedAgent(current, agentId));
@@ -1513,7 +1510,7 @@ export function App() {
 
   const runVaultMutation = async <T,>(operation: () => Promise<T>): Promise<T> => {
     if (coreGeneration !== connectionGenerationRef.current) {
-      throw new Error("The Core connection changed before the Vault operation started.");
+      throw new Error(t("errors.connectionChanged", { ns: "app" }));
     }
     const operationRequest = operationRequestRef.current + 1;
     operationRequestRef.current = operationRequest;
@@ -1521,7 +1518,7 @@ export function App() {
     try {
       const result = await operation();
       if (coreGeneration !== connectionGenerationRef.current) {
-        throw new Error("The Core connection changed before the Vault operation was confirmed.");
+        throw new Error(t("errors.connectionChangedConfirm", { ns: "app" }));
       }
       return result;
     } finally {
@@ -1540,7 +1537,7 @@ export function App() {
     async createVault(name, metadata) {
       try {
         await runVaultMutation(() => requestVaultCreate(core, name, metadata));
-        notify("Vault created.", "success");
+        notify(t("success.vaultCreated", { ns: "app" }), "success");
       } catch (error) {
         await refreshAfterVaultMutation();
         throw error;
@@ -1554,9 +1551,9 @@ export function App() {
           auth: { type: "static_bearer", mcp_server_url: serverURL, token },
         }));
         if (created.vault_id !== vaultId || created.name !== name || created.auth.mcp_server_url !== serverURL) {
-          throw new Error("Agent Core returned mismatched Credential metadata.");
+          throw new Error(t("errors.credentialMismatch", { ns: "app" }));
         }
-        notify("Credential created. Token remains hidden.", "success");
+        notify(t("success.credentialCreated", { ns: "app" }), "success");
       } catch (error) {
         await refreshAfterVaultMutation();
         throw error;
@@ -1568,7 +1565,7 @@ export function App() {
         credential.vault_id === vaultId && credential.id === credentialId
       ));
       if (!baseline || vaultCollectionState !== "ready") {
-        throw new Error("The latest Credential metadata is unavailable. Refresh before replacing its token.");
+        throw new Error(t("errors.latestCredentialMissing", { ns: "app" }));
       }
       try {
         const updated = await runVaultMutation(() => core.replaceVaultCredentialToken(vaultId, credentialId, {
@@ -1578,8 +1575,8 @@ export function App() {
           updated.id !== baseline.id || updated.vault_id !== baseline.vault_id ||
           updated.name !== baseline.name || updated.auth.mcp_server_url !== baseline.auth.mcp_server_url ||
           updated.created_at !== baseline.created_at || updated.updated_at < baseline.updated_at
-        ) throw new Error("Agent Core returned mismatched Credential metadata after replacement.");
-        notify("Credential token replaced. Running work may still hold the previous token.", "success");
+        ) throw new Error(t("errors.credentialReplacementMismatch", { ns: "app" }));
+        notify(t("success.credentialReplaced", { ns: "app" }), "success");
       } catch (error) {
         await refreshAfterVaultMutation();
         throw error;
@@ -1589,7 +1586,7 @@ export function App() {
     async deleteCredential(vaultId, credentialId) {
       try {
         await runVaultMutation(() => core.deleteVaultCredential(vaultId, credentialId));
-        notify("Credential deleted. Provider-side token was not revoked.", "success");
+        notify(t("success.credentialDeleted", { ns: "app" }), "success");
       } catch (error) {
         let confirmedDeleted = false;
         try {
@@ -1599,7 +1596,7 @@ export function App() {
         }
         await refreshAfterVaultMutation();
         if (confirmedDeleted) {
-          notify("Credential deletion reconciled from Core.", "success");
+          notify(t("success.credentialDeleteReconciled", { ns: "app" }), "success");
           return;
         }
         throw error;
@@ -1609,7 +1606,7 @@ export function App() {
     async deleteVault(vaultId) {
       try {
         await runVaultMutation(() => core.deleteVault(vaultId));
-        notify("Vault and its Credentials deleted. Provider-side tokens were not revoked.", "success");
+        notify(t("success.vaultDeleted", { ns: "app" }), "success");
       } catch (error) {
         let confirmedDeleted = false;
         try {
@@ -1619,7 +1616,7 @@ export function App() {
         }
         await refreshAfterVaultMutation();
         if (confirmedDeleted) {
-          notify("Vault deletion reconciled from Core.", "success");
+          notify(t("success.vaultDeleteReconciled", { ns: "app" }), "success");
           return;
         }
         throw error;
@@ -1633,12 +1630,12 @@ export function App() {
 
   const createEnvironmentTemplate = async (input: CreateEnvironmentTemplateInput) => {
     if (!__AGENTS_CORE_WEB_OPENAI_HOSTED_SESSIONS__) {
-      throw new Error("Managed Environment configuration is not enabled for this Web build.");
+      throw new Error(t("errors.managedDisabled", { ns: "app" }));
     }
     const template = await core.createEnvironmentTemplate(input);
     // Re-read the durable collection so selection uses Core's own listing.
     await refreshEnvironmentTemplates();
-    notify("Environment Template saved. No Runtime was allocated.", "success");
+    notify(t("success.templateSaved", { ns: "app" }), "success");
     return template;
   };
 
@@ -1737,10 +1734,10 @@ export function App() {
         input.idempotencyKey,
       ));
       if (!session || coreGeneration !== connectionGenerationRef.current) {
-        throw new Error("The Session creation outcome could not be confirmed.");
+        throw new Error(t("errors.sessionOutcomeUnknown", { ns: "app" }));
       }
       openSession(session);
-      notify(input.input === undefined ? "Idle Session created. Opening live events…" : "Session opened. Connecting live events…", "success");
+      notify(t(input.input === undefined ? "success.idleSessionOpened" : "success.sessionOpened", { ns: "app" }), "success");
       return;
     }
 
@@ -1855,14 +1852,14 @@ export function App() {
     try {
       await created;
       if (generation !== connectionGenerationRef.current) {
-        throw new Error("The Session creation outcome could not be confirmed after the Core connection changed.");
+        throw new Error(t("errors.sessionOutcomeChanged", { ns: "app" }));
       }
       notify(
         input.input === undefined
           ? input.environment.type === "openai_hosted"
-            ? "Managed hosted Session created. Live creation events are connected."
-            : "Idle Session created. Live creation events are connected."
-          : "Session created with initial input. Live creation events are connected.",
+            ? t("success.managedSessionConnected", { ns: "app" })
+            : t("success.idleSessionConnected", { ns: "app" })
+          : t("success.sessionInputConnected", { ns: "app" }),
         "success",
       );
     } catch (error) {
@@ -1918,7 +1915,7 @@ export function App() {
       throw error;
     }
     if (generation !== connectionGenerationRef.current) {
-      notify("The previous Core returned a Session update after the connection changed. The current Core view was not modified.", "error");
+      notify(t("errors.previousSessionUpdate", { ns: "app" }), "error");
       return undefined;
     }
     sessionCollectionRevisionRef.current += 1;
@@ -1936,7 +1933,7 @@ export function App() {
       filteredSessionsRef.current = next;
       return next;
     });
-    notify("Session metadata updated.", "success");
+    notify(t("success.metadataUpdated", { ns: "app" }), "success");
     return updated;
   };
 
@@ -2039,10 +2036,10 @@ export function App() {
       );
     }
     if (generation !== connectionGenerationRef.current) {
-      notify("The previous Core confirmed Session deletion after the connection changed. The current Core view was not modified.", "error");
+      notify(t("errors.previousSessionDelete", { ns: "app" }), "error");
       return false;
     }
-    return removeSessionFromWorkspace(sessionId, "Session deleted from Agent Core.");
+    return removeSessionFromWorkspace(sessionId, t("success.sessionDeleted", { ns: "app" }));
   };
 
   // Runs only after the user confirms Cancel work and delete for a Session that
@@ -2059,7 +2056,7 @@ export function App() {
       );
     }
     if (settled === "missing") {
-      return removeSessionFromWorkspace(sessionId, "Session is absent from Agent Core after cancellation.");
+      return removeSessionFromWorkspace(sessionId, t("success.sessionAbsentAfterCancel", { ns: "app" }));
     }
     return deleteSessionFromCore(sessionId);
   };
@@ -2068,7 +2065,7 @@ export function App() {
     const sessionId = selectedId;
     if (!sessionId) return;
     if (!streamReady) {
-      const message = "Wait for the live event stream to connect before sending.";
+      const message = t("errors.waitForStream", { ns: "app" });
       notify(message, "error");
       throw new Error(message);
     }
@@ -2114,7 +2111,7 @@ export function App() {
     try {
       await run(
         () => core.cancelTurn(sessionId, pending.idempotencyKey),
-        "Cancellation requested.",
+        t("success.cancellationRequested", { ns: "app" }),
       );
     } catch (error) {
       if (
@@ -2141,7 +2138,7 @@ export function App() {
     try {
       await run(
         () => core.submitFunctionResult(sessionId, input, pending.idempotencyKey),
-        "Function result submitted.",
+        t("success.functionSubmitted", { ns: "app" }),
       );
     } catch (error) {
       if (
@@ -2267,7 +2264,7 @@ export function App() {
 
   const openSessionSetup = (agentId?: string) => {
     if (agentId && !agents.some((candidate) => candidate.id === agentId)) {
-      notify("Session setup could not open because the selected saved Agent is not loaded.", "error");
+      notify(t("errors.setupAgentMissing", { ns: "app" }), "error");
       return;
     }
     setView("sessions");
@@ -2285,7 +2282,7 @@ export function App() {
 
   return (
     <SandboxProvider connection={connection}><div className="app-shell">
-      <a className="skip-link" href="#main-content">Skip to main content</a>
+      <a className="skip-link" href="#main-content">{t("skipToContent")}</a>
       <aside className="app-sidebar">
         <div className="brand-lockup">
           <span className="brand-mark-frame">
@@ -2311,20 +2308,22 @@ export function App() {
             className="core-switcher"
             type="button"
             onClick={() => setConnectionOpen(true)}
-            aria-label="Configure Agent Core connection"
+            aria-label={t("configureCore")}
           >
             <StatusIcon
               status={coreState === "ready" ? "completed" : coreState === "failed" ? "failed" : "running"}
-              title={`Core API ${coreState}`}
+              title={t("coreState", { state: coreState })}
             />
             <span>
               <strong>Agent Core</strong>
-              <small>{coreState === "connecting" ? "Connecting…" : coreState === "ready" ? "API ready" : coreState}</small>
+              <small>{coreState === "connecting" ? t("coreConnecting") : coreState === "ready" ? t("coreReady") : t("coreFailed")}</small>
             </span>
             <Settings2 size={14} strokeWidth={1.5} />
           </button>
           <ConsoleAccountMenu />
-          <ThemeMenu />
+          <div className="sidebar-preferences">
+            <AppearanceMenu />
+          </div>
         </div>
       </aside>
 
@@ -2465,7 +2464,7 @@ export function App() {
               operations={vaultOperations}
             />
           ) : null}
-          {view === "api-keys" && isLocalProxyBaseUrl(connection.baseUrl) ? <section className="page-section api-keys-page"><header className="page-header"><h1>{t("API keys")}</h1></header><ApiKeyPanel /></section> : null}
+          {view === "api-keys" && isLocalProxyBaseUrl(connection.baseUrl) ? <section className="page-section api-keys-page"><header className="page-header"><h1>{t("API keys", { ns: "firstRun" })}</h1></header><ApiKeyPanel /></section> : null}
           {view === "sandbox" ? <SandboxManagerView key={`sandbox:${coreGeneration}`} coreBaseUrl={connection.baseUrl} /> : null}
           {view === "system" ? (
             <SystemView

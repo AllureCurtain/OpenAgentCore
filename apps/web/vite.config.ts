@@ -41,6 +41,7 @@ export default defineConfig(({ command, mode }) => {
     plugins: [react()],
     test: {
       include: ["src/**/*.test.{ts,tsx}"],
+      setupFiles: ["./src/i18n/test-setup.ts"],
     },
     server: {
       proxy: {

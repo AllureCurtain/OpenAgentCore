@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ArrowRight, Cloud, LogOut } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { ThemeMenu } from "../../components/ThemeMenu";
-import { useLocale } from "../../lib/LocaleProvider";
+import { setLanguage } from "../../i18n";
 import { changeConsoleAuth, ConsoleAuthError, readConsoleAuth, type ConsoleAuth } from "./auth";
 import { defaultProgress, progressKey, saveProgress } from "./progress";
 import "./console-access.css";
@@ -10,15 +11,16 @@ const ConsoleAccountContext = createContext<{ username: string; logout: () => Pr
 export const useConsoleAccount = () => useContext(ConsoleAccountContext);
 
 export function ConsoleLanguage() {
-  const { locale, setLocale, t } = useLocale();
-  return <select className="console-language" aria-label={t("Console language")} value={locale} onChange={(event) => setLocale(event.target.value === "zh" ? "zh" : "en")}>
-    <option value="en">English</option><option value="zh">中文</option>
+  const { t, i18n } = useTranslation("firstRun");
+  const language = i18n.resolvedLanguage?.startsWith("zh") ? "zh-CN" : "en";
+  return <select className="console-language" aria-label={t("Console language")} value={language} onChange={(event) => void setLanguage(event.target.value === "zh-CN" ? "zh-CN" : "en")}>
+    <option value="en">English</option><option value="zh-CN">中文</option>
   </select>;
 }
 
 export function ConsoleAccountMenu() {
   const account = useConsoleAccount();
-  const { t } = useLocale();
+  const { t } = useTranslation("firstRun");
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   if (!account) return null;
@@ -32,7 +34,7 @@ export function ConsoleAccountMenu() {
 }
 
 export function ConsoleAccess({ children }: { children: ReactNode }) {
-  const { t } = useLocale();
+  const { t } = useTranslation("firstRun");
   const [status, setStatus] = useState<ConsoleAuth | null>(null);
   const [failed, setFailed] = useState(false);
   const [revision, setRevision] = useState(0);
@@ -94,7 +96,7 @@ export function ConsoleAccess({ children }: { children: ReactNode }) {
 function AccountForm({ setup, onAuthenticated, onRefresh }: {
   setup: boolean; onAuthenticated: (status: ConsoleAuth) => void; onRefresh: () => void;
 }) {
-  const { t } = useLocale();
+  const { t } = useTranslation("firstRun");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [uncertain, setUncertain] = useState(false);

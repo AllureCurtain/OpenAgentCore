@@ -1,4 +1,6 @@
 export const consoleAuthChinese = {
+  "Try again": "重试",
+  "Copied": "已复制",
   "Your cloud. Your workspace.": "你的云，你的工作台。",
   "A place for your Agents to work.": "让你的 Agent 在这里工作。",
   "Connect your machines. Create Agents. Watch work happen.": "连接自己的机器，创建 Agent，让工作在这里发生。",

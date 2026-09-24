@@ -1,6 +1,9 @@
 import type { InlineAgentInput, SavedAgent } from "@agents-core-web/agents-client";
 
 import { deriveSessionVaultPlan, type VaultCatalog } from "../vaults/vault-catalog";
+import i18n from "../../i18n";
+
+const ta = (key: string, options?: Record<string, unknown>) => i18n.t(key as never, { ns: "agents", ...options });
 
 // Go strings.TrimSpace uses unicode.IsSpace, whose White_Space set includes U+0085.
 export function isCoreWhitespaceOnly(value: string): boolean {
@@ -130,15 +133,15 @@ export function effectiveSessionAgent(
  */
 export function knownSessionAdmissionBlockers(agent: SavedAgent): string[] {
   const blockers: string[] = [];
-  if (isCoreWhitespaceOnly(agent.model)) blockers.push("a non-empty model is required");
+  if (isCoreWhitespaceOnly(agent.model)) blockers.push(ta("admission.model"));
   if (agent.multi_agent.enabled || agent.multi_agent.max_concurrent_subagents !== null) {
-    blockers.push("multi-agent execution is not supported");
+    blockers.push(ta("admission.multiAgent"));
   }
   if (agent.reasoning.effort != null || agent.reasoning.summary != null) {
-    blockers.push("explicit reasoning options are saved-only");
+    blockers.push(ta("admission.reasoning"));
   }
-  if (agent.service_tier !== "auto") blockers.push("service tier must be auto");
-  if (agent.text.format.type !== "text") blockers.push("text format must be text");
+  if (agent.service_tier !== "auto") blockers.push(ta("admission.serviceTier"));
+  if (agent.text.format.type !== "text") blockers.push(ta("admission.text"));
 
   const functionNames = new Set<string>();
   const mcpLabels = new Set<string>();
@@ -146,66 +149,66 @@ export function knownSessionAdmissionBlockers(agent: SavedAgent): string[] {
   let searchCount = 0;
   for (const rawTool of agent.tools) {
     if (!rawTool || typeof rawTool !== "object" || Array.isArray(rawTool)) {
-      blockers.push("the saved tool configuration is not executable");
+      blockers.push(ta("admission.malformedTool"));
       continue;
     }
     const tool = rawTool as Record<string, unknown>;
     switch (tool.type) {
       case "function": {
         functionCount += 1;
-        if (!isCanonicalExecutionFunction(tool)) blockers.push("the saved function tool is incomplete or malformed");
-        if (tool.defer_loading === true) blockers.push("deferred functions are saved-only");
+        if (!isCanonicalExecutionFunction(tool)) blockers.push(ta("admission.malformedFunction"));
+        if (tool.defer_loading === true) blockers.push(ta("admission.deferred"));
         if (typeof tool.name === "string") {
           if (isCoreWhitespaceOnly(tool.name) || new TextEncoder().encode(tool.name).length > 512) {
-            blockers.push("function names must be non-empty and at most 512 bytes");
+            blockers.push(ta("admission.functionName"));
           }
-          if (functionNames.has(tool.name)) blockers.push("function names must be unique");
+          if (functionNames.has(tool.name)) blockers.push(ta("admission.functionUnique"));
           functionNames.add(tool.name);
         }
         break;
       }
       case "mcp":
-        if (!isCanonicalExecutionMcp(tool)) blockers.push("the saved MCP tool is incomplete or malformed");
-        if (tool.credential_id != null) blockers.push("attached MCP credentials are unavailable in this Web Session flow");
+        if (!isCanonicalExecutionMcp(tool)) blockers.push(ta("admission.malformedMcp"));
+        if (tool.credential_id != null) blockers.push(ta("admission.credential"));
         if (typeof tool.server_label === "string") {
-          if (mcpLabels.has(tool.server_label)) blockers.push("MCP server labels must be unique");
+          if (mcpLabels.has(tool.server_label)) blockers.push(ta("admission.mcpUnique"));
           mcpLabels.add(tool.server_label);
         }
         break;
       case "web_search":
         searchCount += 1;
-        if (!isCanonicalWebSearch(tool)) blockers.push("the saved web_search tool is incomplete or malformed");
-        else if (tool.mode !== "disabled") blockers.push("web_search mode must be disabled because Core does not run enabled search");
+        if (!isCanonicalWebSearch(tool)) blockers.push(ta("admission.malformedWebSearch"));
+        else if (tool.mode !== "disabled") blockers.push(ta("admission.enabledWebSearch"));
         break;
       case "tool_search":
       case "programmatic_tool_calling":
-        blockers.push(`${String(tool.type)} is saved-only`);
+        blockers.push(ta("admission.savedOnly", { type: String(tool.type) }));
         break;
       default:
-        blockers.push("the saved tool type is not executable");
+        blockers.push(ta("admission.unsupportedTool"));
     }
   }
-  if (functionCount > 64) blockers.push("at most 64 function tools can execute");
-  if (searchCount > 1) blockers.push("at most one web_search tool can execute");
+  if (functionCount > 64) blockers.push(ta("admission.functionCount"));
+  if (searchCount > 1) blockers.push(ta("admission.webSearchCount"));
   return [...new Set(blockers)];
 }
 
 export function knownSessionAdmissionBlocker(agent: SavedAgent): string | null {
   const blockers = knownSessionAdmissionBlockers(agent);
-  return blockers.length ? `Current Core Session admission requires ${blockers.join(", ")}.` : null;
+  return blockers.length ? ta("admission.coreRequires", { reasons: blockers.join(", ") }) : null;
 }
 
-const legacyCredentialBlocker = "attached MCP credentials are unavailable in this Web Session flow";
+const legacyCredentialBlocker = () => ta("admission.credential");
 
 /**
  * Full Web admission gate. The legacy helper intentionally remains fail-closed
  * for callers that have not supplied a complete, current Vault catalog.
  */
 export function sessionAdmissionBlocker(agent: SavedAgent, catalog: VaultCatalog | null): string | null {
-  const blockers = knownSessionAdmissionBlockers(agent).filter((blocker) => blocker !== legacyCredentialBlocker);
-  if (blockers.length) return `Current Core Session admission requires ${blockers.join(", ")}.`;
+  const blockers = knownSessionAdmissionBlockers(agent).filter((blocker) => blocker !== legacyCredentialBlocker());
+  if (blockers.length) return ta("admission.coreRequires", { reasons: blockers.join(", ") });
   const plan = deriveSessionVaultPlan(agent, catalog);
-  return plan.blocker ? `Session Vault attachment is unavailable. ${plan.blocker}` : null;
+  return plan.blocker ? ta("admission.vaultUnavailable", { reason: plan.blocker }) : null;
 }
 
 /** The pinned basic managed Runtime has not qualified service-origin HTTP MCP. */
@@ -217,6 +220,6 @@ export function sessionEnvironmentAdmissionBlocker(
   return agent.tools.some((tool) => (
     tool !== null && typeof tool === "object" && !Array.isArray(tool) && (tool as Record<string, unknown>).type === "mcp"
   ))
-    ? "Managed hosted Sessions do not yet support MCP tools. Choose no Environment or self-hosted, or use a Function-only Agent."
+    ? ta("admission.managedMcp")
     : null;
 }

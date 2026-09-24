@@ -12,6 +12,7 @@ import {
   Square,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import type {
   AgentCore,
@@ -122,8 +123,9 @@ interface SessionsViewProps {
 const coreRuntimeSetupUrl = "https://github.com/MiniMax-AI/parsar-core/blob/main/services/agents-api/README.md#public-text-execution";
 
 function SessionsListSkeleton() {
+  const { t } = useTranslation("sessions");
   return (
-    <div className="sessions-list-loading" aria-busy="true" aria-label="Loading Sessions">
+    <div className="sessions-list-loading" aria-busy="true" aria-label={t("list.loading")}>
       {Array.from({ length: 5 }).map((_, index) => (
         <div className="session-loading-row" key={index}>
           <Skeleton className="skeleton-status" />
@@ -139,8 +141,9 @@ function SessionsListSkeleton() {
 }
 
 function SessionWorkspaceSkeleton() {
+  const { t } = useTranslation("sessions");
   return (
-    <div className="session-workspace-loading" aria-busy="true" aria-label="Loading Session workspace">
+    <div className="session-workspace-loading" aria-busy="true" aria-label={t("conversation.loadingWorkspace")}>
       <div className="session-workspace-loading-header">
         <Skeleton />
         <Skeleton />
@@ -155,8 +158,9 @@ function SessionWorkspaceSkeleton() {
 }
 
 function SessionTimelineSkeleton() {
+  const { t } = useTranslation("sessions");
   return (
-    <div className="session-timeline-loading" aria-busy="true" aria-label="Loading Session timeline">
+    <div className="session-timeline-loading" aria-busy="true" aria-label={t("conversation.loadingTimeline")}>
       <Skeleton className="session-timeline-user" />
       <Skeleton className="session-timeline-agent" />
       <Skeleton className="session-timeline-user session-timeline-user-short" />
@@ -164,16 +168,17 @@ function SessionTimelineSkeleton() {
   );
 }
 
-function sessionTitle(session: AgentSession): string {
-  return session.metadata.title || session.agent.name || "Untitled Session";
+function sessionTitle(session: AgentSession, fallback = "Untitled Session"): string {
+  return session.metadata.title || session.agent.name || fallback;
 }
 
-function relativeTime(seconds: number): string {
+function relativeTime(seconds: number, locale: string): string {
   const delta = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
-  if (delta < 60) return "now";
-  if (delta < 3_600) return `${Math.floor(delta / 60)}m`;
-  if (delta < 86_400) return `${Math.floor(delta / 3_600)}h`;
-  return `${Math.floor(delta / 86_400)}d`;
+  const formatter = new Intl.RelativeTimeFormat(locale, { numeric: "auto", style: "narrow" });
+  if (delta < 60) return formatter.format(0, "second");
+  if (delta < 3_600) return formatter.format(-Math.floor(delta / 60), "minute");
+  if (delta < 86_400) return formatter.format(-Math.floor(delta / 3_600), "hour");
+  return formatter.format(-Math.floor(delta / 86_400), "day");
 }
 
 export function restoreDraftAfterFailedSend(currentDraft: string, failedDraft: string): string {
@@ -193,14 +198,6 @@ function streamStatusKind(state: StreamState): StatusKind {
   return "queued";
 }
 
-function streamStatusLabel(state: StreamState): string {
-  if (state === "connecting") return "Connecting events…";
-  if (state === "listening") return "Live events";
-  if (state === "recovering") return "Reconnecting events…";
-  if (state === "failed") return "Events unavailable";
-  return "Events idle";
-}
-
 function isEnvironmentConnectionAction(value: unknown): value is EnvironmentConnectionAction {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const action = value as Record<string, unknown>;
@@ -218,26 +215,28 @@ function isFunctionCallAction(value: unknown): value is FunctionCallAction {
 }
 
 function UnsupportedActionNotice() {
+  const { t } = useTranslation("sessions");
   return (
-    <section className="environment-connection-notice" aria-label="Unsupported required action">
+    <section className="environment-connection-notice" aria-label={t("conversation.unsupportedAction")}>
       <div className="environment-connection-notice-heading">
         <StatusIcon status="interrupted" />
-        <strong>Required action unavailable</strong>
+        <strong>{t("conversation.requiredActionUnavailable")}</strong>
       </div>
-      <p>Core returned an unknown or incomplete required action. This Web will not infer a form or continue the Session.</p>
+      <p>{t("conversation.requiredActionDetail")}</p>
     </section>
   );
 }
 
 function CancelActiveTurnButton({ busy, onCancel }: { busy: boolean; onCancel: () => void }) {
+  const { t } = useTranslation("sessions");
   return (
     <button
       className="composer-action"
       type="button"
       onClick={onCancel}
       disabled={busy}
-      aria-label="Cancel active Turn"
-      title="Cancel active Turn"
+      aria-label={t("common.cancelActiveTurn")}
+      title={t("common.cancelActiveTurn")}
     >
       <Square size={13} fill="currentColor" strokeWidth={1.5} />
     </button>
@@ -245,20 +244,22 @@ function CancelActiveTurnButton({ busy, onCancel }: { busy: boolean; onCancel: (
 }
 
 function CancelOnlyBar({ busy, onCancel }: { busy: boolean; onCancel: () => void }) {
+  const { t } = useTranslation("sessions");
   return (
-    <section className="active-turn-cancel-bar" aria-label="Active Turn controls">
-      <p>Turn continuation is unavailable, but cancellation remains available.</p>
+    <section className="active-turn-cancel-bar" aria-label={t("conversation.activeTurnControls")}>
+      <p>{t("conversation.cancelOnly")}</p>
       <CancelActiveTurnButton busy={busy} onCancel={onCancel} />
     </section>
   );
 }
 
 function PendingUserMessage({ message }: { message: LocalPendingMessage }) {
+  const { t } = useTranslation("sessions");
   return (
     <article className="message-row user pending-message" data-send-state="sending">
       <div className="message-body">
         <div className="message-copy">{message.payload}</div>
-        <span className="message-delivery-state">Sending…</span>
+        <span className="message-delivery-state">{t("conversation.sending")}</span>
       </div>
     </article>
   );
@@ -318,6 +319,8 @@ export function SessionsView({
   onSend,
   onUpdateSession,
 }: SessionsViewProps) {
+  const { t, i18n } = useTranslation("sessions");
+  const locale = i18n.resolvedLanguage || "en";
   // Inline Agent creation remains available without a saved Agent. Saved-only
   // incompatibilities can also be repaired through explicit Session overrides.
   const newSessionUnavailableReason = null;
@@ -526,9 +529,9 @@ export function SessionsView({
     <section ref={pageRef} className="page-section session-page" tabIndex={-1}>
       <aside className="session-browser">
         <header className="session-browser-header">
-          <h1>Sessions <span>Conversations</span></h1>
+          <h1>{t("list.title")} <span>{t("list.subtitle")}</span></h1>
           <div className="session-browser-actions">
-            <button className="icon-button ghost" type="button" onClick={onRefresh} disabled={coreState === "connecting"} aria-label="Recover durable state">
+            <button className="icon-button ghost" type="button" onClick={onRefresh} disabled={coreState === "connecting"} aria-label={t("list.recover")}>
               <RefreshCw className={coreState === "connecting" ? "refresh-spinning" : undefined} size={14} strokeWidth={1.5} />
             </button>
             <span className="action-tooltip">
@@ -545,7 +548,7 @@ export function SessionsView({
                 disabled={coreState !== "ready"}
                 aria-disabled={newSessionUnavailableReason ? true : undefined}
                 aria-describedby={newSessionUnavailableReason ? "new-session-unavailable-reason" : undefined}
-                aria-label="New Session"
+                aria-label={t("list.new")}
               >
                 <Plus size={14} strokeWidth={1.5} />
               </button>
@@ -560,16 +563,16 @@ export function SessionsView({
 
         <label className="session-agent-filter">
           <Bot size={13} strokeWidth={1.5} aria-hidden="true" />
-          <span className="sr-only">Filter Sessions by Agent</span>
+          <span className="sr-only">{t("list.filterByAgent")}</span>
           <select
-            aria-label="Filter Sessions by Agent"
+            aria-label={t("list.filterByAgent")}
             value={agentFilter ?? ""}
             onChange={(event) => onAgentFilterChange?.(event.target.value || null)}
             disabled={!agents.length}
           >
-            <option value="">All Agents</option>
+            <option value="">{t("list.allAgents")}</option>
             {agentFilter && !agents.some((agent) => agent.id === agentFilter) ? (
-              <option value={agentFilter}>Unavailable Agent (not loaded)</option>
+              <option value={agentFilter}>{t("list.unavailableAgent")}</option>
             ) : null}
             {agents.map((agent) => (
               <option value={agent.id} key={agent.id}>{agent.name || agent.model}</option>
@@ -578,18 +581,18 @@ export function SessionsView({
         </label>
 
         <div className="session-list-heading">
-          <span>Recent</span>
-          <span>{coreState === "ready" || sessions.length ? sessions.length : "—"}</span>
+          <span>{t("list.recent")}</span>
+          <span>{coreState === "ready" || sessions.length ? sessions.length.toLocaleString(locale) : "—"}</span>
         </div>
         <div className="session-list">
           {coreState === "connecting" && !sessions.length ? <SessionsListSkeleton /> : null}
           {coreState === "failed" && sessions.length ? (
             <ErrorState
               className="session-collection-error"
-              title="Couldn’t refresh Sessions"
-              description="The last loaded Sessions remain available."
+              title={t("list.refreshFailed")}
+              description={t("list.lastLoadedAvailable")}
               detail={coreError ?? undefined}
-              hint="Check the Agent Core connection, then retry."
+              hint={t("list.checkConnection")}
               onRetry={onRefresh}
             />
           ) : null}
@@ -601,21 +604,21 @@ export function SessionsView({
               <button
                 type="button"
                 className="session-row-select"
-                aria-label={`${session.status.replaceAll("_", " ")} ${session.agent.name || session.agent.model} · ${sessionTitle(session)}`}
+                aria-label={t("list.sessionLabel", { status: t(`status.${session.status}` as never), agent: session.agent.name || session.agent.model, title: sessionTitle(session, t("common.untitledSession")) })}
                 onClick={() => onSelect(session.id)}
               >
-                <StatusIcon status={sessionStatusKind(session.status)} title={session.status.replaceAll("_", " ")} />
+                <StatusIcon status={sessionStatusKind(session.status)} title={t(`status.${session.status}` as never)} />
                 <span className="session-row-copy">
-                  <strong>{sessionTitle(session)}</strong>
+                  <strong>{sessionTitle(session, t("common.untitledSession"))}</strong>
                   <small>{session.agent.name || session.agent.model}</small>
                 </span>
-                <span className="session-age">{relativeTime(session.last_active_at)}</span>
+                <span className="session-age">{relativeTime(session.last_active_at, locale)}</span>
               </button>
               <button
                 className="session-row-action icon-button ghost"
                 type="button"
-                aria-label={`Manage ${sessionTitle(session)}`}
-                title="Session details and actions"
+                aria-label={t("list.manage", { title: sessionTitle(session, t("common.untitledSession")) })}
+                title={t("list.detailsActions")}
                 disabled={busy}
                 onClick={() => setActionSession(session)}
               >
@@ -626,7 +629,7 @@ export function SessionsView({
           {coreState === "ready" && !sessions.length ? (
             <div className="session-list-empty">
               <MessageSquare size={20} strokeWidth={1.5} />
-              <span>No Sessions yet</span>
+              <span>{t("list.none")}</span>
             </div>
           ) : null}
         </div>
@@ -637,10 +640,10 @@ export function SessionsView({
       ) : coreState === "failed" && !selected ? (
         <div className="workspace-error">
           <ErrorState
-            title="Couldn’t load Sessions"
-            description="The Web could not read Sessions from the connected Agent Core."
+            title={t("list.loadFailed")}
+            description={t("list.readFailed")}
             detail={coreError ?? undefined}
-            hint="Check the Agent Core connection in the sidebar, then retry."
+            hint={t("list.checkSidebarConnection")}
             onRetry={onRefresh}
           />
         </div>
@@ -649,11 +652,11 @@ export function SessionsView({
           <header className="conversation-header">
             <div className="conversation-heading-copy">
               <div className="conversation-title-row">
-                <h2>{sessionTitle(selected)}</h2>
+                <h2>{sessionTitle(selected, t("common.untitledSession"))}</h2>
                 <StatusIcon status={sessionStatusKind(selected.status)} />
-                <span className="status-label">{selected.status.replaceAll("_", " ")}</span>
+                <span className="status-label">{t(`status.${selected.status}` as never)}</span>
               </div>
-              <p>{selected.agent.name || "Untitled Agent"} <span>·</span> <code>{selected.agent.model}</code></p>
+              <p>{selected.agent.name || t("common.untitledAgent")} <span>·</span> <code>{selected.agent.model}</code></p>
             </div>
             <div className="conversation-header-actions">
               {environmentPresentation?.visible ? (
@@ -662,30 +665,30 @@ export function SessionsView({
                   type="button"
                   aria-haspopup="dialog"
                   aria-expanded={environmentDialogSessionId === selected.id}
-                  aria-label={environmentPresentation.triggerLabel}
-                  title="View Environment status and connection instructions"
+                  aria-label={environmentPresentation.status === "required" ? t("environment.triggerConnect") : t("environment.trigger", { status: t(`environment.status.${environmentPresentation.status}` as never) })}
+                  title={t("environment.viewStatus")}
                   onClick={() => setEnvironmentDialogSessionId(selected.id)}
                 >
                   <HardDrive size={14} strokeWidth={1.5} aria-hidden="true" />
-                  <span>{environmentPresentation.triggerLabel}</span>
+                  <span>{environmentPresentation.status === "required" ? t("environment.triggerConnect") : t("environment.trigger", { status: t(`environment.status.${environmentPresentation.status}` as never) })}</span>
                 </button>
               ) : null}
               <div
                 className={`stream-indicator ${streamState}`}
                 role="status"
                 aria-live="polite"
-                aria-label={`Session live events: ${streamState === "listening" ? "connected" : streamState}`}
-                title="Status of this Session’s live update channel. It does not confirm that the Environment or executor is ready."
+                aria-label={t("conversation.liveEventsAria", { status: t(`stream.${streamState}` as never) })}
+                title={t("conversation.liveEventsTitle")}
               >
                 <StatusIcon status={streamStatusKind(streamState)} />
-                <span>{streamStatusLabel(streamState)}</span>
+                <span>{t(`stream.${streamState}` as never)}</span>
               </div>
               <button
                 ref={conversationActionRef}
                 className="icon-button ghost conversation-session-action"
                 type="button"
-                aria-label={`Manage ${sessionTitle(selected)}`}
-                title="Session details and actions"
+                aria-label={t("list.manage", { title: sessionTitle(selected, t("common.untitledSession")) })}
+                title={t("list.detailsActions")}
                 disabled={busy}
                 onClick={() => setActionSession(selected)}
               >
@@ -707,7 +710,7 @@ export function SessionsView({
             />
           ) : null}
 
-          <div className="session-view-tabs" role="tablist" aria-label="Session view">
+          <div className="session-view-tabs" role="tablist" aria-label={t("conversation.sessionView")}>
             <button
               id="session-conversation-tab"
               type="button"
@@ -718,7 +721,7 @@ export function SessionsView({
               onClick={() => setSessionView("conversation")}
               onKeyDown={onViewTabKeyDown}
             >
-              Conversation
+              {t("conversation.conversation")}
             </button>
             <button
               id="session-trace-tab"
@@ -730,7 +733,7 @@ export function SessionsView({
               onClick={() => setSessionView("trace")}
               onKeyDown={onViewTabKeyDown}
             >
-              Trace
+              {t("conversation.trace")}
             </button>
             <button
               id="session-metrics-tab"
@@ -742,7 +745,7 @@ export function SessionsView({
               onClick={() => setSessionView("metrics")}
               onKeyDown={onViewTabKeyDown}
             >
-              Metrics
+              {t("conversation.metrics")}
             </button>
           </div>
 
@@ -758,12 +761,12 @@ export function SessionsView({
               <div ref={setThreadContent} className="thread-content">
                 <div className="session-origin">
                   <Clock3 size={13} strokeWidth={1.5} />
-                  <span>Session</span>
+                  <span>{t("common.session")}</span>
                   <code>{selected.id}</code>
                 </div>
 
                 <div className="message-stack">
-                  <ThreadItems items={items} agentName={selected.agent.name || "Agent"} />
+                  <ThreadItems items={items} agentName={selected.agent.name || t("common.agent")} />
                   {visiblePendingMessage ? <PendingUserMessage message={visiblePendingMessage} /> : null}
                 </div>
 
@@ -772,10 +775,10 @@ export function SessionsView({
                 {detailState === "failed" ? (
                   <ErrorState
                     className="session-detail-error"
-                    title="Couldn’t load this Session"
-                    description="The Web could not read this Session and its durable Items from the connected Agent Core."
+                    title={t("conversation.sessionLoadFailed")}
+                    description={t("conversation.sessionReadFailed")}
                     detail={detailError ?? undefined}
-                    hint={items.length ? "The last loaded Items remain visible. Retry to recover the latest durable state." : "Check the Agent Core connection, then retry."}
+                    hint={items.length ? t("conversation.lastItemsVisible") : t("list.checkConnection")}
                     onRetry={onRetrySession}
                   />
                 ) : null}
@@ -783,10 +786,10 @@ export function SessionsView({
                 {streamState === "failed" && streamError ? (
                   <ErrorState
                     className="session-stream-error"
-                    title="Couldn’t open live events"
-                    description="The Agent Core rejected this Session’s read-only event stream."
+                    title={t("conversation.eventsOpenFailed")}
+                    description={t("conversation.eventsRejected")}
                     detail={streamError}
-                    hint="Check the Agent Core URL and token, then retry the live stream."
+                    hint={t("conversation.eventsRetryHint")}
                     onRetry={onRetryStream}
                   />
                 ) : null}
@@ -794,21 +797,21 @@ export function SessionsView({
                 {sendError ? (
                   <ErrorState
                     className="session-send-error"
-                    title={sendError.code === "execution_unavailable" ? "Core execution is unavailable" : "Message wasn’t sent"}
+                    title={sendError.code === "execution_unavailable" ? t("conversation.executionUnavailable") : t("conversation.messageNotSent")}
                     description={sendError.code === "execution_unavailable"
-                      ? "Agent Core rejected this execution request. Your draft was restored and was not retried."
+                      ? t("conversation.executionRejected")
                       : sendError.uncertain
-                        ? "Core may have accepted this message before the response was lost. Your draft was restored and was not retried."
-                        : "Agent Core rejected the message. Your draft was restored and was not retried."}
+                        ? t("conversation.messageUncertain")
+                        : t("conversation.messageRejected")}
                     detail={sendError.message}
                     hint={sendError.code === "execution_unavailable"
-                      ? "Review the Core error and operator runtime configuration, then explicitly send the unchanged draft again when Core is ready."
+                      ? t("conversation.executionRetryHint")
                       : sendError.uncertain
-                        ? "Review durable state first. Explicitly send the unchanged draft to reuse its key; editing it creates a new operation."
-                        : "Review the error, then send the restored draft as a new operation when the Core is ready."}
+                        ? t("conversation.uncertainRetryHint")
+                        : t("conversation.rejectedRetryHint")}
                     action={sendError.code === "execution_unavailable" ? (
                       <a className="button outline" href={coreRuntimeSetupUrl} target="_blank" rel="noreferrer">
-                        Core runtime setup
+                        {t("conversation.coreRuntimeSetup")}
                         <ExternalLink size={13} strokeWidth={1.5} aria-hidden="true" />
                       </a>
                     ) : undefined}
@@ -818,10 +821,10 @@ export function SessionsView({
                 {selected.status === "failed" ? (
                   <ErrorState
                     className="session-runtime-error"
-                    title={inputBlockedByTerminalEnvironment ? "Session cannot continue" : "Latest attempt failed"}
+                    title={inputBlockedByTerminalEnvironment ? t("conversation.cannotContinue") : t("conversation.latestFailed")}
                     description={inputBlockedByTerminalEnvironment
-                      ? "The Environment for this Session is failed or expired. Start a new Session to continue."
-                      : "The Agent Core reported that the latest input or Turn failed. You can send another message to start a new Turn in this Session."}
+                      ? t("conversation.environmentTerminal")
+                      : t("conversation.latestFailedDetail")}
                     detail={selected.error ?? undefined}
                   />
                 ) : null}
@@ -829,11 +832,11 @@ export function SessionsView({
                 {detailState === "ready" && streamState !== "failed" && selected.status !== "failed" && !items.length && !visiblePendingMessage ? (
                   <div className="conversation-empty">
                     <Bot size={24} strokeWidth={1.5} />
-                    <h3>Session is ready</h3>
+                    <h3>{t("conversation.ready")}</h3>
                     <p>
                       {streamState === "listening"
-                        ? "Live events are connected. Message execution also requires a Core worker and executor."
-                        : "Opening the event stream before enabling the composer."}
+                        ? t("conversation.liveConnected")
+                        : t("conversation.openingStream")}
                     </p>
                   </div>
                 ) : null}
@@ -842,7 +845,7 @@ export function SessionsView({
             {showScrollToLatest ? (
               <button className="button outline scroll-to-latest" type="button" onClick={scrollToLatest}>
                 <ArrowDown size={14} strokeWidth={1.5} aria-hidden="true" />
-                Back to latest
+                {t("conversation.backLatest")}
               </button>
             ) : null}
           </div>
@@ -857,9 +860,9 @@ export function SessionsView({
             ))}
             {unsupportedActionCount ? <UnsupportedActionNotice /> : null}
             {selected.status === "in_progress" ? (
-              <ConversationActivity label={`${selected.agent.name || "Agent"} is working…`} />
+              <ConversationActivity label={t("conversation.agentWorking", { agent: selected.agent.name || t("common.agent") })} />
             ) : visiblePendingMessage ? (
-              <ConversationActivity label="Sending message…" />
+              <ConversationActivity label={t("conversation.sendingMessage")} />
             ) : null}
             {showCancelOnly ? (
               <CancelOnlyBar busy={busy} onCancel={cancel} />
@@ -867,7 +870,7 @@ export function SessionsView({
             {!unsupportedActionCount && functionActions.length ? (
                 <FunctionActionPanel
                   actions={functionActions}
-                  agentName={selected.agent.name || "Agent"}
+                  agentName={selected.agent.name || t("common.agent")}
                   autoFocus={!environmentConnections.length && !unsupportedActionCount}
                   busy={busy || detailState !== "ready"}
                   onCancel={cancel}
@@ -887,16 +890,16 @@ export function SessionsView({
                 }}
                 onKeyDown={onComposerKeyDown}
                 placeholder={inputBlockedByTerminalEnvironment
-                  ? "Start a new Session to continue"
-                  : `Message ${selected.agent.name || "the Agent"}…`}
-                aria-label="Message the Agent"
+                  ? t("conversation.startNewToContinue")
+                  : t("conversation.messageAgentPlaceholder", { agent: selected.agent.name || t("conversation.theAgent") })}
+                aria-label={t("conversation.messageAgent")}
                 rows={1}
                 disabled={detailState !== "ready" || inputBlockedByTerminalEnvironment}
               />
               <div className="composer-bar">
                 <span className="composer-context">
                   <span className="initial-tile">{(selected.agent.name?.charAt(0) || "A").toUpperCase()}</span>
-                  <span>{selected.agent.name || "Untitled Agent"}</span>
+                  <span>{selected.agent.name || t("common.untitledAgent")}</span>
                 </span>
                 {selected.status === "in_progress" || selected.status === "requires_action" ? (
                   <CancelActiveTurnButton busy={busy} onCancel={cancel} />
@@ -904,8 +907,8 @@ export function SessionsView({
                   <button
                     className="composer-action send"
                     type="submit"
-                    aria-label="Send message"
-                    title="Send message"
+                    aria-label={t("conversation.sendMessage")}
+                    title={t("conversation.sendMessage")}
                     disabled={busy || detailState !== "ready" || !message.trim() || inputBlockedByTerminalEnvironment || streamState !== "listening"}
                   >
                     <ArrowUp size={16} strokeWidth={2} />
@@ -952,7 +955,7 @@ export function SessionsView({
                     stale={runtimeStale ?? false}
                     loadRuntimeHistory={loadRuntimeHistory}
                     headingId={`session-runtime-trends-heading-${sessionId}`}
-                    title="Session resource trends"
+                    title={t("metrics.resourceTrends")}
                     showDurableUptimePlaceholder
                     allowSourceSelection
                   />
@@ -961,13 +964,13 @@ export function SessionsView({
             }) : null}
             {sessionRuntimeSnapshot ? null : runtimeError ? (
               <ErrorState
-                title="Couldn’t load Session metrics"
-                description="The latest Runtime observation is unavailable."
+                title={t("metrics.loadFailed")}
+                description={t("metrics.observationUnavailable")}
                 detail={runtimeError}
                 onRetry={onRefresh}
               />
             ) : (
-              <div className="session-metrics-loading" aria-busy="true" aria-label="Loading Session metrics">
+              <div className="session-metrics-loading" aria-busy="true" aria-label={t("metrics.loading")}>
                 <Skeleton />
                 <Skeleton />
                 <Skeleton />
@@ -979,8 +982,8 @@ export function SessionsView({
       ) : (
         <div className="workspace-empty">
           <MessageSquare size={24} strokeWidth={1.5} />
-          <h2>Select or create a Session</h2>
-          <p>Sessions keep the durable Agent configuration, Turns, and Items.</p>
+          <h2>{t("list.selectOrCreate")}</h2>
+          <p>{t("list.emptyDescription")}</p>
         </div>
       )}
 

@@ -1,5 +1,6 @@
 import { Activity, Clock3 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type {
   AgentTurn,
@@ -22,11 +23,11 @@ interface TurnTimelineProps {
 }
 
 const usageMetrics = [
-  ["Input", ["input_tokens"]],
-  ["Output", ["output_tokens"]],
-  ["Total", ["total_tokens"]],
-  ["Cached", ["input_tokens_details", "cached_tokens"]],
-  ["Reasoning", ["output_tokens_details", "reasoning_tokens"]],
+  ["input", ["input_tokens"]],
+  ["output", ["output_tokens"]],
+  ["total", ["total_tokens"]],
+  ["cached", ["input_tokens_details", "cached_tokens"]],
+  ["reasoning", ["output_tokens_details", "reasoning_tokens"]],
 ] as const;
 
 function metric(value: unknown, path: readonly string[]): number | null {
@@ -49,13 +50,15 @@ function UsageGrid({
   accessibleLabel?: string;
   landmark?: boolean;
 }) {
+  const { t, i18n } = useTranslation("sessions");
+  const locale = i18n.resolvedLanguage || "en";
   const content = (
     <>
       <strong>{label}</strong>
       <dl>
         {usageMetrics.map(([name, path]) => {
           const value = metric(usage, path);
-          return <div key={name}><dt>{name}</dt><dd>{value === null ? "Unknown" : value.toLocaleString("en-US")}</dd></div>;
+          return <div key={name}><dt>{t(`usage.${name}` as never)}</dt><dd>{value === null ? t("common.unknown") : value.toLocaleString(locale)}</dd></div>;
         })}
       </dl>
     </>
@@ -63,10 +66,6 @@ function UsageGrid({
   return landmark
     ? <section className="turn-usage" aria-label={accessibleLabel}>{content}</section>
     : <div className="turn-usage" role="group" aria-label={accessibleLabel}>{content}</div>;
-}
-
-function statusLabel(status: TurnStatus): string {
-  return status.replaceAll("_", " ").replace(/^./, (value) => value.toUpperCase());
 }
 
 function statusKind(status: TurnStatus): StatusKind {
@@ -81,11 +80,12 @@ function seconds(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
-export function formatTurnTimestamp(value: unknown): string {
+export function formatTurnTimestamp(value: unknown, locale?: string, unknownLabel = "Unknown"): string {
   const timestamp = seconds(value);
-  if (timestamp === null) return "Unknown";
+  if (timestamp === null) return unknownLabel;
   const date = new Date(timestamp * 1_000);
-  if (Number.isNaN(date.getTime())) return "Unknown";
+  if (Number.isNaN(date.getTime())) return unknownLabel;
+  if (locale) return new Intl.DateTimeFormat(locale, { dateStyle: "medium", timeStyle: "medium" }).format(date);
   return `${date.toISOString().slice(0, 19).replace("T", " ")} UTC`;
 }
 
@@ -110,6 +110,8 @@ function errorProjection(value: unknown): { code: string; message: string } | nu
 }
 
 function TurnCard({ turn, itemCount, now }: { turn: AgentTurn; itemCount: number; now: number }) {
+  const { t, i18n } = useTranslation("sessions");
+  const locale = i18n.resolvedLanguage || "en";
   const active = turn.status === "in_progress" || turn.status === "waiting";
   const elapsed = active
     ? formatTurnElapsed(turn.started_at, now)
@@ -120,35 +122,35 @@ function TurnCard({ turn, itemCount, now }: { turn: AgentTurn; itemCount: number
   return (
     <article className={`turn-card turn-card-${turn.status}`} data-turn-id={turn.id} data-turn-status={turn.status} aria-labelledby={headingId}>
       <header className="turn-card-heading">
-        <StatusIcon status={statusKind(turn.status)} title={`Turn status: ${statusLabel(turn.status)}`} />
+        <StatusIcon status={statusKind(turn.status)} title={t("turns.statusTitle", { status: t(`status.${turn.status}` as never) })} />
         <div>
-          <strong id={headingId}>{statusLabel(turn.status)} Turn</strong>
+          <strong id={headingId}>{t("turns.statusTurn", { status: t(`status.${turn.status}` as never) })}</strong>
           <code title={turn.id}>{turn.id}</code>
         </div>
-        <span className="turn-item-count">{itemCount} linked {itemCount === 1 ? "Item" : "Items"}</span>
+        <span className="turn-item-count">{t("turns.linkedItems", { count: itemCount })}</span>
       </header>
 
       <dl className="turn-timing">
-        <div><dt>Started</dt><dd>{formatTurnTimestamp(turn.started_at)}</dd></div>
-        <div><dt>Completed</dt><dd>{formatTurnTimestamp(turn.completed_at)}</dd></div>
+        <div><dt>{t("turns.started")}</dt><dd>{formatTurnTimestamp(turn.started_at, locale, t("common.unknown"))}</dd></div>
+        <div><dt>{t("turns.completed")}</dt><dd>{formatTurnTimestamp(turn.completed_at, locale, t("common.unknown"))}</dd></div>
         <div>
-          <dt>{active ? "Running elapsed" : "Wall clock"}</dt>
-          <dd aria-label={active ? `Running elapsed ${elapsed}` : `Wall clock ${elapsed}`}>
-            {active && elapsed !== "Unknown" ? `Running · ${elapsed}` : elapsed}
+          <dt>{active ? t("turns.runningElapsed") : t("turns.wallClock")}</dt>
+          <dd aria-label={active ? t("turns.runningElapsedValue", { elapsed }) : t("turns.wallClockValue", { elapsed })}>
+            {active && elapsed !== "Unknown" ? t("turns.runningValue", { elapsed }) : elapsed === "Unknown" ? t("common.unknown") : elapsed}
           </dd>
         </div>
       </dl>
 
       {error ? (
         <div className="turn-error">
-          <strong>Turn error</strong>
+          <strong>{t("turns.error")}</strong>
           <code>{error.code}</code>
           <p>{error.message}</p>
-          <small>Durable conversation Items remain available in the Conversation tab.</small>
+          <small>{t("turns.errorItemsRemain")}</small>
         </div>
       ) : null}
 
-      <UsageGrid label="Turn usage" accessibleLabel={`Usage for Turn ${turn.id}`} usage={turn.usage} />
+      <UsageGrid label={t("turns.usage")} accessibleLabel={t("turns.usageFor", { id: turn.id })} usage={turn.usage} />
     </article>
   );
 }
@@ -161,6 +163,7 @@ export function TurnTimeline({
   error = null,
   nowSeconds,
 }: TurnTimelineProps) {
+  const { t } = useTranslation("sessions");
   const [clock, setClock] = useState(() => nowSeconds ?? Math.floor(Date.now() / 1_000));
   const active = turns.some((turn) => turn.status === "in_progress" || turn.status === "waiting");
   const counts = useMemo(() => {
@@ -183,36 +186,36 @@ export function TurnTimeline({
   }, [active, nowSeconds]);
 
   return (
-    <section className="turn-timeline" aria-label="Turn timeline" aria-busy={loadState === "loading" || undefined}>
+    <section className="turn-timeline" aria-label={t("turns.timeline")} aria-busy={loadState === "loading" || undefined}>
       <header className="turn-timeline-heading">
         <div>
           <Activity size={14} strokeWidth={1.5} aria-hidden="true" />
-          <strong>Turn timeline</strong>
+          <strong>{t("turns.timeline")}</strong>
         </div>
-        <span>{loadState === "ready" || turns.length ? `${turns.length} observed ${turns.length === 1 ? "Turn" : "Turns"}` : "Core state"}</span>
+        <span>{loadState === "ready" || turns.length ? t("turns.observed", { count: turns.length }) : t("turns.coreState")}</span>
       </header>
 
-      <UsageGrid label="Session aggregate usage" usage={sessionUsage} landmark />
+      <UsageGrid label={t("turns.sessionUsage")} usage={sessionUsage} landmark />
 
       {loadState === "loading" ? (
         <div className="turn-timeline-state">
           <Clock3 size={14} strokeWidth={1.5} aria-hidden="true" />
-          <span>{turns.length ? "Loading complete Turn history; live observations may already appear." : "Loading every Turn page…"}</span>
+          <span>{turns.length ? t("turns.loadingComplete") : t("turns.loadingEveryPage")}</span>
         </div>
       ) : null}
 
       {loadState === "failed" ? (
         <div className="turn-timeline-failure" role="alert">
-          <strong>Couldn’t load Turn history</strong>
-          <p>{error || "The Agent Core Turn read failed."}</p>
-          {turns.length ? <small>The last observed Turn timeline remains visible.</small> : null}
+          <strong>{t("turns.loadFailed")}</strong>
+          <p>{error || t("turns.coreReadFailed")}</p>
+          {turns.length ? <small>{t("turns.lastObservedVisible")}</small> : null}
         </div>
       ) : null}
 
       {loadState === "ready" && !turns.length ? (
         <div className="turn-timeline-state">
           <Clock3 size={14} strokeWidth={1.5} aria-hidden="true" />
-          <span>No Turns reported yet.</span>
+          <span>{t("turns.none")}</span>
         </div>
       ) : null}
 
@@ -226,7 +229,7 @@ export function TurnTimeline({
 
       {unassociatedItems ? (
         <p className="turn-unassociated" role="status">
-          {unassociatedItems} {unassociatedItems === 1 ? "Item is" : "Items are"} not associated with an observed Turn yet.
+          {t("turns.unassociated", { count: unassociatedItems })}
         </p>
       ) : null}
     </section>

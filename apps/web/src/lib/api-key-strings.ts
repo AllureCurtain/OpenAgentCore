@@ -1,4 +1,5 @@
 export const apiKeyChinese = {
+  "My API key": "我的 API 密钥",
   "Use an existing Agent API key.": "使用已有的 Agent API 密钥。",
   "This console cannot create API keys. Use a key supplied by your Core administrator for requests from your machine or application.": "此控制台无法创建 API 密钥。从本机或应用发起请求时，请使用 Core 管理员提供的密钥。",
   "You can continue the introduction and use your signed-in console connection to create an Agent.": "你可以继续导览，并通过已登录的控制台连接创建 Agent。",

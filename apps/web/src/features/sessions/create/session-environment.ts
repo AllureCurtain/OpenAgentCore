@@ -2,6 +2,9 @@ import type {
   AgentEnvironmentInput,
   OpenAIHostedNetworkAccess,
 } from "@agents-core-web/agents-client";
+import i18n from "../../../i18n";
+
+const ts = (key: string) => i18n.t(key as never, { ns: "sessions" });
 
 export type SessionEnvironmentType = AgentEnvironmentInput["type"];
 export type HostedNetworkChoice = "default" | OpenAIHostedNetworkAccess;
@@ -10,12 +13,12 @@ export type SessionEnvironmentValidation =
   | { input: AgentEnvironmentInput; error: null }
   | { input: null; error: string };
 
-const absoluteWorkspaceError = "Workspace directory must be an absolute POSIX path, for example /workspace.";
-const safeWorkspaceError = "Workspace directory cannot contain NUL, carriage return, line feed, or backslash characters.";
+const absoluteWorkspaceError = () => ts("validation.absoluteWorkspace");
+const safeWorkspaceError = () => ts("validation.safeWorkspace");
 
 export function validateWorkspaceDirectory(value: string): string | null {
-  if (!value || value.startsWith("~") || !value.startsWith("/")) return absoluteWorkspaceError;
-  if (/[\0\r\n\\]/u.test(value)) return safeWorkspaceError;
+  if (!value || value.startsWith("~") || !value.startsWith("/")) return absoluteWorkspaceError();
+  if (/[\0\r\n\\]/u.test(value)) return safeWorkspaceError();
   return null;
 }
 
@@ -33,7 +36,7 @@ export function sessionEnvironmentInput(
 
   if (type === "openai_hosted") {
     if (hostedNetwork !== "default" && hostedNetwork !== "enabled" && hostedNetwork !== "disabled") {
-      return { input: null, error: "The managed Environment network policy is unsupported." };
+      return { input: null, error: ts("validation.unsupportedNetworkPolicy") };
     }
     // Omitting the field inherits the Core default, or a referenced Template's
     // policy. Core rejects an explicit null beside a reference, so Web never
@@ -43,7 +46,7 @@ export function sessionEnvironmentInput(
       return { input: { type: "openai_hosted", ...network }, error: null };
     }
     if (!canonicalUuidPattern.test(environmentTemplateId)) {
-      return { input: null, error: "The selected Environment Template identifier is invalid." };
+      return { input: null, error: ts("validation.invalidTemplateId") };
     }
     return {
       input: { type: "openai_hosted", environment_template_id: environmentTemplateId, ...network },
@@ -52,7 +55,7 @@ export function sessionEnvironmentInput(
   }
 
   if (type !== "self_hosted") {
-    return { input: null, error: "The selected Environment type is unsupported." };
+    return { input: null, error: ts("validation.unsupportedEnvironmentType") };
   }
 
   const error = validateWorkspaceDirectory(workspaceDirectory);
@@ -86,12 +89,12 @@ function hasKey(value: Record<string, unknown>, key: string): boolean {
 export function normalizeSessionEnvironmentInput(value: unknown): SessionEnvironmentValidation {
   const input = record(value);
   if (!input || typeof input.type !== "string") {
-    return { input: null, error: "The Environment input is invalid." };
+    return { input: null, error: ts("validation.invalidEnvironmentInput") };
   }
   if (input.type === "none") {
     return exactKeys(input, ["type"])
       ? sessionEnvironmentInput("none", "")
-      : { input: null, error: "The no-Environment request contains unsupported fields." };
+      : { input: null, error: ts("validation.invalidNoEnvironment") };
   }
   if (input.type === "self_hosted") {
     if (
@@ -99,7 +102,7 @@ export function normalizeSessionEnvironmentInput(value: unknown): SessionEnviron
       !Array.isArray(input.capability_directories) ||
       input.capability_directories.length !== 0 ||
       typeof input.workspace_directory !== "string"
-    ) return { input: null, error: "The self-hosted Environment request is not the supported Web profile." };
+    ) return { input: null, error: ts("validation.invalidSelfHosted") };
     return sessionEnvironmentInput("self_hosted", input.workspace_directory);
   }
   if (input.type === "openai_hosted") {
@@ -115,8 +118,8 @@ export function normalizeSessionEnvironmentInput(value: unknown): SessionEnviron
       !network ||
       !exactKeys(network, ["access"]) ||
       (network.access !== "enabled" && network.access !== "disabled")
-    ) return { input: null, error: "The managed Environment request is not the supported basic profile." };
+    ) return { input: null, error: ts("validation.invalidManaged") };
     return sessionEnvironmentInput("openai_hosted", "", network.access, templateId);
   }
-  return { input: null, error: "The selected Environment type is unsupported." };
+  return { input: null, error: ts("validation.unsupportedEnvironmentType") };
 }

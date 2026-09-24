@@ -1,4 +1,5 @@
 import { useId, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 import type { EnvironmentTemplate } from "@agents-core-web/agents-client";
 import { templatePatch, type TemplateDraft } from "./template-editor";
 
@@ -8,6 +9,8 @@ export function TemplateForm({ template, busy, onSave, onCancel }: {
   onSave: (draft: TemplateDraft) => void;
   onCancel: () => void;
 }) {
+  const { t } = useTranslation("templates");
+  const { t: tCommon } = useTranslation("common");
   const id = useId();
   const [draft, setDraft] = useState<TemplateDraft>({ name: template?.name ?? "", access: template?.network.access ?? "enabled" });
   const tooLong = [...draft.name.trim()].length > 256;
@@ -19,20 +22,20 @@ export function TemplateForm({ template, busy, onSave, onCancel }: {
   };
   return (
     <form className="template-form" onSubmit={submit}>
-      <label htmlFor={`${id}-name`}>Name <span aria-hidden="true">Optional</span></label>
+      <label htmlFor={`${id}-name`}>{t("form.name")} <span aria-hidden="true">{t("form.optional")}</span></label>
       <input id={`${id}-name`} value={draft.name} disabled={busy} aria-invalid={tooLong || undefined} aria-describedby={tooLong ? `${id}-error` : undefined}
-        onChange={(event) => setDraft({ ...draft, name: event.target.value })} autoComplete="off" placeholder="e.g. Restricted network" />
-      {tooLong ? <p id={`${id}-error`} role="alert">A name accepts at most 256 characters.</p> : null}
-      <label htmlFor={`${id}-network`}>Network access</label>
+        onChange={(event) => setDraft({ ...draft, name: event.target.value })} autoComplete="off" placeholder={t("form.namePlaceholder")} />
+      {tooLong ? <p id={`${id}-error`} role="alert">{t("form.nameTooLong")}</p> : null}
+      <label htmlFor={`${id}-network`}>{t("form.networkAccess")}</label>
       <select id={`${id}-network`} value={draft.access} disabled={busy || !networkEditable}
         onChange={(event) => setDraft({ ...draft, access: event.target.value as TemplateDraft["access"] })}>
-        <option value="enabled">Enabled</option><option value="disabled">Disabled</option>
+        <option value="enabled">{t("enabled")}</option><option value="disabled">{t("disabled")}</option>
       </select>
-      {!networkEditable ? <p>This Web cannot edit this network policy without replacing its allowed domains.</p> : null}
-      <p>Applies when creating a new Session with this Template. Existing Sessions keep their configuration.</p>
+      {!networkEditable ? <p>{t("form.policyLocked")}</p> : null}
+      <p>{t("form.sessionBoundary")}</p>
       <div className="template-form-actions">
-        <button className="button outline" type="button" disabled={busy} onClick={onCancel}>Cancel</button>
-        <button className="button primary" type="submit" disabled={busy || tooLong || Boolean(unchanged)}>{busy ? "Saving…" : template ? "Save changes" : "Create Template"}</button>
+        <button className="button outline" type="button" disabled={busy} onClick={onCancel}>{tCommon("actions.cancel")}</button>
+        <button className="button primary" type="submit" disabled={busy || tooLong || Boolean(unchanged)}>{busy ? t("form.saving") : template ? t("form.saveChanges") : t("form.create")}</button>
       </div>
     </form>
   );

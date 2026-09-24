@@ -1,12 +1,12 @@
 import { Check, Copy, KeyRound, Plus, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useLocale } from "../../lib/LocaleProvider";
+import { useTranslation } from "react-i18next";
 import { sandboxConsoleConfig } from "../sandbox/console-config";
 import { createConsoleKey, KeyRequestError, listConsoleKeys, revokeConsoleKey, safeKey, type ConsoleAPIKey, type IssuedConsoleAPIKey } from "./api-keys";
 import "./api-keys.css";
 
 export function ApiKeyPanel({ onReady }: { onReady?: (ready: boolean) => void }) {
-  const { t } = useLocale();
+  const { t } = useTranslation("firstRun");
   const [capability, setCapability] = useState<"loading" | "available" | "unavailable" | "error">("loading");
   const [revision, setRevision] = useState(0);
   const ready = useRef(onReady); ready.current = onReady;
@@ -34,9 +34,11 @@ export function ApiKeyPanel({ onReady }: { onReady?: (ready: boolean) => void })
 }
 
 function ManagedApiKeyPanel({ onReady }: { onReady?: (ready: boolean) => void }) {
-  const { t } = useLocale();
+  const { t } = useTranslation("firstRun");
+  const defaultName = t("My API key");
   const [keys, setKeys] = useState<ConsoleAPIKey[]>([]);
-  const [name, setName] = useState("My API key");
+  const [name, setName] = useState<string>(defaultName);
+  const nameEdited = useRef(false);
   const [issued, setIssued] = useState<IssuedConsoleAPIKey | null>(null);
   const [revision, setRevision] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -51,6 +53,7 @@ function ManagedApiKeyPanel({ onReady }: { onReady?: (ready: boolean) => void })
   const activeRequest = useRef(false);
   const lifetime = useRef<AbortController | null>(null);
   const ready = useRef(onReady); ready.current = onReady;
+  useEffect(() => { if (!nameEdited.current) setName(defaultName); }, [defaultName]);
   useEffect(() => {
     const controller = new AbortController(); lifetime.current = controller;
     return () => { controller.abort(); lifetime.current = null; };
@@ -118,7 +121,7 @@ function ManagedApiKeyPanel({ onReady }: { onReady?: (ready: boolean) => void })
       <div className="api-key-actions"><button type="button" className="button outline" onClick={() => void copy()}>{copied ? <Check size={14} /> : <Copy size={14} />}{t(copied ? "Copied" : "Copy key")}</button>
         <button type="button" className="button primary" onClick={() => setIssued(null)}>{t("I've saved this key")}</button></div>
       {copyFailed ? <p role="alert">{t("Select the key and copy it manually.")}</p> : null}</div> :
-      <form className="api-key-create" onSubmit={(event) => void create(event)}><label className="field"><span>{t("Key name")}</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required disabled={busy || Boolean(uncertain)} /></label>
+      <form className="api-key-create" onSubmit={(event) => void create(event)}><label className="field"><span>{t("Key name")}</span><input value={name} onChange={(event) => { nameEdited.current = true; setName(event.target.value); }} maxLength={80} required disabled={busy || Boolean(uncertain)} /></label>
         <button type="submit" className="button primary" disabled={busy || loading || !fresh || Boolean(uncertain) || !name.trim()}><Plus size={14} />{t(busy ? "Creating key…" : "Create API key")}</button></form>}
     {error ? <p className="api-key-error" role="alert">{error}</p> : null}
     {uncertain && keys.some((key) => key.id === uncertain) ? <p className="api-key-error" role="alert">{t("This key was created, but its secret cannot be shown again. Revoke it and create a new key.")}</p> : null}

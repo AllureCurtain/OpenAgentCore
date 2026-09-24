@@ -1,8 +1,8 @@
 import { ArrowLeft, ArrowRight, Check, Copy, KeyRound, Network, Terminal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { AgentCore, SavedAgent } from "@agents-core-web/agents-client";
+import { useTranslation } from "react-i18next";
 import type { CoreConnection } from "../../lib/connection";
-import { useLocale } from "../../lib/LocaleProvider";
 import { SandboxManagerView } from "../sandbox/SandboxManagerView";
 import { FirstRequest } from "./FirstRequest";
 import { ApiKeyPanel } from "../api-keys/ApiKeyPanel";
@@ -26,7 +26,8 @@ export function FirstRunHome({ active = true, ...props }: FirstRunHomeProps) {
 }
 
 function FirstRunBody({ connection, core, username, initialStep = 0, onStepChange, onOpenAgent, onDone, onRefresh }: FirstRunHomeProps) {
-  const { t, locale } = useLocale();
+  const { t, i18n } = useTranslation("firstRun");
+  const locale = i18n.resolvedLanguage || "en";
   const [step, setStep] = useState<FirstRunStep>(initialStep);
   const [copied, setCopied] = useState(false);
   const [copyFailed, setCopyFailed] = useState(false);

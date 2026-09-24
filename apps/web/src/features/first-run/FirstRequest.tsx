@@ -1,7 +1,7 @@
 import { ArrowUpRight, Bot, Check, Code2, Copy, Play, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { AgentCore, CoreHarnessKind, SavedAgent } from "@agents-core-web/agents-client";
-import { useLocale } from "../../lib/LocaleProvider";
+import { useTranslation } from "react-i18next";
 import { isLocalProxyBaseUrl, isValidDirectCoreBaseUrl, type CoreConnection } from "../../lib/connection";
 import { buildModelOptionGroups } from "../../lib/model-options";
 import { exampleForm, exampleInput, terminalExample } from "./example-request";
@@ -11,7 +11,7 @@ export function FirstRequest({ core, connection, scope, onCreated, onOpenAgent }
   core: AgentCore; connection: CoreConnection; scope: string;
   onCreated: (agent: SavedAgent) => void; onOpenAgent: (id: string) => void;
 }) {
-  const { t } = useLocale();
+  const { t } = useTranslation("firstRun");
   const request = useExampleRequest(core, scope, onCreated);
   const [form, setForm] = useState(() => exampleForm(buildModelOptionGroups([], import.meta.env.VITE_AGENT_MODEL_PRESETS, import.meta.env.VITE_AGENT_DEFAULT_MODEL).defaultModel, request.marker));
   const [harnesses, setHarnesses] = useState<CoreHarnessKind[]>([]);

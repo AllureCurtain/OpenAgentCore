@@ -1,4 +1,5 @@
 import { Plus, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import type { VaultCatalog } from "../../vaults/vault-catalog";
 import { vaultName } from "../../vaults/vault-catalog";
@@ -19,6 +20,7 @@ export function SessionToolsEditor({
   onChange,
   tools,
 }: SessionToolsEditorProps) {
+  const { t } = useTranslation("sessions");
   const update = (index: number, tool: AgentToolDraft) => {
     onChange(tools.map((candidate, position) => position === index ? tool : candidate));
   };
@@ -30,50 +32,49 @@ export function SessionToolsEditor({
     <section className="agent-form-section agent-tools-section" aria-label={label}>
       <div className="agent-form-section-heading">
         <h3>{label}</h3>
-        <span>Whole replacement · Core-owned execution</span>
+        <span>{t("tools.wholeReplacement")}</span>
       </div>
       <p className="agent-form-capability-note">
-        Only non-deferred Functions and service-origin HTTP MCP are accepted. Web Search, tool search,
-        programmatic calling, headers, OAuth, stdio, and client-origin MCP remain unavailable.
+        {t("tools.capabilityNote")}
       </p>
       <div className="agent-tools-list">
         {tools.map((tool, index) => tool.kind === "read-only" ? (
-          <article className="agent-tool-card agent-tool-read-only" key={`read-only-${index}`} aria-label="Unsupported inherited tool">
+          <article className="agent-tool-card agent-tool-read-only" key={`read-only-${index}`} aria-label={t("tools.unsupportedInherited")}>
             <header>
-              <div><strong>Unsupported inherited tool</strong><span>{tool.label}</span></div>
-              <button className="icon-button danger" type="button" aria-label={`Remove unsupported tool ${index + 1}`} onClick={() => remove(index)} disabled={disabled}><Trash2 size={14} /></button>
+              <div><strong>{t("tools.unsupportedInherited")}</strong><span>{tool.label}</span></div>
+              <button className="icon-button danger" type="button" aria-label={t("tools.removeUnsupported", { number: index + 1 })} onClick={() => remove(index)} disabled={disabled}><Trash2 size={14} /></button>
             </header>
-            <small>Remove this entry or choose “Clear all tools”; it cannot be copied into an executable Session override.</small>
+            <small>{t("tools.unsupportedHint")}</small>
           </article>
         ) : tool.kind === "function" ? (
           <article className="agent-tool-card" key={`function-${index}`}>
             <header>
-              <strong>Function</strong>
-              <button className="button outline" type="button" onClick={() => remove(index)} disabled={disabled}>Remove</button>
+              <strong>{t("tools.function")}</strong>
+              <button className="button outline" type="button" onClick={() => remove(index)} disabled={disabled}>{t("common.remove")}</button>
             </header>
             <div className="agent-tool-grid">
-              <label className="field"><span>Name</span><input value={tool.name} onChange={(event) => update(index, { ...tool, name: event.target.value })} placeholder="lookup_customer" disabled={disabled} /></label>
-              <label className="field"><span>Description</span><input value={tool.description} onChange={(event) => update(index, { ...tool, description: event.target.value })} placeholder="Look up a customer record" disabled={disabled} /></label>
+              <label className="field"><span>{t("common.name")}</span><input value={tool.name} onChange={(event) => update(index, { ...tool, name: event.target.value })} placeholder="lookup_customer" disabled={disabled} /></label>
+              <label className="field"><span>{t("common.description")}</span><input value={tool.description} onChange={(event) => update(index, { ...tool, description: event.target.value })} placeholder={t("tools.functionDescriptionPlaceholder")} disabled={disabled} /></label>
             </div>
             <label className="field">
-              <span>Parameters JSON Schema</span>
+              <span>{t("tools.parametersSchema")}</span>
               <textarea value={tool.parameters} onChange={(event) => update(index, { ...tool, parameters: event.target.value })} rows={6} spellCheck={false} disabled={disabled} />
-              <small>JSON object only. Functions are always non-deferred; at most 64 unique names, each at most 512 UTF-8 bytes.</small>
+              <small>{t("tools.parametersHint")}</small>
             </label>
           </article>
         ) : (
           <article className="agent-tool-card" key={`mcp-${index}`}>
             <header>
-              <strong>{tool.credentialId ? "Vault bearer HTTP MCP" : "HTTP MCP"}</strong>
-              <button className="button outline" type="button" onClick={() => remove(index)} disabled={disabled}>Remove</button>
+              <strong>{tool.credentialId ? t("tools.vaultMcp") : t("tools.httpMcp")}</strong>
+              <button className="button outline" type="button" onClick={() => remove(index)} disabled={disabled}>{t("common.remove")}</button>
             </header>
             <div className="agent-tool-grid">
               <label className="field">
-                <span>Server label</span>
+                <span>{t("tools.serverLabel")}</span>
                 <input value={tool.serverLabel} onChange={(event) => update(index, { ...tool, serverLabel: event.target.value })} placeholder="docs" disabled={disabled} />
               </label>
               <label className="field">
-                <span>Authentication</span>
+                <span>{t("tools.authentication")}</span>
                 <select
                   value={tool.credentialId ?? ""}
                   onChange={(event) => {
@@ -89,7 +90,7 @@ export function SessionToolsEditor({
                   }}
                   disabled={disabled}
                 >
-                  <option value="">Selected Vaults may resolve implicitly</option>
+                  <option value="">{t("tools.implicitVaults")}</option>
                   {catalog?.vaults.map((vault) => {
                     const credentials = catalog.credentials.filter((credential) => credential.vault_id === vault.id);
                     return credentials.length ? (
@@ -104,36 +105,36 @@ export function SessionToolsEditor({
                   })}
                 </select>
                 <small>
-                  Explicit Credentials lock their exact URL and owning Vault. Without one, only manually selected Vaults participate in implicit matching.
+                  {t("tools.credentialHint")}
                 </small>
               </label>
               <label className="field">
-                <span>Server URL</span>
+                <span>{t("tools.serverUrl")}</span>
                 <input value={tool.serverUrl} onChange={(event) => update(index, { ...tool, serverUrl: event.target.value })} placeholder="https://mcp.example/tools" inputMode="url" spellCheck={false} readOnly={Boolean(tool.credentialId)} disabled={disabled} />
               </label>
             </div>
             <fieldset className="agent-mcp-allowed-tools" disabled={disabled}>
-              <legend>Allowed tools</legend>
-              <label><input type="radio" checked={tool.allowedToolsMode === "all"} onChange={() => update(index, { ...tool, allowedToolsMode: "all", allowedToolsValue: null })} /> All advertised tools</label>
-              <label><input type="radio" checked={tool.allowedToolsMode === "list"} onChange={() => update(index, { ...tool, allowedToolsMode: "list" })} /> Only the listed tools</label>
+              <legend>{t("tools.allowedTools")}</legend>
+              <label><input type="radio" checked={tool.allowedToolsMode === "all"} onChange={() => update(index, { ...tool, allowedToolsMode: "all", allowedToolsValue: null })} /> {t("tools.allAdvertised")}</label>
+              <label><input type="radio" checked={tool.allowedToolsMode === "list"} onChange={() => update(index, { ...tool, allowedToolsMode: "list" })} /> {t("tools.onlyListed")}</label>
               {tool.allowedToolsMode === "list" ? (
-                <textarea value={tool.allowedTools} onChange={(event) => update(index, { ...tool, allowedTools: event.target.value })} rows={4} placeholder={"search\nread_document"} spellCheck={false} aria-label={`Allowed tools for ${tool.serverLabel || "MCP server"}`} />
+                <textarea value={tool.allowedTools} onChange={(event) => update(index, { ...tool, allowedTools: event.target.value })} rows={4} placeholder={"search\nread_document"} spellCheck={false} aria-label={t("tools.allowedFor", { server: tool.serverLabel || t("tools.mcpServer") })} />
               ) : null}
-              <small>Omitted or null allows every advertised tool; an empty list allows none.</small>
+              <small>{t("tools.allowedHint")}</small>
             </fieldset>
             <label className="agent-mcp-required">
               <input type="checkbox" checked={tool.required === true} onChange={(event) => update(index, { ...tool, required: event.target.checked })} disabled={disabled} />
-              Require this server for Core execution
+              {t("tools.requireServer")}
             </label>
           </article>
         ))}
       </div>
       <div className="agent-tool-actions">
         <button className="button outline" type="button" onClick={() => onChange([...tools, { kind: "function", name: "", description: "", parameters: "{\n  \"type\": \"object\"\n}" }])} disabled={disabled}>
-          <Plus size={13} /> Add Function
+          <Plus size={13} /> {t("tools.addFunction")}
         </button>
         <button className="button outline" type="button" onClick={() => onChange([...tools, { kind: "mcp", serverLabel: "", serverUrl: "", allowedToolsMode: "all", allowedTools: "", allowedToolsValue: null, required: false, credentialId: null }])} disabled={disabled}>
-          <Plus size={13} /> Add HTTP MCP
+          <Plus size={13} /> {t("tools.addHttpMcp")}
         </button>
       </div>
     </section>
