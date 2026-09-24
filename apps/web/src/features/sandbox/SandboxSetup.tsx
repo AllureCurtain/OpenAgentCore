@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import type { InitializeSandboxDeployment, SandboxProvider } from "@agents-core-web/agents-client";
-import { useLocale } from "../../lib/LocaleProvider";
+import { useTranslation } from "react-i18next";
 import { sandboxSetupOrigin } from "./core-origin";
 
 export function SandboxSetup({ initialCoreUrl, disabled, onInitialize }: {
@@ -8,7 +8,7 @@ export function SandboxSetup({ initialCoreUrl, disabled, onInitialize }: {
   disabled: boolean;
   onInitialize: (input: InitializeSandboxDeployment) => Promise<void>;
 }) {
-  const { t } = useLocale();
+  const { t } = useTranslation("sandbox");
   const [provider, setProvider] = useState<SandboxProvider | "">("");
   const [coreUrl, setCoreUrl] = useState(initialCoreUrl);
   const origin = sandboxSetupOrigin(coreUrl);

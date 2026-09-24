@@ -3,7 +3,7 @@ import type {
   InputMessage,
   SavedAgent,
 } from "@agents-core-web/agents-client";
-
+import i18n from "../../../i18n";
 import {
   serializeAgentToolDrafts,
   toolDraftsFromAgent,
@@ -23,6 +23,8 @@ import {
   sessionInitialInputError,
   type SessionInitialInputDraft,
 } from "./session-initial-input";
+
+const ts = (key: string) => i18n.t(key as never, { ns: "sessions" });
 
 export type SessionAgentMode = "inline" | "saved";
 export type SessionToolsMode = "clear" | "inherit" | "replace";
@@ -138,7 +140,7 @@ export function validateInlineSessionAgent(
 ): SessionAgentOverrideValidation {
   const model = values.inlineModel.trim();
   if (isCoreWhitespaceOnly(model)) {
-    return { overrideError: "Enter a model ID for the inline Agent." };
+    return { overrideError: ts("validation.inlineModelRequired") };
   }
   const serialized = serializeAgentToolDrafts(values.inlineTools, catalog);
   if (serialized.error) return { overrideError: serialized.error };
@@ -161,7 +163,7 @@ export function validateSessionAgentOverrides(
   catalog: VaultCatalog | null = null,
 ): SessionAgentOverrideValidation {
   if (!sourceAgent) {
-    return { overrideError: "Select a saved Agent before configuring Session-only overrides." };
+    return { overrideError: ts("validation.selectSavedAgent") };
   }
   if (!values.overridesEnabled) {
     const blocker = sessionAdmissionBlocker(sourceAgent, catalog);
@@ -173,7 +175,7 @@ export function validateSessionAgentOverrides(
   const agent: InlineAgentInput = {};
   if (values.overrideModelEnabled) {
     const model = values.overrideModel.trim();
-    if (isCoreWhitespaceOnly(model)) return { overrideError: "Enter a non-empty Session model override." };
+    if (isCoreWhitespaceOnly(model)) return { overrideError: ts("validation.nonemptyModelOverride") };
     agent.model = model;
   }
   if (values.overrideInstructionsEnabled) {
@@ -316,23 +318,23 @@ export function validateSessionAgentSubmission(
   catalog: VaultCatalog | null,
 ): SessionAgentSubmissionValidation {
   if (mode === "inline") {
-    if (agentId !== undefined) return { error: "Inline Session creation must not send agent_id." };
+    if (agentId !== undefined) return { error: ts("validation.inlineMustNotSendId") };
     const agent = strictInlineAgent(requestAgent);
-    if (!agent) return { error: "The inline Agent request is outside the supported Web profile." };
+    if (!agent) return { error: ts("validation.invalidInlineProfile") };
     const effectiveAgent = inlineAgentSnapshot(agent);
     const blocker = sessionAdmissionBlocker(effectiveAgent, catalog);
     return blocker ? { error: blocker } : { effectiveAgent, requestAgent: agent };
   }
 
   if (mode !== "saved" || typeof agentId !== "string" || !agentId) {
-    return { error: "Select a loaded saved Agent or use an inline Agent." };
+    return { error: ts("validation.selectLoadedOrInline") };
   }
   const sourceAgent = agents.find((agent) => agent.id === agentId);
-  if (!sourceAgent) return { error: "The selected saved Agent is not loaded." };
+  if (!sourceAgent) return { error: ts("validation.savedAgentNotLoaded") };
   let agent: InlineAgentInput | undefined;
   if (requestAgent !== undefined) {
     agent = strictSavedOverride(requestAgent) ?? undefined;
-    if (!agent) return { error: "The Session-only Agent override is outside the supported Web profile." };
+    if (!agent) return { error: ts("validation.invalidOverrideProfile") };
   }
   const effectiveAgent = effectiveSessionAgent(sourceAgent, agent);
   const blocker = sessionAdmissionBlocker(effectiveAgent, catalog);

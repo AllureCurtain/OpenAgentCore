@@ -24,6 +24,7 @@ func TestPublicEnvironmentInputFailureMappings(t *testing.T) {
 		{execution.ErrEnvironmentInputExpired, http.StatusConflict, "environment_input_expired"},
 		{execution.ErrEnvironmentInputCancelled, http.StatusConflict, "environment_input_cancelled"},
 		{execution.ErrExecutionUnavailable, http.StatusServiceUnavailable, "execution_unavailable"},
+		{execution.ErrWhitespaceOnlyText, http.StatusBadRequest, "unsupported_or_invalid_configuration"},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			recorder := &inputRecorder{err: fmt.Errorf("submission: %w", tc.err)}
@@ -31,6 +32,7 @@ func TestPublicEnvironmentInputFailureMappings(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/v1/agents/sessions/session/events", strings.NewReader(`{"events":[{"type":"agent.session.input.message","input":[{"role":"user","content":[{"type":"input_text","text":"Start"}]}]}]}`))
 			request.Header.Set("Authorization", "Bearer test-api-key")
 			request.Header.Set("OpenAI-Beta", "agents=v1")
+			request.Header.Set("Content-Type", "application/json")
 			request.Header.Set("Idempotency-Key", "retained-request")
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
@@ -72,6 +74,7 @@ func TestPreparedEnvironmentInputWaitExtendsOnlyItsResponseDeadline(t *testing.T
 			create := httptest.NewRequest(http.MethodPost, "/v1/agents/sessions", strings.NewReader(`{"agent":{"model":"MiniMax-M3"},"environment":`+environmentJSON+`,"input":"Prepare the response deadline fixture."}`))
 			create.Header.Set("Authorization", "Bearer key")
 			create.Header.Set("OpenAI-Beta", "agents=v1")
+			create.Header.Set("Content-Type", "application/json")
 			created := httptest.NewRecorder()
 			handler.ServeHTTP(created, create)
 			if created.Code != http.StatusCreated {
@@ -93,6 +96,7 @@ func TestPreparedEnvironmentInputWaitExtendsOnlyItsResponseDeadline(t *testing.T
 			}
 			request.Header.Set("Authorization", "Bearer key")
 			request.Header.Set("OpenAI-Beta", "agents=v1")
+			request.Header.Set("Content-Type", "application/json")
 			type result struct {
 				response *http.Response
 				err      error

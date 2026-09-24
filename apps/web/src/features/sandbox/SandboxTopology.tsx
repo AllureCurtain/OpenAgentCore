@@ -1,6 +1,6 @@
 import { Network, Server } from "lucide-react";
 import type { SandboxAllocation, SandboxNode } from "@agents-core-web/agents-client";
-import { useLocale } from "../../lib/LocaleProvider";
+import { useTranslation } from "react-i18next";
 import { sandboxNodeStatus } from "../../lib/sandbox-labels";
 import "./SandboxTopology.css";
 
@@ -11,7 +11,8 @@ export function SandboxTopology({ nodes, allocations, stale, selectedId, onSelec
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
-  const { t, locale } = useLocale();
+  const { t, i18n } = useTranslation("sandbox");
+  const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
   const rows = Math.ceil(nodes.length / 2);
   const height = Math.max(460, rows * 168 + 112);
   const positioned = nodes.map((node, index) => {

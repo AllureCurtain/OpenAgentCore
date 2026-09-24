@@ -38,12 +38,17 @@ Tenant ownership is enforced by Core for both queries and streams.
 Adapters publish cumulative measurements for the current execution through the
 existing neutral Usage contract. Core replaces a Turn's snapshot atomically;
 repeated snapshots, including terminal repeats, do not add consumption. The
-Session total sums recorded root-Turn measurements, not Subagent Turn lists.
+Session total sums recorded root-Turn measurements, not Subagent Turn lists. It
+is null while any root Turn has not ended and once any root Turn ends with
+unknown usage ([item serialization](#item-serialization-2026-09-23)).
 It is best-effort accounting, not an invoice or an estimate of missing work.
 
 - Codex publishes observed snapshots while the Turn is active. Exact native
   resume excludes the previous Session total from the new Turn. A complete public
   breakdown requires valid input, cached, output, reasoning and total counters.
+  A thread total that has not advanced past the Turn's baseline measures nothing
+  for that Turn, so a Turn interrupted before any response reported usage stays
+  null rather than zero.
 - Claude retains native result evidence internally. Its per-turn and cumulative
   query/model counters have different scopes, and reasoning attribution can be
   incomplete. Complete public TokenUsage remains unqualified and null.
@@ -201,11 +206,14 @@ Deferred, with evidence retained in `findings.json`:
 - EVT-08: official Items omit in-progress and incomplete output Items; Core keeps
   them under native history ownership.
 - EVT-09 and EVT-10: null-valued `output_index`, `phase` and `error` fields and
-  the initial assistant content belong to a separate serialization batch.
-- EVT-11 and EVT-12: unknown call/Turn result and conflict error codes belong to
-  ERROR-PROTOCOL-001.
+  the initial assistant content were since aligned by the
+  [item serialization batch](#item-serialization-2026-09-23).
+- EVT-11 and EVT-12: unknown call/Turn result and conflict error codes were
+  since aligned by the [input conflict batch](official-semantics-alignment.md#session-input-conflicts-and-result-targets--september-23).
 - EVT-13: official Session usage became null when any root Turn usage was
-  unknown; Core sums the known Turns. The in-progress case is unverified.
+  unknown; Core summed the known Turns. The
+  [item serialization batch](#item-serialization-2026-09-23) adopted the official
+  rule, including the non-terminal case later observed as ST-03.
 - EVT-19: the Core terminal sequence for a Turn cancelled mid-text is recorded by
   this batch's live acceptance, not changed by it.
 
@@ -215,3 +223,152 @@ initial-input, self-hosted and initial-failure scripts, plus the TypeScript
 client and Core Web unit tests. Resource-level replay, live model acceptance and
 the full gate are recorded separately; retry, self-hosted, hosted and no-input
 creation stream lifetimes have no official observation.
+
+## Item serialization, 2026-09-23
+
+Evidence: the second campaign scan's owned official `environment:none` Sessions
+(private `~/.parsar/remediation/20260923/campaign-scan-2/events-tools/`,
+`findings.json` EVT-09, EVT-10 and EVT-13, raw frames `official/streams-s1..s4.json`
+and Items pages `official/calls-s2.json` `s2-items-after-t1`, `calls-s4.json`
+`s4-items`), the first scan's SES-23 and SES-25 (`campaign-scan-1/sessions/`) and
+VA-11 (`campaign-scan-1/vaults-agents/`), the fifth scan's ST-03
+(`campaign-scan-5/sessions-turns/findings.json`, raw `official/calls.json`), and
+the live-kit observation EVT-24
+(`creation-stream-settlement/acceptance/candidate-evidence/codex-kimi/attempt-1/`,
+`r1-events.json`, `r1-reads.json`, `daemon.log`). The plan is
+`~/.parsar/remediation/20260923/item-serialization/PLAN.md`. This batch changes
+field presence, event framing and the Session usage rule only; it never alters
+model output text and never fills a model-derived default or counter.
+
+- **Null output index (S1, EVT-09).** Official `item.added` events for input Items
+  (user messages, function results) carried `output_index: null`. Core Item events
+  (`item.added`, `item.done`) now always carry `output_index`, null for input
+  Items; Session and Turn events keep omitting it.
+- **Message phase (S2, SES-25, EVT-09).** Official message Items always carried
+  `phase`, null for user messages. Core messages in Items pages and events now
+  carry `phase`: the native phase when the adapter reports one (Codex message
+  observations, Claude structured output), otherwise null. Native phase values are
+  unchanged.
+- **Function result fields (S3, EVT-09).** Official `function_call_output` Items
+  always carried both `output` and `error` (`error` null when not submitted; every
+  sampled submission had an output). Core Items and events
+  now always carry both, null when the submission omitted them. The stored payload
+  and the saved submission keep the submitted presence; the wire no longer
+  distinguishes an omitted field from null. The official Items page reported a
+  failed result's `output` as null although its event carried the submitted array;
+  Core keeps the submitted content in both.
+- **Assistant message sequence (S4, EVT-10).** Official streams added an assistant
+  message in progress with `content: []`, then `content_part.added` with empty
+  text, deltas, `output_text.done`, `content_part.done` and `item.done`. Core no
+  longer pre-fills the part in `item.added`: it sends the same sequence, with the
+  Item in progress and empty content. The stored Item and later reads are
+  unchanged. Clients that append a part on `content_part.added` no longer see a
+  duplicate.
+- **Non-streamed finals (S5, EVT-10).** Official structured output streamed like
+  any message. A Core message first observed complete, such as Claude structured
+  output or a legacy final answer, now follows the same sequence with its full
+  text in exactly one `output_text.delta`. The delta is the native text byte for
+  byte; this is event framing only.
+- **Reasoning keys (S6, SES-23, VA-11).** Official Agent and Session responses
+  always carried `reasoning.effort` and `reasoning.summary`. Core saved Agent,
+  Session, Session list and Session event responses now serialize both keys, null
+  when unset, instead of `{}`. Official responses fill the model-derived default
+  effort (for example `medium`); Core does not, which remains a documented native
+  difference. Requests and stored configuration keep their encoding, so creation
+  retry identity is unchanged.
+- **Session usage (S7, EVT-13, ST-03).** Official Session usage stayed null after
+  a root Turn ended with unknown usage, and was the exact sum when every Turn was
+  known (EVT-13). In three more samples it was null in every read while a root
+  Turn was in progress or waiting for a function result, even after earlier
+  Turns were measured, and returned to the sum once every Turn had settled with
+  known usage (ST-03: retrieve, list and the metadata update response). Core
+  Session usage (retrieve, list, update and Session event snapshots) is now the
+  sum of recorded root Turn usage only when every root Turn has ended (completed,
+  failed or cancelled) with known usage; otherwise it is null. A later measured
+  Turn does not restore the sum after an unmeasured one. The official samples did
+  not read a queued Turn; Core treats queued Turns like active ones, since their
+  consumption is not yet known. A root Turn cancelled while still queued ends
+  without usage, so public Session usage stays null afterwards. That follows
+  from the terminal rule; ST-03 has no official sample of the case, so it is an
+  inference. A usage snapshot that an active Codex Turn
+  records stays readable on that Turn but does not count in the Session until the
+  Turn ends. Claude and MiniMax Turns remain unmeasured, so their Sessions stay
+  null. Official reads also lagged settlement by seconds; Core does not copy that
+  timing.
+- **Measured telemetry usage (Core extension).** Runtime observation telemetry,
+  runtime history token points and their OTLP export are Core extensions with no
+  official counterpart. They read a separate internal measured usage: the sum of
+  every recorded root Turn snapshot, active Turns included, null only when
+  nothing is recorded. It differs from public Session usage by design, so the
+  token series stays continuous while Turns run and after an unmeasured Turn.
+  Public Session usage (retrieve, list, update and every Session event snapshot,
+  including the function-action and Environment-input snapshots) keeps the rule
+  above. Core Web reads public Session usage. Its Runtime summary's reported
+  token total keeps a listed Session's last reported total while the usage is
+  null, so it does not drop; rows still show the current public value. Its live
+  token trend keeps that Session in the series but treats the held total as
+  unknown: those intervals are gaps, never zero, and the rate once usage is
+  reported again is spread over the time since its last report.
+- **Cancelled Codex usage (S8, EVT-24).** The all-zero counters on a cancelled
+  Codex Turn came from the Codex adapter, not from Core or storage. The Turn was
+  the second of its Session, on a resumed native thread, and was cancelled
+  mid-text. Native reports a cumulative thread total, and the adapter publishes
+  its difference from the Turn's baseline. The daemon forwarded no usage frame
+  for the Turn until one right after the cancel, whose total had not advanced
+  past the baseline. The adapter published the difference, all zeros, as a
+  complete measurement, the cancellation outcome repeated it, and Core stored
+  what it received. Native did not report zero usage for the Turn, it reported no
+  new usage. The adapter now ignores a total that has not advanced past the
+  Turn's baseline, so the Turn stays null, as official terminal usage does. A
+  total that later advances is still published. An explicit native zero in a
+  per-Turn usage payload would still be kept.
+
+Unchanged: the resume/cancel event sets (EVT-05/06), result publication timing
+(INTERACTION-PUBLICATION-001), reconnect catch-up (EVT-07), Items list contents
+(EVT-08), native phase values, Core-only extension fields and the stored
+payloads. The TypeScript client accepts `output_index: null`, `phase: null` and
+the explicit function result nulls, and still accepts older Cores that omit them;
+Core Web accepts a null message phase.
+
+Batch validation used Go contract tests for the wire shapes, API tests for the
+Session and stream rendering, real-PostgreSQL store tests for the event sequences,
+stored-payload presence and the Session usage rule, the Codex adapter usage tests
+(with `-race`), the pinned-SDK official client suite against a local server and
+the TypeScript client and Web unit tests. `make openapi` adds only `x-nullable` to
+Item `phase` and event `output_index`; `make sqlc-generate` changes
+`SessionTokenUsage` and adds the internal `SessionMeasuredTokenUsage`. The native pinned-SDK scripts updated for these shapes run
+only with a native daemon, and live model acceptance is recorded separately.
+
+## Hosted initialization failure events, 2026-09-23
+
+Evidence: campaign scan 6 HI-01..04 (private
+`~/.parsar/remediation/20260923/campaign-scan-6/hosted-init/`, raw frames
+`official/007-S2-events.json` and `009-S3-events.json`); rows H1–H8 are in
+[official semantics](official-semantics-alignment.md#hosted-initialization-failure--september-23).
+
+- **Order.** A hosted Environment that fails to provision records
+  `agent.session.environment.failed`, `error` and `agent.session.failed` in one
+  transaction, as officially observed. The official streams showed no
+  `environment.pending` event; Core records none either.
+- **Payloads.** `environment.error` is `{type: environment_error, code:
+  environment_connection_failed, message: "The environment failed to connect."}`.
+  The `error` event carries the pinned `SessionError`: `{type: environment_error,
+  code: sandbox_error, message: <safe reason>, param: null}`. Core's own
+  `stream_interrupted` frame keeps its three-field error without `param`, which
+  released clients validate exactly. The `agent.session.failed` snapshot has `status: failed`,
+  the reason as `error`, `required_actions: []` and the failure time as
+  `last_active_at`, identical to later retrieve and list reads. Pending input
+  settled by the failure is captured in the same snapshot.
+- **Stream lifetime.** GET and creation streams end right after that
+  `agent.session.failed`, as the official GET stream did. This changes the
+  earlier rule that GET streams never end on their own, for this terminal case
+  only: a Turn failure leaves GET streams open because the Session can continue,
+  and a GET stream opened after the failure stays open (not observed officially).
+- **Client.** The TypeScript client still raises `stream_interrupted` as an
+  `AgentCoreError`, and now delivers other `error` events to `onEvent` as
+  `AgentSessionErrorEvent`, before the failed snapshot. It accepts an optional
+  nullable `param` on stream errors. Core Web renders the failed Session and its
+  error from the snapshot and ignores the error event.
+
+Environments that failed before migration `000062` have no recorded reason; they
+keep their earlier projection and events.

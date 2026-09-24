@@ -86,20 +86,57 @@ that family. Record uncertain range/lookup behavior separately; do not reproduce
 observed upstream server failures as compatibility behavior. See
 `contracts/agents-api/list-query-semantics.md` for the bounded evidence.
 
+Every Agents API JSON route reads its body through the shared gate
+(`readJSONObject`) before route decoding, validation or lookup. It requires a JSON
+Content-Type, applies the route's body limit and rejects invalid UTF-8, malformed
+JSON (including unpaired surrogate escapes), repeated keys and non-object roots
+with the official messages; an empty body or null becomes `{}`. DELETE, multipart,
+Core extension and internal routes keep their own readers. Member names match
+exactly: decode request objects with `decodeInputObject`, or check
+`inexactMember` before another decoder, so that encoding/json never matches
+a case variant to a field. See
+`contracts/agents-api/official-semantics-alignment.md#request-body-parsing--september-23`.
 Report validation failures with official evidence through the typed field error,
 which emits `invalid_request_error` with the observed param and message; keep
-other local codes until their official fields are sampled. Agent configuration
+other local codes until their official fields are sampled. Every 409 has type
+`conflict_error`. Session input conflicts and changed tool results also use code
+`conflict_error`; documented Core-only conflicts, such as Idempotency-Key reuse,
+sandbox administration and Environment input states, keep their local codes. Agent configuration
 (saved create/update and the inline Session agent) uses one path-tracking
 validator of the pinned shapes before its parsers and harness admission, which
 keep their local codes; do not grow it into a JSON Schema engine. A malformed path
 identifier must produce exactly the response of a well-formed missing one on that
 route, including invalid bodies, queries and storage availability: resolve it to
 the never-assigned maximum UUID and let the missing path run, or reject it
-directly only where the lookup is the next check. Malformed list cursors and
-request-body references keep their own errors. Reject U+0000 in metadata
+directly only where the lookup is the next check. Request-body references keep
+their own errors. An `after` cursor that does not resolve inside its already
+resolved parent, malformed ones included, returns that list family's observed
+error: the missing-resource 404 on lookup lists, otherwise the typed store cursor
+error. Foreign and missing cursors stay identical; see
+`contracts/agents-api/list-query-semantics.md`. Reject U+0000 in metadata
 explicitly with its `metadata.<key>` param; other stored strings rely on the
 PostgreSQL error mapping, so keep each request's writes in one transaction. See
 `contracts/agents-api/official-semantics-alignment.md`.
+
+Serve requests on their canonical path and never redirect. `api.CanonicalPaths`
+wraps the complete server handler in both configurations (the daemon ServeMux and
+the API router alone), so every route group, middleware, authentication check and
+handler sees one path. It starts from the request's own spelling, never a path
+re-escaped from its decoded form: invalid bytes are percent-encoded, unreserved
+escapes decoded, empty and dot segments resolved with ServeMux semantics, the
+trailing slash kept, and other escapes such as `%2F` and `%5C` left encoded;
+`Path` and `RawPath` are set consistently for chi and the ServeMux. Do not route
+or authorize on a path outside that wrapper. On the Beta
+group the constant OpenAI-Beta check (exactly one `agents=v1` value) runs before
+authentication, and authentication still precedes every Beta handler, 404 and 405.
+Every Agents API 401 has type `invalid_request_error`: null code on Beta routes; on Files,
+Skills and Core project extensions `invalid_api_key` only for a rejected Bearer
+credential. Agents API responses carry a fresh `X-Request-Id` (also in the log
+context), `OpenAI-Version`, `OpenAI-Processing-Ms` and nosniff through the API
+router's own middleware, not the shared log middleware. HEAD runs GET routes;
+streaming, content-download, live directory, Runtime observation and Runtime
+history routes register an explicit HEAD 405 instead. Every 405 of the API router, unknown methods included, has the JSON
+body and lists the route's methods in `Allow`.
 
 Keep runtime state, test artifacts and build output under `~/.parsar/`. Require
 absolute user-supplied working directories. Keep credentials out of source and
@@ -325,8 +362,9 @@ common field.
 Runtime history uses the existing Core PostgreSQL database: one sanitized row per
 periodic observation, seven-day retention and bounded reads. It is best-effort
 operational evidence, not execution or Usage authority. The execution owner samples
-by default every 30 seconds. Existing canonical Session Usage supplies token
-snapshots; never aggregate provider counters as model tokens. Preserve missing data
+by default every 30 seconds. Core's internal measured Session usage (every
+recorded root Turn snapshot, active Turns included) supplies token snapshots, not
+the public Session usage rule; never aggregate provider counters as model tokens. Preserve missing data
 and reset CPU derivation across compute incarnations or counter regressions.
 The bounded asynchronous database writer and optional OTLP exporter have independent
 queues; external telemetry outages must not stall local history or execution.
@@ -345,7 +383,10 @@ The private daemon wire protocol is 0.5.0. Initial, prepared and active input us
 the same ordered MessageInput contract, replacing scalar prompts and attachments.
 User-message boundaries and text/image order remain intact through Core and the
 Runtime wire; adapters own native conversion and receipt aggregation. Text-only
-transports reject image content rather than dropping it. Codex has a flat native
+transports reject image content rather than dropping it. Text is never trimmed:
+engine profiles declare whether whitespace-only messages are qualified, and
+unqualified harnesses (Claude SDK, MiniMax Code) reject them at admission rather than having
+their input rewritten. Codex has a flat native
 input list and uses blank-line separators between messages; this does not preserve
 independent native user-message boundaries. No old wire fallback is maintained.
 Deploy Core and daemon together; the existing major/minor WebSocket check rejects
@@ -429,6 +470,15 @@ This bounds extra maintenance work but does not bypass capacity, a busy lifecycl
 gate or multi-page scheduling, and does not guarantee a resume deadline.
 
 A recovered or uncertain running installation fails and uses existing cleanup, without replaying writes.
+A hosted provisioning failure is terminal for its Session. The allocation's cleanup
+transaction stores a safe reason with the failed Environment and records
+`environment.failed`, `error` and one `agent.session.failed`; Session reads derive
+`failed`, that reason and the failure time from the same record, and live streams end
+after the failed event. The initializer reports only the integer exit status of a
+failed sandboxed step. Core composes the reason from a fixed step label and that status,
+never from command, package-manager or file output; unknown effects, timeouts and
+receipts without a status keep a generic reason. New input then gets the observed 409
+`conflict_error`; expiry and pending-input settlement keep their behavior.
 Completed environments never reinstall initial files on reconnect or native recovery.
 Provider RunCommand carries bounded stdin, not confidential argv. Only fixed trusted
 initializers may run with Runtime authority. User setup and package install hooks
@@ -1078,7 +1128,11 @@ qualify this layout. The read-only deployment needs neither writer setting.
 
 Transfer a complete bounded body in acknowledged 64 KiB frames before invoking
 the existing installer, verify the declared digest, and run no model for upload.
-Keep the existing private 50 MiB bound distinct from upstream protocol limits.
+Keep the private 50 MiB transfer bound distinct from the official 5 MiB decoded
+inline bound, which the API checks before any Runtime work. Files.create uses the
+installer's explicit create mode: parents are created without following links and
+an existing path is never replaced. Initial Session files and Skills keep the
+installer's replace mode; do not change one caller's mode for another.
 The dedicated Runtime excludes execution while receiving or applying a write;
 malformed, incomplete or expired transfers cannot reach the installer. Exact
 commit/rejection receipts release the mutation owner. Missing or ambiguous
@@ -1251,8 +1305,9 @@ admission deadline plus response grace. Request/observer disconnect stops waitin
 not the durable reservation or execution; retries keep the original identity and
 deadline. The Worker remains the readiness, promotion and Start owner. Local failure
 mapping uses 409 `environment_input_expired` / `environment_input_cancelled`, 503
-`execution_unavailable` for ownership loss, and existing 404 for deletion. Exact
-hosted failure status/body and pending-input crash recovery remain unverified.
+`execution_unavailable` for ownership loss, and existing 404 for deletion. New input
+after a hosted provisioning failure returns the observed 409 `conflict_error`; other
+exact hosted failure statuses/bodies and pending-input crash recovery remain unverified.
 Principal acceptance must use public Session creation and input against the built
 standalone service, including a wait exceeding its ordinary 30-second write timeout,
 real remote commands/files and a second native-history Turn. Private provisioning
@@ -1548,6 +1603,62 @@ microsandbox runtime/firmware hashes and executable native payloads. Release gen
 qualification. A release must be tested from fresh extraction with real models;
 no synthetic result may substitute for native execution acceptance.
 
+Distribution `images` records each exported image's config digest;
+`image_manifest_digests` records its OCI manifest/index digest. Derive and verify
+both from the same archive, including its referenced config and layer bytes, and
+require the build host's selected image ID to match one of them. Docker's classic
+store identifies images by config, while its containerd store uses the OCI
+descriptor. Core, node and self-hosted installers share one resolver for these
+required identities: confirm Linux amd64 and the returned immutable local ID,
+then use that ID in service/provider configuration and Runtime launches. Tags do
+not replace identity verification. The microsandbox-qualified `runtime_ref`
+remains independent of Docker's local store identity.
+
+The manifest is the shared download contract for Core, node and self-hosted
+installers: flat versioned filenames, compressed Runtime size/hash and unpacked
+size/hash, with HTTPS release URLs or the explicit offline payload. Download into
+private temporary files, verify before atomic promotion, and reuse only verified
+cache entries or exact image identities. Core's default image must not acquire
+execution-only payloads. Python zipapps bundle the shared resolver with each
+remote bootstrap; the console publishes only fixed non-secret files and declared
+artifact names. Release automation builds artifacts and may create an unpublished
+draft, but cannot claim real execution qualification or public availability.
+Manual builds use the legal `build-<full source SHA>` release tag; tag-triggered
+builds use the actual `v*` tag. The manifest download base and draft tag must match,
+while artifact filenames and source provenance retain the full source SHA.
+Qualify the exact downloaded production artifacts before publishing the draft;
+keep qualified executable, image and source payload bytes and source identity
+unchanged. A recorded release-address/checksum-only repack requires proof that
+every other archive member is unchanged and verification of final published asset
+digests and URLs. Never use an acceptance
+image containing a private test CA or model credential as a release input.
+Repository visibility is independent of publication. Do not add repository
+credentials to installed node/Runtime configuration to bypass download access.
+
+Project-authenticated executor-credential extensions remain outside the upstream
+API namespace and reuse the existing restricted issuer. They require the exact
+creator of a live self-hosted Environment; deployment administrator authority and
+shared Session read access do not grant credential issuance. The console preserves
+explicit caller credentials on these routes and never substitutes its administrator
+key. Self-hosted installation reuses Docker Runtime isolation, owns no sandbox
+node or Core allocation, and retains user-owned native history after uncertain
+launches. Report started, connected and real execution success separately.
+Self-hosted installation confirms connection through the private daemon transport
+using only its restricted executor credential. The read checks the exact live
+Environment/key binding and current authenticated connection; it never enrolls,
+allocates, wakes a sandbox or grants project resource access. Console forwarding
+preserves this credential without replacing it with an administrator or project
+key. Bounded polling and reruns retain the original container and history;
+timeout is a diagnostic failure, not permission to relaunch. An explicit installer
+`--public-url` supplies both the console origin and the advertised daemon `wss`
+origin. Keep local managed Provider routing separate; do not return an internal
+Compose hostname to a user-managed Runtime when an external origin was supplied. Bootstrap routing uses the
+node bound to the authenticated device's persisted allocation, never request Host
+or caller-supplied placement fields. An embedded managed node retains its internal
+Core route; remote managed nodes use the selected setup/public route, while
+self-hosted devices retain the deployment's advertised public address. This does
+not widen sandbox network policies or change credential admission.
+
 The distribution build sets umask 022 for non-root-readable payloads; installation
 credentials and state retain their explicit private permissions.
 
@@ -1562,8 +1673,9 @@ a provider selects microsandbox; `--provider` without enabling the option is an
 error. Web-only mode cannot enable a sandbox provider. Core-only mode retains the
 same opt-in rule. Missing KVM fails when microsandbox is selected without changing
 that choice.
-The distribution supplies native Core/helper binaries and pinned msb runtime and
-firmware. For microsandbox, Core is a native systemd user service with direct
+The thin distribution supplies native Core binaries. Provider helpers, the node
+agent, Runtime launcher and pinned msb runtime/firmware are separate, same-revision
+assets resolved only when selected. For microsandbox, Core is a native systemd user service with direct
 `ExecStart` and `KillMode=process`: its restart must preserve the Provider's resident
 microVM/helper processes. Never package those processes inside Core's container
 PID namespace, kill their process group on Core stop, or add recovery mechanisms to
@@ -1577,7 +1689,7 @@ The basic distroless API image and binary builds remain independent artifacts.
 The standalone API release and Core distribution both include the Hosted Sandbox
 Manager guide at the relative path used by their packaged README. Include the
 guide in each artifact checksum list so extracted documentation matches its build.
-The distribution includes the sandbox-node binary. An enabled local node uses a
+The node asset includes the sandbox-node binary. An enabled local node uses a
 persistent private state directory, explicitly separate from read-only configuration.
 Docker grants Core write access only to that node-state mount; native Core uses the
 same installation-owned directory. Zero-node installs create no node identity
@@ -1594,8 +1706,9 @@ credential encryption key. Provider identity/backend namespace and native histor
 must not change on a repeated install.
 
 `services/core-console` serves the production Web build and forwards public `/v1`
-requests to one configured Core using its project bearer, after console Basic
-authentication. The paired console uses the same login for allowlisted sandbox
+requests to one configured Core using its project bearer after administrator
+authentication. New installations use a console-local single administrator account;
+existing installations without explicit account mode retain Basic authentication. The paired console uses the same login for allowlisted sandbox
 management routes and supplies its private server-side administrator token from
 `CORE_CONSOLE_SANDBOX_ADMIN_TOKEN_FILE`. The browser receives only capability
 flags through `/console/config`, never the deployment bearer. Project API keys
@@ -1629,7 +1742,66 @@ verification, and passes the enrollment credential only to the installer process
 Both proxy paths retain fixed-origin, cross-site, safe-path, redirect and Upgrade
 restrictions through the standard Go reverse proxy with streaming/cancellation.
 The console implements no product identity, resource semantics, Runtime discovery
-or execution loop.
+or execution loop. Its local administrator account grants the complete console
+surface; do not introduce Web roles, invitations or per-project Web identities.
+Agent API caller keys remain independent of the administrator password and cookie.
+Explicit, unambiguous caller Bearer requests to public `/v1` routes pass through
+unchanged to Core, without borrowing the console's caller or administrator key.
+The same origin, path, method and transport restrictions still apply.
+
+Account mode is explicit (`CORE_CONSOLE_AUTH_MODE=account`) and requires a private
+setup-key file and a private writable state directory. Only the installation's
+one-time setup credential can claim the administrator account. The atomic durable
+account record stores a password hash; corruption or a missing required credential
+must never reopen registration. Account creation is race-safe. Cookie sessions are
+bounded, HttpOnly, SameSite Strict and Secure for HTTPS origins; a restart requires
+sign-in again, without deleting the account. Unauthenticated access is limited to
+the static login UI, finite console authentication routes and the existing
+independently authenticated node/project transports. Authentication requests use
+same-origin JSON POSTs with bounded bodies and bounded password-hash work.
+
+Console-managed Agent API keys live in Core PostgreSQL, separate from console
+login state and model credentials. Only deployment administrator authentication
+can create, list or revoke them through the Core management extension. The console
+bridge derives the static parent binding digest from its private caller token;
+never accept a browser-supplied parent, tenant or subject. A static parent digest
+is a selector, not authentication. Freeze the complete configured principal with
+each derived key, and reject it whenever the current static binding is missing or
+changed. Never derive keys from another dynamic key. The issuer returns a random
+secret once and stores only its digest and safe metadata. Reads never return key
+material. Check revocation on each dynamic-key request without an auth cache;
+database failures fail closed. Static configured-key authentication remains
+independent of this lookup. Keep key management outside public `/v1` resources.
+
+A caller-supplied creation UUID identifies a single key issuance. A repeated UUID
+returns conflict without replaying or rotating a secret. After an uncertain create,
+read the safe list and explicitly revoke an inaccessible key before replacing it;
+any explicit retry uses the same UUID. The first-run UI reminds the operator to
+save the key and use it for subsequent Agent API calls. Never persist a displayed
+key in browser storage or carry it into the request code or URL. The console has
+one administrator role and no project/role editor.
+The `/console/config` `api_keys` capability controls whether key management is
+available. Paired consoles require an active saved key before continuing from the
+access step. Web-only consoles with `api_keys: false` instead explain how to use
+an existing Core key and allow the introduction to continue without key-management
+requests. A failed or malformed capability read must not imply either capability.
+
+First-run Home is a skippable/replayable console introduction after account setup.
+It does not change public Core resource semantics or block ordinary administration.
+Keep new onboarding state and components outside the oversized `App.tsx`. Persist
+only non-secret presentation progress; password, setup key and model provider key
+must not enter browser storage or generated code samples. Creating a saved Agent
+is an explicit write through the existing API. Reconcile uncertain results before
+another write, and associate external examples with their exact metadata marker,
+not arbitrary new resources or name matches. The request workbench generates code
+from its real form fields; local execution obtains caller and model keys separately.
+Generated examples reject redirects so credentials stay at the selected API origin.
+A registered host supplies sandbox resources only for hosted Sessions; self-hosted
+execution remains application-managed. Reuse the existing enrollment and topology
+contracts. Show actual confirmed resources, no simulated work or Agent-to-node
+ownership. Use nonlinear motion for transitions and success emphasis, preserve
+keyboard focus, and honor reduced motion. Compatibility scope and caveats belong
+in documentation, not in the introduction.
 The console has neither KVM nor Docker authority; its static root contains no
 secrets. Installation exposes only loopback API/console ports. Remote exposure
 requires an operator-configured HTTPS/access boundary. Web-only mode can connect
@@ -1819,13 +1991,14 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   timestamps and metadata, separately from saved configuration and Session state.
   Resolve known defaults and validate supported schema before writing. Preserve
   model/name/instructions verbatim, nullable fields and structured JSON numbers.
-  Stored reasoning/service tiers, enabled multi-agent settings, JSON Schema output
-  and deferred/tool-search/programmatic tools do not imply execution support.
-  Reuse function wire validation, keeping Session execution restrictions separate.
-  Model-derived reasoning effort is unresolved when omitted; do not infer it from
-  the selected harness. Omitted/null service tier currently uses `auto`; complete
-  upstream default/error/retry conformance and remaining MCP/web-search variants
-  remain gaps. Unknown/unsupported variants fail explicitly. No product lookup is permitted.
+  Stored reasoning/service tiers, enabled multi-agent settings, JSON Schema output,
+  enabled web-search modes and deferred/tool-search/programmatic tools do not imply
+  execution support. Reuse function wire validation, keeping Session execution
+  restrictions separate. Model-derived reasoning effort is unresolved when omitted;
+  do not infer it from the selected harness. Omitted/null service tier currently
+  uses `auto`; complete upstream default/error/retry conformance and remaining MCP
+  variants remain gaps. Unknown/unsupported variants fail explicitly. No product
+  lookup is permitted.
 - Service-origin public HTTP MCP uses the native harness client and tool loop on
   trusted service-owned `environment:none` compute, with Codex or Claude SDK.
   The V1 colocated `self_hosted` profile rejects it: user-owned compute cannot be
@@ -1851,8 +2024,10 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   snapshots; per-Session tools replace the whole field. The initial profile admits
   HTTP(S), boolean `required` (default false), empty/null metadata and empty/null headers.
   Static and OAuth bearer authentication require HTTPS and the attached-Vault rules below.
-  Inline authorization, URL userinfo/query/fragment,
-  other origins and stdio remain explicitly unsupported.
+  An omitted/null `connection_origin` on HTTP transport is stored as `service`
+  before the other checks, identical to an explicit declaration, as observed
+  officially. Inline authorization, URL userinfo/query/fragment, the `environment`
+  origin and stdio remain explicitly unsupported.
 - Codex required MCP initialization additionally needs `mcp_http_required`, advertised
   only for the verified native pin and checked during selection, final preclaim
   and daemon dispatch/preparation. Preserve the boolean through typed messages,
@@ -1892,22 +2067,28 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   storage. Core-managed OAuth uses this same access-token path; native OAuth
   login/refresh and hosted redirect/error equivalence remain separate work.
 - Session `vault_ids` omission/null/empty means `[]`; nonempty attachments must all
-  belong to the authenticated tenant. Preserve caller order and public MCP
+  belong to the authenticated tenant. Preserve caller order and the stored caller
   `credential_id`. Saved Agents may store a nullable/nonempty credential reference
   without authorizing its use. Session admission resolves an explicit credential
   only inside attached Vaults for the exact declared URL, or selects the unique
   matching static or OAuth credential when the ID is omitted/null. No match remains
-  anonymous; ambiguity is a local 400 and unavailable references use the same 404.
-  Resolve before any Session, initial input or event write. Freeze safe bindings,
-  including anonymous decisions, in private Session configuration; never populate
-  the public credential field from implicit resolution. At actual dispatch, recheck
+  anonymous. Selection errors use the observed official messages with a null param:
+  a reference without attachments, one outside the attached Vaults and one for
+  another URL are 400 `invalid_request_error`; several implicit matches are 409
+  `conflict_error`. Missing, foreign-tenant, unattached and malformed references
+  share one message; echo caller values only within `internal/echotext`. Unknown
+  or foreign Vaults keep the same 404. Resolve after the input requirement and
+  before any Session, initial input or event write. Freeze safe bindings,
+  including anonymous decisions, in private Session configuration. Session
+  projections, never the stored configuration, show an implicitly selected ID in a
+  null/omitted public `credential_id`, also after deletion. At actual dispatch, recheck
   tenant, attached Vault, selected ID, frozen auth type and exact URL before scoped
   decryption. Metadata queries select no ciphertext; tokens enter only the existing
   transient daemon request. Selected authentication requires `mcp_http_bearer_auth`
   during device selection and the final preclaim check. Missing/wrong keys or
   binding failures never fall back to anonymous execution. Exact URL equality,
-  immutable selection timing, implicit response population and hosted error/redirect
-  semantics remain local decisions or unverified gaps. No new MCP loop is permitted.
+  immutable selection timing and hosted redirect semantics remain local decisions
+  or unverified gaps. No new MCP loop is permitted.
 - Saved Agent execution defaults use separate input and safe-output Core extensions.
   Keep model-provider bundles whole at every replacement boundary: endpoint, key,
   protocol and limits must never be independently inherited. Ordinary Agent JSON
@@ -1931,6 +2112,23 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   matching retries return committed state without replay. No Turn-level overrides,
   provider catalog or self-hosted/none credential expansion is included. Public
   input/null semantics and examples live in `contracts/agents-api/model-execution.md`.
+- Session execution-configuration reads use a separate immutable safe projection,
+  written with provenance in the same creation transaction as Session resources.
+  Read no credential ciphertext and never recompute sources from current Agents
+  or operator defaults. Model/harness sources are independent; provider bundles
+  retain one source. Project reads redact all deployment provider details. Old
+  Sessions expose persisted model/harness with unknown sources and unavailable
+  provider metadata, without backfill. Projection metadata does not alter retry
+  identity; retries cannot replace it. Keep this query separate from runtime
+  observations and do not touch activity or wake sandboxes. The versioned contract
+  is `contracts/agents-api/execution-configuration.md`.
+- Provider input validation uses the adapter-owned rules in `internal/harnessconfig`.
+  Keep one internal registry for protocol and token-limit validation; Core owns
+  credential environment and endpoint admission policy. These rules are not a
+  public discovery API or Runtime registration descriptor. Operation qualification
+  and live readiness retain their existing owners. The Core startup view keeps its
+  basic supported/configured deployment snapshot and accepts no query parameters.
+  Session frozen execution-configuration reads remain a separate Core extension.
 - Public Agent updates use `POST /v1/agents/{agent_id}` with the same tenant/Beta
   boundary and shared saved-field validation. Preserve omission separately from
   null; only supplied fields replace saved values. Metadata is a separate whole-map
@@ -2125,8 +2323,11 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   Core replaces complete valid token breakdowns and preserves the last committed
   measurement on interruption. Missing measurements remain unknown. Do not infer
   token consumption from context occupancy or estimated costs, or parse native
-  Raw payloads in Core. Session totals cover recorded root Turns; Subagent Turn
-  listings are not a summable accounting ledger. Native measurement coverage
+  Raw payloads in Core. Public Session totals cover recorded root Turns and are
+  null while any root Turn has not ended or once one ends with unknown usage;
+  Runtime telemetry uses the separate measured sum of recorded snapshots. Subagent
+  Turn listings are not a summable accounting ledger. A cumulative native total that has not advanced
+  past the Turn's baseline is not a measurement of that Turn. Native measurement coverage
   and exact provider/model attribution remain explicit qualification boundaries.
   No separate public usage event or historical SSE replay is introduced.
 - The dispatcher is an internal entry point used by the standalone service worker.
@@ -2164,7 +2365,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   not remove unrelated native utilities or claim enabled programmatic support.
   Explicit `web_search.mode=disabled` reuses the existing disabled search control.
   Search remains off when omitted. Optional search settings are resource data and
-  do not cause execution while disabled. Enabled search remains unqualified here.
+  do not cause execution while disabled. Saved Agents keep every pinned search mode;
+  enabled search remains unqualified and rejects at Session admission.
 - `web_search_control` advertises the Codex adapter's explicit `web_search` option
   (`disabled`, `cached`, or `live`). Agents API requires this capability before Codex dispatch;
   the typed execution controls force search off on new and resumed Turns. Native configuration translation stays in the
@@ -2246,20 +2448,23 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   Turn/call identity selects an existing call; admission never creates a Turn for
   a result. Save the complete result and its input retry record in the same Session
   transaction. Any invalid target, conflicting result or later batch error rolls
-  back the whole request. Identical saved results remain retryable after termination
+  back the whole request. Resolve targets only after the tenant Session lookup:
+  an unknown call or a call of another Turn is 400 `invalid_request_error`, and
+  missing or foreign Sessions keep one 404. Identical saved results remain retryable after termination
   without applying them again. The execution input cursor skips function results;
   their separate native receipts still determine application. Public result events
-  validate variant-specific fields and required values before admission; retain
+  validate variant-specific fields and required values before admission; store
   omitted versus null error/output and ordered text/image parts. Inline function
   tools resolve into the immutable configuration with explicit
   `defer_loading=false`. Validate required strings and parameter objects before
   persistence; reject unsupported deferred discovery. Omitted/null/empty tool
   lists resolve to no tools. The public worker selects or waits for a same-tenant
   device advertising `function_tools` when the Session has functions.
-  Function results are Session input Items: emit `item.added` without an output
+  Function results are Session input Items: emit `item.added` with a null output
   index, and never emit `item.done`, whose upstream union only allows agent output.
-  Project their public output/error from the saved submission, including missing
-  versus null fields; native content normalization must not change public history.
+  Project their public output/error from the saved submission; the wire always
+  carries both, null when not submitted, while stored payloads keep the submitted
+  presence. Native content normalization must not change public history.
 - Codex function application requires a matching live native dynamic-tool completion,
   including root thread/Turn/call identity, function, success and ordered content.
   Writing its JSON-RPC response is not application. The adapter owns pending
@@ -2379,7 +2584,10 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   connection comment and ends at once, admitting nothing and following no work,
   because official same-key requests create distinct Sessions. Retry the same
   request/key with `stream=false`, or use the GET events stream, to recover. GET
-  event streams keep their live-only start and never end on settlement.
+  event streams keep their live-only start and never end on settlement or a Turn
+  failure; the only server-side end is the terminal `agent.session.failed` of a
+  hosted provisioning failure (and Session deletion), since that Session can
+  never run again.
   Disconnect never cancels admitted work. Official observations cover `none`
   creation; self-hosted, hosted and no-input stream lifetimes and the retry
   behavior are local choices, and the separate SDK one-Turn helper does not
@@ -2418,7 +2626,16 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   Completion text replaces accumulated deltas. Item merging must not mutate the
   incoming observation or the previous snapshot: public text delta events read the
   original fragment after merging, while Items retain the accumulated text.
-  Copy the content slice before replacing its text pointer. Keep partial output on termination;
+  Copy the content slice before replacing its text pointer. Assistant text
+  Items follow the official event sequence: `item.added` in progress with empty
+  content, an empty `content_part.added`, deltas, then the done events. A first
+  observation without its own fragment (a non-streamed native final) carries its
+  unchanged text in one delta; this frames the text and never alters it. Wire-only
+  explicit nulls (`phase`, function result `output`/`error`, Item event
+  `output_index`, Agent `reasoning` keys) come from response marshalling. Stored
+  Item payloads keep their original encoding through `Item.MarshalStored`, so
+  replayed child Items still compare equal, and stored configuration keeps
+  omitting unset reasoning keys. Keep partial output on termination;
   do not turn an unfinished call into a successful result. Thinking fragments are
   internal observations, not a claim of upstream reasoning-item support.
 

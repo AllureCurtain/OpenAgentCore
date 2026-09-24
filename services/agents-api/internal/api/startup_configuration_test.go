@@ -41,6 +41,10 @@ func TestStartupConfigurationHTTP(t *testing.T) {
 	if strings.Contains(w.Body.String(), "mutated") || strings.Contains(w.Body.String(), "base_url") || strings.Contains(w.Body.String(), "token") {
 		t.Fatalf("mutable or private configuration leaked: %s", w.Body)
 	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(w.Body.Bytes(), &fields) != nil || len(fields) != 4 || fields["configuration_capabilities"] != nil {
+		t.Fatal("startup response includes provider discovery")
+	}
 	if w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatalf("Cache-Control = %q", w.Header().Get("Cache-Control"))
 	}
@@ -56,6 +60,7 @@ func TestStartupConfigurationRejectsUnsupportedReads(t *testing.T) {
 		status int
 	}{
 		{name: "missing auth", option: []Option{WithStartupConfiguration(configured)}, path: "/v1/agents/core/startup-configuration", status: http.StatusUnauthorized},
+		{name: "retired discovery", option: []Option{WithStartupConfiguration(configured)}, path: "/v1/agents/core/startup-configuration?include=configuration_capabilities", auth: "Bearer test-api-key", status: http.StatusBadRequest},
 		{name: "query", option: []Option{WithStartupConfiguration(configured)}, path: "/v1/agents/core/startup-configuration?raw=true", auth: "Bearer test-api-key", status: http.StatusBadRequest},
 		{name: "malformed query", option: []Option{WithStartupConfiguration(configured)}, path: "/v1/agents/core/startup-configuration?raw;private", auth: "Bearer test-api-key", status: http.StatusBadRequest},
 		{name: "composition missing", path: "/v1/agents/core/startup-configuration", auth: "Bearer test-api-key", status: http.StatusServiceUnavailable},

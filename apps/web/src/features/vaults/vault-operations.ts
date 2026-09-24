@@ -1,6 +1,7 @@
 import type { AgentCore, Vault } from "@agents-core-web/agents-client";
 
 import type { VaultMetadata } from "./vault-metadata";
+import i18n from "../../i18n";
 
 function metadataMatches(actual: VaultMetadata, expected: VaultMetadata): boolean {
   return Object.keys(actual).length === Object.keys(expected).length &&
@@ -20,7 +21,7 @@ export async function requestVaultCreate(
 ): Promise<Vault> {
   const created = await core.createVault({ name, metadata });
   if (created.name !== name || !metadataMatches(created.metadata, metadata)) {
-    throw new Error("Agent Core returned mismatched Vault metadata.");
+    throw new Error(i18n.t("errors.mismatchedMetadata", { ns: "vaults" }));
   }
   return created;
 }

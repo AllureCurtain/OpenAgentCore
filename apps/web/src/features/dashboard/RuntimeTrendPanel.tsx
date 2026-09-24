@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { RuntimeDashboardSnapshot } from "./runtime-snapshot";
 import { RUNTIME_SNAPSHOT_REFRESH_MS } from "./runtime-snapshot";
@@ -28,7 +29,7 @@ export function RuntimeTrendPanel({
   stale,
   loadRuntimeHistory,
   headingId = "dashboard-runtime-live-heading",
-  title = "Resource trends",
+  title,
   allowSourceSelection = false,
   activeDisplay = "sum",
 }: {
@@ -40,6 +41,9 @@ export function RuntimeTrendPanel({
   allowSourceSelection?: boolean;
   activeDisplay?: "sum" | "binary";
 }) {
+  const { t, i18n } = useTranslation("dashboard");
+  const locale = i18n.resolvedLanguage;
+  const displayTitle = title ?? t("trends.title");
   const [trendSamples, setTrendSamples] = useState<RuntimeTrendSample[]>(() => appendRuntimeTrendSample([], snapshot));
   const [selectedTrendRange, setSelectedTrendRange] = useState<RuntimeTrendRange>(RUNTIME_TREND_WINDOW_MS);
   const [selectedDurableRange, setSelectedDurableRange] = useState<RuntimeDurableRange>(RUNTIME_DURABLE_RANGES[0].milliseconds);
@@ -102,7 +106,7 @@ export function RuntimeTrendPanel({
     }).catch((error: unknown) => {
       if (controller.signal.aborted) return;
       setDurableState("failed");
-      setDurableError(error instanceof Error ? error.message : "Durable Runtime history request failed.");
+      setDurableError(error instanceof Error ? error.message : t("trends.requestFailed"));
     });
     return () => controller.abort();
   }, [durableRefresh, durableTargetKey, loadRuntimeHistory, selectedDurableRange]);
@@ -111,51 +115,51 @@ export function RuntimeTrendPanel({
   const waitingForHistory = source === "live" && (!allowSourceSelection || sourcePreference === "durable");
   const sourceStatus = source === "durable"
     ? durableState === "failed"
-      ? "History stale"
+      ? t("trends.historyStale")
       : durableState === "connecting"
-        ? "History · loading"
-        : `Durable · ${durableSnapshot?.resolutionSeconds ?? 0}s`
+        ? t("trends.historyLoading")
+        : t("trends.durableResolution", { seconds: durableSnapshot?.resolutionSeconds ?? 0 })
     : waitingForHistory
       ? durableState === "failed"
-        ? "Live · history retrying"
+        ? t("trends.liveRetrying")
         : durableState === "unavailable"
-          ? "Live · history unavailable"
-          : "Live · loading history"
+          ? t("trends.liveUnavailable")
+          : t("trends.liveLoading")
     : stale
-      ? "Stale · retrying"
-      : `Live · ${RUNTIME_SNAPSHOT_REFRESH_MS / 1_000}s`;
+      ? t("trends.staleRetrying")
+      : t("trends.liveInterval", { seconds: RUNTIME_SNAPSHOT_REFRESH_MS / 1_000 });
   const sourceStatusStale = source === "durable" ? durableState === "failed" : stale || waitingForHistory && durableState === "failed";
 
   return (
     <section className="dashboard-runtime-live" aria-labelledby={headingId}>
       <header className="dashboard-runtime-live-toolbar">
         <div>
-          <h3 id={headingId}>{title}</h3>
-          <p>{source === "durable" ? "Retained samples · durable history" : "Browser-local samples · reset on reload"}</p>
+          <h3 id={headingId}>{displayTitle}</h3>
+          <p>{t(source === "durable" ? "trends.retained" : "trends.local")}</p>
         </div>
         <div className="dashboard-runtime-live-controls">
           {allowSourceSelection ? (
-            <div className="dashboard-runtime-source" role="group" aria-label="Runtime metric source">
-              <button type="button" aria-pressed={source === "live"} onClick={() => setSourcePreference("live")}>Live</button>
-              <button type="button" aria-pressed={source === "durable"} disabled={!durableAvailable} onClick={() => setSourcePreference("durable")}>History</button>
+            <div className="dashboard-runtime-source" role="group" aria-label={t("trends.source")}>
+              <button type="button" aria-pressed={source === "live"} onClick={() => setSourcePreference("live")}>{t("trends.live")}</button>
+              <button type="button" aria-pressed={source === "durable"} disabled={!durableAvailable} onClick={() => setSourcePreference("durable")}>{t("trends.history")}</button>
             </div>
           ) : null}
           <span
             className={`${sourceStatusStale ? "dashboard-runtime-live-status dashboard-runtime-live-status-stale" : "dashboard-runtime-live-status"}${source === "durable" ? " dashboard-runtime-live-status-durable" : ""}`}
             aria-label={source === "durable"
-              ? `${sourceStatus}; ${durableSnapshot?.targetCount ?? 0} Runtime targets`
+              ? t("trends.durableStatus", { status: sourceStatus, count: durableSnapshot?.targetCount ?? 0 })
               : stale
-                ? "Runtime sampling refresh failed; showing retained samples"
-                : `Live Runtime sampling every ${RUNTIME_SNAPSHOT_REFRESH_MS / 1_000} seconds`}
+                ? t("trends.retainedFailure")
+                : t("trends.samplingInterval", { seconds: RUNTIME_SNAPSHOT_REFRESH_MS / 1_000 })}
           >
             <i aria-hidden="true" />{sourceStatus}
           </span>
           <span className="dashboard-runtime-sample-count">
-            {selectedSamples.length} {source === "durable" ? selectedSamples.length === 1 ? "bucket" : "buckets" : selectedSamples.length === 1 ? "sample" : "samples"}
-            {source === "durable" && durableSnapshot ? <> · {durableSnapshot.sampleCount}/{durableSnapshot.expectedSampleCount} observations</> : null}
-            {latestTrendSample ? <> · <time dateTime={new Date(latestTrendSample.sampledAt).toISOString()}>{new Date(latestTrendSample.sampledAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time></> : null}
+            {selectedSamples.length.toLocaleString(locale)} {t(source === "durable" ? selectedSamples.length === 1 ? "trends.bucket" : "trends.buckets" : selectedSamples.length === 1 ? "trends.sample" : "trends.samples")}
+            {source === "durable" && durableSnapshot ? <> · {t("trends.observations", { actual: durableSnapshot.sampleCount, expected: durableSnapshot.expectedSampleCount })}</> : null}
+            {latestTrendSample ? <> · <time dateTime={new Date(latestTrendSample.sampledAt).toISOString()}>{new Date(latestTrendSample.sampledAt).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time></> : null}
           </span>
-          <div className="dashboard-runtime-range" role="group" aria-label={source === "durable" ? "Runtime durable range" : "Runtime live range"}>
+          <div className="dashboard-runtime-range" role="group" aria-label={t(source === "durable" ? "trends.durableRange" : "trends.liveRange")}>
             {rangeOptions.map((range) => (
               <button
                 key={range.label}
@@ -172,8 +176,8 @@ export function RuntimeTrendPanel({
           </div>
         </div>
       </header>
-      {durableState === "failed" && durableError ? <p className="dashboard-runtime-history-error" role="status">Durable history refresh failed: {durableError}</p> : null}
-      {durableState === "unavailable" ? <p className="dashboard-runtime-history-note">Durable history is not configured; Live samples remain available.</p> : null}
+      {durableState === "failed" && durableError ? <p className="dashboard-runtime-history-error" role="status">{t("trends.refreshFailed", { error: durableError })}</p> : null}
+      {durableState === "unavailable" ? <p className="dashboard-runtime-history-note">{t("trends.notConfigured")}</p> : null}
       <RuntimeTrendCharts samples={selectedSamples} source={source} rangeStart={rangeStart} rangeEnd={rangeEnd} activeDisplay={activeDisplay} />
     </section>
   );

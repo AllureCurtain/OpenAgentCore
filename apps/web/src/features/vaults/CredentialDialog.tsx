@@ -1,22 +1,25 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import { AgentCoreError } from "@agents-core-web/agents-client";
 
 import { Modal } from "../../components/Modal";
+import i18n from "../../i18n";
 
-export const credentialStorageUnavailableMessage = "Credential encryption is not configured on this Core. Configure AGENTS_API_CREDENTIAL_KEY_FILE and restart Core before creating or replacing a token.";
+const tv = (key: string, options?: Record<string, unknown>) => i18n.t(key as never, { ns: "vaults", ...options });
+export const credentialStorageUnavailableMessage = tv("errors.storageUnavailable");
 
 export function safeCredentialMutationError(error: unknown): string {
   if (error instanceof AgentCoreError) {
     if (error.status === 503 && error.code === "credential_write_failed") {
-      return credentialStorageUnavailableMessage;
+      return tv("errors.storageUnavailable");
     }
-    if (error.status === 401) return "Core authentication failed. The Credential was not confirmed.";
-    if (error.status === 404) return "The Vault or Credential is no longer available. Refresh before trying again.";
-    if (error.status === 413) return "The Credential request exceeded Core's accepted size.";
-    if (error.status === 400) return "Core rejected the Credential fields. Check the name, exact HTTPS URL, and token format.";
+    if (error.status === 401) return tv("errors.auth");
+    if (error.status === 404) return tv("errors.missing");
+    if (error.status === 413) return tv("errors.tooLarge");
+    if (error.status === 400) return tv("errors.invalidFields");
   }
-  return "The Credential write outcome was not confirmed. The catalog was refreshed; review it before explicitly trying again.";
+  return tv("errors.credentialUncertain");
 }
 
 function executableCredentialURL(value: string): boolean {
@@ -49,6 +52,8 @@ export function CredentialDialog({
   onCreate?: (name: string, serverURL: string, token: string) => Promise<void>;
   onReplace?: (token: string) => Promise<void>;
 }) {
+  const { t } = useTranslation("vaults");
+  const { t: tCommon } = useTranslation("common");
   const formId = useId();
   const tokenRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState("");
@@ -82,15 +87,15 @@ export function CredentialDialog({
     const token = tokenInput?.value ?? "";
     const trimmedName = name.trim();
     if (!executableBearerToken(token)) {
-      setFieldError("Enter a non-empty RFC 6750 bearer token. Whitespace and other opaque storage-only values cannot execute in the current runtime.");
+      setFieldError(t("errors.bearer"));
       return;
     }
     if (!replacing && (!trimmedName || new TextEncoder().encode(trimmedName).length > 256)) {
-      setFieldError("Credential name must contain 1 to 256 UTF-8 bytes.");
+      setFieldError(t("errors.credentialName"));
       return;
     }
     if (!replacing && !executableCredentialURL(serverURL)) {
-      setFieldError("Enter an exact HTTPS MCP URL without credentials, query parameters, fragments, whitespace, or backslashes.");
+      setFieldError(t("errors.exactUrl"));
       return;
     }
 
@@ -118,37 +123,37 @@ export function CredentialDialog({
     <Modal
       open={open}
       onClose={close}
-      title={replacing ? `Replace token · ${credentialName ?? "Credential"}` : "Add static bearer Credential"}
+      title={replacing ? t("credentialDialog.replaceTitle", { name: credentialName ?? t("credential") }) : t("credentialDialog.addTitle")}
       footer={(
         <>
-          <button className="button outline" type="button" onClick={close} disabled={submitting}>Cancel</button>
+          <button className="button outline" type="button" onClick={close} disabled={submitting}>{tCommon("actions.cancel")}</button>
           <button className="button primary" type="submit" form={formId} disabled={submitting}>
-            {submitting ? "Saving…" : replacing ? "Replace token" : "Create Credential"}
+            {submitting ? t("credentialDialog.saving") : replacing ? t("replaceToken") : t("credentialDialog.create")}
           </button>
         </>
       )}
     >
       <form id={formId} className="form-stack" onSubmit={(event) => void submit(event)} noValidate>
-        {requestError ? <div className="session-action-error" role="alert"><strong>Credential was not confirmed</strong><span>{requestError}</span></div> : null}
+        {requestError ? <div className="session-action-error" role="alert"><strong>{t("credentialDialog.notConfirmed")}</strong><span>{requestError}</span></div> : null}
         {!replacing ? (
           <>
             <label className="field">
-              <span>Name</span>
-              <input value={name} onChange={(event) => setName(event.target.value)} maxLength={256} disabled={submitting} placeholder="Internal MCP" />
+              <span>{t("credentialDialog.name")}</span>
+              <input value={name} onChange={(event) => setName(event.target.value)} maxLength={256} disabled={submitting} placeholder={t("credentialDialog.namePlaceholder")} />
             </label>
             <label className="field">
-              <span>Exact MCP server URL</span>
+              <span>{t("credentialDialog.exactUrl")}</span>
               <input value={serverURL} onChange={(event) => setServerURL(event.target.value)} disabled={submitting} placeholder="https://mcp.example.com/endpoint" inputMode="url" spellCheck={false} />
-              <small>The URL must exactly match the Agent MCP definition. Creating this resource makes no network request.</small>
+              <small>{t("credentialDialog.urlHelp")}</small>
             </label>
           </>
         ) : (
-          <div className="notice warning" role="note">The old token is never read or shown. Running work may already hold it, and replacing it does not revoke the provider-side token.</div>
+          <div className="notice warning" role="note">{t("credentialDialog.replaceWarning")}</div>
         )}
         <label className="field">
-          <span>{replacing ? "New bearer token" : "Bearer token"}</span>
+          <span>{replacing ? t("credentialDialog.newToken") : t("credentialDialog.token")}</span>
           <input ref={tokenRef} type="password" autoComplete="new-password" spellCheck={false} disabled={submitting} aria-describedby={`${formId}-token-help`} />
-          <small id={`${formId}-token-help`}>Write only. It is sent once, immediately cleared, and never stored in browser state, metadata, previews, or logs.</small>
+          <small id={`${formId}-token-help`}>{t("credentialDialog.tokenHelp")}</small>
         </label>
         {fieldError ? <p className="field-error" role="alert">{fieldError}</p> : null}
       </form>

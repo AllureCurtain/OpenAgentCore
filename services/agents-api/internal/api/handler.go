@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
+	"reflect"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
 	"github.com/MiniMax-AI-Dev/parsar/internal/obs/log"
@@ -15,6 +15,7 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/identity"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 )
 
@@ -42,6 +43,7 @@ type Handler struct {
 	policy                execution.Policy
 	store                 ResourceStore
 	auth                  *Authenticator
+	projectKeys           ProjectAPIKeyStore
 	harnesses             map[string]bool
 	modelProviderDefaults ModelProviderDefaults
 	engine                string
@@ -74,8 +76,20 @@ func NewHandler(s ResourceStore, auth *Authenticator, engine string, options ...
 			}
 		}
 	}
+	return CanonicalPaths(h.routes()), nil
+}
+
+// routes builds the router. HEAD runs the GET route without a body after the
+// same authentication and Beta checks (HP-19). Routes that stream events,
+// download content, read a live workspace directory, sample Runtime
+// observations or query Runtime history register an explicit HEAD 405 instead,
+// so HEAD never holds a stream open, reads full content or does Runtime or
+// telemetry work. Every 405, including unknown methods and routes outside the
+// Beta group, has the JSON body and Allow header.
+func (h *Handler) routes() *chi.Mux {
 	router := chi.NewRouter()
-	router.Use(log.HTTPMiddleware)
+	router.Use(agentsResponseHeaders, log.HTTPMiddleware, middleware.GetHead)
+	router.MethodNotAllowed(methodNotAllowed)
 	router.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -86,9 +100,12 @@ func NewHandler(s ResourceStore, auth *Authenticator, engine string, options ...
 		r.Get("/v1/files", h.listSourceFiles)
 		r.Get("/v1/files/{file_id}", h.getSourceFile)
 		r.Get("/v1/files/{file_id}/content", h.sourceFileContent)
+		r.Head("/v1/files/{file_id}/content", methodNotAllowed)
 		r.Delete("/v1/files/{file_id}", h.deleteSourceFile)
 	})
 	h.registerSandboxManagerRoutes(router)
+	h.registerProjectAPIKeyRoutes(router)
+	h.registerEnvironmentExecutorRoutes(router)
 	router.Route("/v1", func(r chi.Router) {
 		r.Use(h.authenticate)
 		h.registerSandboxProjectRoutes(r)
@@ -114,18 +131,24 @@ func NewHandler(s ResourceStore, auth *Authenticator, engine string, options ...
 		r.Delete("/agents/environments/templates/{environment_template_id}", h.deleteEnvironmentTemplate)
 		r.Get("/agents/environments/{environment_id}", h.getEnvironment)
 		r.Get("/agents/environments/{environment_id}/files", h.listEnvironmentFiles)
+		r.Head("/agents/environments/{environment_id}/files", methodNotAllowed)
 		r.Post("/agents/environments/{environment_id}/files", h.createEnvironmentFile)
 		r.Post("/agents/sessions", h.createSession)
 		r.Get("/agents/sessions", h.listSessions)
 		r.Get("/agents/sessions/{session_id}", h.getSession)
+		r.Get("/agents/sessions/{session_id}/execution-configuration", h.getSessionExecutionConfiguration)
 		r.Get("/agents/sessions/{session_id}/runtime-observation", h.getRuntimeObservation)
+		r.Head("/agents/sessions/{session_id}/runtime-observation", methodNotAllowed)
 		r.Get("/agents/runtime-observations", h.listRuntimeObservations)
+		r.Head("/agents/runtime-observations", methodNotAllowed)
 		r.Get("/agents/runtime-history/capabilities", h.getRuntimeHistoryCapabilities)
 		r.Get("/agents/sessions/{session_id}/runtime-history", h.getRuntimeHistory)
+		r.Head("/agents/sessions/{session_id}/runtime-history", methodNotAllowed)
 		r.Post("/agents/sessions/{session_id}", h.updateSession)
 		r.Delete("/agents/sessions/{session_id}", h.deleteSession)
 		r.Post("/agents/sessions/{session_id}/events", h.createEvents)
 		r.Get("/agents/sessions/{session_id}/events", h.streamEvents)
+		r.Head("/agents/sessions/{session_id}/events", methodNotAllowed)
 		r.Get("/agents/sessions/{session_id}/items", h.listItems)
 		r.Get("/agents/sessions/{session_id}/turns", h.listTurns)
 		r.Get("/agents/sessions/{session_id}/turns/{turn_id}", h.getTurn)
@@ -133,20 +156,19 @@ func NewHandler(s ResourceStore, auth *Authenticator, engine string, options ...
 		r.Get("/agents/sessions/{session_id}/artifacts", h.listSessionArtifacts)
 		r.Get("/agents/sessions/{session_id}/artifacts/{artifact_id}", h.getSessionArtifact)
 		r.Get("/agents/sessions/{session_id}/artifacts/{artifact_id}/content", h.sessionArtifactContent)
+		r.Head("/agents/sessions/{session_id}/artifacts/{artifact_id}/content", methodNotAllowed)
 		r.Delete("/agents/sessions/{session_id}/artifacts/{artifact_id}", h.deleteSessionArtifact)
 		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 			writeError(w, http.StatusNotFound, "unsupported_operation", "This API operation is not supported.")
 		})
-		r.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
-			writeError(w, http.StatusMethodNotAllowed, "unsupported_operation", "This API method is not supported.")
-		})
+		r.MethodNotAllowed(methodNotAllowed)
 	})
-	return router, nil
+	return router
 }
 
 // createSession atomically reserves or admits initial text with the Session.
 // @Summary Create an execution Session
-// @Description The optional Core model_provider bundle resolves from the Session override, saved Agent defaults, then deployment defaults. Hosted Sessions encrypt and freeze the resolved bundle; later Agent edits and same-key retries cannot change it. Keys are never returned. Supports inline configuration or a tenant-owned saved agent_id with per-Session field replacements. Execution supports model/instructions, text verbosity, non-deferred function tools, adapter-qualified multi_agent with persisted Subagent reads, implicit reasoning, service tier auto and environment type none, subject to the configured engine. Codex additionally supports HTTP MCP with explicit service origin, native allowed_tools and boolean required defaulting to false. Session vault_ids attach only project-owned Vaults; credential_id selects an attached static bearer credential for the exact HTTPS URL, while null/omission selects a unique match or remains anonymous. Ambiguous selection rejects creation. Frozen private selections never populate an omitted public credential_id; missing decryption configuration fails dispatch without anonymous fallback. Required initialization uses native startup before the first native Turn, including cold resume, and requires a separately advertised capability; exact hosted creation timing and error parity remain unverified. Other MCP origins and OAuth remain unsupported. The self_hosted profile requires Codex, an absolute workspace_directory and empty capability_directories, with optional non-deferred function tools and HTTP MCP using explicit service origin, optionally authenticated by the attached Vault rules. Remote MCP and remote Bearer authentication each require separately advertised combination support; old peers cannot receive unsupported work. Omitted/null capability_directories use the empty-list default; self_hosted requires configured execution plus executor registry. Claude SDK currently requires medium verbosity and object-root function schemas. It supports anonymous or attached static-bearer service-origin HTTP MCP on none with boolean required and separately advertised MCP/bearer/required runtime support. Required servers must be connected before the first native input is released; pending or failed startup rejects execution. The shared Vault selection and immutable binding rules apply; unsupported native labels/tool names reject before persistence. An attached Vault with no matching credential may remain anonymous; missing keys or failed credential lookup/decryption never fall back to anonymous execution. Omitted stream defaults to false; stream and agent_id cannot be null. Metadata may be null; non-string values and limit violations return invalid_request_error with a metadata or metadata.<key> param. The inline agent uses the Agent create configuration validation with agent.-prefixed params, reported before the input requirement and saved-Agent lookup; saved configurations with conflicting tools or schema roots reject admission with the same errors, and execution limits keep unsupported_or_invalid_configuration. Hosted network policy rejections return invalid_request_error with a null param. Initial input accepts a string or ordered user-message array. Codex and Claude SDK on none and qualified openai_hosted also accept inline PNG/JPEG image content; other image combinations and remote URLs are unsupported. None initial input atomically starts a Turn; self_hosted initial input is reserved while returning its Environment connection target, with execution deferred to native readiness and Session failure on initial timeout. Initial input is required for none and for streamed creation outside self_hosted. Omitted/null input remains valid for non-streaming hosted and self_hosted creation. With stream=true, returns live Session events starting with the committed creation snapshot and closes right after the first agent.session.idle recorded when a Turn ends or an input reservation stops being pending, or any agent.session.failed, without sending later events. A creation that admitted nothing closes after the snapshot; a settlement that records no event closes after events up to the cursor read with a settled Session projection. Required actions keep it open; disconnect does not cancel execution. The GET events stream remains live-only. New Sessions retain their authenticated creator; all creation retries require the same typed subject, including across key rotation. Saved-Agent retries and inline requests using Vault attachments or credential references retain caller intent independently of later resource changes; new hosted inline requests also freeze caller intent before deployment defaults resolve; unrelated non-hosted inline retries preserve resolved/default equivalences. Unknown historical creators reject retries; known creators without recorded intent retain resolved-snapshot retry rules. These conflict policies are local and not verified hosted parity. A same-key stream=true retry of an existing creation returns 201 with no events and closes at once; retry with stream=false or use the GET events stream to recover. Claude SDK on none and Core-managed Docker openai_hosted supports qualified object-root json_schema output with medium verbosity, single-Agent execution and ordinary functions. Hosted execution reuses native workspace tools and Files/Artifacts; Skills, Plugins, capability directories, HTTP MCP, Subagent and tool_search combinations remain unqualified, including inherited template contents. Other non-text initial input remains unsupported. Basic Codex and Claude SDK openai_hosted creation requires an explicitly configured managed provider. The Claude workspace profile supports non-deferred function tools with text or successful inline PNG/JPEG results alongside native workspace tools; HTTP MCP remains unsupported. Idle Sessions provision automatically; initial provisioning has no caller connection action. Network defaults to enabled; disabled and restricted exact ASCII hostnames are supported. Restricted policy requires 1–100 allowed domains. Unsupported hostname forms and startup installations are rejected. Confidential env, system/npm/Python packages and ordered setup commands use the shared initialization lifecycle; requested network applies after setup. Initial inline and tenant-owned file_id files freeze encrypted bytes before provisioning, then install through the common Core lifecycle before native execution or live Files access. With a template reference, omitted/null files, env, packages and setup_commands inherit. Non-null files and command lists replace; env overlays by key; each package manager inherits on omission/null and otherwise replaces its list. Empty lists clear their selected field. Tenant-owned environment_template_id references inherit omitted/null network and allow only narrowing overrides. Inline hosted network:null retains the enabled default; updating a Template with network:null resets its saved policy to enabled. Core freezes effective configuration; template updates/deletion do not alter Session snapshots or same-intent creation retries. Inline or tenant-owned skill_reference Skills share initialization. Templates preserve default/latest/explicit selectors; Session creation freezes concrete metadata and encrypted content atomically. Skill, Plugin and capability-directory list omission/null inherit; a non-null list replaces, including empty-list clearing. Omitted/null Skill version selectors resolve the default version. Source deletion/default updates cannot change committed Session Skill contents. Deferred function discovery uses type-only tool_search and per-function defer_loading in the qualified single-agent Claude environment:none function profile, including qualified inline image messages and text results. Explicit web_search mode disabled and programmatic_tool_calling enabled false use frozen common Runtime controls. Enabled forms remain unqualified. Omitted programmatic configuration preserves native behavior, a documented difference from the official default-on behavior. Other combinations remain unqualified; see the operation coverage.
+// @Description The optional Core model_provider bundle resolves from the Session override, saved Agent defaults, then deployment defaults. Hosted Sessions encrypt and freeze the resolved bundle; later Agent edits and same-key retries cannot change it. Keys are never returned. Supports inline configuration or a tenant-owned saved agent_id with per-Session field replacements. Execution supports model/instructions, text verbosity, non-deferred function tools, adapter-qualified multi_agent with persisted Subagent reads, implicit reasoning, service tier auto and environment type none, subject to the configured engine. Codex additionally supports HTTP MCP with service origin (omitted or null on HTTP transport is saved as service), native allowed_tools and boolean required defaulting to false. Session vault_ids attach only project-owned Vaults; credential_id selects an attached static bearer or OAuth credential for the exact HTTPS URL, while null/omission selects a unique match or remains anonymous. Session reads, lists and event snapshots show that implicitly selected credential ID in a null or omitted credential_id, also after the credential is deleted; anonymous selections stay null and the stored caller intent is unchanged. After the input requirement and before any write, a credential_id without vault_ids, one outside the attached Vaults (one message for missing, foreign and unattached IDs) or one for another server_url returns 400 invalid_request_error, and several implicit matches return 409 conflict_error. Missing decryption configuration fails dispatch without anonymous fallback. Required initialization uses native startup before the first native Turn, including cold resume, and requires a separately advertised capability; exact hosted creation timing and error parity remain unverified. Other MCP origins and native OAuth login remain unsupported. The self_hosted profile requires Codex, an absolute workspace_directory and empty capability_directories, with optional non-deferred function tools and HTTP MCP using service origin, optionally authenticated by the attached Vault rules. Remote MCP and remote Bearer authentication each require separately advertised combination support; old peers cannot receive unsupported work. Omitted/null capability_directories use the empty-list default; self_hosted requires configured execution plus executor registry. Claude SDK currently requires medium verbosity and object-root function schemas. It supports anonymous or attached static-bearer service-origin HTTP MCP on none with boolean required and separately advertised MCP/bearer/required runtime support. Required servers must be connected before the first native input is released; pending or failed startup rejects execution. The shared Vault selection and immutable binding rules apply; unsupported native labels/tool names reject before persistence. An attached Vault with no matching credential may remain anonymous; missing keys or failed credential lookup/decryption never fall back to anonymous execution. Omitted stream defaults to false; stream and agent_id cannot be null. Metadata may be null; non-string values and limit violations return invalid_request_error with a metadata or metadata.<key> param. The inline agent uses the Agent create configuration validation with agent.-prefixed params, reported before the input requirement and saved-Agent lookup; saved configurations with conflicting tools or schema roots reject admission with the same errors, and execution limits keep unsupported_or_invalid_configuration. Hosted network policy rejections return invalid_request_error with a null param. Initial input accepts a string or ordered user-message array. Codex and Claude SDK on none and qualified openai_hosted also accept inline PNG/JPEG image content; other image combinations and remote URLs are unsupported. None initial input atomically starts a Turn; self_hosted initial input is reserved while returning its Environment connection target, with execution deferred to native readiness and Session failure on initial timeout. Initial input is required for none and for streamed creation outside self_hosted. Omitted/null input remains valid for non-streaming hosted and self_hosted creation. With stream=true, returns live Session events starting with the committed creation snapshot and closes right after the first agent.session.idle recorded when a Turn ends or an input reservation stops being pending, or any agent.session.failed, without sending later events. A creation that admitted nothing closes after the snapshot; a settlement that records no event closes after events up to the cursor read with a settled Session projection. Required actions keep it open; disconnect does not cancel execution. The GET events stream remains live-only. New Sessions retain their authenticated creator; all creation retries require the same typed subject, including across key rotation. Saved-Agent retries and inline requests using Vault attachments or credential references retain caller intent independently of later resource changes; new hosted inline requests also freeze caller intent before deployment defaults resolve; unrelated non-hosted inline retries preserve resolved/default equivalences. Unknown historical creators reject retries; known creators without recorded intent retain resolved-snapshot retry rules. These conflict policies are local and not verified hosted parity. A same-key stream=true retry of an existing creation returns 201 with no events and closes at once; retry with stream=false or use the GET events stream to recover. Claude SDK on none and Core-managed Docker openai_hosted supports qualified object-root json_schema output with medium verbosity, single-Agent execution and ordinary functions. Hosted execution reuses native workspace tools and Files/Artifacts; Skills, Plugins, capability directories, HTTP MCP, Subagent and tool_search combinations remain unqualified, including inherited template contents. Other non-text initial input remains unsupported. Basic Codex and Claude SDK openai_hosted creation requires an explicitly configured managed provider. The Claude workspace profile supports non-deferred function tools with text or successful inline PNG/JPEG results alongside native workspace tools; HTTP MCP remains unsupported. Idle Sessions provision automatically; initial provisioning has no caller connection action. Network defaults to enabled; disabled and restricted exact ASCII hostnames are supported. Restricted policy requires 1–100 allowed domains. Unsupported hostname forms and startup installations are rejected. Confidential env, system/npm/Python packages and ordered setup commands use the shared initialization lifecycle; requested network applies after setup. Initial inline and tenant-owned file_id files freeze encrypted bytes before provisioning, then install through the common Core lifecycle before native execution or live Files access. With a template reference, omitted/null files, env, packages and setup_commands inherit. Non-null files and command lists replace; env overlays by key; each package manager inherits on omission/null and otherwise replaces its list. Empty lists clear their selected field. Tenant-owned environment_template_id references inherit omitted/null network and allow only narrowing overrides. Inline hosted network:null retains the enabled default; updating a Template with network:null resets its saved policy to enabled. Core freezes effective configuration; template updates/deletion do not alter Session snapshots or same-intent creation retries. Inline or tenant-owned skill_reference Skills share initialization. Templates preserve default/latest/explicit selectors; Session creation freezes concrete metadata and encrypted content atomically. Skill, Plugin and capability-directory list omission/null inherit; a non-null list replaces, including empty-list clearing. Omitted/null Skill version selectors resolve the default version. Source deletion/default updates cannot change committed Session Skill contents. Deferred function discovery uses type-only tool_search and per-function defer_loading in the qualified single-agent Claude environment:none function profile, including qualified inline image messages and text results. Explicit web_search mode disabled and programmatic_tool_calling enabled false use frozen common Runtime controls. Enabled forms, including those saved on an Agent, remain unqualified and reject before any write unless the Session replaces tools. Omitted programmatic configuration preserves native behavior, a documented difference from the official default-on behavior. Other combinations remain unqualified; see the operation coverage.
 // @Tags Sessions
 // @Accept json
 // @Produce json,text/event-stream
@@ -158,7 +180,7 @@ func NewHandler(s ResourceStore, auth *Authenticator, engine string, options ...
 // @Failure 400,401,404,409,413,500,503 {object} v1.ErrorResponse
 // @Router /agents/sessions [post]
 func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
-	raw, ok := readJSONBodyLimit(w, r, 16*1024*1024, "Request exceeds 16 MiB.")
+	raw, ok := readJSONObjectLimit(w, r, 16*1024*1024, "Request exceeds 16 MiB.")
 	if !ok {
 		return
 	}
@@ -168,12 +190,10 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 	var request decodedSessionRequest
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
+	// An unknown member, including a case variant such as Metadata, is rejected
+	// before decoding; see inexactMember.
+	if inexactMember(raw, reflect.TypeOf(request)) || decoder.Decode(&request) != nil {
 		writeError(w, http.StatusBadRequest, "invalid_request", "Request must be a JSON object containing supported fields.")
-		return
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		writeError(w, http.StatusBadRequest, "invalid_request", "Request must contain exactly one JSON object.")
 		return
 	}
 	input, err := request.validated()
@@ -259,10 +279,12 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "execution_unavailable", "Hosted execution is not configured on this service.")
 		return
 	}
+	executionConfiguration := sessionExecutionProjection(input, saved, inheritedProvider, provider, selectedEngine, configuration)
 	createInput := store.CreateSessionInput{
-		ModelProvider: provider,
-		ModelOptions:  providerOptions,
-		Creator:       sessionCreator(r), InitialFiles: input.initialFiles, Initialization: input.initialization,
+		ExecutionConfiguration: &executionConfiguration,
+		ModelProvider:          provider,
+		ModelOptions:           providerOptions,
+		Creator:                sessionCreator(r), InitialFiles: input.initialFiles, Initialization: input.initialization,
 		Engine: selectedEngine, IdempotencyKey: key, Metadata: input.Metadata, Configuration: configuration, InitialInputs: initialInputs, CreationRequest: creationRequest,
 	}
 	if input.XAgentsCore != nil && input.XAgentsCore.SandboxNodeID != nil {
@@ -321,7 +343,7 @@ func (h *Handler) respondSessionStatus(w http.ResponseWriter, r *http.Request, s
 }
 
 // @Summary List execution Sessions
-// @Description Cursor and results are scoped to the authenticated execution tenant. Optional agent_id matches the immutable root Agent ID, including inline Agents and historical Sessions whose saved source was updated or deleted. Omission lists all Agents. Returns the same Environment and pending-input activity projection as Session retrieval, including self_hosted Sessions.
+// @Description Cursor and results are scoped to the authenticated execution tenant; an unknown, malformed or foreign after cursor returns not found. Optional agent_id matches the immutable root Agent ID, including inline Agents and historical Sessions whose saved source was updated or deleted. Omission lists all Agents. Returns the same Environment and pending-input activity projection as Session retrieval, including self_hosted Sessions.
 // @Tags Sessions
 // @Produce json
 // @Security BearerAuth

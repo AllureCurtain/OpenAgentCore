@@ -11,8 +11,10 @@ import {
   formatDashboardTimestamp,
   formatDashboardBytes,
   formatDashboardDuration,
+  reportedSessionTokens,
   runtimeObservationStatusLabel,
 } from "./dashboard-model";
+import { holdLastReported } from "./held-usage";
 
 function agent(id: string, overrides: Partial<SavedAgent> = {}): SavedAgent {
   return {
@@ -300,6 +302,98 @@ describe("Dashboard loaded-snapshot model", () => {
     expect(runtimeObservationStatusLabel(observations[0]!)).toBe("Observed");
     expect(formatDashboardBytes(2048)).toBe("2.00 KiB");
     expect(formatDashboardDuration(90)).toBe("1m 30s");
+  });
+
+  it("counts a shared managed allocation once while retaining both Session rows", () => {
+    const first = session("11111111-1111-4111-8111-111111111111", { usage: usage(21) });
+    const second = session("22222222-2222-4222-8222-222222222222", { usage: usage(5) });
+    const allocationId = "44444444-4444-4444-8444-444444444444";
+    const firstObservation: RuntimeObservation = {
+      id: first.id,
+      object: "agent.runtime_observation",
+      session_id: first.id,
+      environment_id: "33333333-3333-4333-8333-333333333333",
+      mode: "openai_hosted",
+      provider_type: "docker",
+      instance: { kind: "managed_allocation", allocation_id: allocationId, device_id: null, connection_generation: null },
+      lifecycle_state: "active",
+      status: "observed",
+      reason: null,
+      allocation_created_at: 100,
+      resolved_at: 220,
+      observed_at: 210,
+      started_at: 150,
+      cpu: { usage_seconds_total: 3.5, capacity_cores: 2, usage_cores: null, utilization_ratio: null },
+      memory: { usage_bytes: 512, limit_bytes: 2048 },
+    };
+    const secondObservation: RuntimeObservation = {
+      ...firstObservation,
+      id: second.id,
+      session_id: second.id,
+      environment_id: "55555555-5555-4555-8555-555555555555",
+      resolved_at: 221,
+      observed_at: 211,
+      cpu: { usage_seconds_total: 4.5, capacity_cores: 2, usage_cores: null, utilization_ratio: null },
+      memory: { usage_bytes: 768, limit_bytes: 2048 },
+    };
+
+    const model = buildRuntimeDashboardModel([first, second], [firstObservation, secondObservation]);
+
+    expect(model.rows).toHaveLength(2);
+    expect(model.summary).toMatchObject({
+      sessionCount: 2,
+      managedRuntimeCount: 1,
+      sandboxTotalCount: 1,
+      activeSandboxCount: 1,
+      observedRuntimeCount: 1,
+      cpuUsageSecondsTotal: 4.5,
+      cpuCapacityCores: 2,
+      cpuCoverageCount: 1,
+      memoryUsageBytes: 768,
+      memoryLimitBytes: 2048,
+      memoryCoverageCount: 1,
+      totalTokens: 26,
+      tokenCoverageCount: 2,
+    });
+  });
+
+  it("holds each Session's last reported tokens in the summary while public usage is null", () => {
+    const running = session("11111111-1111-4111-8111-111111111111", { usage: usage(21) });
+    const other = session("22222222-2222-4222-8222-222222222222", { usage: usage(5) });
+    const observation = (id: string): RuntimeObservation => ({
+      id,
+      object: "agent.runtime_observation",
+      session_id: id,
+      environment_id: null,
+      mode: "none",
+      provider_type: null,
+      instance: { kind: "none", allocation_id: null, device_id: null, connection_generation: null },
+      lifecycle_state: null,
+      status: "unsupported",
+      reason: "runtime_mode_not_observable",
+      allocation_created_at: null,
+      resolved_at: 225,
+      observed_at: null,
+      started_at: null,
+      cpu: null,
+      memory: null,
+    });
+    const observations = [observation(running.id), observation(other.id)];
+    let held = holdLastReported(new Map<string, number>(), reportedSessionTokens([running, other]));
+    expect(buildRuntimeDashboardModel([running, other], observations, held).summary)
+      .toMatchObject({ totalTokens: 26, tokenCoverageCount: 2 });
+
+    // A Turn starts: public usage is withheld, the summary keeps the last total.
+    const withheld = { ...running, status: "in_progress", usage: null } as AgentSession;
+    held = holdLastReported(held, reportedSessionTokens([withheld, { ...other, usage: usage(9) }]));
+    const model = buildRuntimeDashboardModel([withheld, { ...other, usage: usage(9) }], observations, held);
+    expect(model.summary).toMatchObject({ totalTokens: 30, tokenCoverageCount: 2 });
+    expect(model.rows.find((row) => row.session.id === withheld.id)?.session.totalTokens).toBeNull();
+    expect(buildRuntimeDashboardModel([withheld, other], observations).summary.totalTokens).toBe(5);
+
+    // A newly reported value replaces the held one; unlisted Sessions are dropped.
+    held = holdLastReported(held, reportedSessionTokens([{ ...running, usage: usage(40) }]));
+    expect([...held]).toEqual([[running.id, 40]]);
   });
 
   it("does not infer a released allocation lifetime from the current resolution time", () => {

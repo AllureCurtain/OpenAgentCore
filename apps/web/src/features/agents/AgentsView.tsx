@@ -1,5 +1,7 @@
 import { RefreshCw, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 
 import type { CoreStartupConfiguration, CreateAgentInput, SavedAgent, UpdateAgentInput } from "@agents-core-web/agents-client";
 
@@ -15,6 +17,8 @@ import { type AgentTemplate, valuesFromAgentTemplate } from "./agent-templates";
 import { sessionAdmissionBlocker } from "./session-admission";
 
 interface AgentsViewProps {
+  openAgentId?: string;
+  onOpenAgentConsumed?: (id: string) => void;
   agents: SavedAgent[];
   busy: boolean;
   coreBaseUrl?: string;
@@ -41,12 +45,13 @@ type ReturnFocusTarget =
   | { kind: "template"; id: string };
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : "The Agent Core request failed.";
+  return error instanceof Error ? error.message : i18n.t("requestFailed", { ns: "agents" });
 }
 
 function AgentsLoadingSkeleton() {
+  const { t } = useTranslation("agents");
   return (
-    <div className="agents-loading" aria-busy="true" aria-label="Loading Agents">
+    <div className="agents-loading" aria-busy="true" aria-label={t("loading")}>
       <div className="agents-loading-header" />
       {Array.from({ length: 5 }).map((_, index) => (
         <div className="agents-loading-row" key={index}>
@@ -63,7 +68,7 @@ function AgentsLoadingSkeleton() {
 }
 
 function formatTimestamp(seconds: number): string {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" }).format(new Date(seconds * 1000));
+  return new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "en", { dateStyle: "medium", timeStyle: "medium" }).format(new Date(seconds * 1000));
 }
 
 function StructuredValue({ value }: { value: unknown }) {
@@ -71,51 +76,53 @@ function StructuredValue({ value }: { value: unknown }) {
 }
 
 function ToolSummary({ tools, vaultCatalog }: { tools: unknown[]; vaultCatalog: VaultCatalog | null }) {
-  if (tools.length === 0) return <span className="agent-null-value">None</span>;
+  const { t } = useTranslation("agents");
+  if (tools.length === 0) return <span className="agent-null-value">{t("details.none")}</span>;
   return (
     <ul className="agent-tool-summary">
       {tools.map((rawTool, index) => {
         const projection = projectSavedTool(rawTool, vaultCatalog);
         if (projection.kind === "function") {
-          return <li key={index}>Function <code>{projection.name}</code></li>;
+          return <li key={index}>{t("form.function")} <code>{projection.name}</code></li>;
         }
         if (projection.kind === "mcp") {
-          return <li key={index}>{projection.credentialId ? "Vault bearer" : "Anonymous"} service-origin HTTP MCP <code>{projection.serverLabel}</code></li>;
+          return <li key={index}>{projection.credentialId ? t("details.vaultBearer") : t("details.anonymous")} {t("details.serviceOriginMcp")} <code>{projection.serverLabel}</code></li>;
         }
-        return <li key={index}>{projection.label} · read only</li>;
+        return <li key={index}>{t("details.readOnly", { label: projection.label })}</li>;
       })}
     </ul>
   );
 }
 
 export function AgentDetails({ agent, vaultCatalog = null }: { agent: SavedAgent; vaultCatalog?: VaultCatalog | null }) {
+  const { t } = useTranslation("agents");
   const blocker = sessionAdmissionBlocker(agent, vaultCatalog);
   return (
     <div className="agent-details">
       <div className="agent-detail-summary">
         <dl>
-          <div><dt>ID</dt><dd><code>{agent.id}</code></dd></div>
-          <div><dt>Created</dt><dd><time dateTime={new Date(agent.created_at * 1000).toISOString()}>{formatTimestamp(agent.created_at)}</time></dd></div>
-          <div><dt>Updated</dt><dd><time dateTime={new Date(agent.updated_at * 1000).toISOString()}>{formatTimestamp(agent.updated_at)}</time></dd></div>
-          <div><dt>Model</dt><dd><code>{agent.model}</code></dd></div>
-          <div><dt>Name</dt><dd>{agent.name ?? <span className="agent-null-value">Not set</span>}</dd></div>
-          <div><dt>Instructions</dt><dd>{agent.instructions ?? <span className="agent-null-value">Not set</span>}</dd></div>
-          <div><dt>Metadata</dt><dd><StructuredValue value={agent.metadata} /></dd></div>
+          <div><dt>{t("details.id")}</dt><dd><code>{agent.id}</code></dd></div>
+          <div><dt>{t("details.created")}</dt><dd><time dateTime={new Date(agent.created_at * 1000).toISOString()}>{formatTimestamp(agent.created_at)}</time></dd></div>
+          <div><dt>{t("details.updated")}</dt><dd><time dateTime={new Date(agent.updated_at * 1000).toISOString()}>{formatTimestamp(agent.updated_at)}</time></dd></div>
+          <div><dt>{t("details.model")}</dt><dd><code>{agent.model}</code></dd></div>
+          <div><dt>{t("details.name")}</dt><dd>{agent.name ?? <span className="agent-null-value">{t("details.notSet")}</span>}</dd></div>
+          <div><dt>{t("details.instructions")}</dt><dd>{agent.instructions ?? <span className="agent-null-value">{t("details.notSet")}</span>}</dd></div>
+          <div><dt>{t("details.metadata")}</dt><dd><StructuredValue value={agent.metadata} /></dd></div>
         </dl>
       </div>
       <div className="agent-capability-warning" role="note">
         {blocker
-          ? `This Agent can be saved, but the known Core Session profile cannot start it: ${blocker}`
-          : "Saved advanced configuration is not runtime proof. Model, provider, host, tools, and conditional verbosity still require executor validation."}
+          ? t("details.blocked", { reason: blocker })
+          : t("details.runtimeBoundary")}
       </div>
       <section className="agent-capabilities" aria-labelledby="agent-capabilities-title">
-        <h3 id="agent-capabilities-title">Advanced configuration · read only</h3>
+        <h3 id="agent-capabilities-title">{t("details.advanced")}</h3>
         <dl>
-          <div><dt>Tools</dt><dd><ToolSummary tools={agent.tools} vaultCatalog={vaultCatalog} /></dd></div>
-          <div><dt>Reasoning</dt><dd><StructuredValue value={agent.reasoning} /></dd></div>
-          <div><dt>Text</dt><dd><StructuredValue value={agent.text} /></dd></div>
-          <div><dt>Service tier</dt><dd><code>{agent.service_tier}</code></dd></div>
-          <div><dt>Multi-agent</dt><dd><StructuredValue value={agent.multi_agent} /></dd></div>
+          <div><dt>{t("details.tools")}</dt><dd><ToolSummary tools={agent.tools} vaultCatalog={vaultCatalog} /></dd></div>
+          <div><dt>{t("details.reasoning")}</dt><dd><StructuredValue value={agent.reasoning} /></dd></div>
+          <div><dt>{t("details.text")}</dt><dd><StructuredValue value={agent.text} /></dd></div>
+          <div><dt>{t("details.serviceTier")}</dt><dd><code>{agent.service_tier}</code></dd></div>
+          <div><dt>{t("details.multiAgent")}</dt><dd><StructuredValue value={agent.multi_agent} /></dd></div>
         </dl>
       </section>
     </div>
@@ -123,16 +130,19 @@ export function AgentDetails({ agent, vaultCatalog = null }: { agent: SavedAgent
 }
 
 export function AgentDeleteConfirmation({ agent }: { agent: SavedAgent }) {
+  const { t } = useTranslation("agents");
   return (
     <div className="agent-delete-confirmation">
-      <p>Delete <strong>{agent.name || "Untitled Agent"}</strong> from Agent Core?</p>
-      <p>Exact Agent ID: <code>{agent.id}</code></p>
-      <p>This removes the saved Agent only after Core confirms success. Existing Sessions keep their durable Agent snapshots.</p>
+      <p>{t("details.deleteBefore")} <strong>{agent.name || t("catalog.untitled")}</strong> {t("details.deleteAfter")}</p>
+      <p>{t("details.exactIdLabel")} <code>{agent.id}</code></p>
+      <p>{t("details.deleteWarning")}</p>
     </div>
   );
 }
 
 export function AgentsView({
+  openAgentId,
+  onOpenAgentConsumed,
   agents,
   busy,
   coreBaseUrl = "/v1",
@@ -149,6 +159,8 @@ export function AgentsView({
   onStartSession,
   onUpdate,
 }: AgentsViewProps) {
+  const { t } = useTranslation("agents");
+  const { t: tPages } = useTranslation("pages");
   const [mode, setMode] = useState<ViewMode>("closed");
   const [selectedAgent, setSelectedAgent] = useState<SavedAgent | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<AgentTemplate | null>(null);
@@ -161,6 +173,7 @@ export function AgentsView({
   const returnFocusRef = useRef<ReturnFocusTarget | null>(null);
   const failedOpenFocusRef = useRef<ReturnFocusTarget | null>(null);
   const lastCreateRequestRef = useRef(0);
+  const lastOpenAgentRef = useRef<string | undefined>(undefined);
   const knownModels = agents.map((agent) => agent.model);
   const normalizedQuery = query.trim().toLowerCase();
   const filteredAgents = normalizedQuery
@@ -242,10 +255,10 @@ export function AgentsView({
     setActionError(null);
     setOpeningAgentId(agent.id);
     try {
-      if (!onRetrieve) throw new Error("Agent retrieval is unavailable for this Agent Core connection.");
+      if (!onRetrieve) throw new Error(t("errors.retrievalUnavailable"));
       const latest = await onRetrieve(agent.id);
-      if (!latest) throw new Error("The Agent request was interrupted by a connection change.");
-      if (latest.id !== agent.id) throw new Error("Agent Core returned a different Agent than the one requested.");
+      if (!latest) throw new Error(t("errors.interrupted"));
+      if (latest.id !== agent.id) throw new Error(t("errors.differentRetrieved"));
       if (!requestGate.current.isCurrent(request)) return;
       setSelectedAgent(latest);
       setMode("edit");
@@ -258,6 +271,15 @@ export function AgentsView({
       if (requestGate.current.isCurrent(request)) setOpeningAgentId(null);
     }
   };
+
+  useEffect(() => {
+    if (!openAgentId || lastOpenAgentRef.current === openAgentId) return;
+    const agent = agents.find((candidate) => candidate.id === openAgentId);
+    if (!agent) return;
+    lastOpenAgentRef.current = openAgentId;
+    onOpenAgentConsumed?.(openAgentId);
+    void retrieveForEdit(agent);
+  }, [openAgentId, agents, onOpenAgentConsumed]);
 
   const submitCreate = async (input: CreateAgentInput) => {
     const request = requestGate.current.begin();
@@ -275,10 +297,10 @@ export function AgentsView({
     const request = requestGate.current.begin();
     setActionError(null);
     try {
-      if (!onUpdate) throw new Error("Agent updates are unavailable for this Agent Core connection.");
+      if (!onUpdate) throw new Error(t("errors.updateUnavailable"));
       const updated = await onUpdate(agentId, input);
-      if (!updated) throw new Error("The Agent update was interrupted by a connection change.");
-      if (updated.id !== agentId) throw new Error("Agent Core returned a different Agent than the one updated.");
+      if (!updated) throw new Error(t("errors.updateInterrupted"));
+      if (updated.id !== agentId) throw new Error(t("errors.differentUpdated"));
       if (!requestGate.current.isCurrent(request)) return undefined;
       setSelectedAgent(updated);
       return updated;
@@ -299,7 +321,7 @@ export function AgentsView({
     const request = requestGate.current.begin();
     setActionError(null);
     try {
-      if (!onDelete) throw new Error("Delete is unavailable for this Agent Core connection.");
+      if (!onDelete) throw new Error(t("errors.deleteUnavailable"));
       await onDelete(selectedAgent.id);
       if (!requestGate.current.isCurrent(request)) return;
       setMode("closed");
@@ -344,19 +366,19 @@ export function AgentsView({
           <AgentDialog
             open={mode === "delete"}
             onClose={closeDelete}
-            title="Delete Agent?"
+            title={t("details.deleteTitle")}
             footer={mode === "delete" ? (
               <>
-                <button key="cancel-delete" className="button outline" type="button" onClick={closeDelete} disabled={busy}>Cancel</button>
+                <button key="cancel-delete" className="button outline" type="button" onClick={closeDelete} disabled={busy}>{t("details.cancel")}</button>
                 <button key="confirm-delete" className="button danger" type="button" onClick={() => void confirmDelete()} disabled={busy} autoFocus>
-                  {busy ? "Deleting…" : "Delete Agent"}
+                  {busy ? t("details.deleting") : t("setup.delete")}
                 </button>
               </>
             ) : null}
           >
             {actionError ? (
               <div className="agent-action-error" role="alert">
-                <strong>Request failed</strong>
+                <strong>{t("requestFailure")}</strong>
                 <span>{actionError}</span>
               </div>
             ) : null}
@@ -370,7 +392,7 @@ export function AgentsView({
   return (
     <section className="page-section agents-page">
       <header className="page-header">
-        <h1>Agents</h1>
+        <h1>{tPages("agents.title")}</h1>
         <div className="page-actions">
           <label className="search-control">
             <Search size={14} strokeWidth={1.5} aria-hidden="true" />
@@ -381,12 +403,12 @@ export function AgentsView({
                 setQuery(event.target.value);
                 setShowAllAgents(false);
               }}
-              placeholder="Search name, model, or ID…"
-              aria-label="Search Agents"
+              placeholder={t("searchPlaceholder")}
+              aria-label={t("searchLabel")}
               disabled={coreState !== "ready"}
             />
           </label>
-          <button className="icon-button outline" type="button" onClick={onRefresh} disabled={coreState === "connecting"} aria-label="Refresh Agents">
+          <button className="icon-button outline" type="button" onClick={onRefresh} disabled={coreState === "connecting"} aria-label={t("refreshLabel")}>
             <RefreshCw className={coreState === "connecting" ? "refresh-spinning" : undefined} size={14} strokeWidth={1.5} />
           </button>
         </div>
@@ -397,12 +419,12 @@ export function AgentsView({
       {coreState === "failed" ? (
         <div className="collection-error">
           <ErrorState
-            title={agents.length ? "Couldn’t refresh Agents" : "Couldn’t load Agents"}
+            title={agents.length ? t("refreshFailed") : t("loadFailed")}
             description={agents.length
-              ? "The last loaded Agent configurations remain available."
-              : "The Web could not read Agent configurations from the connected Agent Core."}
+              ? t("staleDescription")
+              : t("loadDescription")}
             detail={coreError ?? undefined}
-            hint="Check the Agent Core connection in the sidebar, then retry."
+            hint={t("connectionHint")}
             onRetry={onRefresh}
           />
         </div>
@@ -410,9 +432,9 @@ export function AgentsView({
 
       {mode === "closed" && actionError ? (
         <div className="agent-action-error agent-open-error" role="alert">
-          <strong>Couldn’t open the latest Agent</strong>
+          <strong>{t("openFailed")}</strong>
           <span>{actionError}</span>
-          {selectedAgent ? <button className="button outline" type="button" onClick={() => void retrieveForEdit(selectedAgent)}>Retry</button> : null}
+          {selectedAgent ? <button className="button outline" type="button" onClick={() => void retrieveForEdit(selectedAgent)}>{t("retry")}</button> : null}
         </div>
       ) : null}
 

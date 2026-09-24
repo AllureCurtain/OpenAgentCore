@@ -74,6 +74,7 @@ func TestHTTPConfigurationAndTenantIdentity(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPost, "/v1/agents/sessions?tenant_id=untrusted-tenant", strings.NewReader(body))
 	request.Header.Set("Authorization", "Bearer test-api-key")
 	request.Header.Set("OpenAI-Beta", "agents=v1")
+	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Idempotency-Key", "retry-key")
 	request.Header.Set("X-Tenant-ID", "untrusted-tenant")
 	w := httptest.NewRecorder()
@@ -87,6 +88,35 @@ func TestHTTPConfigurationAndTenantIdentity(t *testing.T) {
 	}
 	if response.RequiredActions == nil || response.VaultIDs == nil || response.Agent.Tools == nil {
 		t.Fatal("upstream list fields must be empty arrays, not null")
+	}
+}
+
+// Session responses carry both reasoning keys (SES-23); the stored
+// configuration and creation retry identity keep their original encoding.
+func TestSessionResponseReasoningKeysAreExplicit(t *testing.T) {
+	s := &recordingStore{}
+	h, _, _ := testHandler(t, WithExecution(&inputRecorder{ResourceStore: s}))
+	request := httptest.NewRequest(http.MethodPost, "/v1/agents/sessions", strings.NewReader(`{"agent":{"model":"requested-model"},"environment":{"type":"none"},"input":"hello"}`))
+	request.Header.Set("Authorization", "Bearer test-api-key")
+	request.Header.Set("OpenAI-Beta", "agents=v1")
+	request.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, request)
+	var body struct {
+		Agent struct {
+			Reasoning json.RawMessage `json:"reasoning"`
+		} `json:"agent"`
+	}
+	if w.Code != http.StatusCreated || json.Unmarshal(w.Body.Bytes(), &body) != nil || string(body.Agent.Reasoning) != `{"effort":null,"summary":null}` {
+		t.Fatalf("response = %d %s", w.Code, w.Body)
+	}
+	var stored struct {
+		Agent struct {
+			Reasoning json.RawMessage `json:"reasoning"`
+		} `json:"agent"`
+	}
+	if json.Unmarshal(s.input.Configuration, &stored) != nil || string(stored.Agent.Reasoning) != `{}` {
+		t.Fatalf("stored configuration changed: %s", s.input.Configuration)
 	}
 }
 
@@ -107,7 +137,7 @@ func TestHTTPRejectsUntrustedOrUnsupportedRequests(t *testing.T) {
 		{"unknown saved agent", "Bearer test-api-key", "agents=v1", "/v1/agents/sessions", strings.Replace(valid, `"agent":`, `"agent_id":"saved","agent":`, 1), 404},
 		{"unknown agent option", "Bearer test-api-key", "agents=v1", "/v1/agents/sessions", strings.Replace(valid, `"model":`, `"tools":[{}],"model":`, 1), 400},
 		{"multiple objects", "Bearer test-api-key", "agents=v1", "/v1/agents/sessions", valid + `{}`, 400},
-		{"no object", "Bearer test-api-key", "agents=v1", "/v1/agents/sessions", `null`, 400},
+		{"null body as empty object", "Bearer test-api-key", "agents=v1", "/v1/agents/sessions", `null`, 400},
 		{"large body", "Bearer test-api-key", "agents=v1", "/v1/agents/sessions", `{"agent":{"model":"` + strings.Repeat("x", 16*1024*1024) + `"}}`, 413},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -115,10 +145,16 @@ func TestHTTPRejectsUntrustedOrUnsupportedRequests(t *testing.T) {
 			r := httptest.NewRequest(http.MethodPost, test.path, strings.NewReader(test.body))
 			r.Header.Set("Authorization", test.auth)
 			r.Header.Set("OpenAI-Beta", test.beta)
+			r.Header.Set("Content-Type", "application/json")
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
 			var response v1.ErrorResponse
-			if w.Code != test.status || json.Unmarshal(w.Body.Bytes(), &response) != nil || response.Error.Code == nil || *response.Error.Code == "" || s.tenant != "" {
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatalf("response = %d %s: %v", w.Code, w.Body, err)
+			}
+			// Beta 401s have a null code (HP-07); every other rejection names one.
+			coded := response.Error.Code != nil && *response.Error.Code != ""
+			if w.Code != test.status || coded == (test.status == http.StatusUnauthorized) || s.tenant != "" {
 				t.Fatalf("response = %d %s, stored tenant = %s", w.Code, w.Body, s.tenant)
 			}
 		})

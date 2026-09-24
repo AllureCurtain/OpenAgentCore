@@ -6,6 +6,8 @@ import uuid
 import httpx2
 from openai import AuthenticationError, BadRequestError, NotFoundError
 
+import official_body
+
 
 def verify_agents(client, other, invalid, expect_error):
     agents = client.beta.agents
@@ -27,6 +29,8 @@ def verify_agents(client, other, invalid, expect_error):
             assert body["name"] is None and body["instructions"] is None and body["metadata"] == {}
             assert body["multi_agent"] == {"enabled": False, "max_concurrent_subagents": None}
             assert body["text"] == {"format": {"type": "text"}, "verbosity": "medium"}
+            # Both reasoning keys are present; the model-derived effort stays unresolved.
+            assert body["reasoning"] == {"effort": None, "summary": None}
             assert body["tools"] == []
             assert agent.created_at == agent.updated_at and abs(agent.created_at - time.time()) < 10
             assert agents.retrieve(agent.id) == agent
@@ -137,11 +141,17 @@ def verify_agents(client, other, invalid, expect_error):
             assert response.status_code == 400 and response.json()["error"]["code"] == "invalid_request_error"
             assert response.json()["error"]["param"] is None
         assert len(list(agents.list())) == count
-        for content in ("{}", "null", "[]", '{"model":"x"} {}'):
-            assert raw.post(base, headers=headers, content=content).status_code == 400
-        assert raw.post(base, headers=headers, content='{"model":"' + "x" * (1024 * 1024) + '"}').status_code == 413
+        # The shared body gate rejects before any write (HP-09..HP-15); a zero-length
+        # body or null is {} and reports the missing model (HP-13).
+        official_body.check(raw, base, headers, official_body.rejected('{"model":"resource-model","name":"gate"}', "name", "name"))
+        json_headers = {**headers, **official_body.JSON}
+        for content in ("", "{}", "null"):
+            response = raw.post(base, headers=json_headers, content=content)
+            assert response.status_code == 400 and response.json()["error"]["param"] == "model", response.text
+        assert raw.post(base, headers=json_headers, content='{"model":"' + "x" * (1024 * 1024) + '"}').status_code == 413
         # tenant_id is an ignored query key; it never selects another tenant.
-        assert raw.post(base, headers=headers, params={"tenant_id": "other"}, content="{}").status_code == 400
+        assert raw.post(base, headers=json_headers, params={"tenant_id": "other"}, content="{}").status_code == 400
+        assert len(list(agents.list())) == count
         plain = raw.get(base + "/" + saved[0].id, headers=headers)
         scoped = raw.get(base + "/" + saved[0].id, headers=headers, params={"tenant_id": "other"})
         assert plain.status_code == scoped.status_code == 200 and scoped.json() == plain.json()
@@ -151,9 +161,39 @@ def verify_agents(client, other, invalid, expect_error):
         expect_error(AuthenticationError, lambda: invalid.beta.agents.retrieve(saved[0].id))
         expect_error(AuthenticationError, lambda: invalid.beta.agents.create(model="x"))
         expect_error(BadRequestError, lambda: agents.create(model="x", extra_headers={"OpenAI-Beta": ""}))
-        assert raw.post(base, json={"model": "x"}).status_code == 401
-        # Unsupported families are explicit gaps, not schema-conformance evidence.
-        for tool in ({"type": "web_search"}, {"type": "mcp", "server_label": "x", "transport": {"type": "http", "server_url": "https://example.invalid"}}):
-            expect_error(BadRequestError, lambda: agents.create(model="x", tools=[tool]))
-    print("Reusable Agents: fixed SDK/raw HTTP create/retrieve, explicit configuration, known defaults, isolation and validation passed; model defaults/MCP/web_search/retry semantics remain gaps.")
+        # The Beta header is checked before authentication (HP-05).
+        assert raw.post(base, json={"model": "x"}).json()["error"]["code"] == "invalid_beta"
+        assert raw.post(base, headers={"OpenAI-Beta": "agents=v1"}, json={"model": "x"}).status_code == 401
+        # The minimal pinned MCP tool saves its omitted origin as "service" (MV-01);
+        # the environment origin remains an explicit gap.
+        mcp = {"type": "mcp", "server_label": "x", "transport": {"type": "http", "server_url": "https://example.invalid"}}
+        minimal = agents.with_raw_response.create(model="x", tools=[mcp]).http_response.json()
+        assert minimal["tools"] == [{**mcp, "transport": {**mcp["transport"], "headers": {}}, "connection_origin": "service",
+                                     "allowed_tools": None, "credential_id": None, "request_metadata": {}, "required": False}]
+        assert agents.delete(minimal["id"]).deleted
+        expect_error(BadRequestError, lambda: agents.create(model="x", tools=[{**mcp, "connection_origin": "environment"}]))
+        # Every pinned web_search mode is saved as the official service does (TV-05);
+        # omitted or null mode is saved as live. A supplied location, including {},
+        # has all four keys (req_db41d2f6261b4abfb69465eafe719ab5,
+        # req_165d53b88445490b9146d8272c54134d).
+        live = {"type": "web_search", "mode": "live", "context_size": "medium", "allowed_domains": None, "location": None}
+        for tool, expected in (
+            ({"type": "web_search"}, live),
+            ({"type": "web_search", "mode": None}, live),
+            ({"type": "web_search", "mode": "cached", "context_size": "high", "allowed_domains": ["example.com"],
+              "location": {"country": "FR", "city": "Paris"}},
+             {"type": "web_search", "mode": "cached", "context_size": "high", "allowed_domains": ["example.com"],
+              "location": {"city": "Paris", "country": "FR", "region": None, "timezone": None}}),
+            ({"type": "web_search", "mode": "cached", "location": {}},
+             {"type": "web_search", "mode": "cached", "context_size": "medium", "allowed_domains": None,
+              "location": {"city": None, "country": None, "region": None, "timezone": None}}),
+        ):
+            response = agents.with_raw_response.create(model="x", tools=[tool])
+            agent = response.parse()
+            assert response.status_code == 201 and response.http_response.json()["tools"] == [expected]
+            assert [t.to_dict() for t in agent.tools] == [expected]
+            assert raw.get(base + "/" + agent.id, headers=headers).json()["tools"] == [expected]
+            assert agents.retrieve(agent.id) == agent
+            saved.append(agent)
+    print("Reusable Agents: fixed SDK/raw HTTP create/retrieve, explicit configuration, known defaults, saved web_search modes, isolation and validation passed; model defaults/MCP/retry semantics and enabled web_search execution remain gaps.")
     return saved

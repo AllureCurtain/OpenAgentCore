@@ -1,15 +1,18 @@
 import { AgentCoreError, type EnvironmentTemplate, type OpenAIHostedNetworkAccess, type UpdateEnvironmentTemplateInput } from "@agents-core-web/agents-client";
+import i18n from "../../i18n";
+
+const tt = (key: string) => i18n.t(key as never, { ns: "templates" });
 
 export interface TemplateDraft { name: string; access: OpenAIHostedNetworkAccess }
 
 export function templatePatch(template: EnvironmentTemplate, draft: TemplateDraft): UpdateEnvironmentTemplateInput {
   const name = draft.name.trim() || null;
-  if ([...(name ?? "")].length > 256) throw new Error("A name accepts at most 256 characters.");
+  if ([...(name ?? "")].length > 256) throw new Error(tt("form.nameTooLong"));
   const patch: UpdateEnvironmentTemplateInput = {};
   if (draft.name !== (template.name ?? "")) patch.name = name;
   if (draft.access !== template.network.access) {
     if (template.network.allowed_domains.length !== 0) {
-      throw new Error("This network policy cannot be edited by this Web. Its allowed domains must be preserved.");
+      throw new Error(tt("errors.policyPreserved"));
     }
     patch.network = { access: draft.access };
   }
@@ -17,16 +20,16 @@ export function templatePatch(template: EnvironmentTemplate, draft: TemplateDraf
 }
 
 export function templateName(template: EnvironmentTemplate): string {
-  return template.name?.trim() || "Unnamed Template";
+  return template.name?.trim() || tt("unnamed");
 }
 
 export function templateFailure(error: unknown): string {
   if (error instanceof AgentCoreError) {
-    if (error.status === 401 || error.status === 403) return "Core rejected this request. Check the connection and access permissions.";
-    if (error.status === 404) return "This Template is no longer available. Refresh the catalog before trying again.";
-    if (error.status === 400 || error.status === 422) return "Core rejected the Template configuration. Refresh the catalog and review the fields.";
+    if (error.status === 401 || error.status === 403) return tt("errors.forbidden");
+    if (error.status === 404) return tt("errors.missing");
+    if (error.status === 400 || error.status === 422) return tt("errors.invalid");
   }
-  return "The write outcome was not confirmed. Refresh and review Core's catalog before making another change. The request was not replayed.";
+  return tt("errors.uncertain");
 }
 
 export type TemplateWriteResult =

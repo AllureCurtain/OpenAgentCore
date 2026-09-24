@@ -1,5 +1,7 @@
 import { Check, ChevronRight, Circle, Code2, MessageSquare, Trash2 } from "lucide-react";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 
 import type { CoreHarnessKind, CreateAgentInput, SavedAgent, UpdateAgentInput } from "@agents-core-web/agents-client";
 
@@ -19,14 +21,15 @@ function AgentRequestPreview({
   baseUrl: string;
   values: AgentFormValues;
 }) {
+  const { t } = useTranslation("agents");
   const preview = buildAgentRequestPreview(values, baseUrl, agentId);
   return (
     <section className="agent-request-preview" aria-labelledby="agent-request-preview-title">
       <header>
         <Code2 size={15} strokeWidth={1.5} aria-hidden="true" />
         <div>
-          <h2 id="agent-request-preview-title">Request preview</h2>
-          <p>Uses placeholders only. The connected Core credential is never read into this preview.</p>
+          <h2 id="agent-request-preview-title">{t("setup.requestPreview")}</h2>
+          <p>{t("setup.previewHelp")}</p>
         </div>
       </header>
       <div className="agent-preview-block">
@@ -42,28 +45,30 @@ function AgentRequestPreview({
 }
 
 function SavedDefinitionSummary({ agent }: { agent: SavedAgent }) {
+  const { t } = useTranslation("agents");
   return (
     <section className="agent-saved-summary" aria-labelledby="agent-saved-summary-title">
-      <h2 id="agent-saved-summary-title">Saved definition</h2>
+      <h2 id="agent-saved-summary-title">{t("setup.savedDefinition")}</h2>
       <dl>
-        <div><dt>Agent ID</dt><dd><code>{agent.id}</code></dd></div>
-        <div><dt>Updated</dt><dd><time dateTime={new Date(agent.updated_at * 1000).toISOString()}>{new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(agent.updated_at * 1000))}</time></dd></div>
-        <div><dt>Multi-agent</dt><dd>{agent.multi_agent.enabled ? "Enabled · saved configuration" : "Disabled"}</dd></div>
+        <div><dt>{t("setup.agentId")}</dt><dd><code>{agent.id}</code></dd></div>
+        <div><dt>{t("setup.updated")}</dt><dd><time dateTime={new Date(agent.updated_at * 1000).toISOString()}>{new Intl.DateTimeFormat(i18n.resolvedLanguage ?? "en", { dateStyle: "medium", timeStyle: "short" }).format(new Date(agent.updated_at * 1000))}</time></dd></div>
+        <div><dt>{t("setup.multiAgent")}</dt><dd>{agent.multi_agent.enabled ? t("setup.enabledSaved") : t("setup.disabled")}</dd></div>
       </dl>
     </section>
   );
 }
 
 function SetupGuide({ saved }: { saved: boolean }) {
+  const { t } = useTranslation("agents");
   const steps = [
-    ["Define an Agent", "Choose a startup-enabled harness, model, and instructions; the Web keeps generation settings on the current Session-safe profile.", true],
-    ["Save the definition", "Core becomes the durable source of truth for the saved Agent.", saved],
-    ["Start a Session", "Choose a supported Environment profile, create an idle Session, and subscribe before sending input.", false],
-    ["Exchange events", "A real Turn still requires a compatible worker, executor, model, and provider.", false],
+    [t("setup.steps.define"), t("setup.steps.defineHelp"), true],
+    [t("setup.steps.save"), t("setup.steps.saveHelp"), saved],
+    [t("setup.steps.start"), t("setup.steps.startHelp"), false],
+    [t("setup.steps.exchange"), t("setup.steps.exchangeHelp"), false],
   ] as const;
   return (
     <section className="agent-setup-guide" aria-labelledby="agent-setup-guide-title">
-      <h2 id="agent-setup-guide-title">Get started creating an Agent</h2>
+      <h2 id="agent-setup-guide-title">{t("setup.guideTitle")}</h2>
       <ol>
         {steps.map(([title, description, complete]) => (
           <li className={complete ? "complete" : ""} key={title}>
@@ -107,6 +112,7 @@ export function AgentSetupView({
   onStartSession: (agentId: string) => void;
   onUpdate?: (agentId: string, input: UpdateAgentInput) => Promise<SavedAgent | undefined>;
 }) {
+  const { t } = useTranslation("agents");
   const isEditing = Boolean(agent);
   const [draft, setDraft] = useState<AgentFormValues>(() => {
     const values = agent ? valuesFromAgent(agent, vaultCatalog) : initialValues ?? valuesFromAgent(undefined, vaultCatalog);
@@ -136,7 +142,7 @@ export function AgentSetupView({
         setSavedAgent(updated);
         setDraft(valuesFromAgent(updated, vaultCatalog));
         setFormRevision((current) => current + 1);
-        setSaveNotice("Agent definition updated.");
+        setSaveNotice(t("setup.updatedNotice"));
       }
       return;
     }
@@ -145,40 +151,40 @@ export function AgentSetupView({
     const created = await onCreate(input as CreateAgentInput);
     if (created) {
       setSavedAgent(created);
-      setSaveNotice(`Agent definition saved as ${created.id}.`);
+      setSaveNotice(t("setup.savedNotice", { id: created.id }));
     }
   };
 
   return (
     <section className="page-section agent-setup-page">
       <header className="agent-setup-header">
-        <div className="agent-setup-breadcrumb" aria-label="Breadcrumb">
-          <button type="button" onClick={onBack} disabled={busy}>Agents</button>
+        <div className="agent-setup-breadcrumb" aria-label={t("setup.breadcrumb")}>
+          <button type="button" onClick={onBack} disabled={busy}>{t("catalog.listLabel")}</button>
           <ChevronRight size={14} aria-hidden="true" />
-          <h1>{savedAgent?.name || initialValues?.name || "New Agent"}</h1>
+          <h1>{savedAgent?.name || initialValues?.name || t("setup.newAgent")}</h1>
         </div>
-        <div className="agent-setup-tabs" role="tablist" aria-label="Agent setup sections">
-          <button type="button" role="tab" aria-selected="true">Setup</button>
-          <button type="button" role="tab" aria-selected="false" disabled title="Session history is available from the Sessions product view">Sessions</button>
+        <div className="agent-setup-tabs" role="tablist" aria-label={t("setup.sections")}>
+          <button type="button" role="tab" aria-selected="true">{t("setup.setup")}</button>
+          <button type="button" role="tab" aria-selected="false" disabled title={t("setup.sessionsTitle")}>{t("setup.sessions")}</button>
         </div>
       </header>
 
       <div className="agent-setup-layout">
-        <section className="agent-setup-editor" aria-label="Agent definition">
+        <section className="agent-setup-editor" aria-label={t("setup.definition")}>
           {actionError ? (
             <div className="agent-action-error" role="alert">
-              <strong>Request failed</strong><span>{actionError}</span>
+              <strong>{t("requestFailure")}</strong><span>{actionError}</span>
             </div>
           ) : null}
           {saveNotice ? (
             <div className="notice success agent-created-notice" role="status">
               <Check size={14} aria-hidden="true" />
-              {saveNotice} This does not prove execution readiness.
+              {saveNotice} {t("setup.readinessBoundary")}
             </div>
           ) : null}
           {sessionBlocker ? (
             <div className="notice warning" id="created-agent-session-blocker" role="note">
-              Start Session is unavailable. {sessionBlocker}
+              {t("setup.startUnavailable", { reason: sessionBlocker })}
             </div>
           ) : null}
           <AgentForm
@@ -195,14 +201,14 @@ export function AgentSetupView({
             onSubmit={save}
           />
           <footer className="agent-setup-actions">
-            <button className="button outline" type="button" onClick={onBack} disabled={busy}>Back to Agents</button>
+            <button className="button outline" type="button" onClick={onBack} disabled={busy}>{t("setup.back")}</button>
             {isEditing && onDeleteRequest ? (
               <button className="button danger" type="button" data-agent-delete="true" onClick={onDeleteRequest} disabled={busy}>
-                <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" /> Delete Agent
+                <Trash2 size={14} strokeWidth={1.5} aria-hidden="true" /> {t("setup.delete")}
               </button>
             ) : null}
             <button className="button primary" type="submit" form={formId} disabled={busy || (!isEditing && Boolean(savedAgent))}>
-              {busy ? "Saving…" : isEditing ? "Save changes" : savedAgent ? "Agent saved" : "Save Agent definition"}
+              {busy ? t("setup.saving") : isEditing ? t("setup.saveChanges") : savedAgent ? t("setup.saved") : t("setup.saveDefinition")}
             </button>
             <button
               className="button primary agent-start-session"
@@ -212,7 +218,7 @@ export function AgentSetupView({
               onClick={() => savedAgent && onStartSession(savedAgent.id)}
             >
               <MessageSquare size={14} strokeWidth={1.5} aria-hidden="true" />
-              Start Session
+              {t("setup.startSession")}
             </button>
           </footer>
         </section>

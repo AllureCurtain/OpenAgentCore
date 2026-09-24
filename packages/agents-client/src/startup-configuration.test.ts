@@ -41,16 +41,19 @@ describe("Core startup configuration", () => {
       }) as typeof fetch,
     });
 
-    const result = await client.retrieveStartupConfiguration();
+    const abort = new AbortController();
+    const result = await client.retrieveStartupConfiguration({ signal: abort.signal });
     (body.supported as { harnesses: string[] }).harnesses[0] = "mutated";
 
     expect(String(calls[0]?.input)).toBe("https://core.example/v1/agents/core/startup-configuration");
+    expect(calls[0]?.init?.signal).toBe(abort.signal);
     expect(new Headers(calls[0]?.init?.headers).get("Authorization")).toBe("Bearer project-key");
     expect(result.supported.harnesses).toEqual(["claude_sdk", "codex", "mcode"]);
     expect(result.configured.managed_sandbox).toEqual({ enabled: true, provider: "docker", maintenance: false });
   });
 
   it.each([
+    ["removed configuration discovery", (value: any) => { value.configuration_capabilities = {}; }],
     ["unknown field", (value: any) => { value.secret = "private"; }],
     ["unknown harness", (value: any) => { value.supported.harnesses[0] = "future"; }],
     ["unsorted harnesses", (value: any) => { value.supported.harnesses.reverse(); }],

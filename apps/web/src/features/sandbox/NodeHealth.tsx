@@ -1,12 +1,13 @@
 import { SandboxDiagnostic } from "./SandboxDiagnostic";
-import { useLocale } from "../../lib/LocaleProvider";
+import { useTranslation } from "react-i18next";
 import type { Locale } from "../../lib/locale";
 import type { SandboxNode } from "@agents-core-web/agents-client";
 function bytes(value: number, locale: Locale): string {
   return `${(value / 1024 ** 3).toLocaleString(locale, { maximumFractionDigits: 1 })} GiB`;
 }
 export function NodeHealth({ node }: { node: SandboxNode }) {
-  const { t, locale } = useLocale();
+  const { t, i18n } = useTranslation("sandbox");
+  const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
   const metric = (value: number | null) => value === null ? t("Unavailable") : bytes(value, locale);
   return <div>
     <strong>{node.online ? t("Online") : t("Offline")} · {!node.online ? t("Provider status unconfirmed") : node.provider_ready ? t("Provider ready") : t("Provider unavailable")}</strong>

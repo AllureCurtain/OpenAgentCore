@@ -104,11 +104,16 @@ def verify_vault_list(client, other, invalid, peer, binding, saved, root, direct
         response = raw.get(endpoint, headers=headers, params={"after": foreign.id})
         assert response.status_code == 404 and response.json()["error"]["code"] == "not_found_error"
         assert foreign.id not in response.text
-        for params in ({"after": "invalid-vault"}, {"status": "unknown"}, {"limit": "null"}):
+        # A malformed cursor is a missing one.
+        invalid_cursor = raw.get(endpoint, headers=headers, params={"after": "invalid-vault"})
+        assert invalid_cursor.status_code == 404 and invalid_cursor.json() == response.json()
+        for params in ({"status": "unknown"}, {"limit": "null"}):
             response = raw.get(endpoint, headers=headers, params=params)
             assert response.status_code == 400
             assert response.json()["error"]["type"] == "invalid_request_error"
-        assert raw.get(endpoint).status_code == 401
+        # The Beta header is checked before authentication (HP-05).
+        assert raw.get(endpoint).status_code == 400
+        assert raw.get(endpoint, headers={"OpenAI-Beta": "agents=v1"}).status_code == 401
         for beta in (None, "agents=v2"):
             auth = {"Authorization": headers["Authorization"]}
             if beta is not None:

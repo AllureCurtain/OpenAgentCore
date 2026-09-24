@@ -11,6 +11,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 
 import { StatusIcon } from "./StatusIcon";
 
@@ -167,6 +168,7 @@ function ToastStrip({
   onLeave: (id: number) => void;
   onDrop: (id: number) => void;
 }) {
+  const { t } = useTranslation("common");
   const [focused, setFocused] = useState(false);
   const remaining = useRef(toast.durationMs);
   const startedAt = useRef(0);
@@ -224,7 +226,7 @@ function ToastStrip({
           <button
             className="icon-button ghost toast-close"
             type="button"
-            aria-label="Close notification"
+            aria-label={t("actions.closeNotification")}
             onClick={() => onLeave(toast.id)}
           >
             <X size={14} strokeWidth={1.5} aria-hidden="true" />

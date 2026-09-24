@@ -1,5 +1,6 @@
 import { Check, Copy, ExternalLink, Folder, HardDrive, TerminalSquare } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type {
   AgentCore,
@@ -169,6 +170,7 @@ function EnvironmentLauncherGuide({
   dockerGuideProfile: LocalDockerGuideProfile | null;
   defaultOpen: boolean;
 }) {
+  const { t } = useTranslation("sessions");
   const [copied, setCopied] = useState(false);
   const launcherCommand = buildLauncherCommand(
     environmentId,
@@ -198,8 +200,8 @@ function EnvironmentLauncherGuide({
   if (!command) {
     return (
       <div className="environment-launcher-unavailable" role="note">
-        <strong>Connect Environment unavailable</strong>
-        <p>Core did not return the complete supported projection: a canonical Environment ID, safe executor origin, absolute Workspace, and empty capability directories. This Web will not construct a launcher command.</p>
+        <strong>{t("environment.connectUnavailable")}</strong>
+        <p>{t("environment.connectUnavailableDetail")}</p>
       </div>
     );
   }
@@ -222,11 +224,11 @@ function EnvironmentLauncherGuide({
     >
       <summary>
         <TerminalSquare size={14} strokeWidth={1.5} aria-hidden="true" />
-        <span><strong>Connect Environment</strong><small>Copy a command for the executor compute</small></span>
+        <span><strong>{t("environment.connect")}</strong><small>{t("environment.copyCommandHint")}</small></span>
       </summary>
       <div className="environment-launcher-body">
         {dockerCommand ? (
-          <div className="environment-launcher-modes" role="group" aria-label="Connection command type">
+          <div className="environment-launcher-modes" role="group" aria-label={t("environment.commandType")}>
             <button
               type="button"
               aria-pressed={commandType === "docker"}
@@ -236,25 +238,25 @@ function EnvironmentLauncherGuide({
               type="button"
               aria-pressed={commandType === "native"}
               onClick={() => { setCommandType("native"); setCopied(false); }}
-            >Linux / VM</button>
+            >{t("environment.linuxVm")}</button>
           </div>
         ) : null}
         {commandType === "docker" && dockerCommand ? (
           <p>
-            Run this block on the configured local Docker host. It bind-mounts the terminal&apos;s current directory as <code>{String(workspaceDirectory)}</code>; set <code>HOST_WORKSPACE_DIRECTORY</code> first to use another existing host directory.
+            {t("environment.dockerCommandPrefix")} <code>{String(workspaceDirectory)}</code>{t("environment.dockerCommandSuffix")}
           </p>
         ) : (
           <p>
-            Run this on the Linux machine, Docker container, or VM that owns the Workspace above—not in the browser or the Agent Core daemon container.
+            {t("environment.nativeCommandHint")}
           </p>
         )}
         <pre><code>{command}</code></pre>
         <button className="button outline" type="button" onClick={() => void copyCommand()}>
           {copied ? <Check size={13} aria-hidden="true" /> : <Copy size={13} aria-hidden="true" />}
-          {copied ? "Copied" : commandType === "docker" && dockerCommand ? "Copy Docker command" : "Copy native command"}
+          {copied ? t("common.copied") : commandType === "docker" && dockerCommand ? t("environment.copyDockerCommand") : t("environment.copyNativeCommand")}
         </button>
         <p className="environment-launcher-security">
-          The operator must provide the mode-0600 credential file at the configured path. Web copies its path but never creates, reads, stores, or transmits the key. Running a command can release already queued input; connected status is transport evidence only, not model or runtime readiness.
+          {t("environment.launcherSecurity")}
         </p>
       </div>
     </details>
@@ -268,19 +270,19 @@ export function EnvironmentConnectionNotice({
   action: EnvironmentConnectionAction;
   onOpenSetup?: () => void;
 }) {
+  const { t } = useTranslation("sessions");
   return (
-    <section className="environment-connection-notice" aria-label="Environment connection required">
+    <section className="environment-connection-notice" aria-label={t("environment.connectionRequired")}>
       <div className="environment-connection-notice-heading">
         <TerminalSquare size={14} strokeWidth={1.5} aria-hidden="true" />
-        <strong>Environment connection required</strong>
+        <strong>{t("environment.connectionRequired")}</strong>
       </div>
       <p>
-        Environment <code>{action.environment_id}</code> must be connected by the Core operator.
-        This Web cannot connect, complete, or approve it.
+        {t("environment.connectionRequiredPrefix")} <code>{action.environment_id}</code> {t("environment.connectionRequiredSuffix")}
       </p>
       {onOpenSetup ? (
         <button className="button outline environment-connection-notice-action" type="button" onClick={onOpenSetup}>
-          Open setup
+          {t("environment.openSetup")}
         </button>
       ) : null}
     </section>
@@ -306,6 +308,7 @@ export function EnvironmentPanel({
   onListFiles?: ListEnvironmentFiles;
   onCreateFile?: AgentCore["createEnvironmentFile"];
 }) {
+  const { t } = useTranslation("sessions");
   const raw = environment !== null && typeof environment === "object" && !Array.isArray(environment)
     ? environment as unknown as Record<string, unknown>
     : {};
@@ -342,66 +345,66 @@ export function EnvironmentPanel({
     const exactDurableHosted = status !== "failed" && status !== "expired" &&
       isWritableBasicHostedEnvironmentResource(durableResource, environmentId);
     const networkAccess = network?.access === "enabled"
-      ? "Enabled"
+      ? t("common.enabled")
       : network?.access === "disabled"
-        ? "Disabled"
-        : "Unavailable";
+        ? t("common.disabled")
+        : t("common.unavailable");
 
     return (
-      <section className="environment-panel environment-panel-managed" aria-label="Environment and Workspace status">
+      <section className="environment-panel environment-panel-managed" aria-label={t("environment.statusAria")}>
         <div className="environment-panel-heading">
           <HardDrive size={15} strokeWidth={1.5} aria-hidden="true" />
           <div>
-            <strong>Managed hosted Environment</strong>
-            <span>{environmentId ?? "ID unavailable"}</span>
+            <strong>{t("environment.managedHosted")}</strong>
+            <span>{environmentId ?? t("environment.idUnavailable")}</span>
           </div>
           <div className={`environment-panel-status environment-panel-status-${status}`} role="status" aria-live="polite">
             <StatusIcon status={presentation.statusKind} />
-            <span>{presentation.statusLabel}</span>
+            <span>{t(`environment.status.${status}` as never)}</span>
           </div>
         </div>
 
         <div className="environment-panel-grid">
           <div className="environment-panel-field">
-            <span>Environment ID</span>
-            <code>{environmentId ?? "Unavailable"}</code>
+            <span>{t("environment.id")}</span>
+            <code>{environmentId ?? t("common.unavailable")}</code>
           </div>
           <div className="environment-panel-field">
-            <span>Network access</span>
+            <span>{t("environment.networkAccess")}</span>
             <strong>{networkAccess}</strong>
           </div>
           <div className="environment-panel-field environment-panel-field-wide">
-            <span>Workspace directory</span>
+            <span>{t("environment.workspaceDirectory")}</span>
             <code><Folder size={12} strokeWidth={1.5} aria-hidden="true" />/workspace</code>
           </div>
           <div className="environment-panel-field environment-panel-field-wide">
-            <span>Allowed network domains</span>
-            <strong>{Array.isArray(network?.allowed_domains) && network.allowed_domains.length === 0 ? "None configured by the basic profile" : "Unavailable"}</strong>
+            <span>{t("environment.allowedDomains")}</span>
+            <strong>{Array.isArray(network?.allowed_domains) && network.allowed_domains.length === 0 ? t("environment.noneBasicDomains") : t("common.unavailable")}</strong>
           </div>
           <div className="environment-panel-field environment-panel-field-wide">
-            <span>Startup packages</span>
+            <span>{t("environment.startupPackages")}</span>
             {npmPackages && pythonPackages && systemPackages ? (
               <strong>{npmPackages.length + pythonPackages.length + systemPackages.length === 0
-                ? "None installed by the basic profile"
-                : `${npmPackages.length} npm · ${pythonPackages.length} Python · ${systemPackages.length} system`}</strong>
-            ) : <strong>Unavailable</strong>}
+                ? t("environment.noneBasicPackages")
+                : t("environment.packageCounts", { npm: npmPackages.length, python: pythonPackages.length, system: systemPackages.length })}</strong>
+            ) : <strong>{t("common.unavailable")}</strong>}
           </div>
           <div className="environment-panel-field environment-panel-field-wide">
-            <span>Installed metadata</span>
+            <span>{t("environment.installedMetadata")}</span>
             {capabilityDirectories && installedFiles && installedPlugins && installedSkills ? (
-              <strong>{capabilityDirectories.length} capability directories · {installedFiles.length} files · {installedPlugins.length} plugins · {installedSkills.length} skills</strong>
-            ) : <strong>Unavailable</strong>}
+              <strong>{t("environment.installedCounts", { directories: capabilityDirectories.length, files: installedFiles.length, plugins: installedPlugins.length, skills: installedSkills.length })}</strong>
+            ) : <strong>{t("common.unavailable")}</strong>}
           </div>
         </div>
 
         <p className="environment-panel-provenance">
           {live?.source === "live"
-            ? "Status is the last supported managed Environment event. Connected transport does not prove native Runtime, model, provider, Function, or tool readiness."
+            ? t("environment.managedLiveProvenance")
             : live?.source === "durable"
-              ? "Status comes from the exact durable managed Environment resource. It describes connection lifecycle, not native execution readiness."
+              ? t("environment.managedDurableProvenance")
               : live?.source === "unavailable"
-                ? "Durable managed Environment status is unavailable. No previous readiness claim is retained."
-                : "Managed provisioning is owned by Core. Status is unknown until the durable Environment resource or a supported event is read."}
+                ? t("environment.managedUnavailableProvenance")
+                : t("environment.managedUnknownProvenance")}
         </p>
 
         {environmentFilesEnabled && supportedHostedProjection && environmentId && onListFiles ? (
@@ -424,15 +427,15 @@ export function EnvironmentPanel({
 
         {status === "failed" || status === "expired" ? (
           <div className="environment-panel-error" role="alert">
-            <strong>Managed Environment {status}</strong>
-            <p>Core reported a terminal managed Environment state. Web does not recreate, retry, or substitute a Runtime.</p>
+            <strong>{t("environment.managedTerminal", { status: t(`environment.status.${status}` as never) })}</strong>
+            <p>{t("environment.managedTerminalDetail")}</p>
           </div>
         ) : null}
 
         <footer className="environment-panel-footer">
-          <p>Core provisions this basic managed Runtime automatically. There is no executor launcher or caller connection action.</p>
-          <nav aria-label="Managed Environment setup documentation">
-            <a href={hostedSetupUrl} target="_blank" rel="noreferrer">Operator setup<ExternalLink size={11} aria-hidden="true" /></a>
+          <p>{t("environment.managedFooter")}</p>
+          <nav aria-label={t("environment.managedDocs")}>
+            <a href={hostedSetupUrl} target="_blank" rel="noreferrer">{t("environment.operatorSetup")}<ExternalLink size={11} aria-hidden="true" /></a>
           </nav>
         </footer>
       </section>
@@ -441,12 +444,12 @@ export function EnvironmentPanel({
 
   if (type !== "self_hosted") {
     return (
-      <section className="environment-panel environment-panel-unavailable" aria-label="Environment and Workspace status">
+      <section className="environment-panel environment-panel-unavailable" aria-label={t("environment.statusAria")}>
         <div className="environment-panel-heading">
           <StatusIcon status="interrupted" />
-          <div><strong>Environment unavailable</strong><span>Unknown type</span></div>
+          <div><strong>{t("environment.unavailable")}</strong><span>{t("environment.unknownType")}</span></div>
         </div>
-        <p>Core returned an unsupported Environment type. Workspace details and actions are unavailable.</p>
+        <p>{t("environment.unsupportedType")}</p>
       </section>
     );
   }
@@ -468,52 +471,52 @@ export function EnvironmentPanel({
   const status = presentation.status;
 
   return (
-    <section className="environment-panel" aria-label="Environment and Workspace status">
+    <section className="environment-panel" aria-label={t("environment.statusAria")}>
       <div className="environment-panel-heading">
         <HardDrive size={15} strokeWidth={1.5} aria-hidden="true" />
         <div>
-          <strong>Self-hosted Environment</strong>
-          <span>{environmentId ?? "ID unavailable"}</span>
+          <strong>{t("environment.selfHosted")}</strong>
+          <span>{environmentId ?? t("environment.idUnavailable")}</span>
         </div>
         <div className={`environment-panel-status environment-panel-status-${status}`} role="status" aria-live="polite">
           <StatusIcon status={presentation.statusKind} />
-          <span>{presentation.statusLabel}</span>
+          <span>{t(`environment.status.${status}` as never)}</span>
         </div>
       </div>
 
       <div className="environment-panel-grid">
         <div className="environment-panel-field">
-          <span>Environment ID</span>
-          <code>{environmentId ?? "Unavailable"}</code>
+          <span>{t("environment.id")}</span>
+          <code>{environmentId ?? t("common.unavailable")}</code>
         </div>
         <div className="environment-panel-field">
-          <span>Remote URL</span>
-          {remoteUrl ? <code>{remoteUrl.label}</code> : <strong>Unavailable — unsafe or malformed URL</strong>}
+          <span>{t("environment.remoteUrl")}</span>
+          {remoteUrl ? <code>{remoteUrl.label}</code> : <strong>{t("environment.unsafeUrl")}</strong>}
         </div>
         <div className="environment-panel-field environment-panel-field-wide">
-          <span>Workspace directory</span>
-          <code><Folder size={12} strokeWidth={1.5} aria-hidden="true" />{workspaceDirectory ?? "Unavailable"}</code>
+          <span>{t("environment.workspaceDirectory")}</span>
+          <code><Folder size={12} strokeWidth={1.5} aria-hidden="true" />{workspaceDirectory ?? t("common.unavailable")}</code>
         </div>
         <div className="environment-panel-field environment-panel-field-wide">
-          <span>Capability directories</span>
-          {capabilityDirectories === null ? <strong>Unavailable</strong> : capabilityDirectories.length ? (
+          <span>{t("environment.capabilityDirectories")}</span>
+          {capabilityDirectories === null ? <strong>{t("common.unavailable")}</strong> : capabilityDirectories.length ? (
             <ul>{capabilityDirectories.map((directory, index) => <li key={`${index}:${directory}`}><code>{directory}</code></li>)}</ul>
-          ) : <strong>None exposed</strong>}
+          ) : <strong>{t("environment.noneExposed")}</strong>}
         </div>
       </div>
 
       <p className="environment-panel-provenance">
         {live?.source === "live"
-          ? "Connection is the last supported live event observed after the durable Environment snapshot. It does not prove executor, runtime, model, or provider readiness."
+          ? t("environment.selfLiveProvenance")
           : live?.source === "durable"
             ? live.resource.files.length === 0 && live.resource.plugins.length === 0 && live.resource.skills.length === 0
-              ? "Status comes from the durable Environment resource. Core reports no API-managed files, plugins, or skills; this is not host or Workspace inventory and does not prove executor, runtime, model, or provider readiness."
-              : "Status comes from the durable Environment resource. API-managed installation metadata is present but is not rendered as host or Workspace inventory and does not prove executor, runtime, model, or provider readiness."
+              ? t("environment.selfDurableEmptyProvenance")
+              : t("environment.selfDurableProvenance")
             : live?.source === "unavailable"
-              ? "Durable Environment status is unavailable. The conversation remains usable, and no previous live readiness claim is retained."
+              ? t("environment.selfUnavailableProvenance")
               : requiresConnection
-                ? "Core durably requires an operator connection. No executor availability is inferred."
-                : "Connection status is unknown because the durable Session projection does not expose it."}
+                ? t("environment.selfRequiredProvenance")
+                : t("environment.selfUnknownProvenance")}
       </p>
 
       {environmentFilesEnabled && supportedProjection && environmentId && workspaceDirectory && onListFiles ? (
@@ -538,23 +541,23 @@ export function EnvironmentPanel({
 
       {status === "failed" ? (
         <div className="environment-panel-error" role="alert">
-          <strong>Environment failed</strong>
-          <p>Core reported an Environment failure. Raw error fields are hidden because they may contain credentials, Vault IDs, paths, or private URLs.</p>
+          <strong>{t("environment.failed")}</strong>
+          <p>{t("environment.failedDetail")}</p>
         </div>
       ) : null}
 
       {status === "expired" ? (
         <div className="environment-panel-error environment-panel-expired" role="status">
-          <strong>Environment expired</strong>
-          <p>The durable Environment resource expired. Reconnect or provision it through the Core operator; this Web does not retry or recreate it.</p>
+          <strong>{t("environment.expired")}</strong>
+          <p>{t("environment.expiredDetail")}</p>
         </div>
       ) : null}
 
       <footer className="environment-panel-footer">
-        <p>Workspace is this Environment’s execution directory, not a top-level workspaces API. Paths and the executor URL are shown as text only.</p>
-        <nav aria-label="Self-hosted Environment setup documentation">
-          <a href={coreSetupUrl} target="_blank" rel="noreferrer">Core setup<ExternalLink size={11} aria-hidden="true" /></a>
-          <a href={launcherSetupUrl} target="_blank" rel="noreferrer">Launcher setup<ExternalLink size={11} aria-hidden="true" /></a>
+        <p>{t("environment.selfFooter")}</p>
+        <nav aria-label={t("environment.selfDocs")}>
+          <a href={coreSetupUrl} target="_blank" rel="noreferrer">{t("environment.coreSetup")}<ExternalLink size={11} aria-hidden="true" /></a>
+          <a href={launcherSetupUrl} target="_blank" rel="noreferrer">{t("environment.launcherSetup")}<ExternalLink size={11} aria-hidden="true" /></a>
         </nav>
       </footer>
     </section>

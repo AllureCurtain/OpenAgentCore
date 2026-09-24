@@ -260,9 +260,16 @@ export function dashboardEnvironmentLabel(profile: DashboardEnvironmentProfile):
   }
 }
 
-export function formatDashboardTimestamp(value: number | null): string {
+export function formatDashboardTimestamp(value: number | null, locale?: string): string {
   const seconds = canonicalTimestamp(value);
   if (seconds === null) return "Unknown";
+  if (locale) {
+    return new Intl.DateTimeFormat(locale, {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "UTC",
+    }).format(new Date(seconds * 1_000));
+  }
   return `${new Date(seconds * 1_000).toISOString().slice(0, 16).replace("T", " ")} UTC`;
 }
 
@@ -280,9 +287,19 @@ function elapsedSeconds(start: number | null, end: number | null): number | null
   return end - start;
 }
 
+/** Each Session's reported total tokens, null when its public usage is null. */
+export function reportedSessionTokens(sessions: readonly AgentSession[]): Map<string, number | null> {
+  return new Map(sessions.map((session) => [session.id, canonicalUsage(session.usage)?.total_tokens ?? null]));
+}
+
+/**
+ * Rows show current public usage. The summary token total adds each Session's
+ * held last reported total (see holdLastReported) while its usage is null.
+ */
 export function buildRuntimeDashboardModel(
   sessions: readonly AgentSession[],
   observations: readonly RuntimeObservation[],
+  heldTokens: ReadonlyMap<string, number> = new Map(),
 ): RuntimeDashboardModel {
   const sessionsById = new Map(sessions.map((session) => [session.id, session]));
   const rows: RuntimeDashboardRow[] = [];
@@ -315,6 +332,9 @@ export function buildRuntimeDashboardModel(
   let tokenCoverageCount = 0;
   let oldestResolvedAt: number | null = null;
   let newestResolvedAt: number | null = null;
+  const latestManagedByAllocation = new Map<string, RuntimeObservation>();
+  const managedWithoutAllocation: RuntimeObservation[] = [];
+  const latestObservedByAllocation = new Map<string, RuntimeObservation>();
 
   for (const observation of observations) {
     const session = sessionsById.get(observation.session_id);
@@ -326,30 +346,66 @@ export function buildRuntimeDashboardModel(
       newestResolvedAt = newestResolvedAt === null ? resolvedAt : Math.max(newestResolvedAt, resolvedAt);
     }
     if (observation.mode === "openai_hosted") {
-      managedRuntimeCount += 1;
-      switch (observation.lifecycle_state) {
-        case "active":
-          activeSandboxCount += 1;
-          sandboxTotalCount += 1;
-          break;
-        case "sleeping":
-          sleepingSandboxCount += 1;
-          sandboxTotalCount += 1;
-          break;
-        case "transitioning":
-          transitioningSandboxCount += 1;
-          sandboxTotalCount += 1;
-          break;
-        case "pending":
-          pendingSandboxCount += 1;
-          sandboxTotalCount += 1;
-          break;
-        case "stopped":
-          break;
+      const allocationId = observation.instance.allocation_id;
+      if (allocationId === null || allocationId.length === 0) {
+        managedWithoutAllocation.push(observation);
+      } else {
+        const previous = latestManagedByAllocation.get(allocationId);
+        if (!previous || observation.resolved_at >= previous.resolved_at) {
+          latestManagedByAllocation.set(allocationId, observation);
+        }
+        if (observation.status === "observed") {
+          const previousObserved = latestObservedByAllocation.get(allocationId);
+          if (!previousObserved || (
+            observation.observed_at ?? -1
+          ) >= (previousObserved.observed_at ?? -1)) {
+            latestObservedByAllocation.set(allocationId, observation);
+          }
+        }
       }
     }
-    if (observation.status === "observed") {
-      observedRuntimeCount += 1;
+    if (observation.status === "unavailable") {
+      unavailableRuntimeCount += 1;
+    } else if (observation.status === "unsupported") {
+      unsupportedRuntimeCount += 1;
+    }
+
+    const sessionTokens = sessionRow.totalTokens ?? heldTokens.get(session.id) ?? null;
+    if (sessionTokens !== null) {
+      const next = safeAdd(totalTokens, sessionTokens);
+      if (next !== null) {
+        totalTokens = next;
+        tokensKnown = true;
+      } else tokensSafe = false;
+      tokenCoverageCount += 1;
+    }
+    rows.push({
+      session: sessionRow,
+      observation,
+      computeUptimeSeconds: observation.status === "observed"
+        ? elapsedSeconds(canonicalTimestamp(observation.started_at), canonicalTimestamp(observation.observed_at))
+        : null,
+      allocationAgeSeconds: observation.mode === "openai_hosted" && observation.reason !== "runtime_not_running"
+        ? elapsedSeconds(canonicalTimestamp(observation.allocation_created_at), resolvedAt)
+        : null,
+    });
+  }
+
+  const managedRuntimes = [...latestManagedByAllocation.values(), ...managedWithoutAllocation];
+  managedRuntimeCount = managedRuntimes.length;
+  for (const observation of managedRuntimes) {
+    switch (observation.lifecycle_state) {
+      case "active": activeSandboxCount += 1; sandboxTotalCount += 1; break;
+      case "sleeping": sleepingSandboxCount += 1; sandboxTotalCount += 1; break;
+      case "transitioning": transitioningSandboxCount += 1; sandboxTotalCount += 1; break;
+      case "pending": pendingSandboxCount += 1; sandboxTotalCount += 1; break;
+      case "stopped": break;
+    }
+  }
+
+  const observedRuntimes = [...latestObservedByAllocation.values()];
+  observedRuntimeCount = observedRuntimes.length;
+  for (const observation of observedRuntimes) {
       const cpuUsage = safeFiniteNonNegative(observation.cpu?.usage_seconds_total);
       const cpuCapacity = safeFiniteNonNegative(observation.cpu?.capacity_cores);
       if (cpuUsage !== null) {
@@ -385,30 +441,6 @@ export function buildRuntimeDashboardModel(
         } else memoryLimitSafe = false;
       }
       if (memoryUsage !== null) memoryCoverageCount += 1;
-    } else if (observation.status === "unavailable") {
-      unavailableRuntimeCount += 1;
-    } else {
-      unsupportedRuntimeCount += 1;
-    }
-
-    if (sessionRow.totalTokens !== null) {
-      const next = safeAdd(totalTokens, sessionRow.totalTokens);
-      if (next !== null) {
-        totalTokens = next;
-        tokensKnown = true;
-      } else tokensSafe = false;
-      tokenCoverageCount += 1;
-    }
-    rows.push({
-      session: sessionRow,
-      observation,
-      computeUptimeSeconds: observation.status === "observed"
-        ? elapsedSeconds(canonicalTimestamp(observation.started_at), canonicalTimestamp(observation.observed_at))
-        : null,
-      allocationAgeSeconds: observation.mode === "openai_hosted" && observation.reason !== "runtime_not_running"
-        ? elapsedSeconds(canonicalTimestamp(observation.allocation_created_at), resolvedAt)
-        : null,
-    });
   }
 
   const statusOrder = { observed: 0, unavailable: 1, unsupported: 2 } as const;
@@ -467,9 +499,9 @@ export function formatDashboardDuration(value: number | null): string {
   return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
-export function formatDashboardTokens(value: number | null): string {
+export function formatDashboardTokens(value: number | null, locale = "en-US"): string {
   if (value === null) return "Unavailable";
-  return value.toLocaleString("en-US");
+  return value.toLocaleString(locale);
 }
 
 export function runtimeObservationStatusLabel(observation: RuntimeObservation): string {

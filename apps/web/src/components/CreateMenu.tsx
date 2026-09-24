@@ -5,6 +5,7 @@ import {
   Plus,
 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 interface CreateMenuActions {
   canCreateAgent: boolean;
@@ -19,17 +20,18 @@ export function CreateMenuContent({
   onCreateAgent,
   onStartSession,
 }: CreateMenuActions) {
+  const { t } = useTranslation();
   return (
-    <div className="create-menu-panel" role="menu" aria-label="Create">
+    <div className="create-menu-panel" role="menu" aria-label={t("actions.create")}>
       <button type="button" role="menuitem" onClick={onCreateAgent} disabled={!canCreateAgent}>
         <Bot size={16} strokeWidth={1.5} aria-hidden="true" />
-        <span><strong>Agent</strong><small>Save a reusable Agent definition</small></span>
+        <span><strong>{t("createMenu.agent")}</strong><small>{t("createMenu.agentDescription")}</small></span>
       </button>
       <button type="button" role="menuitem" onClick={onStartSession} disabled={!canStartSession}>
         <MessageSquare size={16} strokeWidth={1.5} aria-hidden="true" />
         <span>
-          <strong>Start Session</strong>
-          <small>{canStartSession ? "Choose a Session-compatible saved Agent" : "Requires a loaded Session-compatible Agent"}</small>
+          <strong>{t("createMenu.session")}</strong>
+          <small>{canStartSession ? t("createMenu.sessionDescription") : t("createMenu.sessionDisabledDescription")}</small>
         </span>
       </button>
     </div>
@@ -37,6 +39,7 @@ export function CreateMenuContent({
 }
 
 export function CreateMenu(actions: CreateMenuActions) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -99,7 +102,7 @@ export function CreateMenu(actions: CreateMenuActions) {
         }}
       >
         <Plus size={14} strokeWidth={1.8} aria-hidden="true" />
-        Create
+        {t("actions.create")}
         <ChevronDown size={13} strokeWidth={1.5} aria-hidden="true" />
       </button>
       {open ? (

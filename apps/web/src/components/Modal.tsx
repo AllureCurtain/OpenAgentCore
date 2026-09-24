@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type PropsWithChildren, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 interface ModalProps extends PropsWithChildren {
   open: boolean;
@@ -9,6 +10,7 @@ interface ModalProps extends PropsWithChildren {
 }
 
 export function Modal({ open, title, footer, onClose, children }: ModalProps) {
+  const { t } = useTranslation();
   const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
   const previousFocusRef = useRef<HTMLElement | null>(null);
@@ -115,7 +117,7 @@ export function Modal({ open, title, footer, onClose, children }: ModalProps) {
       >
         <header className="modal-header">
           <h2 id={titleId}>{title}</h2>
-          <button className="icon-button" type="button" onClick={onClose} aria-label="Close dialog">
+          <button className="icon-button" type="button" onClick={onClose} aria-label={t("actions.closeDialog")}>
             <X size={14} strokeWidth={1.5} />
           </button>
         </header>

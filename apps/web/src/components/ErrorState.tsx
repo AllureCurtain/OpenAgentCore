@@ -1,5 +1,6 @@
 import { AlertTriangle, RefreshCw } from "lucide-react";
 import type { ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 interface ErrorStateProps {
   title: string;
@@ -21,6 +22,7 @@ export function ErrorState({
   action,
   className,
 }: ErrorStateProps) {
+  const { t } = useTranslation();
   return (
     <div className={["error-state", className].filter(Boolean).join(" ")}>
       <div className="error-state-heading">
@@ -37,7 +39,7 @@ export function ErrorState({
           {onRetry ? (
             <button className="button outline" type="button" onClick={onRetry}>
               <RefreshCw size={14} strokeWidth={1.5} aria-hidden="true" />
-              Retry
+              {t("actions.retry")}
             </button>
           ) : null}
           {action}

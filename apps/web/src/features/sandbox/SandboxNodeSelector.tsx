@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import type { SandboxDirectoryNode } from "@agents-core-web/agents-client";
-import { useLocale } from "../../lib/LocaleProvider";
+import { useTranslation } from "react-i18next";
 import { useSandboxClient } from "./SandboxContext";
 
 export function SandboxNodeSelector({ value, onChange, disabled }: {
   value: string; onChange: (value: string) => void; disabled: boolean;
 }) {
-  const { t, locale } = useLocale();
+  const { t, i18n } = useTranslation("sandbox");
+  const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
   const client = useSandboxClient();
   const [nodes, setNodes] = useState<SandboxDirectoryNode[]>([]);
   const [error, setError] = useState(false);

@@ -22,6 +22,15 @@ const (
 	EnvironmentInputFailed    = "failed"
 )
 
+// ErrSessionInputPending rejects a new input batch while earlier Session input
+// still waits for admission. It remains a Turn conflict for internal callers.
+var ErrSessionInputPending = fmt.Errorf("%w: session input is still pending", ErrTurnConflict)
+
+// ErrHostedEnvironmentFailed rejects new input on a Session whose hosted
+// Environment failed to provision. It remains ErrEnvironmentUnavailable for
+// internal callers; an expired Environment keeps that plain error.
+var ErrHostedEnvironmentFailed = fmt.Errorf("%w: the hosted environment failed to provision", ErrEnvironmentUnavailable)
+
 // EnvironmentInputReservation is private admission state, not a public Session projection.
 type EnvironmentInputReservation struct {
 	ID        string
@@ -81,6 +90,11 @@ func (s *Store) ReserveEnvironmentInput(ctx context.Context, tenantID, sessionID
 			return ErrInvalidInput
 		} else if err != nil {
 			return err
+		}
+		if environment.Environment.Status == "failed" {
+			if kind, err := storedEnvironmentType(environment); err == nil && kind == "openai_hosted" {
+				return ErrHostedEnvironmentFailed
+			}
 		}
 		if environment.Environment.Status == "failed" || environment.Environment.Status == "expired" {
 			return ErrEnvironmentUnavailable
@@ -278,7 +292,7 @@ func checkEnvironmentInputGate(ctx context.Context, q *sqlc.Queries, session pgt
 		return ErrIdempotencyConflict
 	}
 	if gate.Blocked {
-		return ErrTurnConflict
+		return ErrSessionInputPending
 	}
 	return nil
 }

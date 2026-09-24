@@ -1,4 +1,6 @@
 import { useRef, useState, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
+import i18n from "../../i18n";
 
 import "./VaultCreateForm.css";
 import {
@@ -9,7 +11,8 @@ import {
 
 const VAULT_NAME_MAX_BYTES = 256;
 
-export const vaultCreateFailureMessage = "Vault creation was not confirmed. Your draft is unchanged. Review current Core state before explicitly trying again.";
+const tv = (key: string) => i18n.t(key as never, { ns: "vaults" });
+export const vaultCreateFailureMessage = tv("errors.createUncertain");
 
 export interface VaultCreateDraft {
   metadata: string;
@@ -61,7 +64,7 @@ export async function submitVaultCreateDraft(
     return {
       kind: "validation_error",
       draft,
-      message: "Name must contain 1 to 256 UTF-8 bytes.",
+      message: tv("errors.vaultName"),
     };
   }
 
@@ -74,7 +77,7 @@ export async function submitVaultCreateDraft(
       draft,
       message: error instanceof VaultMetadataValidationError
         ? error.message
-        : "Metadata could not be validated.",
+        : tv("errors.metadataUnknown"),
     };
   }
 
@@ -83,13 +86,14 @@ export async function submitVaultCreateDraft(
     await onCreate(name, metadata);
     return { kind: "success", draft: { metadata: "", name: "" } };
   } catch {
-    return { kind: "failure", draft, message: vaultCreateFailureMessage };
+    return { kind: "failure", draft, message: tv("errors.createUncertain") };
   } finally {
     gate.pending = false;
   }
 }
 
 export function VaultCreateForm({ disabled = false, onCreate }: VaultCreateFormProps) {
+  const { t } = useTranslation("vaults");
   const [draft, setDraft] = useState<VaultCreateDraft>({ metadata: "", name: "" });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -113,19 +117,19 @@ export function VaultCreateForm({ disabled = false, onCreate }: VaultCreateFormP
   return (
     <form className="form-stack vault-create-form" onSubmit={(event) => void submit(event)} noValidate>
       <label className="field">
-        <span>Name</span>
+        <span>{t("createForm.name")}</span>
         <input
           autoFocus
           disabled={unavailable}
           onChange={(event) => setDraft((current) => ({ ...current, name: event.target.value }))}
-          placeholder="Runtime credentials"
+          placeholder={t("createForm.namePlaceholder")}
           value={draft.name}
         />
-        <small>Required. The trimmed name may contain at most 256 UTF-8 bytes.</small>
+        <small>{t("createForm.nameHelp")}</small>
       </label>
 
       <label className="field">
-        <span>Metadata <span className="field-optional">Optional</span></span>
+        <span>{t("createForm.metadata")} <span className="field-optional">{t("createForm.optional")}</span></span>
         <textarea
           aria-describedby="vault-create-metadata-help"
           disabled={unavailable}
@@ -135,18 +139,18 @@ export function VaultCreateForm({ disabled = false, onCreate }: VaultCreateFormP
           spellCheck={false}
           value={draft.metadata}
         />
-        <small id="vault-create-metadata-help">Enter a JSON object with string values. Blank input becomes <code>{"{}"}</code>; encoded metadata may be at most 64 KiB.</small>
+        <small id="vault-create-metadata-help">{t("createForm.metadataHelp", { emptyObject: "{}" })}</small>
       </label>
 
       <div className="notice warning vault-create-metadata-warning" role="note">
-        Vault metadata is public. Never place secrets, tokens, passwords, credentials, or private connection data here.
+        {t("createForm.metadataWarning")}
       </div>
 
       {error ? <p className="field-error" role="alert">{error}</p> : null}
 
       <div className="vault-create-actions">
         <button className="button primary" type="submit" disabled={unavailable || !draft.name.trim()}>
-          {submitting ? "Creating…" : "Create Vault"}
+          {submitting ? t("createForm.creating") : t("createForm.create")}
         </button>
       </div>
     </form>

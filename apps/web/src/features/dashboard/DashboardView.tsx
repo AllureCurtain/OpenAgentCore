@@ -7,6 +7,7 @@ import {
   Rows3,
 } from "lucide-react";
 import { useMemo, type ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { AgentSession, SavedAgent } from "@agents-core-web/agents-client";
 
@@ -15,8 +16,6 @@ import { backendFailureStatus } from "../../lib/core-readiness";
 import {
   buildDashboardSnapshot,
   buildRuntimeDashboardModel,
-  dashboardEnvironmentLabel,
-  dashboardStatusLabel,
   formatDashboardTimestamp,
   type DashboardCollectionState,
   type DashboardSessionRow,
@@ -58,12 +57,6 @@ function collectionStatusKind(state: DashboardCollectionState): StatusKind {
   return "running";
 }
 
-function collectionStateLabel(state: DashboardCollectionState, hasSnapshot: boolean): string {
-  if (state === "ready") return "Ready";
-  if (state === "connecting") return hasSnapshot ? "Refreshing" : "Loading";
-  return hasSnapshot ? "Stale" : "Unavailable";
-}
-
 function CollectionStateBadge({
   label,
   state,
@@ -73,11 +66,17 @@ function CollectionStateBadge({
   state: DashboardCollectionState;
   hasSnapshot: boolean;
 }) {
+  const { t } = useTranslation("pages");
+  const stateLabel = state === "ready"
+    ? t("dashboard.collection.ready")
+    : state === "connecting"
+      ? t(hasSnapshot ? "dashboard.collection.refreshing" : "dashboard.collection.loading")
+      : t(hasSnapshot ? "dashboard.collection.stale" : "dashboard.collection.unavailable");
   return (
     <span className={`dashboard-source-badge dashboard-source-badge-${state}`}>
-      <StatusIcon status={collectionStatusKind(state)} title={`${label} collection ${state}`} />
+      <StatusIcon status={collectionStatusKind(state)} title={t("dashboard.collection.statusLabel", { label, state: stateLabel })} />
       <strong>{label}</strong>
-      <span>{collectionStateLabel(state, hasSnapshot)}</span>
+      <span>{stateLabel}</span>
     </span>
   );
 }
@@ -103,22 +102,23 @@ function Metric({
 }
 
 function SessionMeta({ session }: { session: DashboardSessionRow }) {
+  const { t, i18n } = useTranslation("pages");
   return (
     <span className="dashboard-session-meta">
       <span>{session.agentLabel}</span>
       <span aria-hidden="true">·</span>
       <span
         title={session.environmentProfile === "self_hosted"
-          ? "This is a Session profile, not proof that an executor is connected."
+          ? t("dashboard.environment.selfHostedHint")
           : session.environmentProfile === "openai_hosted"
-            ? "Core owns this managed placement; the label is not proof that its Runtime is ready."
+            ? t("dashboard.environment.managedHint")
             : undefined}
       >
-        {dashboardEnvironmentLabel(session.environmentProfile)}
+        {t(`dashboard.environment.${session.environmentProfile}` as never)}
       </span>
       <span aria-hidden="true">·</span>
       <time dateTime={session.lastActiveAt === null ? undefined : new Date(session.lastActiveAt * 1_000).toISOString()}>
-        {formatDashboardTimestamp(session.lastActiveAt)}
+        {formatDashboardTimestamp(session.lastActiveAt, i18n.resolvedLanguage)}
       </time>
     </span>
   );
@@ -131,8 +131,9 @@ function AttentionList({
   sessions: readonly DashboardSessionRow[];
   onOpenSession: (sessionId: string) => void;
 }) {
+  const { t } = useTranslation("pages");
   return (
-    <div className="dashboard-attention-list" role="list" aria-label="Sessions needing attention">
+    <div className="dashboard-attention-list" role="list" aria-label={t("dashboard.attentionList")}>
       {sessions.map((session, index) => (
         <div role="listitem" key={`${session.id ?? "unavailable"}:${index}`}>
           <button
@@ -148,7 +149,7 @@ function AttentionList({
               <span className="dashboard-attention-title">
                 <strong>{session.title}</strong>
                 <span className={`dashboard-status-pill dashboard-status-pill-${session.status}`}>
-                  {dashboardStatusLabel(session.status)}
+                  {t(`dashboard.status.${session.status}` as never)}
                 </span>
               </span>
               <SessionMeta session={session} />
@@ -191,13 +192,14 @@ function RecentSessions({
   sessions: readonly DashboardSessionRow[];
   onOpenSession: (sessionId: string) => void;
 }) {
+  const { t, i18n } = useTranslation("pages");
   return (
-    <div className="dashboard-recent-ledger" role="table" aria-label="Recent Sessions">
+    <div className="dashboard-recent-ledger" role="table" aria-label={t("dashboard.recentTable")}>
       <div className="dashboard-recent-header" role="row">
-        <span role="columnheader">Session</span>
-        <span role="columnheader">Status</span>
-        <span role="columnheader">Environment</span>
-        <span role="columnheader">Last active</span>
+        <span role="columnheader">{t("dashboard.session")}</span>
+        <span role="columnheader">{t("dashboard.statusLabel")}</span>
+        <span role="columnheader">{t("dashboard.environmentLabel")}</span>
+        <span role="columnheader">{t("dashboard.lastActive")}</span>
       </div>
       {sessions.map((session, index) => (
         <div className="dashboard-recent-row" role="row" key={`${session.id ?? "unavailable"}:${index}`}>
@@ -215,15 +217,15 @@ function RecentSessions({
           </span>
           <span role="cell">
             <span className={`dashboard-status-pill dashboard-status-pill-${session.status}`}>
-              {dashboardStatusLabel(session.status)}
+              {t(`dashboard.status.${session.status}` as never)}
             </span>
           </span>
-          <span role="cell">{dashboardEnvironmentLabel(session.environmentProfile)}</span>
+          <span role="cell">{t(`dashboard.environment.${session.environmentProfile}` as never)}</span>
           <time
             role="cell"
             dateTime={session.lastActiveAt === null ? undefined : new Date(session.lastActiveAt * 1_000).toISOString()}
           >
-            {formatDashboardTimestamp(session.lastActiveAt)}
+            {formatDashboardTimestamp(session.lastActiveAt, i18n.resolvedLanguage)}
           </time>
         </div>
       ))}
@@ -253,6 +255,8 @@ export function DashboardView({
   onConfigureConnection,
   onOpenSession,
 }: DashboardViewProps) {
+  const { t, i18n } = useTranslation("pages");
+  const locale = i18n.resolvedLanguage;
   const snapshot = useMemo(() => buildDashboardSnapshot(agents, sessions, 6, 5), [agents, sessions]);
   const runtimeModel = useMemo(() => runtimeSnapshot
     ? buildRuntimeDashboardModel(runtimeSnapshot.sessions, runtimeSnapshot.observations)
@@ -277,22 +281,22 @@ export function DashboardView({
   const backendFailureStatuses = coreSourceErrors.map(([, error]) => backendFailureStatus(error));
   const backendUnavailable = coreSourceErrors.length > 0 && backendFailureStatuses.every(Boolean);
   const backendFailureDetail = Array.from(new Set(backendFailureStatuses.filter(Boolean))).map((status) => (
-    status === "network" ? "network failure" : `HTTP ${status}`
+    status === "network" ? t("dashboard.backend.networkFailure") : `HTTP ${status}`
   )).join(" / ");
   const snapshotTitle = hasUnavailableSource
-    ? "Snapshot incomplete"
+    ? t("dashboard.snapshotIncomplete")
     : hasStaleSnapshot
-      ? "Using the last successful snapshot"
+      ? t("dashboard.snapshotStale")
       : refreshing
-        ? "Refreshing snapshot"
-        : "Snapshot ready";
+        ? t("dashboard.snapshotRefreshing")
+        : t("dashboard.snapshotReady");
 
   return (
     <section className="page-section dashboard-page" aria-labelledby="dashboard-heading">
       <header className="page-header dashboard-header">
         <div>
-          <h1 id="dashboard-heading">Dashboard</h1>
-          <p>Agents and Sessions that may need your attention.</p>
+          <h1 id="dashboard-heading">{t("dashboard.title")}</h1>
+          <p>{t("dashboard.subtitle")}</p>
         </div>
         <div className="page-actions">
           <button
@@ -300,10 +304,10 @@ export function DashboardView({
             type="button"
             onClick={onRefresh}
             disabled={refreshing}
-            aria-label="Refresh Dashboard snapshot"
+            aria-label={t("dashboard.refreshLabel")}
           >
             <RefreshCw className={refreshing ? "refresh-spinning" : undefined} size={14} strokeWidth={1.5} aria-hidden="true" />
-            {refreshing ? "Refreshing…" : "Refresh"}
+            {refreshing ? t("dashboard.refreshing") : t("dashboard.refresh")}
           </button>
         </div>
       </header>
@@ -318,13 +322,13 @@ export function DashboardView({
               />
               <span>
                 <strong id="dashboard-overview-heading">{snapshotTitle}</strong>
-                <small>Latest complete paginated reads · not a live Core total or runtime-readiness signal</small>
+                <small>{t("dashboard.snapshotDetail")}</small>
               </span>
             </div>
-            <div className="dashboard-source-badges" aria-label="Dashboard data sources">
-              <CollectionStateBadge label="Agents" state={agentCollectionState} hasSnapshot={agentCollectionHasSnapshot} />
-              <CollectionStateBadge label="Sessions" state={sessionCollectionState} hasSnapshot={sessionCollectionHasSnapshot} />
-              <CollectionStateBadge label="Runtime" state={runtimeCollectionState} hasSnapshot={runtimeCollectionHasSnapshot} />
+            <div className="dashboard-source-badges" aria-label={t("dashboard.dataSources")}>
+              <CollectionStateBadge label={t("dashboard.agents")} state={agentCollectionState} hasSnapshot={agentCollectionHasSnapshot} />
+              <CollectionStateBadge label={t("dashboard.sessions")} state={sessionCollectionState} hasSnapshot={sessionCollectionHasSnapshot} />
+              <CollectionStateBadge label={t("dashboard.runtime")} state={runtimeCollectionState} hasSnapshot={runtimeCollectionHasSnapshot} />
             </div>
           </div>
 
@@ -335,18 +339,15 @@ export function DashboardView({
                   className="dashboard-backend-recovery"
                   type="button"
                   onClick={onConfigureConnection}
-                  aria-label="Agent Core backend is not ready. Open Docker startup guide"
+                  aria-label={t("dashboard.backend.label")}
                 >
                   <AlertTriangle size={16} aria-hidden="true" />
                   <span>
-                    <strong>Agent Core backend is not ready</strong>
-                    <small>
-                      Web is running, but its local `/v1` proxy cannot reach a ready Core
-                      {backendFailureDetail ? ` (${backendFailureDetail})` : ""}. Start the Docker backend, then test the connection.
-                    </small>
+                    <strong>{t("dashboard.backend.title")}</strong>
+                    <small>{t("dashboard.backend.detail", { failure: backendFailureDetail ? ` (${backendFailureDetail})` : "" })}</small>
                   </span>
                   <span className="dashboard-backend-recovery-action">
-                    Open startup guide
+                    {t("dashboard.backend.openGuide")}
                     <ArrowRight size={13} strokeWidth={1.7} aria-hidden="true" />
                   </span>
                 </button>
@@ -355,11 +356,11 @@ export function DashboardView({
                   <span className="dashboard-snapshot-error-copy">
                     <AlertTriangle size={14} aria-hidden="true" />
                     <span>
-                      {sourceErrors.map(([label, error]) => `${label}: ${error || "Collection request failed."}`).join(" · ")}
+                      {sourceErrors.map(([label, error]) => `${t(`dashboard.${label.toLowerCase()}` as never)}: ${error || t("dashboard.backend.collectionFailed")}`).join(" · ")}
                     </span>
                   </span>
                   <button className="dashboard-connection-action" type="button" onClick={onConfigureConnection}>
-                    Connection settings
+                    {t("dashboard.connectionSettings")}
                     <ArrowRight size={13} strokeWidth={1.7} aria-hidden="true" />
                   </button>
                 </>
@@ -367,14 +368,14 @@ export function DashboardView({
             </div>
           ) : null}
 
-          <dl className="dashboard-summary" aria-label="Core resource snapshot">
-            <Metric label="Agents" value={agentsAvailable ? snapshot.loadedAgentCount.toLocaleString("en-US") : "Unavailable"} detail="Saved definitions" />
-            <Metric label="Sessions" value={sessionsAvailable ? snapshot.loadedSessionCount.toLocaleString("en-US") : "Unavailable"} detail="In this snapshot" />
-            <Metric label="In progress" value={sessionsAvailable ? snapshot.statusCounts.in_progress.toLocaleString("en-US") : "Unavailable"} detail="Core-reported status" />
+          <dl className="dashboard-summary" aria-label={t("dashboard.coreSnapshot")}>
+            <Metric label={t("dashboard.agents")} value={agentsAvailable ? snapshot.loadedAgentCount.toLocaleString(locale) : t("dashboard.unavailable")} detail={t("dashboard.savedDefinitions")} />
+            <Metric label={t("dashboard.sessions")} value={sessionsAvailable ? snapshot.loadedSessionCount.toLocaleString(locale) : t("dashboard.unavailable")} detail={t("dashboard.inSnapshot")} />
+            <Metric label={t("dashboard.inProgress")} value={sessionsAvailable ? snapshot.statusCounts.in_progress.toLocaleString(locale) : t("dashboard.unavailable")} detail={t("dashboard.reportedStatus")} />
             <Metric
-              label="Needs attention"
-              value={sessionsAvailable ? attentionCount.toLocaleString("en-US") : "Unavailable"}
-              detail="Requires action or failed"
+              label={t("dashboard.needsAttention")}
+              value={sessionsAvailable ? attentionCount.toLocaleString(locale) : t("dashboard.unavailable")}
+              detail={t("dashboard.attentionDetail")}
               emphasis={sessionsAvailable && attentionCount > 0}
             />
           </dl>
@@ -383,13 +384,12 @@ export function DashboardView({
         <section className="dashboard-panel dashboard-runtime-panel" aria-labelledby="dashboard-runtime-heading">
           <header>
             <div>
-              <h2 id="dashboard-runtime-heading">Runtime monitoring</h2>
-              <p>Current provider status · retained metrics history</p>
+              <h2 id="dashboard-runtime-heading">{t("dashboard.runtimeMonitoring")}</h2><p>{t("dashboard.runtimeSubtitle")}</p>
             </div>
             {runtimeModel ? (
               <span className="dashboard-runtime-freshness">
-                {runtimeModel.summary.observedRuntimeCount}/{runtimeModel.summary.managedRuntimeCount} managed observed
-                {runtimeModel.summary.newestResolvedAt === null ? "" : ` · ${formatDashboardTimestamp(runtimeModel.summary.newestResolvedAt)}`}
+                {t("dashboard.managedObserved", { observed: runtimeModel.summary.observedRuntimeCount, managed: runtimeModel.summary.managedRuntimeCount })}
+                {runtimeModel.summary.newestResolvedAt === null ? "" : ` · ${formatDashboardTimestamp(runtimeModel.summary.newestResolvedAt, locale)}`}
               </span>
             ) : null}
           </header>
@@ -397,12 +397,12 @@ export function DashboardView({
             <p className="dashboard-empty">
               <AlertTriangle size={14} aria-hidden="true" />
               {runtimeCollectionState === "connecting"
-                ? "Loading Runtime observations…"
+                ? t("dashboard.loadingRuntime")
                 : backendUnavailable
-                  ? "Runtime observations unavailable while the Core backend is offline."
+                  ? t("dashboard.runtimeOffline")
                   : runtimeCollectionError
-                    ? `Runtime observations unavailable: ${runtimeCollectionError}`
-                    : "Runtime observations unavailable."}
+                    ? t("dashboard.runtimeError", { error: runtimeCollectionError })
+                    : t("dashboard.runtimeUnavailable")}
             </p>
           ) : (
             <>
@@ -414,7 +414,7 @@ export function DashboardView({
                   onOpenSession={onOpenSession}
                 />
               ) : (
-                <p className="dashboard-empty dashboard-empty-positive">No Session-owned Runtime contexts in this snapshot.</p>
+                <p className="dashboard-empty dashboard-empty-positive">{t("dashboard.noRuntime")}</p>
               )}
             </>
           )}
@@ -424,21 +424,20 @@ export function DashboardView({
           <section className="dashboard-panel dashboard-attention-panel" aria-labelledby="dashboard-attention-heading">
             <header>
               <div>
-                <h2 id="dashboard-attention-heading">Needs attention</h2>
-                <p>Most recent Sessions requiring action or reporting failure.</p>
+                <h2 id="dashboard-attention-heading">{t("dashboard.needsAttention")}</h2><p>{t("dashboard.attentionSubtitle")}</p>
               </div>
               {sessionsAvailable && attentionCount > 0 ? <span className="dashboard-count-badge">{attentionCount}</span> : null}
             </header>
             {!sessionsAvailable ? (
-              <p className="dashboard-empty"><AlertTriangle size={14} aria-hidden="true" />Session snapshot unavailable.</p>
+              <p className="dashboard-empty"><AlertTriangle size={14} aria-hidden="true" />{t("dashboard.sessionUnavailable")}</p>
             ) : snapshot.attentionSessions.length ? (
               <AttentionList sessions={snapshot.attentionSessions} onOpenSession={onOpenSession} />
             ) : (
-              <p className="dashboard-empty dashboard-empty-positive">No Sessions currently need attention.</p>
+              <p className="dashboard-empty dashboard-empty-positive">{t("dashboard.noAttention")}</p>
             )}
             <footer>
               <button className="dashboard-text-action" type="button" onClick={onViewSessions}>
-                View all Sessions <ArrowRight size={13} aria-hidden="true" />
+                {t("dashboard.viewSessions")} <ArrowRight size={13} aria-hidden="true" />
               </button>
             </footer>
           </section>
@@ -446,17 +445,16 @@ export function DashboardView({
           <section className="dashboard-panel dashboard-quick-panel" aria-labelledby="dashboard-quick-heading">
             <header>
               <div>
-                <h2 id="dashboard-quick-heading">Quick actions</h2>
-                <p>Move directly into the two common workflows.</p>
+                <h2 id="dashboard-quick-heading">{t("dashboard.quickActions")}</h2><p>{t("dashboard.quickSubtitle")}</p>
               </div>
             </header>
             <div className="dashboard-quick-list">
-              <QuickAction icon={<Bot size={17} strokeWidth={1.6} />} title="Create agent" description="Start from a blank definition or template." onClick={onCreateAgent} />
-              <QuickAction icon={<MessageSquare size={17} strokeWidth={1.6} />} title="Start session" description="Choose a saved Agent and Environment profile." onClick={onStartSession} />
+              <QuickAction icon={<Bot size={17} strokeWidth={1.6} />} title={t("dashboard.createAgent")} description={t("dashboard.createAgentDetail")} onClick={onCreateAgent} />
+              <QuickAction icon={<MessageSquare size={17} strokeWidth={1.6} />} title={t("dashboard.startSession")} description={t("dashboard.startSessionDetail")} onClick={onStartSession} />
             </div>
             <footer className="dashboard-quick-footer">
-              <button className="dashboard-text-action" type="button" onClick={onViewAgents}>Browse Agents</button>
-              <button className="dashboard-text-action" type="button" onClick={onViewSessions}>Browse Sessions</button>
+              <button className="dashboard-text-action" type="button" onClick={onViewAgents}>{t("dashboard.browseAgents")}</button>
+              <button className="dashboard-text-action" type="button" onClick={onViewSessions}>{t("dashboard.browseSessions")}</button>
             </footer>
           </section>
         </div>
@@ -464,19 +462,18 @@ export function DashboardView({
         <section className="dashboard-panel dashboard-recent-panel" aria-labelledby="dashboard-recent-heading">
           <header>
             <div>
-              <h2 id="dashboard-recent-heading">Recent activity</h2>
-              <p>Latest Sessions that are not already listed under Needs attention.</p>
+              <h2 id="dashboard-recent-heading">{t("dashboard.recent")}</h2><p>{t("dashboard.recentSubtitle")}</p>
             </div>
             <button className="dashboard-text-action" type="button" onClick={onViewSessions}>
-              View all <ArrowRight size={13} aria-hidden="true" />
+              {t("dashboard.viewAll")} <ArrowRight size={13} aria-hidden="true" />
             </button>
           </header>
           {!sessionsAvailable ? (
-            <p className="dashboard-empty"><AlertTriangle size={14} aria-hidden="true" />Recent Sessions unavailable.</p>
+            <p className="dashboard-empty"><AlertTriangle size={14} aria-hidden="true" />{t("dashboard.recentUnavailable")}</p>
           ) : snapshot.recentSessions.length ? (
             <RecentSessions sessions={snapshot.recentSessions} onOpenSession={onOpenSession} />
           ) : (
-            <p className="dashboard-empty"><Rows3 size={14} aria-hidden="true" />No other recent Sessions in this snapshot.</p>
+            <p className="dashboard-empty"><Rows3 size={14} aria-hidden="true" />{t("dashboard.noRecent")}</p>
           )}
         </section>
       </div>

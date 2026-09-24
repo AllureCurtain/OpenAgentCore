@@ -1,5 +1,6 @@
 import { File, FolderOpen, RefreshCw } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   AgentCoreError,
@@ -49,28 +50,38 @@ export function environmentFilesRequestDirectory(value: string): string {
   return canonicalDirectory(value) ?? value;
 }
 
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+export function formatFileSize(bytes: number, locale?: string): string {
+  if (!locale) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(bytes < 10 * 1024 ? 1 : 0)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  }
+  const [value, unit, maximumFractionDigits] = bytes < 1024
+    ? [bytes, "B", 0] as const
+    : bytes < 1024 * 1024
+      ? [bytes / 1024, "KB", bytes < 10 * 1024 ? 1 : 0] as const
+      : bytes < 1024 * 1024 * 1024
+        ? [bytes / (1024 * 1024), "MB", bytes < 10 * 1024 * 1024 ? 1 : 0] as const
+        : [bytes / (1024 * 1024 * 1024), "GB", 1] as const;
+  return `${value.toLocaleString(locale, { minimumFractionDigits: maximumFractionDigits, maximumFractionDigits })} ${unit}`;
 }
 
-export function environmentFilesFailureMessage(error: unknown, loadingMore: boolean): string {
+export function environmentFilesFailureMessage(error: unknown, loadingMore: boolean, translate?: (key: string) => string): string {
   if (
     error instanceof AgentCoreError &&
     (error.status === 404 || error.status === 405) &&
     error.code === "unsupported_operation"
   ) {
-    return "Workspace file listing is not supported by the connected Core. Web will not retry or infer support.";
+    return translate?.("files.unsupported") ?? "Workspace file listing is not supported by the connected Core. Web will not retry or infer support.";
   }
   if (error instanceof AgentCoreError && error.status === 503) {
-    return "Workspace files are temporarily unavailable. The executor may need to connect before Core can perform this read.";
+    return translate?.("files.temporarilyUnavailable") ?? "Workspace files are temporarily unavailable. The executor may need to connect before Core can perform this read.";
   }
   if (loadingMore && error instanceof AgentCoreError && error.status === 400) {
-    return "The continuation is no longer valid. The directory may have changed; refresh the file list to start again.";
+    return translate?.("files.invalidContinuation") ?? "The continuation is no longer valid. The directory may have changed; refresh the file list to start again.";
   }
-  return "Core could not list this Workspace directory. No partial result was accepted.";
+  return translate?.("files.listFailed") ?? "Core could not list this Workspace directory. No partial result was accepted.";
 }
 
 export function EnvironmentFilesPanel({
@@ -82,6 +93,8 @@ export function EnvironmentFilesPanel({
   workspaceDirectory: string;
   onListFiles: ListEnvironmentFiles;
 }) {
+  const { t, i18n } = useTranslation("sessions");
+  const locale = i18n.resolvedLanguage || "en";
   const [directory, setDirectory] = useState(workspaceDirectory);
   const [appliedDirectory, setAppliedDirectory] = useState(workspaceDirectory);
   const [order, setOrder] = useState<PageOrder>("asc");
@@ -150,17 +163,17 @@ export function EnvironmentFilesPanel({
       if (request !== requestRef.current || controller.signal.aborted) return;
       if (!append) setFiles([]);
       setNextPage(null);
-      setError(environmentFilesFailureMessage(reason, append));
+      setError(environmentFilesFailureMessage(reason, append, t as (key: string) => string));
       setState("failed");
     }
   };
 
   return (
-    <section className="environment-files" aria-label="Workspace files">
+    <section className="environment-files" aria-label={t("files.title")}>
       <header className="environment-files-heading">
         <div>
           <FolderOpen size={14} strokeWidth={1.5} aria-hidden="true" />
-          <span><strong>Workspace files</strong><small>Direct regular files · metadata only</small></span>
+          <span><strong>{t("files.title")}</strong><small>{t("files.subtitle")}</small></span>
         </div>
         {state !== "idle" ? (
           <button
@@ -169,14 +182,14 @@ export function EnvironmentFilesPanel({
             onClick={() => void load(false)}
             disabled={!directoryValid || state === "loading" || state === "loading-more"}
           >
-            <RefreshCw size={12} aria-hidden="true" /> Refresh
+            <RefreshCw size={12} aria-hidden="true" /> {t("common.refresh")}
           </button>
         ) : null}
       </header>
 
       <div className="environment-files-controls">
         <label>
-          <span>Directory</span>
+          <span>{t("files.directory")}</span>
           <input
             type="text"
             value={directory}
@@ -189,7 +202,7 @@ export function EnvironmentFilesPanel({
           />
         </label>
         <label>
-          <span>Order</span>
+          <span>{t("files.order")}</span>
           <select
             value={order}
             onChange={(event) => {
@@ -208,27 +221,27 @@ export function EnvironmentFilesPanel({
           onClick={() => void load(false)}
           disabled={!directoryValid || loading}
         >
-          {state === "loading" ? "Loading…" : "List files"}
+          {state === "loading" ? t("common.loading") : t("files.list")}
         </button>
       </div>
-      {!directoryValid ? <p className="environment-files-validation">Enter an absolute directory inside this Workspace. Parent traversal and backslashes are not allowed.</p> : null}
+      {!directoryValid ? <p className="environment-files-validation">{t("files.directoryValidation")}</p> : null}
 
       {error ? <p className="environment-files-error" role="alert">{error}</p> : null}
       {state === "idle" ? (
-        <p className="environment-files-empty">Files are loaded only when requested. Listing never starts a Turn or reads file contents.</p>
+        <p className="environment-files-empty">{t("files.idle")}</p>
       ) : state === "loading" ? (
-        <p className="environment-files-empty" aria-live="polite">Reading the authorized directory…</p>
+        <p className="environment-files-empty" aria-live="polite">{t("files.reading")}</p>
       ) : state === "failed" && files.length === 0 ? null : files.length === 0 ? (
-        <p className="environment-files-empty">No direct regular files were returned for this directory.</p>
+        <p className="environment-files-empty">{t("files.none")}</p>
       ) : (
-        <div className="environment-files-list" role="table" aria-label="Workspace file metadata">
+        <div className="environment-files-list" role="table" aria-label={t("files.metadata")}>
           <div className="environment-files-row environment-files-row-header" role="row">
-            <span role="columnheader">Path</span><span role="columnheader">Size</span>
+            <span role="columnheader">{t("files.path")}</span><span role="columnheader">{t("files.size")}</span>
           </div>
           {files.map((file) => (
             <div className="environment-files-row" role="row" key={file.path}>
               <code role="cell"><File size={12} strokeWidth={1.5} aria-hidden="true" />{file.path}</code>
-              <span role="cell">{formatFileSize(file.size_bytes)}</span>
+              <span role="cell">{formatFileSize(file.size_bytes, locale)}</span>
             </div>
           ))}
         </div>
@@ -241,10 +254,10 @@ export function EnvironmentFilesPanel({
           onClick={() => void load(true)}
           disabled={state === "loading" || state === "loading-more"}
         >
-          {state === "loading-more" ? "Loading…" : "Load more"}
+          {state === "loading-more" ? t("common.loading") : t("files.loadMore")}
         </button>
       ) : null}
-      <p className="environment-files-boundary">Paths are constrained to this Environment&apos;s Workspace root <code>{workspaceDirectory}</code>. The selected directory is sent to Core for a live, non-recursive read; it is not a durable file inventory.</p>
+      <p className="environment-files-boundary">{t("files.boundaryPrefix")} <code>{workspaceDirectory}</code>{t("files.boundarySuffix")}</p>
     </section>
   );
 }

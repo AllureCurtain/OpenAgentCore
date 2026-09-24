@@ -81,10 +81,12 @@ func TestAgentConfigurationValidationRejectsWithoutWritesPostgres(t *testing.T) 
 		{"X01", `"tool_choice":"auto"`, "{p}tool_choice", "Unknown parameter: '{p}tool_choice'."},
 		{"M01", `"multi_agent":{}`, "{p}multi_agent.enabled", "Missing required parameter: '{p}multi_agent.enabled'."},
 		{"M02", `"multi_agent":{"enabled":true,"max_concurrent_subagents":0}`, "{p}multi_agent.max_concurrent_subagents", "Invalid '{p}multi_agent.max_concurrent_subagents': integer below minimum value. Expected a value >= 1, but got 0 instead."},
-		// Repeated members would merge when decoded, and names match case-insensitively (local message).
-		{"merged text", `"text":{"format":{"type":"json_schema","schema":{"type":"array"}}},"text":{"verbosity":"low"}`, "{p}text", "Duplicate parameter: '{p}text'."},
-		{"merged reasoning", `"reasoning":{"Effort":"high"},"reasoning":{}`, "{p}reasoning", "Duplicate parameter: '{p}reasoning'."},
-		{"merged location", `"tools":[{"type":"web_search","mode":"disabled","location":{"city":"Paris"},"location":{"country":null}}]`, "{p}tools[0].location", "Duplicate parameter: '{p}tools[0].location'."},
+		// Repeated members would merge when decoded: the shared body gate rejects
+		// them with a null param (HP-11). Member names match exactly, so a case
+		// variant is an unknown member.
+		{"merged text", `"text":{"format":{"type":"json_schema","schema":{"type":"array"}}},"text":{"verbosity":"low"}`, "", "Invalid body: duplicate JSON key 'text' at '{p}text'. Duplicate JSON keys are not supported."},
+		{"merged reasoning", `"reasoning":{"Effort":"high"},"reasoning":{}`, "", "Invalid body: duplicate JSON key 'reasoning' at '{p}reasoning'. Duplicate JSON keys are not supported."},
+		{"merged location", `"tools":[{"type":"web_search","mode":"disabled","location":{"city":"Paris"},"location":{"country":null}}]`, "", "Invalid body: duplicate JSON key 'location' at '{p}tools.location'. Duplicate JSON keys are not supported."},
 		{"case variant", `"reasoning":{"effort":"high","EFFORT":"max"}`, "{p}reasoning.EFFORT", "Unknown parameter: '{p}reasoning.EFFORT'."},
 	}
 	expect := func(tc struct{ name, fields, param, message string }, prefix string) string {
@@ -126,10 +128,11 @@ func TestAgentConfigurationValidationRejectsWithoutWritesPostgres(t *testing.T) 
 	if status, body := client.do(foreign, http.MethodPost, "/v1/agents/sessions", "application/json", []byte(`{"agent_id":"`+legacy.ID+`","environment":{"type":"none"},"input":"hi"}`)); status != http.StatusNotFound {
 		t.Errorf("foreign legacy saved Agent: %d %s", status, body)
 	}
-	// K2 and K3 keep the local configuration code.
+	// K2 keeps the local configuration code; saved enabled web_search (TV-05) is
+	// covered by TestSavedWebSearchPostgres.
 	for _, request := range []struct{ path, body, message string }{
-		{"/v1/agents", `{"model":"m","tools":[{"type":"web_search","mode":"live"}]}`, "Only disabled web_search is qualified for execution."},
-		{"/v1/agents/" + agent, `{"tools":[{"type":"web_search"}]}`, "Only disabled web_search is qualified for execution."},
+		{"/v1/agents/sessions", `{"agent":{"model":"m","tools":[{"type":"web_search","mode":"live"}]},"environment":{"type":"none"},"input":"hi"}`, "Only disabled web_search is qualified for execution."},
+		{"/v1/agents/sessions", `{"agent":{"model":"m","tools":[{"type":"web_search"}]},"environment":{"type":"none"},"input":"hi"}`, "Only disabled web_search is qualified for execution."},
 		{"/v1/agents/sessions", `{"agent":{"model":"m","tools":[{"type":"programmatic_tool_calling","enabled":true}]},"environment":{"type":"none"},"input":"hi"}`, "Programmatic tool calling is not qualified for execution."},
 		{"/v1/agents/sessions", `{"agent":{"model":"m","text":{"format":{"type":"json_schema","schema":{"type":"object"}}}},"environment":{"type":"none"},"input":"hi"}`, "Harness codex does not support the requested Agent/environment configuration: Structured output is not qualified for this engine."},
 	} {

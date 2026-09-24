@@ -1,5 +1,6 @@
 import type { AgentSession, RuntimeObservation } from "@agents-core-web/agents-client";
 
+import { holdLastReported } from "./held-usage";
 import type { RuntimeDashboardSnapshot } from "./runtime-snapshot";
 
 export const RUNTIME_TREND_WINDOW_MS = 60 * 60 * 1_000;
@@ -44,6 +45,8 @@ export interface RuntimeTrendTokenTotal {
   sampledAt: number;
   inputTokens: number;
   outputTokens: number;
+  /** Kept from the report at sampledAt while public Session usage is null. */
+  held?: true;
 }
 
 export interface TokenThroughputSample {
@@ -93,6 +96,17 @@ function tokenTotals(sessions: readonly AgentSession[], sampledAt: number): Runt
       ? []
       : [{ sessionId: session.id, sampledAt, inputTokens, outputTokens }];
   });
+}
+
+// Keep a listed Session's last reported totals, with their report time, while
+// its public usage is null. tokenRate treats a held total as unknown, so those
+// intervals are gaps; the next reported total is spread over the time since the
+// last report.
+function carryTokenTotals(previous: RuntimeTrendSample, next: RuntimeTrendSample, snapshot: RuntimeDashboardSnapshot): void {
+  const reported = new Map<string, RuntimeTrendTokenTotal | null>(snapshot.sessions.map((session) => [session.id, null]));
+  for (const total of next.tokenTotals) reported.set(total.sessionId, total);
+  const prior = new Map(previous.tokenTotals.map((total) => [total.sessionId, { ...total, held: true as const }]));
+  next.tokenTotals = [...holdLastReported(prior, reported).values()];
 }
 
 export function runtimeTrendSample(snapshot: RuntimeDashboardSnapshot): RuntimeTrendSample {
@@ -239,15 +253,17 @@ function tokenRate(
     const prior = previousTotals.get(current.sessionId);
     return prior ? [[prior, current]] : [];
   });
+  // A total held from an earlier report is not a measurement at this sample.
+  const measured = (current: RuntimeTrendTokenTotal) => !current.held;
   const inputRates = pairs.map(([prior, current]) => {
     const elapsedMinutes = (current.sampledAt - prior.sampledAt) / 60_000;
     const delta = current.inputTokens - prior.inputTokens;
-    return elapsedMinutes > 0 && delta >= 0 ? delta / elapsedMinutes : null;
+    return measured(current) && elapsedMinutes > 0 && delta >= 0 ? delta / elapsedMinutes : null;
   });
   const outputRates = pairs.map(([prior, current]) => {
     const elapsedMinutes = (current.sampledAt - prior.sampledAt) / 60_000;
     const delta = current.outputTokens - prior.outputTokens;
-    return elapsedMinutes > 0 && delta >= 0 ? delta / elapsedMinutes : null;
+    return measured(current) && elapsedMinutes > 0 && delta >= 0 ? delta / elapsedMinutes : null;
   });
   const inputRate = inputRates.length > 0 && inputRates.every((rate) => rate !== null)
     ? inputRates.reduce<number>((total, rate) => total + (rate ?? 0), 0)
@@ -284,6 +300,7 @@ export function appendRuntimeTrendSample(
     .slice(-(maximum - 1));
   const previous = retained.at(-1);
   if (previous) {
+    carryTokenTotals(previous, next, snapshot);
     Object.assign(next, tokenRate(previous, next));
     applyCPURatios(next, cpuRatios(previous, next));
   }

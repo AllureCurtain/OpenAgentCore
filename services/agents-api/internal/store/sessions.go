@@ -47,6 +47,9 @@ type Session struct {
 	RequiredActions          []v1.FunctionCallAction
 	Environment              *Environment
 	EnvironmentInputActivity *EnvironmentInputActivity
+	// EnvironmentFailure is the recorded provisioning failure of a failed hosted
+	// Environment. It makes the Session failed and is terminal.
+	EnvironmentFailure *EnvironmentFailure
 	// PendingInput reports that the latest input reservation, read once no Turn
 	// is active or newer, can still start a Turn. It only supports settlement
 	// checks and is never rendered.
@@ -54,8 +57,9 @@ type Session struct {
 }
 
 type CreateSessionInput struct {
-	SandboxNodeID string
-	ModelProvider *v1.ModelProviderInput
+	ExecutionConfiguration *v1.SessionExecutionConfiguration
+	SandboxNodeID          string
+	ModelProvider          *v1.ModelProviderInput
 	// ModelOptions is a private snapshot of trusted deployment execution options.
 	ModelOptions    map[string]any
 	Initialization  EnvironmentSetup
@@ -139,7 +143,8 @@ func (s *Store) createSession(ctx context.Context, tenantID string, input Create
 			return SessionCreation{}, ErrInvalidInput
 		}
 		environment, _ := fields["environment"].(map[string]any)
-		if environment["type"] != "openai_hosted" {
+		environmentType, _ := environment["type"].(string)
+		if !v1.ModelProviderEnvironmentSupported(environmentType) {
 			return SessionCreation{}, fmt.Errorf("%w: model credentials require a hosted environment", ErrInvalidInput)
 		}
 		fields["model_provider_configured"] = true
@@ -178,7 +183,7 @@ func (s *Store) createSession(ctx context.Context, tenantID string, input Create
 		Configuration: configuration, CreationRequestHash: creationHash,
 		CreatorKind: pgtype.Text{String: input.Creator.Kind, Valid: true}, CreatorID: pgtype.Text{String: input.Creator.ID, Valid: true},
 	}
-	row, environment, err := s.createSessionResources(ctx, tenantID, params, batch, encodedInput, input.InitialFiles, input.Initialization, input.ModelProvider, input.ModelOptions, input.SandboxNodeID)
+	row, environment, err := s.createSessionResources(ctx, tenantID, params, batch, encodedInput, input.InitialFiles, input.Initialization, input.ModelProvider, input.ModelOptions, input.SandboxNodeID, input.ExecutionConfiguration)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SessionCreation{}, ErrIdempotencyConflict
 	}
@@ -223,11 +228,7 @@ func (s *Store) ListSessions(ctx context.Context, tenantID, cursor string, limit
 		params.AgentID = pgtype.Text{String: *agentID, Valid: true}
 	}
 	if cursor != "" {
-		// A malformed cursor remains an invalid request, unlike a path identifier.
-		if _, err := parseID(cursor); err != nil {
-			return SessionPage{}, err
-		}
-		after, err := s.GetSession(ctx, tenantID, cursor)
+		after, err := s.GetSession(ctx, tenantID, lookupCursor(cursor))
 		if err != nil {
 			return SessionPage{}, err
 		}
@@ -269,7 +270,7 @@ var UnknownResourceID = uuid.Max.String()
 // parsePathID parses a caller-supplied resource path identifier. A value that
 // cannot name a resource resolves to UnknownResourceID, so the request follows
 // exactly the path of a well-formed missing identifier, including validation
-// order. List cursors and request-body references keep parseID.
+// order. Request-body references keep parseID; see lookupCursor for cursors.
 func parsePathID(value string) pgtype.UUID {
 	id, err := parseID(value)
 	if err != nil {

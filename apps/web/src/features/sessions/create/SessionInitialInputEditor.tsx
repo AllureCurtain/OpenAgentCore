@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { useId, useRef } from "react";
+import { useTranslation } from "react-i18next";
 
 import {
   projectSessionInitialInput,
@@ -25,6 +26,7 @@ export function SessionInitialInputEditor({
   showTextField = true,
   onChange,
 }: SessionInitialInputEditorProps) {
+  const { t } = useTranslation("sessions");
   const id = useId();
   const nextIdRef = useRef(0);
   const projection = projectSessionInitialInput(draft);
@@ -57,13 +59,13 @@ export function SessionInitialInputEditor({
     <section className="session-initial-input-editor" aria-labelledby={`${id}-heading`}>
       <div className="session-initial-input-heading">
         <div>
-          <span id={`${id}-heading`}>Initial input</span>
-          <small>User text only. Assistant messages and images are not supported here.</small>
+          <span id={`${id}-heading`}>{t("initialInput.title")}</span>
+          <small>{t("initialInput.description")}</small>
         </div>
       </div>
 
       <fieldset className="session-initial-input-modes" disabled={disabled}>
-        <legend>Input format</legend>
+        <legend>{t("initialInput.format")}</legend>
         <label>
           <input
             type="radio"
@@ -72,7 +74,7 @@ export function SessionInitialInputEditor({
             checked={draft.mode === "text"}
             onChange={() => dispatch({ type: "set-mode", mode: "text" })}
           />
-          Text
+          {t("initialInput.text")}
         </label>
         <label>
           <input
@@ -82,38 +84,38 @@ export function SessionInitialInputEditor({
             checked={draft.mode === "messages"}
             onChange={selectMessages}
           />
-          Message array
+          {t("initialInput.messageArray")}
         </label>
       </fieldset>
 
       <p className="session-initial-input-switch-note" role="note">
-        Text and message-array drafts stay separate when you switch. Only the selected format is submitted.
+        {t("initialInput.switchNote")}
       </p>
 
       {draft.mode === "text" && showTextField ? (
         <label className="field session-initial-text-field">
-          <span>First user message</span>
+          <span>{t("initialInput.firstUserMessage")}</span>
           <textarea
-            aria-label="Initial input"
+            aria-label={t("initialInput.title")}
             value={draft.text}
             onChange={(event) => dispatch({ type: "set-text", value: event.target.value })}
             rows={5}
-            placeholder={required ? "Write the first message…" : "Optional first message…"}
+            placeholder={required ? t("initialInput.requiredPlaceholder") : t("initialInput.optionalPlaceholder")}
             aria-required={required}
             disabled={disabled}
           />
-          <small>{required ? "Required without an Environment. " : "Optional. "}Nonblank input is preserved exactly and starts the initial Turn during Session creation.</small>
+          <small>{required ? t("initialInput.requiredPrefix") : t("initialInput.optionalPrefix")}{t("initialInput.preservationNote")}</small>
         </label>
       ) : draft.mode === "text" ? (
         <p className="session-initial-input-switch-note">
-          The basic First message field is active. Select Message array here only when ordered user messages or multiple text parts are required.
+          {t("initialInput.basicFieldActive")}
         </p>
       ) : (
         <div className="session-initial-message-builder">
           <div className="session-initial-message-builder-heading">
             <div>
-              <strong>Ordered user messages</strong>
-              <span>Each message contains one or more ordered text parts.</span>
+              <strong>{t("initialInput.orderedMessages")}</strong>
+              <span>{t("initialInput.orderedMessagesHint")}</span>
             </div>
             <button
               className="button outline"
@@ -122,7 +124,7 @@ export function SessionInitialInputEditor({
               disabled={disabled}
             >
               <Plus size={13} aria-hidden="true" />
-              Add message
+              {t("initialInput.addMessage")}
             </button>
           </div>
 
@@ -130,13 +132,13 @@ export function SessionInitialInputEditor({
             {draft.messages.map((message, messageIndex) => (
               <li className="session-initial-message" key={message.id}>
                 <div className="session-initial-message-heading">
-                  <strong>User message {messageIndex + 1}</strong>
+                  <strong>{t("initialInput.userMessageNumber", { number: messageIndex + 1 })}</strong>
                   <div className="session-initial-editor-actions">
                     <button
                       className="icon-button"
                       type="button"
-                      aria-label={`Move user message ${messageIndex + 1} up`}
-                      title="Move message up"
+                      aria-label={t("initialInput.moveMessageUp", { number: messageIndex + 1 })}
+                      title={t("initialInput.moveMessageUpTitle")}
                       disabled={disabled || messageIndex === 0}
                       onClick={() => dispatch({
                         type: "move-message",
@@ -149,8 +151,8 @@ export function SessionInitialInputEditor({
                     <button
                       className="icon-button"
                       type="button"
-                      aria-label={`Move user message ${messageIndex + 1} down`}
-                      title="Move message down"
+                      aria-label={t("initialInput.moveMessageDown", { number: messageIndex + 1 })}
+                      title={t("initialInput.moveMessageDownTitle")}
                       disabled={disabled || messageIndex === draft.messages.length - 1}
                       onClick={() => dispatch({
                         type: "move-message",
@@ -163,8 +165,8 @@ export function SessionInitialInputEditor({
                     <button
                       className="icon-button danger"
                       type="button"
-                      aria-label={`Remove user message ${messageIndex + 1}`}
-                      title="Remove message"
+                      aria-label={t("initialInput.removeMessage", { number: messageIndex + 1 })}
+                      title={t("initialInput.removeMessageTitle")}
                       disabled={disabled || draft.messages.length === 1}
                       onClick={() => dispatch({
                         type: "remove-message",
@@ -180,13 +182,13 @@ export function SessionInitialInputEditor({
                   {message.parts.map((part, partIndex) => (
                     <li className="session-initial-part" key={part.id}>
                       <div className="session-initial-part-heading">
-                        <label htmlFor={`${id}-${part.id}`}>Text part {partIndex + 1}</label>
+                        <label htmlFor={`${id}-${part.id}`}>{t("initialInput.textPartNumber", { number: partIndex + 1 })}</label>
                         <div className="session-initial-editor-actions">
                           <button
                             className="icon-button"
                             type="button"
-                            aria-label={`Move text part ${partIndex + 1} of user message ${messageIndex + 1} up`}
-                            title="Move text part up"
+                            aria-label={t("initialInput.moveTextPartUp", { part: partIndex + 1, message: messageIndex + 1 })}
+                            title={t("initialInput.moveTextPartUpTitle")}
                             disabled={disabled || partIndex === 0}
                             onClick={() => dispatch({
                               type: "move-part",
@@ -200,8 +202,8 @@ export function SessionInitialInputEditor({
                           <button
                             className="icon-button"
                             type="button"
-                            aria-label={`Move text part ${partIndex + 1} of user message ${messageIndex + 1} down`}
-                            title="Move text part down"
+                            aria-label={t("initialInput.moveTextPartDown", { part: partIndex + 1, message: messageIndex + 1 })}
+                            title={t("initialInput.moveTextPartDownTitle")}
                             disabled={disabled || partIndex === message.parts.length - 1}
                             onClick={() => dispatch({
                               type: "move-part",
@@ -215,8 +217,8 @@ export function SessionInitialInputEditor({
                           <button
                             className="icon-button danger"
                             type="button"
-                            aria-label={`Remove text part ${partIndex + 1} from user message ${messageIndex + 1}`}
-                            title="Remove text part"
+                            aria-label={t("initialInput.removeTextPart", { part: partIndex + 1, message: messageIndex + 1 })}
+                            title={t("initialInput.removeTextPartTitle")}
                             disabled={disabled || message.parts.length === 1}
                             onClick={() => dispatch({
                               type: "remove-part",
@@ -238,7 +240,7 @@ export function SessionInitialInputEditor({
                           value: event.target.value,
                         })}
                         rows={3}
-                        placeholder="Required user text…"
+                        placeholder={t("initialInput.requiredUserText")}
                         aria-invalid={!message.parts.some((candidate) => candidate.text.match(/[^\p{White_Space}]/u))}
                         disabled={disabled}
                       />
@@ -257,7 +259,7 @@ export function SessionInitialInputEditor({
                   })}
                 >
                   <Plus size={13} aria-hidden="true" />
-                  Add text part
+                  {t("initialInput.addTextPart")}
                 </button>
               </li>
             ))}

@@ -7,6 +7,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useReducer, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type {
   FunctionCallAction,
@@ -152,6 +153,7 @@ function FunctionActionEditor({
   action: FunctionCallAction;
   actionCount: number;
 }) {
+  const { t } = useTranslation("sessions");
   const [draft, dispatch] = useReducer(
     functionResultDraftReducer,
     undefined,
@@ -191,17 +193,17 @@ function FunctionActionEditor({
   };
 
   return (
-    <section className="approval-bar function-action-panel" aria-label="Function result required">
+    <section className="approval-bar function-action-panel" aria-label={t("functionAction.required")}>
       <div className="approval-heading">
         <Code2 size={14} strokeWidth={1.5} aria-hidden="true" />
         <span title={action.name}>{action.name}</span>
         {actionCount > 1 ? <span className="approval-count">1 / {actionCount}</span> : null}
       </div>
-      <p>{agentName || "Agent"} is waiting for this function result.</p>
+      <p>{t("functionAction.waiting", { agent: agentName || t("common.agent") })}</p>
       <pre className="approval-arguments">{pretty(action.arguments)}</pre>
 
       <fieldset className="function-result-mode" disabled={disabled}>
-        <legend>Result format</legend>
+        <legend>{t("functionAction.resultFormat")}</legend>
         <label>
           <input
             type="radio"
@@ -210,7 +212,7 @@ function FunctionActionEditor({
             checked={draft.mode === "text"}
             onChange={() => dispatch({ type: "set-mode", mode: "text" })}
           />
-          Text result
+          {t("functionAction.textResult")}
         </label>
         <label>
           <input
@@ -220,7 +222,7 @@ function FunctionActionEditor({
             checked={draft.mode === "structured"}
             onChange={() => dispatch({ type: "set-mode", mode: "structured" })}
           />
-          Structured result
+          {t("functionAction.structuredResult")}
         </label>
       </fieldset>
 
@@ -230,8 +232,8 @@ function FunctionActionEditor({
           className="approval-input"
           value={draft.text}
           onChange={(event) => dispatch({ type: "set-text", value: event.target.value })}
-          placeholder="Return a result or describe the error…"
-          aria-label="Function result or error"
+          placeholder={t("functionAction.resultPlaceholder")}
+          aria-label={t("functionAction.resultOrError")}
           rows={3}
           disabled={disabled}
         />
@@ -239,33 +241,33 @@ function FunctionActionEditor({
         <div className="function-result-builder">
           <div className="function-result-builder-heading">
             <div>
-              <strong>Ordered content parts</strong>
-              <span>The array is submitted in the order shown.</span>
+              <strong>{t("functionAction.orderedParts")}</strong>
+              <span>{t("functionAction.orderedPartsHint")}</span>
             </div>
             <div className="function-result-add-actions">
               <button className="button outline" type="button" disabled={disabled} onClick={() => addPart("input_text")}>
-                <Plus size={13} aria-hidden="true" /> Text part
+                <Plus size={13} aria-hidden="true" /> {t("functionAction.textPart")}
               </button>
               <button className="button outline" type="button" disabled={disabled} onClick={() => addPart("input_image")}>
-                <Plus size={13} aria-hidden="true" /> Image part
+                <Plus size={13} aria-hidden="true" /> {t("functionAction.imagePart")}
               </button>
             </div>
           </div>
 
           {draft.parts.length === 0 ? (
-            <p className="function-result-empty" role="note">Add at least one non-empty text or image part.</p>
+            <p className="function-result-empty" role="note">{t("functionAction.addPartHint")}</p>
           ) : (
             <ol className="function-result-parts">
               {draft.parts.map((part, index) => (
                 <li className="function-result-part" key={part.id}>
                   <div className="function-result-part-heading">
-                    <span>{part.type === "input_text" ? "Text part" : "Image part"} {index + 1}</span>
+                    <span>{t(part.type === "input_text" ? "functionAction.numberedTextPart" : "functionAction.numberedImagePart", { number: index + 1 })}</span>
                     <div className="function-result-part-actions">
                       <button
                         className="icon-button ghost"
                         type="button"
-                        aria-label={`Move part ${index + 1} up`}
-                        title="Move up"
+                        aria-label={t("functionAction.movePartUp", { number: index + 1 })}
+                        title={t("common.moveUp")}
                         disabled={disabled || index === 0}
                         onClick={() => dispatch({ type: "move-part", id: part.id, direction: -1 })}
                       >
@@ -274,8 +276,8 @@ function FunctionActionEditor({
                       <button
                         className="icon-button ghost"
                         type="button"
-                        aria-label={`Move part ${index + 1} down`}
-                        title="Move down"
+                        aria-label={t("functionAction.movePartDown", { number: index + 1 })}
+                        title={t("common.moveDown")}
                         disabled={disabled || index === draft.parts.length - 1}
                         onClick={() => dispatch({ type: "move-part", id: part.id, direction: 1 })}
                       >
@@ -284,8 +286,8 @@ function FunctionActionEditor({
                       <button
                         className="icon-button ghost"
                         type="button"
-                        aria-label={`Delete part ${index + 1}`}
-                        title="Delete part"
+                        aria-label={t("functionAction.deletePart", { number: index + 1 })}
+                        title={t("functionAction.deletePartTitle")}
                         disabled={disabled}
                         onClick={() => dispatch({ type: "remove-part", id: part.id })}
                       >
@@ -298,9 +300,9 @@ function FunctionActionEditor({
                       className="approval-input function-result-part-input"
                       value={part.value}
                       onChange={(event) => dispatch({ type: "update-part", id: part.id, value: event.target.value })}
-                      aria-label={`Text part ${index + 1}`}
+                      aria-label={t("functionAction.numberedTextPart", { number: index + 1 })}
                       aria-invalid={!part.value.trim()}
-                      placeholder="Text content"
+                      placeholder={t("functionAction.textContent")}
                       rows={2}
                       disabled={disabled}
                     />
@@ -310,7 +312,7 @@ function FunctionActionEditor({
                       type="text"
                       value={part.value}
                       onChange={(event) => dispatch({ type: "update-part", id: part.id, value: event.target.value })}
-                      aria-label={`Image URL for part ${index + 1}`}
+                      aria-label={t("functionAction.imageUrlForPart", { number: index + 1 })}
                       aria-invalid={!part.value.trim()}
                       placeholder="https://… or data:image/…"
                       disabled={disabled}
@@ -322,16 +324,16 @@ function FunctionActionEditor({
           )}
 
           <p className="function-result-image-note" role="note">
-            Image parts are passed to Core as provided. This Web does not fetch or preview them, and support depends on the selected model and runtime.
+            {t("functionAction.imageNote")}
           </p>
           <label className="function-result-error-field">
-            <span>Error detail (used only by Return error)</span>
+            <span>{t("functionAction.errorDetail")}</span>
             <textarea
               className="approval-input"
               value={draft.text}
               onChange={(event) => dispatch({ type: "set-text", value: event.target.value })}
-              placeholder={defaultFunctionRejection}
-              aria-label="Function error detail"
+              placeholder={t("functionAction.defaultRejection")}
+              aria-label={t("functionAction.errorDetailLabel")}
               rows={2}
               disabled={disabled}
             />
@@ -341,7 +343,7 @@ function FunctionActionEditor({
 
       <div className="approval-actions">
         <button className="button outline" type="button" disabled={disabled} onClick={() => submit(false)}>
-          Return error
+          {t("functionAction.returnError")}
         </button>
         <button
           className="button primary"
@@ -349,15 +351,15 @@ function FunctionActionEditor({
           disabled={disabled || !validFunctionResultDraft(draft)}
           onClick={() => submit(true)}
         >
-          Submit result
+          {t("functionAction.submitResult")}
         </button>
         <button
           className="composer-action"
           type="button"
           onClick={onCancel}
           disabled={disabled}
-          aria-label="Cancel active Turn"
-          title="Cancel active Turn"
+          aria-label={t("common.cancelActiveTurn")}
+          title={t("common.cancelActiveTurn")}
         >
           <Square size={13} fill="currentColor" strokeWidth={1.5} aria-hidden="true" />
         </button>

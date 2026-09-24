@@ -6,6 +6,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { useTranslation } from "react-i18next";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 
@@ -46,8 +47,8 @@ function finite(values: readonly (number | null)[]): number[] {
   return values.filter((value): value is number => value !== null && Number.isFinite(value) && value >= 0);
 }
 
-function timeLabel(value: number): string {
-  return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+function timeLabel(value: number, locale: string): string {
+  return new Date(value).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 const toneColors: Record<TrendSeries["tone"], string> = {
@@ -119,7 +120,7 @@ function TrendChart({
   source,
   bands = [],
   ticks = [1, .66, .33, 0],
-  emptyMessage = "Collecting live samples",
+  emptyMessage,
   emptyDetail,
 }: {
   title: string;
@@ -136,6 +137,9 @@ function TrendChart({
   emptyMessage?: string;
   emptyDetail?: string;
 }) {
+  const { t, i18n } = useTranslation("dashboard");
+  const locale = i18n.resolvedLanguage ?? "en";
+  const displayEmptyMessage = emptyMessage ?? t("charts.collecting");
   const instructionId = `${useId().replaceAll(":", "")}-instructions`;
   const mountRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<uPlot | null>(null);
@@ -224,7 +228,7 @@ function TrendChart({
           stroke: axisColor,
           grid: { stroke: gridColor, width: 1 },
           ticks: { stroke: gridColor, width: 1 },
-          values: (_plot, values) => values.map((value) => timeLabel(value * 1_000)),
+          values: (_plot, values) => values.map((value) => timeLabel(value * 1_000, locale)),
           font: "8px ui-monospace, SFMono-Regular, Menlo, monospace",
           size: 28,
         },
@@ -335,7 +339,7 @@ function TrendChart({
     };
   // Data updates are applied without rebuilding so a selected time range remains stable.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bandsKey, seriesKey, source, theme, ticksKey]);
+  }, [bandsKey, locale, seriesKey, source, theme, ticksKey]);
 
   useEffect(() => {
     const plot = plotRef.current;
@@ -398,11 +402,11 @@ function TrendChart({
     }
   };
 
-  const sourceLabel = source === "durable" ? "durable history" : "live";
-  const sampleLabel = source === "durable" ? "retained buckets" : "live samples";
+  const sourceLabel = t(source === "durable" ? "charts.durableHistory" : "charts.live");
+  const sampleLabel = t(source === "durable" ? "charts.retainedBuckets" : "charts.liveSamples");
 
   return (
-    <section className="dashboard-runtime-trend-card" aria-label={`${title} ${sourceLabel} chart`}>
+    <section className="dashboard-runtime-trend-card" aria-label={t("charts.chartLabel", { title, source: sourceLabel })}>
       <header>
         <div><h3>{title}</h3><p>{subtitle}</p></div>
         <div className="dashboard-runtime-trend-legend">
@@ -414,8 +418,8 @@ function TrendChart({
                 key={entry.id}
                 className={visible ? "" : "is-hidden"}
                 aria-pressed={visible}
-                aria-label={`${visible ? "Hide" : "Show"} ${entry.label} series`}
-                title={`${visible ? "Hide" : "Show"} ${entry.label}`}
+                aria-label={t(visible ? "charts.hideSeries" : "charts.showSeries", { series: entry.label })}
+                title={t(visible ? "charts.hide" : "charts.show", { series: entry.label })}
                 onClick={() => setHiddenSeries((current) => {
                   const next = new Set(current);
                   if (next.has(entry.id)) next.delete(entry.id);
@@ -425,14 +429,14 @@ function TrendChart({
               ><i className={`dashboard-runtime-trend-${entry.tone}`} />{entry.label}</button>
             );
           })}
-          {zoomed ? <button type="button" className="dashboard-runtime-chart-reset" onClick={resetZoom}>Reset zoom</button> : null}
+          {zoomed ? <button type="button" className="dashboard-runtime-chart-reset" onClick={resetZoom}>{t("charts.resetZoom")}</button> : null}
         </div>
       </header>
       <div
         className="dashboard-runtime-chart-frame dashboard-runtime-uplot-frame"
         onKeyDown={handleKeyboard}
       >
-        <p id={instructionId} className="dashboard-runtime-visually-hidden">Move the pointer over the plot for exact values. Drag horizontally to select and zoom a time range. Double-click or use Reset zoom to restore the full range. Click to pin a time. Use Left and Right arrows to move the pinned selection, and Escape to clear it.</p>
+        <p id={instructionId} className="dashboard-runtime-visually-hidden">{t("charts.instructions")}</p>
         <div
           ref={mountRef}
           className="dashboard-runtime-uplot"
@@ -451,13 +455,13 @@ function TrendChart({
             role="status"
             style={{ left: `${tooltip?.left ?? 50}%` }}
           >
-            <header><time dateTime={new Date(selectedAt).toISOString()}>{new Date(selectedAt).toLocaleString()}</time>{tooltip?.pinned ? <span>Pinned</span> : <span>Hover</span>}</header>
+            <header><time dateTime={new Date(selectedAt).toISOString()}>{new Date(selectedAt).toLocaleString(locale)}</time>{tooltip?.pinned ? <span>{t("charts.pinned")}</span> : <span>{t("charts.hover")}</span>}</header>
             {selectedValues.map((entry) => (
-              <div key={entry.id}><i className={`dashboard-runtime-trend-${entry.tone}`} /><span>{entry.label}</span><strong>{entry.value === null ? "Unavailable" : formatValue(entry.value)}</strong></div>
+              <div key={entry.id}><i className={`dashboard-runtime-trend-${entry.tone}`} /><span>{entry.label}</span><strong>{entry.value === null ? t("charts.unavailable") : formatValue(entry.value)}</strong></div>
             ))}
           </div>
         )}
-        {!hasLine ? <div className="dashboard-runtime-chart-collecting"><strong>{allSeriesHidden ? "All series hidden" : validPoints > 0 ? "Sparse samples" : emptyMessage}</strong><span>{allSeriesHidden ? "Use the legend to show a series" : validPoints > 0 ? `${validPoints} valid point${validPoints === 1 ? "" : "s"} · a line requires consecutive buckets` : emptyDetail ?? `${validPoints}/2 valid points · ${samples.length} snapshots · no history is synthesized`}</span></div> : null}
+        {!hasLine ? <div className="dashboard-runtime-chart-collecting"><strong>{allSeriesHidden ? t("charts.allHidden") : validPoints > 0 ? t("charts.sparse") : displayEmptyMessage}</strong><span>{allSeriesHidden ? t("charts.showLegend") : validPoints > 0 ? t("charts.sparseDetail", { count: validPoints }) : emptyDetail ?? t("charts.emptyDetail", { valid: validPoints, count: samples.length })}</span></div> : null}
       </div>
       <table className="dashboard-runtime-trend-accessible">
         <caption>{runtimeChartCaption({
@@ -467,15 +471,15 @@ function TrendChart({
           allSeriesHidden,
           validPoints,
           sampleCount: samples.length,
-          emptyMessage,
+          emptyMessage: displayEmptyMessage,
           emptyDetail,
         })}</caption>
-        <thead><tr><th>Series</th><th>Latest value</th><th>Missing samples</th></tr></thead>
+        <thead><tr><th>{t("charts.table.series")}</th><th>{t("charts.table.latest")}</th><th>{t("charts.table.missing")}</th></tr></thead>
         <tbody>
           {series.map((entry) => {
             const latest = entry.points.at(-1)?.value ?? null;
             const missing = entry.points.filter((point) => point.value === null).length;
-            return <tr key={entry.id}><th>{entry.label}</th><td>{latest === null ? "Unavailable" : formatValue(latest)}</td><td>{missing}</td></tr>;
+            return <tr key={entry.id}><th>{entry.label}</th><td>{latest === null ? t("charts.unavailable") : formatValue(latest)}</td><td>{missing.toLocaleString(locale)}</td></tr>;
           })}
         </tbody>
       </table>
@@ -525,6 +529,8 @@ export function RuntimeTrendCharts({
   rangeEnd?: number;
   activeDisplay?: "sum" | "binary";
 }) {
+  const { t, i18n } = useTranslation("dashboard");
+  const locale = i18n.resolvedLanguage ?? "en";
   const charts = useMemo(() => {
     const cpuIds = targetIds(samples, "cpuRatio");
     const cpu = cpuIds.map((id, index): TrendSeries => ({
@@ -534,13 +540,13 @@ export function RuntimeTrendCharts({
       points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: (sample.targets.find((target) => target.seriesId === id)?.cpuRatio ?? 0) * 100 })),
     }));
     if (cpu.length === 0 && samples.length > 0) {
-      cpu.push({ id: "cpu", label: "usage", tone: "orange", points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: 0 })) });
+      cpu.push({ id: "cpu", label: t("charts.usage"), tone: "orange", points: samples.map((sample) => ({ sampledAt: sample.sampledAt, value: 0 })) });
     }
     const memoryUsed = samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.memoryUsageBytes ?? 0 }));
     const memoryLimit = samples.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.memoryLimitBytes ?? 0 }));
     const active = [{
       id: "active",
-      label: activeDisplay === "binary" ? "Runtime" : "active",
+      label: t(activeDisplay === "binary" ? "charts.runtime" : "charts.active.series"),
       tone: "green",
       stepped: true,
       points: samples.map((sample) => ({
@@ -554,16 +560,16 @@ export function RuntimeTrendCharts({
     return {
       cpu,
       memory: [
-        { id: "used", label: "used", tone: "purple", points: memoryUsed },
-        { id: "limit", label: "configured limit", tone: "green", points: memoryLimit },
+        { id: "used", label: t("charts.used"), tone: "purple", points: memoryUsed },
+        { id: "limit", label: t("charts.configuredLimit"), tone: "green", points: memoryLimit },
       ] satisfies TrendSeries[],
       active,
       tokens: [
-        { id: "input", label: "input", tone: "orange", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.inputPerMinute ?? 0 })) },
-        { id: "output", label: "output", tone: "green", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.outputPerMinute ?? 0 })) },
+        { id: "input", label: t("charts.input"), tone: "orange", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.inputPerMinute ?? 0 })) },
+        { id: "output", label: t("charts.output"), tone: "green", points: throughput.map((sample) => ({ sampledAt: sample.sampledAt, value: sample.outputPerMinute ?? 0 })) },
       ] satisfies TrendSeries[],
     };
-  }, [activeDisplay, samples]);
+  }, [activeDisplay, samples, t]);
   const cpuMaximum = Math.max(100, ...finite(charts.cpu.flatMap((series) => series.points.map((point) => point.value))));
   const memoryMaximum = Math.max(1, ...finite(charts.memory.flatMap((series) => series.points.map((point) => point.value))));
   const activeMaximum = Math.max(1, ...finite(charts.active.flatMap((series) => series.points.map((point) => point.value))));
@@ -573,20 +579,20 @@ export function RuntimeTrendCharts({
   const oldest = rangeStart ?? samples[0]?.sampledAt ?? newest - 60 * 60 * 1_000;
   const durable = source === "durable";
   const binaryActive = activeDisplay === "binary";
-  const activeTitle = binaryActive ? "Runtime active" : "Active sandboxes";
-  const activeSubtitle = binaryActive
-    ? durable ? "observed allocation in retained bucket · 1 active / 0 inactive" : "lifecycle state active · 1 active / 0 inactive"
-    : durable ? "observed allocations per retained bucket · durable history" : "lifecycle state active allocations per snapshot · live window";
+  const activeTitle = t(binaryActive ? "charts.active.runtimeTitle" : "charts.active.sandboxTitle");
+  const activeSubtitle = t(binaryActive
+    ? durable ? "charts.active.binaryDurable" : "charts.active.binaryLive"
+    : durable ? "charts.active.sumDurable" : "charts.active.sumLive");
   const formatActive = binaryActive
-    ? (value: number) => value >= .5 ? "Active" : "Inactive"
+    ? (value: number) => t(value >= .5 ? "charts.active.active" : "charts.active.inactive")
     : (value: number) => `${Math.round(value)}`;
 
   return (
-    <div className="dashboard-runtime-trend-grid" aria-label={durable ? "Runtime durable-history charts" : "Runtime live-window charts"}>
-      <TrendChart title="CPU usage" subtitle={durable ? "bucketed cumulative-delta utilization · durable history" : "reported or cumulative-delta utilization · live window"} samples={samples} series={charts.cpu} maximum={cpuMaximum} formatValue={(value) => `${Math.round(value)}%`} rangeStart={oldest} rangeEnd={newest} source={source} bands={[{ from: 0, to: 30, tone: "safe" }, { from: 30, to: 70, tone: "warning" }, { from: 70, to: 100, tone: "danger" }]} ticks={[1, .7, .3, 0]} emptyMessage={durable ? "No retained CPU samples" : undefined} />
-      <TrendChart title="Memory usage" subtitle={durable ? "observed Sandbox aggregate / configured limit · durable history" : "observed Sandbox working set / configured limit · live window"} samples={samples} series={charts.memory} maximum={memoryMaximum} formatValue={(value) => formatDashboardBytes(Math.round(value))} rangeStart={oldest} rangeEnd={newest} source={source} emptyMessage={durable ? "No retained observed memory samples" : undefined} />
-      <TrendChart title={activeTitle} subtitle={activeSubtitle} samples={samples} series={charts.active} maximum={binaryActive ? 1 : activeMaximum} formatValue={formatActive} rangeStart={oldest} rangeEnd={newest} source={source} ticks={binaryActive ? [1, 0] : activeTicks} emptyMessage={durable ? "No retained active Sandbox samples" : undefined} />
-      <TrendChart title="Token throughput" subtitle={durable ? "canonical Session Usage deltas · durable history" : "Session Usage deltas · missing usage excluded"} samples={samples} series={charts.tokens} maximum={tokenMaximum} formatValue={(value) => `${formatDashboardTokens(Math.round(value))}/min`} rangeStart={oldest} rangeEnd={newest} source={source} emptyMessage={durable ? "No retained token samples" : undefined} />
+    <div className="dashboard-runtime-trend-grid" aria-label={t(durable ? "charts.gridDurable" : "charts.gridLive")}>
+      <TrendChart title={t("charts.cpu.title")} subtitle={t(durable ? "charts.cpu.durable" : "charts.cpu.live")} samples={samples} series={charts.cpu} maximum={cpuMaximum} formatValue={(value) => `${Math.round(value)}%`} rangeStart={oldest} rangeEnd={newest} source={source} bands={[{ from: 0, to: 30, tone: "safe" }, { from: 30, to: 70, tone: "warning" }, { from: 70, to: 100, tone: "danger" }]} ticks={[1, .7, .3, 0]} emptyMessage={durable ? t("charts.cpu.empty") : undefined} />
+      <TrendChart title={t("charts.memory.title")} subtitle={t(durable ? "charts.memory.durable" : "charts.memory.live")} samples={samples} series={charts.memory} maximum={memoryMaximum} formatValue={(value) => formatDashboardBytes(Math.round(value))} rangeStart={oldest} rangeEnd={newest} source={source} emptyMessage={durable ? t("charts.memory.empty") : undefined} />
+      <TrendChart title={activeTitle} subtitle={activeSubtitle} samples={samples} series={charts.active} maximum={binaryActive ? 1 : activeMaximum} formatValue={formatActive} rangeStart={oldest} rangeEnd={newest} source={source} ticks={binaryActive ? [1, 0] : activeTicks} emptyMessage={durable ? t("charts.active.empty") : undefined} />
+      <TrendChart title={t("charts.tokens.title")} subtitle={t(durable ? "charts.tokens.durable" : "charts.tokens.live")} samples={samples} series={charts.tokens} maximum={tokenMaximum} formatValue={(value) => t("charts.tokens.perMinute", { value: formatDashboardTokens(Math.round(value), locale) })} rangeStart={oldest} rangeEnd={newest} source={source} emptyMessage={durable ? t("charts.tokens.empty") : undefined} />
     </div>
   );
 }

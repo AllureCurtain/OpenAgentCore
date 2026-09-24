@@ -1,5 +1,6 @@
 import { FilePlus2 } from "lucide-react";
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { AgentCore, EnvironmentFile } from "@agents-core-web/agents-client";
 
@@ -34,6 +35,8 @@ export function EnvironmentFileCreatePanel({
   workspaceDirectory,
   onCreateFile,
 }: EnvironmentFileCreatePanelProps) {
+  const { t, i18n } = useTranslation("sessions");
+  const locale = i18n.resolvedLanguage || "en";
   const fileRef = useRef<File | null>(null);
   const gateRef = useRef(createEnvironmentFileCreateGate());
   const generationRef = useRef(0);
@@ -92,7 +95,15 @@ export function EnvironmentFileCreatePanel({
       setMessage(null);
       return;
     }
-    setMessage(result.message);
+    setMessage(result.kind === "read_failure"
+      ? t("fileCreate.readFailure")
+      : result.kind === "request_failure"
+        ? t("fileCreate.requestFailure")
+        : result.message === "Choose one local file before writing."
+          ? t("fileCreate.chooseFile")
+          : result.message.includes("canonical absolute")
+            ? t("fileCreate.canonicalPath")
+            : t("fileCreate.sizeLimit"));
   };
 
   return (
@@ -100,14 +111,14 @@ export function EnvironmentFileCreatePanel({
       <header>
         <FilePlus2 size={14} strokeWidth={1.5} aria-hidden="true" />
         <div>
-          <strong id="environment-file-create-heading">Add inline Workspace file</strong>
-          <small>Explicit local selection · one write attempt · 50 MiB maximum</small>
+          <strong id="environment-file-create-heading">{t("fileCreate.title")}</strong>
+          <small>{t("fileCreate.subtitle")}</small>
         </div>
       </header>
 
       <form onSubmit={(event) => void submit(event)} noValidate>
         <label>
-          <span>Local file</span>
+          <span>{t("fileCreate.localFile")}</span>
           <input
             key={fileInputKey}
             type="file"
@@ -117,15 +128,15 @@ export function EnvironmentFileCreatePanel({
         </label>
         {selectedFile ? (
           <p className="environment-file-create-selection">
-            <strong>{selectedFile.name}</strong> · {selectedFile.size} bytes selected
+            <strong>{selectedFile.name}</strong> · {t("fileCreate.bytesSelected", { bytes: selectedFile.size.toLocaleString(locale) })}
           </p>
         ) : null}
         {!sizeValid ? (
-          <p className="environment-file-create-validation">This file exceeds the 50 MiB inline-content limit.</p>
+          <p className="environment-file-create-validation">{t("fileCreate.tooLarge")}</p>
         ) : null}
 
         <label>
-          <span>Destination path</span>
+          <span>{t("fileCreate.destinationPath")}</span>
           <input
             type="text"
             value={path}
@@ -143,14 +154,14 @@ export function EnvironmentFileCreatePanel({
         </label>
         {path.length > 0 && !pathValid ? (
           <p className="environment-file-create-validation">
-            Use a canonical absolute file path beneath <code>/workspace/</code>. Parent traversal, dot segments, repeated separators, backslashes, and trailing slashes are rejected.
+            {t("fileCreate.pathValidationPrefix")} <code>/workspace/</code>{t("fileCreate.pathValidationSuffix")}
           </p>
         ) : null}
 
         {message ? <p className="environment-file-create-error" role="alert">{message}</p> : null}
         {createdFile ? (
           <p className="environment-file-create-success" role="status">
-            <strong>Write confirmed:</strong> <code>{createdFile.path}</code> · {createdFile.size_bytes} bytes
+            <strong>{t("fileCreate.writeConfirmed")}</strong> <code>{createdFile.path}</code> · {t("fileCreate.bytes", { bytes: createdFile.size_bytes.toLocaleString(locale) })}
           </p>
         ) : null}
 
@@ -160,12 +171,12 @@ export function EnvironmentFileCreatePanel({
           disabled={submitting || !selectedFile || !sizeValid || !pathValid}
         >
           <FilePlus2 size={13} aria-hidden="true" />
-          {submitting ? "Writing once…" : "Write selected file"}
+          {submitting ? t("fileCreate.writing") : t("fileCreate.writeSelected")}
         </button>
       </form>
 
       <p className="environment-file-create-boundary">
-        The selected bytes are read only for this explicit request and are not stored by Web. A confirmed file write does not start a Turn or prove hosted runtime or executor readiness.
+        {t("fileCreate.boundary")}
       </p>
     </section>
   );

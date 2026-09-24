@@ -50,6 +50,7 @@ build-agents-api-release:
 
 check-agents-api: build-agents-api
 	go test ./services/agents-api/... ./packages/agents-client/... -count=1
+	PYTHONDONTWRITEBYTECODE=1 python3 services/agents-api/deploy/runtime/initialize_receipt_test.py
 
 docker-build-agents-api:
 	./scripts/build-agents-api-image.sh
@@ -120,7 +121,7 @@ check-distribution:
 	go test ./services/core-console -count=1
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy/install -p 'test_*.py'
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/core-distribution-manifest.test.py
-	bash -n deploy/install/install.sh scripts/build-core-console.sh scripts/build-core-distribution.sh
+	bash -n deploy/install/install.sh scripts/build-core-console.sh scripts/build-core-distribution.sh scripts/prepare-release-runtimes.sh
 	./scripts/build-core-console.sh
 
 build-core-distribution:

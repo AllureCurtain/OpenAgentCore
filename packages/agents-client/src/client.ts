@@ -1,3 +1,4 @@
+import { projectExecutionConfiguration } from "./execution-configuration-projection";
 import { exactFields, onlyFields, isRecord, hasOwn, canonicalUuid, isNonnegativeInteger, sameResourceId } from "./response-projection";
 import { projectTokenUsage } from "./usage-projection";
 import { projectAgentTurn, projectSessionItem, projectItemContent, projectHistoryPage, validateHistoryPageOptions } from "./history-projection";
@@ -27,6 +28,7 @@ import type {
   CreateSessionInput,
   CreateSessionStreamOptions,
   CoreStartupConfiguration,
+  SessionExecutionConfiguration,
   CoreHarnessKind,
   CoreManagedSandboxProvider,
   FunctionResultContent,
@@ -122,7 +124,8 @@ export class CreationStreamRetryError extends AgentCoreError {
  * Core deletes only a durably idle or failed Session without required actions
  * or pending input. Any other Session is rejected with HTTP 409 and code
  * `conflict_error` and left unchanged: cancel its work, wait until it is idle,
- * then delete it.
+ * then delete it. Apply this only to a `deleteSession` failure: Session input
+ * conflicts use the same status and code.
  */
 export function isSessionDeletionConflict(error: unknown): error is AgentCoreError {
   return error instanceof AgentCoreError && error.status === 409 && error.code === "conflict_error";
@@ -270,6 +273,8 @@ const canonicalUuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[
 const sourceFileIdPattern = /^file-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const maxSourceFileBytes = 512 * 1024 * 1024;
 const maxEnvironmentFileBytes = 50 * 1024 * 1024;
+// Core applies the official 5 MiB decoded bound to inline data; file_id copies keep 50 MiB.
+const maxInlineEnvironmentFileBytes = 5 * 1024 * 1024;
 const environmentTemplateFields = new Set([
   "id", "object", "name", "network", "capability_directories", "packages",
   "files", "plugins", "skills", "created_at", "updated_at",
@@ -311,6 +316,8 @@ const maxSessionInputEvents = 64;
 const maxSessionInputRequestBytes = 1024 * 1024;
 const goWhitespaceOnlyPattern = /^[\u0009-\u000d\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/u;
 const streamErrorFields = new Set(["code", "type", "message"]);
+// Error events carry the pinned SessionError, whose param is null when unset.
+const sessionErrorFields = new Set([...streamErrorFields, "param"]);
 const environmentStateFields = new Set(["id", "type", "status", "error"]);
 const snapshotEventFields = new Set(["type", "event_id", "session_id", "session"]);
 const turnEventFields = new Set(["type", "event_id", "session_id", "turn_id", "turn"]);
@@ -375,7 +382,8 @@ function canonicalInputMessage(value: unknown): InputMessage {
     text += part.text;
     return { type: "input_text" as const, text: part.text };
   });
-  if (goWhitespaceOnlyPattern.test(text)) return invalidSessionInputBatch();
+  // Core admits whitespace-only text verbatim; only all-empty text rejects.
+  if (text === "") return invalidSessionInputBatch();
   return hasOwn(value, "type")
     ? { type: "message", role: "user", content }
     : { role: "user", content };
@@ -1219,12 +1227,18 @@ function projectRuntimeObservationList(value: unknown, options?: PageOptions): R
 
 function projectStreamError(value: unknown): StreamError {
   if (
-    !isRecord(value) || !exactFields(value, streamErrorFields) ||
+    !isRecord(value) || !onlyFields(value, sessionErrorFields) ||
     typeof value.code !== "string" || value.code === "" ||
     typeof value.type !== "string" || value.type === "" ||
-    typeof value.message !== "string"
+    typeof value.message !== "string" ||
+    !(value.param === undefined || value.param === null || typeof value.param === "string")
   ) return invalidStreamEvent();
-  return { code: value.code, type: value.type, message: value.message };
+  return {
+    code: value.code,
+    type: value.type,
+    message: value.message,
+    ...(value.param === undefined ? {} : { param: value.param as string | null }),
+  };
 }
 
 function requiredEventString(event: Record<string, unknown>, field: string, allowEmpty = false): string {
@@ -1373,7 +1387,8 @@ function projectStreamEventSession(
     if (!sameResourceId(item.turn_id, turnId)) return invalidStreamEvent();
     const itemId = value.item_id === undefined ? undefined : requiredEventString(value, "item_id");
     if (itemId !== undefined && !sameResourceId(item.id, itemId)) return invalidStreamEvent();
-    const outputIndex = optionalEventIndex(value, "output_index");
+    // Input Items carry a null output index; older Cores omit it.
+    const outputIndex = value.output_index === null ? null : optionalEventIndex(value, "output_index");
     return {
       ...base,
       session_id: sessionId,
@@ -1426,6 +1441,14 @@ function projectStreamEventSession(
       output_index: optionalEventIndex(value, "output_index", true)!,
       delta: requiredEventString(value, "delta", true),
     } as SessionEvent;
+  }
+
+  // A Session failure, such as a hosted Environment that failed to provision.
+  // Core's stream_interrupted error never reaches this projection.
+  if (event.type === "error") {
+    if (!exactFields(value, errorEventFields)) return invalidStreamEvent();
+    const sessionId = eventSessionId(value, expectedSessionId, true)!;
+    return { ...base, session_id: sessionId, error: projectStreamError(value.error) } as SessionEvent;
   }
 
   if (event.type.startsWith("agent.session.environment.")) {
@@ -1502,13 +1525,17 @@ async function consumeEventStream(
         return invalidStreamEvent("Agent Core returned an event for a different Session.");
       }
       const streamError = projectStreamError(event.error);
-      throw new AgentCoreError(
-        "Agent Core interrupted the live event stream. Reconnect and retrieve durable state.",
-        503,
-        streamError.code,
-        null,
-        streamError.type,
-      );
+      // Only Core's own interruption ends delivery. Other error events report a
+      // Session failure, delivered in order before agent.session.failed.
+      if (streamError.code === "stream_interrupted") {
+        throw new AgentCoreError(
+          "Agent Core interrupted the live event stream. Reconnect and retrieve durable state.",
+          503,
+          streamError.code,
+          null,
+          streamError.type,
+        );
+      }
     }
     options.onParsedEvent(event);
   });
@@ -1731,13 +1758,15 @@ function projectEnvironmentFile(
 function strictBase64DecodedBytes(value: unknown): number | null {
   if (typeof value !== "string") return null;
   if (value === "") return 0;
-  if (value.length % 4 !== 0 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value)) {
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  // A flat character class stays linear; a grouped quantifier overflows the
+  // regular-expression stack on multi-megabyte inline data.
+  if (value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*$/.test(value.slice(0, value.length - padding))) {
     return null;
   }
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-  if (value.endsWith("==") && (alphabet.indexOf(value[value.length - 3] ?? "") & 15) !== 0) return null;
-  if (value.endsWith("=") && !value.endsWith("==") && (alphabet.indexOf(value[value.length - 2] ?? "") & 3) !== 0) return null;
-  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  if (padding === 2 && (alphabet.indexOf(value[value.length - 3] ?? "") & 15) !== 0) return null;
+  if (padding === 1 && (alphabet.indexOf(value[value.length - 2] ?? "") & 3) !== 0) return null;
   return (value.length / 4) * 3 - padding;
 }
 
@@ -2229,6 +2258,13 @@ export class OpenAIAgentsClient implements AgentCore {
     });
   }
 
+  async retrieveSessionExecutionConfiguration(sessionId: string, options?: ReadOptions): Promise<SessionExecutionConfiguration> {
+    const value = await this.request<unknown>(`/agents/sessions/${encodeURIComponent(sessionId)}/execution-configuration`, { signal: options?.signal });
+    return projectExecutionConfiguration(value, sessionId, () => {
+      throw new AgentCoreError("Agent Core returned an invalid execution configuration.", 502, "invalid_execution_configuration");
+    });
+  }
+
   async retrieveSession(sessionId: string, options?: ReadOptions): Promise<AgentSession> {
     const value = await this.request<unknown>(`/agents/sessions/${encodeURIComponent(sessionId)}`, { signal: options?.signal });
     return projectAgentSession(value, undefined, sessionId);
@@ -2366,7 +2402,9 @@ export class OpenAIAgentsClient implements AgentCore {
       }
       const decodedBytes = strictBase64DecodedBytes(input.data);
       if (decodedBytes === null) throw new TypeError("Inline Environment file data must be strict standard Base64.");
-      if (decodedBytes > maxEnvironmentFileBytes) throw new TypeError("Environment files must be at most 50 MiB.");
+      if (decodedBytes > maxInlineEnvironmentFileBytes) {
+        throw new TypeError("Inline Environment file data must decode to at most 5 MiB.");
+      }
       expectedSize = decodedBytes;
     } else if (input.type === "file_id") {
       if (
@@ -2558,6 +2596,15 @@ export class OpenAIAgentsClient implements AgentCore {
     return this.submitEvents(sessionId, [{ type: "agent.session.input.cancel" }], idempotencyKey);
   }
 
+  /**
+   * Submits one function result. Core rejects a result the Session cannot accept,
+   * such as one after cancellation or one that differs from the saved result,
+   * with HTTP 409 `conflict_error`. A call that is unknown or belongs to another
+   * Turn of the Session is HTTP 400 `invalid_request_error`; nothing changes.
+   * Cores before these codes used 409 `turn_conflict`/`idempotency_conflict`
+   * and 404 for unknown targets: treat any 409 as a conflict, and 400 (new) or
+   * 404 (older, within an owned Session) as an unknown target.
+   */
   submitFunctionResult(sessionId: string, input: FunctionResultInput, idempotencyKey: string): Promise<void> {
     const event: SessionToolResultInputEvent = {
       type: "agent.session.input.tool_result",

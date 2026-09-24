@@ -166,6 +166,16 @@ func run() error {
 	if managedNodes != nil {
 		options = append(options, api.WithSandboxManager(executionStore, managedNodes.admin))
 	}
+	var keyAdmin *api.DeploymentAuthenticator
+	if managedNodes != nil {
+		keyAdmin = managedNodes.admin
+	} else {
+		keyAdmin, err = deploymentAdminAuthenticator()
+		if err != nil {
+			return err
+		}
+	}
+	options = append(options, api.WithProjectAPIKeys(executionStore, keyAdmin))
 	if history.Reader != nil {
 		historyResolver, resolverErr := historystoreresolver.NewResolver(executionStore)
 		if resolverErr != nil {
@@ -180,11 +190,7 @@ func run() error {
 	var daemonHandler http.Handler
 	var registry *gateway.Registry
 	if wsURL := os.Getenv("AGENTS_API_DAEMON_WS_URL"); wsURL != "" {
-		if managedNodes != nil && managedNodes.setup != nil {
-			daemonHandler, registry, err = runtime.NewGatewayWithURLResolver(executionStore, wsURL, managedNodes.setup.webSocketURL(wsURL))
-		} else {
-			daemonHandler, registry, err = runtime.NewGateway(executionStore, wsURL)
-		}
+		daemonHandler, registry, err = runtime.NewGatewayWithURLResolver(executionStore, wsURL, managedNodes.webSocketURL(wsURL))
 		if err != nil {
 			return err
 		}
@@ -252,15 +258,13 @@ func run() error {
 		return err
 	}
 	if daemonHandler != nil {
-		mux := http.NewServeMux()
-		mux.Handle("/api/v1/agent-daemon/", daemonHandler)
-		mux.Handle("/api/v1/agent-daemon/enroll", runtimeenrollment.EnrollmentHandler(executionStore))
-
+		routes := daemonRoutes{gateway: daemonHandler,
+			enrollment: runtimeenrollment.EnrollmentHandler(executionStore),
+			connection: runtimeenrollment.ConnectionHandler(executionStore, registry)}
 		if managedNodes != nil {
-			mux.Handle("/core/v1/sandbox/node/connect", managedNodes.hub)
+			routes.nodeConnect = managedNodes.hub
 		}
-		mux.Handle("/", handler)
-		handler = mux
+		handler = serverHandler(handler, &routes)
 	}
 	addr := serverAddress()
 	server := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}

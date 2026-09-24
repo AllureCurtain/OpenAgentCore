@@ -12,6 +12,7 @@ import turnResources from "./fixtures/parsar-0438880a/turn-resources.json";
 import toolProfiles from "./fixtures/parsar-2b34ea46/tool-profiles.json";
 import type {
   AnonymousHttpMcpToolInput,
+  ServiceHttpMcpToolInput,
   AgentsCoreSelection,
   SavedAgentCoreInput,
   SavedAgentCore,
@@ -144,6 +145,24 @@ describe("Parsar 2b34ea46 bounded tool profiles", () => {
     expectTypeOf<CreateAgentInput["tools"]>().toEqualTypeOf<SavedAgentToolInput[] | null | undefined>();
     expectTypeOf<UpdateAgentInput["tools"]>().toEqualTypeOf<SavedAgentToolInput[] | null | undefined>();
     expectTypeOf<NonNullable<InlineAgentInput["tools"]>[number]>().not.toEqualTypeOf<SavedAgentToolInput>();
+  });
+
+  it("saves every pinned web_search mode without adding it to inline execution profiles", () => {
+    type SavedSearch = Extract<SavedAgentToolInput, { type: "web_search" }>;
+    expectTypeOf<SavedSearch["mode"]>().toEqualTypeOf<"disabled" | "cached" | "live" | null | undefined>();
+    expectTypeOf<SavedSearch["context_size"]>().toEqualTypeOf<"low" | "medium" | "high" | null | undefined>();
+    expectTypeOf<SavedSearch["allowed_domains"]>().toEqualTypeOf<string[] | null | undefined>();
+    expectTypeOf<Extract<NonNullable<InlineAgentInput["tools"]>[number], { type: "web_search" }>>().toEqualTypeOf<never>();
+  });
+
+  it("accepts the minimal pinned MCP tool whose omitted origin Core saves as service", () => {
+    expectTypeOf<ServiceHttpMcpToolInput["connection_origin"]>().toEqualTypeOf<"service" | null | undefined>();
+    const minimal: ServiceHttpMcpToolInput = {
+      type: "mcp",
+      server_label: "docs",
+      transport: { type: "http", server_url: "https://mcp.example/tools" },
+    };
+    expect("connection_origin" in minimal).toBe(false);
   });
 
   it("captures the two Web-configurable write shapes without credentials or browser MCP", () => {

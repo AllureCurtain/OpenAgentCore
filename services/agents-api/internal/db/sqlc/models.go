@@ -35,10 +35,12 @@ type Device struct {
 }
 
 type Environment struct {
-	ID        pgtype.UUID        `json:"id"`
-	SessionID pgtype.UUID        `json:"session_id"`
-	Status    string             `json:"status"`
-	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	ID            pgtype.UUID        `json:"id"`
+	SessionID     pgtype.UUID        `json:"session_id"`
+	Status        string             `json:"status"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	FailureReason pgtype.Text        `json:"failure_reason"`
+	FailedAt      pgtype.Timestamptz `json:"failed_at"`
 }
 
 type EnvironmentConnection struct {
@@ -131,6 +133,21 @@ type InitialEnvironmentFile struct {
 	Path      string      `json:"path"`
 	SizeBytes int64       `json:"size_bytes"`
 	Contents  []byte      `json:"contents"`
+}
+
+type ProjectApiKey struct {
+	ID             pgtype.UUID        `json:"id"`
+	Name           string             `json:"name"`
+	Prefix         string             `json:"prefix"`
+	TokenSha256    string             `json:"token_sha256"`
+	BindingDigest  string             `json:"binding_digest"`
+	TenantID       pgtype.UUID        `json:"tenant_id"`
+	OrganizationID string             `json:"organization_id"`
+	ProjectID      string             `json:"project_id"`
+	SubjectKind    string             `json:"subject_kind"`
+	SubjectID      string             `json:"subject_id"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	RevokedAt      pgtype.Timestamptz `json:"revoked_at"`
 }
 
 type PublicExecutionTurn struct {
@@ -280,6 +297,11 @@ type SessionEvent struct {
 	Sequence     int64       `json:"sequence"`
 	Payload      []byte      `json:"payload"`
 	PayloadBytes pgtype.Int4 `json:"payload_bytes"`
+}
+
+type SessionExecutionConfiguration struct {
+	SessionID     pgtype.UUID `json:"session_id"`
+	Configuration []byte      `json:"configuration"`
 }
 
 type SessionItem struct {

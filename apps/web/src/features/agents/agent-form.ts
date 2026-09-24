@@ -13,6 +13,9 @@ import type {
 
 import { isCoreWhitespaceOnly } from "./session-admission";
 import type { VaultCatalog } from "../vaults/vault-catalog";
+import i18n from "../../i18n";
+
+const ta = (key: string, options?: Record<string, unknown>) => i18n.t(key as never, { ns: "agents", ...options });
 
 export type TextVerbosity = "low" | "medium" | "high";
 
@@ -162,18 +165,26 @@ function editableMcp(value: unknown, catalog: VaultCatalog | null): McpToolDraft
 }
 
 function readOnlyToolLabel(value: unknown): string {
-  if (!isRecord(value) || typeof value.type !== "string") return "Malformed saved tool definition";
-  if (value.type === "tool_search" && hasOnlyKeys(value, ["type"])) return "tool_search is saved-only and cannot run in a Session";
+  if (!isRecord(value) || typeof value.type !== "string") return ta("savedTool.malformed");
+  if (value.type === "tool_search" && hasOnlyKeys(value, ["type"])) return ta("savedTool.toolSearch");
   if (
     value.type === "programmatic_tool_calling"
     && hasOnlyKeys(value, ["type", "enabled"])
     && (value.enabled === undefined || typeof value.enabled === "boolean")
-  ) return "programmatic_tool_calling is saved-only and cannot run in a Session";
-  if (value.type === "function" && value.defer_loading === true) return "Deferred Function is saved-only";
-  if (value.type === "mcp" && value.credential_id != null) return "Credentialed MCP is unresolved or URL-mismatched in the current Vault catalog";
-  if (value.type === "function") return "Unsupported Function tool definition";
-  if (value.type === "mcp") return "Unsupported MCP tool definition";
-  return "Unsupported saved tool definition";
+  ) return ta("savedTool.programmatic");
+  if (
+    value.type === "web_search"
+    && hasOnlyKeys(value, ["type", "mode", "context_size", "allowed_domains", "location"])
+  ) {
+    return value.mode === "disabled"
+      ? ta("savedTool.webSearchDisabled")
+      : ta("savedTool.webSearchEnabled");
+  }
+  if (value.type === "function" && value.defer_loading === true) return ta("savedTool.deferred");
+  if (value.type === "mcp" && value.credential_id != null) return ta("savedTool.credentialedMcp");
+  if (value.type === "function") return ta("savedTool.unsupportedFunction");
+  if (value.type === "mcp") return ta("savedTool.unsupportedMcp");
+  return ta("savedTool.unsupported");
 }
 
 export function projectSavedTool(value: unknown, catalog: VaultCatalog | null = null): AgentToolDraft {
@@ -216,29 +227,29 @@ export function serializeAgentToolDrafts(
   const tools: ConfigurableAgentToolInput[] = [];
   for (const draft of drafts) {
     if (draft.kind === "read-only") {
-      return { error: "Tools cannot be changed while this Agent contains read-only saved tool definitions.", tools };
+      return { error: ta("errors.readOnlyTools"), tools };
     }
     if (draft.kind === "function") {
       functionCount += 1;
       const name = draft.name;
-      if (isCoreWhitespaceOnly(name)) return { error: "Every Function needs a non-empty name.", tools };
-      if (new TextEncoder().encode(name).length > 512) return { error: "Function names must be at most 512 UTF-8 bytes.", tools };
-      if (functionNames.has(name)) return { error: "Function names must be unique.", tools };
+      if (isCoreWhitespaceOnly(name)) return { error: ta("errors.functionName"), tools };
+      if (new TextEncoder().encode(name).length > 512) return { error: ta("errors.functionNameLength"), tools };
+      if (functionNames.has(name)) return { error: ta("errors.functionUnique"), tools };
       functionNames.add(name);
       let parameters: unknown;
       try {
         parameters = JSON.parse(draft.parameters);
       } catch {
-        return { error: `Function ${name} parameters must be valid JSON.`, tools };
+        return { error: ta("errors.functionJson", { name }), tools };
       }
-      if (!isRecord(parameters)) return { error: `Function ${name} parameters must be a JSON object schema.`, tools };
+      if (!isRecord(parameters)) return { error: ta("errors.functionSchema", { name }), tools };
       tools.push({ type: "function", name, description: draft.description, parameters, defer_loading: false });
       continue;
     }
     const label = draft.serverLabel;
-    if (isCoreWhitespaceOnly(label)) return { error: "Every MCP server needs a non-empty label.", tools };
-    if (mcpLabels.has(label)) return { error: "MCP server labels must be unique.", tools };
-    if (!safeMcpUrl(draft.serverUrl)) return { error: `MCP server ${label} needs a valid anonymous HTTP(S) URL.`, tools };
+    if (isCoreWhitespaceOnly(label)) return { error: ta("errors.mcpLabel"), tools };
+    if (mcpLabels.has(label)) return { error: ta("errors.mcpUnique"), tools };
+    if (!safeMcpUrl(draft.serverUrl)) return { error: ta("errors.mcpUrl", { name: label }), tools };
     const allowedTools = draft.allowedToolsMode === "all"
       ? draft.allowedToolsValue
       : draft.allowedTools.split("\n").map((name) => name.trim()).filter(Boolean);
@@ -247,10 +258,10 @@ export function serializeAgentToolDrafts(
       ? catalog?.credentials.find((credential) => credential.id === draft.credentialId)
       : null;
     if (draft.credentialId && !selectedCredential) {
-      return { error: `MCP server ${label} references a Credential that is not available in the current catalog.`, tools };
+      return { error: ta("errors.credentialMissing", { name: label }), tools };
     }
     if (selectedCredential && selectedCredential.auth.mcp_server_url !== draft.serverUrl) {
-      return { error: `MCP server ${label} must use the selected Credential's exact URL.`, tools };
+      return { error: ta("errors.credentialUrl", { name: label }), tools };
     }
     const mcp: ServiceHttpMcpToolInput = {
       type: "mcp",
@@ -263,7 +274,7 @@ export function serializeAgentToolDrafts(
     };
     tools.push(mcp);
   }
-  if (functionCount > 64) return { error: "At most 64 Functions can be configured.", tools };
+  if (functionCount > 64) return { error: ta("errors.functionCount"), tools };
   return { tools };
 }
 
@@ -273,48 +284,48 @@ export function validateAgentForm(
   catalog: VaultCatalog | null = null,
 ): AgentFormValidation {
   const model = values.model.trim();
-  if (isCoreWhitespaceOnly(model)) return { modelError: "Enter a model ID." };
+  if (isCoreWhitespaceOnly(model)) return { modelError: ta("errors.modelRequired") };
 
   const name = values.name.trim();
   if ([...name].length > 128) {
-    return { nameError: "Name must be at most 128 characters." };
+    return { nameError: ta("errors.nameTooLong") };
   }
 
   let parsed: unknown;
   try {
     parsed = values.metadata.trim() ? JSON.parse(values.metadata) : {};
   } catch {
-    return { metadataError: "Metadata must be valid JSON." };
+    return { metadataError: ta("errors.metadataJson") };
   }
 
   if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
-    return { metadataError: "Metadata must be a JSON object." };
+    return { metadataError: ta("errors.metadataObject") };
   }
 
   const metadata = parsed as Record<string, unknown>;
   if (Object.values(metadata).some((value) => typeof value !== "string")) {
-    return { metadataError: "Every metadata value must be a string." };
+    return { metadataError: ta("errors.metadataStrings") };
   }
   const metadataEntries = Object.entries(metadata) as [string, string][];
   if (metadataEntries.length > 16) {
-    return { metadataError: "Agent metadata supports at most 16 pairs." };
+    return { metadataError: ta("errors.metadataCount") };
   }
   if (metadataEntries.some(([key, value]) => [...key].length > 64 || [...value].length > 512)) {
-    return { metadataError: "Metadata keys must be at most 64 characters and values at most 512 characters." };
+    return { metadataError: ta("errors.metadataLength") };
   }
 
   if (intent === "create") {
     if (values.reasoningEffort || values.reasoningSummary) {
-      return { configurationError: "Current Core Sessions require both reasoning fields to use Core default." };
+      return { configurationError: ta("errors.reasoningDefault") };
     }
     if (values.serviceTier !== "auto") {
-      return { configurationError: "Current Core Sessions support service tier auto only." };
+      return { configurationError: ta("errors.serviceTier") };
     }
     if (values.textFormat.type !== "text") {
-      return { configurationError: "Current Core Sessions support text format only." };
+      return { configurationError: ta("errors.textFormat") };
     }
     if (values.textVerbosity !== "medium") {
-      return { configurationError: "Low and high verbosity require a discovered compatible Codex model; use medium for this Web flow." };
+      return { configurationError: ta("errors.verbosity") };
     }
   }
 

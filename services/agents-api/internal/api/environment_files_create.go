@@ -5,16 +5,17 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/echotext"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/execution"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 	"github.com/go-chi/chi/v5"
@@ -29,7 +30,7 @@ func WithEnvironmentFileWriter(writer EnvironmentFileWriter) Option {
 }
 
 // @Summary Create an Environment file from inline bytes or a source file
-// @Description Uploads standard Base64 bytes to a file beneath /workspace in a qualified local Environment and returns 201. Accepts inline bytes or a project-owned source file_id through the same write path. Unknown body fields are rejected with their name as param. Basic public hosted creation requires explicit managed Runtime configuration; an openai_hosted Environment that has not connected yet returns 400. A private 50 MiB decoded-content limit applies. The parent directory must exist. Replacement installs a new mode-0600 inode; upstream overwrite metadata semantics remain unverified. Idle writes exclude execution. Missing receipts return unavailable and retain a durable mutation gate without automatic replay. Error/timing parity with upstream remains unverified.
+// @Description Uploads standard Base64 bytes to a file beneath /workspace in a qualified local Environment and returns 201. Accepts inline bytes or a project-owned source file_id through the same write path. Unknown body fields are rejected with their name as param. Basic public hosted creation requires explicit managed Runtime configuration; an openai_hosted Environment that has not connected yet returns 400. Inline data is limited to 5 MiB decoded and a file_id copy to 50 MiB. Missing parent directories are created with mode 0700 and the file with mode 0600. An existing destination is never replaced; a directory, an existing file or a path through a symlink or non-directory returns 400. Idle writes exclude execution. Missing receipts return unavailable and retain a durable mutation gate without automatic replay. Error/timing parity with upstream remains unverified.
 // @Tags Environments
 // @Accept json
 // @Produce json
@@ -41,14 +42,14 @@ func WithEnvironmentFileWriter(writer EnvironmentFileWriter) Option {
 // @Failure 400,401,404,409,413,500,503 {object} v1.ErrorResponse
 // @Router /agents/environments/{environment_id}/files [post]
 func (h *Handler) createEnvironmentFile(w http.ResponseWriter, r *http.Request) {
+	const maxJSON = int64(((proto.WorkspaceWriteMaxBytes+2)/3)*4 + (16 << 10))
+	raw, ok := readJSONObjectLimit(w, r, maxJSON, "Inline upload exceeds this service's bounded file limit.")
+	if !ok {
+		return
+	}
 	environment, err := h.store.GetEnvironment(r.Context(), tenantID(r), chi.URLParam(r, "environment_id"))
 	if err != nil {
 		writeStoreError(w, r, err)
-		return
-	}
-	const maxJSON = int64(((proto.WorkspaceWriteMaxBytes+2)/3)*4 + (16 << 10))
-	raw, ok := readJSONBodyLimit(w, r, maxJSON, "Inline upload exceeds this service's bounded file limit.")
-	if !ok {
 		return
 	}
 	var request v1.EnvironmentFileCreateRequest
@@ -97,8 +98,8 @@ func (h *Handler) createEnvironmentFile(w http.ResponseWriter, r *http.Request) 
 			writeStoreError(w, r, store.ErrInvalidInput)
 			return
 		}
-		if len(data) > proto.WorkspaceWriteMaxBytes {
-			writeStoreError(w, r, store.ErrSourceFileTooLarge)
+		if len(data) > maxInlineEnvironmentFileBytes {
+			writeFieldError(w, errEnvironmentFileInlineTooLarge)
 			return
 		}
 	}
@@ -136,7 +137,9 @@ func (h *Handler) createEnvironmentFile(w http.ResponseWriter, r *http.Request) 
 	}
 	size, err := h.fileWriter.WriteEnvironmentFile(r.Context(), environment, strings.TrimPrefix(*request.Path, "/workspace/"), data)
 	if err != nil {
-		writeStoreError(w, r, err)
+		if !writeFieldError(w, environmentFileWriteError(err)) {
+			writeStoreError(w, r, err)
+		}
 		return
 	}
 	if size != int64(len(data)) {
@@ -151,6 +154,30 @@ var (
 	errEnvironmentFileCreatePath       = &fieldError{message: "environment.files[0].path must be an absolute POSIX path inside /workspace"}
 	errEnvironmentFileCreateComponents = &fieldError{message: "environment.files[0].path cannot contain empty, . or .. path components"}
 )
+
+// maxInlineEnvironmentFileBytes is the official decoded inline bound (HE-15),
+// measured before any Runtime work. file_id copies keep the 50 MiB destination bound.
+const maxInlineEnvironmentFileBytes = 5 << 20
+
+// Official Files.create size and destination errors (HE-12, HE-13, HE-15).
+var (
+	errEnvironmentFileInlineTooLarge = &fieldError{message: "environment.files[0].data exceeds the 5 MiB decoded limit"}
+	errEnvironmentFileConflict       = &fieldError{message: "file path conflicts with an existing environment file"}
+	errEnvironmentFileUnsafe         = &fieldError{message: "environment.files paths must not traverse symlinks or overwrite existing files"}
+)
+
+// environmentFileWriteError maps the installer's known destination refusals.
+// Core keeps no path ledger of earlier writes, so an existing regular file uses
+// the untracked-file message even when an earlier Files.create wrote it.
+func environmentFileWriteError(err error) error {
+	switch {
+	case errors.Is(err, execution.ErrEnvironmentFileDirectory):
+		return errEnvironmentFileConflict
+	case errors.Is(err, execution.ErrEnvironmentFileUnsafe):
+		return errEnvironmentFileUnsafe
+	}
+	return nil
+}
 
 // environmentFileCreatePathError accepts exactly the canonical absolute paths
 // below /workspace; the accepted set is unchanged, only the errors are specific.
@@ -173,21 +200,9 @@ func environmentFileCreatePathError(value string) error {
 // whose name is not echoed.
 var errUnknownEnvironmentFileField = &fieldError{message: "Unknown parameter."}
 
-// echoableField bounds the caller-supplied name that an unknown-field error
-// repeats in both message and param; JSON escaping can grow each byte sixfold.
-// encoding/json has already replaced invalid bytes and lone surrogates with
-// U+FFFD, so a name containing it is not repeated either.
-func echoableField(field string) bool {
-	if len(field) > 256 || !utf8.ValidString(field) || strings.ContainsRune(field, utf8.RuneError) {
-		return false
-	}
-	for _, r := range field {
-		if !unicode.IsPrint(r) {
-			return false
-		}
-	}
-	return true
-}
+// echoableField bounds the caller-supplied name that an error repeats in its
+// message or param; see echotext.Allowed.
+func echoableField(field string) bool { return echotext.Allowed(field) }
 
 // unknownBodyField returns the first top-level member outside allowed, in
 // document order. Malformed and non-object bodies are left to the caller's

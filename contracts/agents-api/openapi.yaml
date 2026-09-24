@@ -832,6 +832,46 @@ definitions:
     required:
     - error
     type: object
+  v1.ExecutionProviderSelection:
+    properties:
+      configuration:
+        allOf:
+        - $ref: '#/definitions/v1.ModelProviderView'
+        x-nullable: true
+      source:
+        enum:
+        - session
+        - agent
+        - deployment
+        - unknown
+        type: string
+      status:
+        enum:
+        - available
+        - redacted
+        - unavailable
+        type: string
+    required:
+    - configuration
+    - source
+    - status
+    type: object
+  v1.ExecutionSelection:
+    properties:
+      source:
+        enum:
+        - session
+        - agent
+        - deployment
+        - unknown
+        type: string
+      value:
+        type: string
+        x-nullable: true
+    required:
+    - source
+    - value
+    type: object
   v1.InlineAgent:
     properties:
       instructions:
@@ -942,6 +982,7 @@ definitions:
         - commentary
         - final_answer
         type: string
+        x-nullable: true
       reasoning_effort:
         type: string
       recipient_agent_id:
@@ -2118,6 +2159,7 @@ definitions:
         type: string
       output_index:
         type: integer
+        x-nullable: true
       part:
         $ref: '#/definitions/v1.ItemContent'
       session:
@@ -2144,6 +2186,32 @@ definitions:
     required:
     - event_id
     - type
+    type: object
+  v1.SessionExecutionConfiguration:
+    properties:
+      harness:
+        $ref: '#/definitions/v1.ExecutionSelection'
+      model:
+        $ref: '#/definitions/v1.ExecutionSelection'
+      model_provider:
+        $ref: '#/definitions/v1.ExecutionProviderSelection'
+      object:
+        enum:
+        - agent.session.execution_configuration
+        type: string
+      schema_version:
+        enum:
+        - 1
+        type: integer
+      session_id:
+        type: string
+    required:
+    - harness
+    - model
+    - model_provider
+    - object
+    - schema_version
+    - session_id
     type: object
   v1.SessionExecutionInput:
     properties:
@@ -2423,6 +2491,13 @@ definitions:
         type: string
       message:
         type: string
+      param:
+        description: |-
+          Param is the pinned SessionError field. An error SessionEvent always
+          carries it, null when unset; Environment state errors and Core's own
+          stream_interrupted frame omit it.
+        type: string
+        x-nullable: true
       type:
         type: string
     type: object
@@ -2804,7 +2879,8 @@ paths:
       description: Lists only the authenticated tenant's saved Agents, independently
         of Sessions. Limit 0 is treated as 1 and larger limits as 100, as observed
         on the hosted service. The local default is 20; exact upstream default/cap
-        and empty cursor fields remain unverified.
+        and empty cursor fields remain unverified. An unknown, malformed or foreign
+        after cursor returns not found.
       parameters:
       - description: agents=v1
         in: header
@@ -2864,22 +2940,30 @@ paths:
       description: 'Persists configuration independently of execution. Names over
         128 characters and metadata outside 16 string pairs with 64-character keys
         and 512-character values return invalid_request_error with the official param;
-        U+0000 in stored strings is rejected as a local storage limit. Missing, unknown,
-        repeated, wrongly typed or unsupported enum members of the pinned configuration
-        shapes (tools, text, reasoning, service_tier, multi_agent) return invalid_request_error
-        with the JSON path as param; duplicate function names, repeated web_search
-        or tool_search and non-object schema root types return it with a null param.
-        Supports model/name/instructions/metadata, explicit reasoning and service
-        tiers, multi_agent, text/json_schema, function/tool_search/programmatic_tool_calling
-        and HTTP MCP with nullable credential_id and explicit service origin and boolean
-        required defaulting to false. Saving credential_id grants no access: Session
-        admission checks attached Vault ownership and destination. MCP allowed_tools
-        preserves null versus empty; saved HTTP transport includes empty headers.
-        Model-derived reasoning defaults, other MCP variants, enabled web_search and
-        public retry conformance remain incomplete. Explicit disabled web_search can
-        be saved; Session execution also accepts explicit disabled programmatic_tool_calling
-        through qualified Runtime controls. Session execution admits only its supported
-        configuration subset.'
+        U+0000 in stored strings is rejected as a local storage limit. As on every
+        Agents API JSON route, a non-JSON Content-Type, invalid UTF-8, malformed JSON,
+        a repeated key at any depth or a non-object root returns invalid_request_error
+        with a null param and the official message before other checks; an empty or
+        null body is {}. Missing, unknown, wrongly typed or unsupported enum members
+        of the pinned configuration shapes (tools, text, reasoning, service_tier,
+        multi_agent) return invalid_request_error with the JSON path as param; duplicate
+        function names, repeated web_search or tool_search and non-object schema root
+        types return it with a null param. Supports model/name/instructions/metadata,
+        explicit reasoning and service tiers, multi_agent, text/json_schema, function/tool_search/programmatic_tool_calling/web_search
+        and HTTP MCP with nullable credential_id, service origin (omitted or null
+        on HTTP transport is saved as service) and boolean required defaulting to
+        false. Saving credential_id grants no access: Session admission checks attached
+        Vault ownership and destination. MCP allowed_tools preserves null versus empty;
+        saved HTTP transport includes empty headers. Model-derived reasoning defaults,
+        other MCP variants and public retry conformance remain incomplete. web_search
+        saves every pinned mode: omitted or null mode is saved as live and omitted
+        or null context_size as medium; allowed_domains preserves null versus empty
+        and a present location, including {}, includes all four keys with null for
+        omitted ones, as observed officially (req_db41d2f6261b4abfb69465eafe719ab5,
+        req_165d53b88445490b9146d8272c54134d). Session execution accepts only explicit
+        disabled web_search and disabled programmatic_tool_calling through qualified
+        Runtime controls; saved enabled forms reject at Session admission. Session
+        execution admits only its supported configuration subset.'
       parameters:
       - description: agents=v1
         in: header
@@ -3250,11 +3334,13 @@ paths:
         source file_id through the same write path. Unknown body fields are rejected
         with their name as param. Basic public hosted creation requires explicit managed
         Runtime configuration; an openai_hosted Environment that has not connected
-        yet returns 400. A private 50 MiB decoded-content limit applies. The parent
-        directory must exist. Replacement installs a new mode-0600 inode; upstream
-        overwrite metadata semantics remain unverified. Idle writes exclude execution.
-        Missing receipts return unavailable and retain a durable mutation gate without
-        automatic replay. Error/timing parity with upstream remains unverified.
+        yet returns 400. Inline data is limited to 5 MiB decoded and a file_id copy
+        to 50 MiB. Missing parent directories are created with mode 0700 and the file
+        with mode 0600. An existing destination is never replaced; a directory, an
+        existing file or a path through a symlink or non-directory returns 400. Idle
+        writes exclude execution. Missing receipts return unavailable and retain a
+        durable mutation gate without automatic replay. Error/timing parity with upstream
+        remains unverified.
       parameters:
       - description: agents=v1
         in: header
@@ -3316,8 +3402,9 @@ paths:
     get:
       description: Lists tenant-owned safe template metadata in creation order with
         ID tie-breaking. Defaults to limit 20 and descending order; limit 0 is treated
-        as 1 and larger limits as 100. Foreign and missing cursors reject identically.
-        Concurrent-page and exact hosted error behavior remain unverified.
+        as 1 and larger limits as 100. Foreign, missing and malformed cursors return
+        the same not found error. Concurrent-page and exact hosted error behavior
+        remain unverified.
       parameters:
       - description: agents=v1
         in: header
@@ -3667,11 +3754,12 @@ paths:
       - Runtime observations
   /agents/sessions:
     get:
-      description: Cursor and results are scoped to the authenticated execution tenant.
-        Optional agent_id matches the immutable root Agent ID, including inline Agents
-        and historical Sessions whose saved source was updated or deleted. Omission
-        lists all Agents. Returns the same Environment and pending-input activity
-        projection as Session retrieval, including self_hosted Sessions.
+      description: Cursor and results are scoped to the authenticated execution tenant;
+        an unknown, malformed or foreign after cursor returns not found. Optional
+        agent_id matches the immutable root Agent ID, including inline Agents and
+        historical Sessions whose saved source was updated or deleted. Omission lists
+        all Agents. Returns the same Environment and pending-input activity projection
+        as Session retrieval, including self_hosted Sessions.
       parameters:
       - description: agents=v1
         in: header
@@ -3740,19 +3828,25 @@ paths:
         supports model/instructions, text verbosity, non-deferred function tools,
         adapter-qualified multi_agent with persisted Subagent reads, implicit reasoning,
         service tier auto and environment type none, subject to the configured engine.
-        Codex additionally supports HTTP MCP with explicit service origin, native
-        allowed_tools and boolean required defaulting to false. Session vault_ids
-        attach only project-owned Vaults; credential_id selects an attached static
-        bearer credential for the exact HTTPS URL, while null/omission selects a unique
-        match or remains anonymous. Ambiguous selection rejects creation. Frozen private
-        selections never populate an omitted public credential_id; missing decryption
+        Codex additionally supports HTTP MCP with service origin (omitted or null
+        on HTTP transport is saved as service), native allowed_tools and boolean required
+        defaulting to false. Session vault_ids attach only project-owned Vaults; credential_id
+        selects an attached static bearer or OAuth credential for the exact HTTPS
+        URL, while null/omission selects a unique match or remains anonymous. Session
+        reads, lists and event snapshots show that implicitly selected credential
+        ID in a null or omitted credential_id, also after the credential is deleted;
+        anonymous selections stay null and the stored caller intent is unchanged.
+        After the input requirement and before any write, a credential_id without
+        vault_ids, one outside the attached Vaults (one message for missing, foreign
+        and unattached IDs) or one for another server_url returns 400 invalid_request_error,
+        and several implicit matches return 409 conflict_error. Missing decryption
         configuration fails dispatch without anonymous fallback. Required initialization
         uses native startup before the first native Turn, including cold resume, and
         requires a separately advertised capability; exact hosted creation timing
-        and error parity remain unverified. Other MCP origins and OAuth remain unsupported.
-        The self_hosted profile requires Codex, an absolute workspace_directory and
-        empty capability_directories, with optional non-deferred function tools and
-        HTTP MCP using explicit service origin, optionally authenticated by the attached
+        and error parity remain unverified. Other MCP origins and native OAuth login
+        remain unsupported. The self_hosted profile requires Codex, an absolute workspace_directory
+        and empty capability_directories, with optional non-deferred function tools
+        and HTTP MCP using service origin, optionally authenticated by the attached
         Vault rules. Remote MCP and remote Bearer authentication each require separately
         advertised combination support; old peers cannot receive unsupported work.
         Omitted/null capability_directories use the empty-list default; self_hosted
@@ -3833,10 +3927,11 @@ paths:
         tool_search and per-function defer_loading in the qualified single-agent Claude
         environment:none function profile, including qualified inline image messages
         and text results. Explicit web_search mode disabled and programmatic_tool_calling
-        enabled false use frozen common Runtime controls. Enabled forms remain unqualified.
-        Omitted programmatic configuration preserves native behavior, a documented
-        difference from the official default-on behavior. Other combinations remain
-        unqualified; see the operation coverage.
+        enabled false use frozen common Runtime controls. Enabled forms, including
+        those saved on an Agent, remain unqualified and reject before any write unless
+        the Session replaces tools. Omitted programmatic configuration preserves native
+        behavior, a documented difference from the official default-on behavior. Other
+        combinations remain unqualified; see the operation coverage.
       parameters:
       - description: agents=v1
         in: header
@@ -4061,8 +4156,10 @@ paths:
       description: Lists published outputs independently of Environment availability.
         Sorting uses publication time and ID. A later Turn publishes a path again
         only when it is new, its bytes changed, or no Artifact remains for it. A malformed
-        environment_id matches nothing. The local default page size is 20; exact upstream
-        defaults and error parity remain unverified.
+        environment_id matches nothing. An after value that is not an Artifact of
+        this Session, including a malformed one, returns 400 invalid_request_error
+        with the message "after is not a valid artifact ID". The local default page
+        size is 20; exact upstream defaults remain unverified.
       parameters:
       - description: agents=v1
         in: header
@@ -4292,9 +4389,12 @@ paths:
         indexes. Native text conversion and output quotas apply; completion snapshots
         remain authoritative. Reconnect through Session, Turn and Items reads; missed
         events are not replayed. A lagging stream closes with an error when its bounded
-        buffer is exceeded. Session activity includes immutable pending-input connection
-        actions before Turn creation; self_hosted environments use the same safe output
-        as Session retrieval.
+        buffer is exceeded. When a hosted Environment fails to provision, the stream
+        sends agent.session.environment.failed, an error event (environment_error/sandbox_error
+        with the safe step and exit-status reason, never command output) and agent.session.failed,
+        then ends. Session activity includes immutable pending-input connection actions
+        before Turn creation; self_hosted environments use the same safe output as
+        Session retrieval.
       parameters:
       - description: agents=v1
         in: header
@@ -4357,13 +4457,22 @@ paths:
         batches reuse existing scoped result admission and application receipts without
         creating a Turn or bypassing a pending reservation. Mixed prepared-environment
         batches remain unsupported. HTTP expiry/cancellation use local 409 environment_input_expired/environment_input_cancelled
-        errors; exact hosted failure mapping is unverified. Losing execution ownership
-        returns 503. The response write deadline accommodates the admission window
-        for either prepared Environment, independently of new-hosted-admission and
-        executor URL settings. Disconnecting the waiting HTTP request does not cancel
-        retained work or restart its deadline. Retry keys identify the whole ordered
-        batch. Function output accepts text or ordered text/image parts subject to
-        engine support; Claude SDK accepts text results and, on none and qualified
+        errors. New input on a Session whose hosted Environment failed to provision
+        returns the observed 409 conflict_error "the hosted environment failed to
+        provision"; input already waiting when it fails and expired Environments keep
+        the local 409 environment_unavailable. Input the Session cannot accept in
+        its current state, such as a result after cancellation or a batch while earlier
+        input is pending, and a result that differs from the call's saved result return
+        409 with type and code conflict_error; reusing an Idempotency-Key with a different
+        batch returns the local 409 idempotency_conflict. Inside an owned Session,
+        a result for an unknown call or for a call of another Turn returns 400 invalid_request_error
+        and changes nothing; missing and foreign Sessions return 404. Losing execution
+        ownership returns 503. The response write deadline accommodates the admission
+        window for either prepared Environment, independently of new-hosted-admission
+        and executor URL settings. Disconnecting the waiting HTTP request does not
+        cancel retained work or restart its deadline. Retry keys identify the whole
+        ordered batch. Function output accepts text or ordered text/image parts subject
+        to engine support; Claude SDK accepts text results and, on none and qualified
         openai_hosted, successful inline PNG/JPEG results, preserving ordered content;
         error images and remote references reject before admission. Native image resizing
         may change bytes. Runtime image-result support is checked only for image-bearing
@@ -4428,11 +4537,63 @@ paths:
       summary: Submit Session input events
       tags:
       - Sessions
+  /agents/sessions/{session_id}/execution-configuration:
+    get:
+      description: Returns the committed model, harness and safe provider selection
+        with recorded sources. This read never decrypts credentials, resolves current
+        defaults or probes execution health. Deployment provider details remain redacted
+        for project callers. Historical provenance and missing provider projections
+        are explicitly unknown/unavailable.
+      parameters:
+      - description: agents=v1
+        in: header
+        name: OpenAI-Beta
+        required: true
+        type: string
+      - description: Session ID
+        in: path
+        name: session_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/v1.SessionExecutionConfiguration'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+      - BearerAuth: []
+      summary: Retrieve frozen Session execution configuration
+      tags:
+      - Core extensions
   /agents/sessions/{session_id}/items:
     get:
       description: Returns supported message and tool Items in first-observation order.
         Native engine fields are projected explicitly; unfinished Items on terminal
-        Turns are incomplete. Cursors belong to the same tenant and Session.
+        Turns are incomplete. Cursors are Items of the same tenant and Session. Any
+        other after value, including a malformed one, returns 400 invalid_request_error
+        with the message "Invalid session item ID in `after`".
       parameters:
       - description: agents=v1
         in: header
@@ -4650,8 +4811,10 @@ paths:
       - Core
   /agents/sessions/{session_id}/subagents:
     get:
-      description: Includes nested and closed Subagents. Cursors belong to the same
-        tenant and Session. A limit outside 1–100 is rejected.
+      description: Includes nested and closed Subagents. Cursors are Subagents of
+        the same tenant and Session. Any other after value, including a malformed
+        one, returns 400 invalid_request_error with the message "Invalid resource
+        ID in `after`". A limit outside 1–100 is rejected.
       parameters:
       - description: agents=v1
         in: header
@@ -4771,7 +4934,9 @@ paths:
   /agents/sessions/{session_id}/subagents/{subagent_id}/items:
     get:
       description: Returns only this Subagent's own Items across all its Turns, not
-        its descendants' Items. Cursors belong to the same tenant, Session and Subagent.
+        its descendants' Items. Cursors are Items of the same tenant, Session and
+        Subagent. Any other after value, including a malformed one, returns 400 invalid_request_error
+        with the message "Invalid session item ID in `after`".
       parameters:
       - description: agents=v1
         in: header
@@ -4842,8 +5007,10 @@ paths:
   /agents/sessions/{session_id}/subagents/{subagent_id}/turns:
     get:
       description: Includes this Subagent's Turns after resume, with the Session's
-        Agent ID as agent_id. Cursors belong to the same tenant, Session and Subagent.
-        Missing recorded usage remains null. A limit outside 1–100 is rejected.
+        Agent ID as agent_id. Cursors are Turns of the same tenant, Session and Subagent.
+        Any other after value, including a malformed one, returns 400 invalid_request_error
+        with the message "Invalid resource ID in `after`". Missing recorded usage
+        remains null. A limit outside 1–100 is rejected.
       parameters:
       - description: agents=v1
         in: header
@@ -4973,8 +5140,10 @@ paths:
       - Subagents
   /agents/sessions/{session_id}/subagents/{subagent_id}/turns/{turn_id}/items:
     get:
-      description: Returns Items owned by this exact Subagent Turn. Cursors belong
-        to the same tenant, Session, Subagent and Turn.
+      description: Returns Items owned by this exact Subagent Turn. Cursors are Items
+        of the same tenant, Session, Subagent and Turn. Any other after value, including
+        a malformed one, returns 400 invalid_request_error with the message "Invalid
+        session item ID in `after`".
       parameters:
       - description: agents=v1
         in: header
@@ -5051,8 +5220,9 @@ paths:
     get:
       description: Returns the Session's root Turns in creation order; Subagent Turns
         are listed through the Subagent Turn routes. The cursor belongs to the same
-        Session and tenant. Usage contains the latest recorded complete token breakdown;
-        missing measurements remain null.
+        Session and tenant; any other after value, including a malformed one or a
+        Subagent Turn ID, returns not found. Usage contains the latest recorded complete
+        token breakdown; missing measurements remain null.
       parameters:
       - description: agents=v1
         in: header
@@ -5595,8 +5765,10 @@ paths:
   /skills/{skill_id}/versions:
     get:
       description: Orders by version number; after identifies a version resource,
-        not a version number. No contents are decrypted. Limit 0 returns an empty
-        page whose has_more reports whether any version follows the cursor.
+        not a version number. An after value that does not begin with skillver, or
+        a version of another Skill, returns 400 invalid_value with param after; a
+        missing version returns not found. No contents are decrypted. Limit 0 returns
+        an empty page whose has_more reports whether any version follows the cursor.
       parameters:
       - description: Skill ID
         in: path
@@ -5743,12 +5915,13 @@ paths:
       - Skills
   /vaults:
     get:
-      description: Lists project-owned Vaults independently of execution. Includes
-        active and archived records by default. Status accepts a scalar, the SDK's
-        status[] array or both, filtering by their union; a repeated scalar is rejected.
-        Limits default to 20 and clamp to 1–100. Equal creation times use ID ordering;
-        exact hosted errors and concurrent-page behavior remain unverified. Archive/delete
-        lifecycle is not implemented.
+      description: Lists project-owned Vaults independently of execution. An unknown,
+        malformed or foreign after cursor returns not found. Includes active and archived
+        records by default. Status accepts a scalar, the SDK's status[] array or both,
+        filtering by their union; a repeated scalar is rejected. Limits default to
+        20 and clamp to 1–100. Equal creation times use ID ordering; exact hosted
+        errors and concurrent-page behavior remain unverified. Archive/delete lifecycle
+        is not implemented.
       parameters:
       - description: agents=v1
         in: header
@@ -5967,12 +6140,13 @@ paths:
   /vaults/{vault_id}/credentials:
     get:
       description: Lists only metadata from the authenticated project's requested
-        Vault, without decryption or execution. Includes active and archived Credentials
-        by default, independently of Vault status. Status accepts a scalar, the SDK
-        status[] array or both, filtering by their union; a repeated scalar is rejected.
-        Limits default to 20 and clamp to 1–100. Equal creation times use ID ordering.
-        Hosted errors, concurrent-page behavior and archive/delete lifecycle remain
-        unverified or unimplemented.
+        Vault, without decryption or execution. An unknown, malformed or foreign after
+        cursor, including another Vault's Credential, returns not found. Includes
+        active and archived Credentials by default, independently of Vault status.
+        Status accepts a scalar, the SDK status[] array or both, filtering by their
+        union; a repeated scalar is rejected. Limits default to 20 and clamp to 1–100.
+        Equal creation times use ID ordering. Hosted errors, concurrent-page behavior
+        and archive/delete lifecycle remain unverified or unimplemented.
       parameters:
       - description: agents=v1
         in: header

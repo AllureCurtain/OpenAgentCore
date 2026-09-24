@@ -1,6 +1,6 @@
 import { Server } from "lucide-react";
 import type { SandboxAllocation, SandboxNode } from "@agents-core-web/agents-client";
-import { useLocale } from "../../lib/LocaleProvider";
+import { useTranslation } from "react-i18next";
 import { sandboxNodeStatus, sandboxStateLabel } from "../../lib/sandbox-labels";
 import { NodeHealth } from "./NodeHealth";
 import { SandboxDiagnostic } from "./SandboxDiagnostic";
@@ -15,7 +15,8 @@ export function SandboxNodeCard({ node, allocations, stale, disabled, confirming
   onConfirm: () => void;
   onCancel: () => void;
 }) {
-  const { t, locale } = useLocale();
+  const { t, i18n } = useTranslation("sandbox");
+  const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
   const ready = !stale && node.online && node.provider_ready;
   const status = sandboxNodeStatus(node, stale, locale);
   const memory = node.available_memory_bytes === null ? t("Unavailable") : `${(node.available_memory_bytes / 1024 ** 3).toLocaleString(locale, { maximumFractionDigits: 1 })} GiB`;

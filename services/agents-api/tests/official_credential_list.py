@@ -135,18 +135,22 @@ def verify_credential_list(client, other, invalid, peer, binding, saved_vaults, 
             safe_error(raw.get(base + owner + "/credentials", headers=headers), 404)
             expect_error(NotFoundError, lambda: credentials.list(owner))
         for owner, cursor in ((vault.id, sibling.id), (vault.id, foreign.id),
-                              (empty_vault.id, expected[0].id), (vault.id, str(uuid.uuid4()))):
+                              (empty_vault.id, expected[0].id), (vault.id, str(uuid.uuid4())),
+                              (vault.id, "invalid-credential")):
             safe_error(raw.get(base + owner + "/credentials", headers=headers, params={"after": cursor}), 404)
             expect_error(NotFoundError, lambda: credentials.list(owner, after=cursor))
         invalid_queries = [
-            {"after": "invalid-credential"}, {"status": "unknown"}, {"limit": "null"},
+            {"status": "unknown"}, {"limit": "null"},
             {"order": "invalid"}, [("status", "active"), ("status", "archived")],
             [("status", "active"), ("status[]", "unknown")],
         ]
         for params in invalid_queries:
             safe_error(raw.get(endpoint, headers=headers, params=params), 400)
         for suffix in (vault.id, "invalid-vault"):
-            safe_error(raw.get(base + suffix + "/credentials", params={"after": "invalid"}), 401)
+            # The Beta header is checked before authentication (HP-05).
+            safe_error(raw.get(base + suffix + "/credentials", params={"after": "invalid"}), 400)
+            safe_error(raw.get(base + suffix + "/credentials", headers={"OpenAI-Beta": "agents=v1"},
+                               params={"after": "invalid"}), 401)
         for beta in (None, "agents=v2"):
             auth = {"Authorization": headers["Authorization"]}
             if beta is not None:

@@ -317,6 +317,50 @@ describe("OpenAIAgentsClient", () => {
     expect(cancelled).toBe(true);
   });
 
+  it("delivers a hosted provisioning failure's error event before the failed snapshot", async () => {
+    const reason = 'Failed to provision environment: script "setup_commands[0]" failed with exit code 3';
+    const environment = { ...hostedDadf64.session_environment, id: "environment" };
+    const failed = { ...sessionResource(), environment, status: "failed", error: reason, last_active_at: 25 };
+    const frames = [
+      {
+        type: "agent.session.environment.failed", event_id: "evt_environment", session_id: "session",
+        environment: {
+          id: "environment", type: "openai_hosted", status: "failed",
+          error: { type: "environment_error", code: "environment_connection_failed", message: "The environment failed to connect." },
+        },
+      },
+      {
+        type: "error", event_id: "evt_error", session_id: "session",
+        error: { type: "environment_error", code: "sandbox_error", message: reason, param: null },
+      },
+      { type: "agent.session.failed", event_id: "evt_failed", session: failed },
+    ];
+    const onEvent = vi.fn();
+    const client = new OpenAIAgentsClient({
+      fetch: recordingFetch(streamResponse(frames.map((frame) => `event: ${frame.type}\ndata: ${JSON.stringify(frame)}\n\n`)), []),
+    });
+
+    await expect(client.streamEvents("session", { onEvent })).resolves.toBeUndefined();
+    expect(onEvent.mock.calls.map(([event]) => event.type)).toEqual(["agent.session.environment.failed", "error", "agent.session.failed"]);
+    expect(onEvent.mock.calls[1]?.[0]).toEqual(frames[1]);
+    expect(onEvent.mock.calls[2]?.[0]).toMatchObject({ session: { status: "failed", error: reason, last_active_at: 25 } });
+  });
+
+  it.each([
+    ["null param", { code: "stream_interrupted", type: "server_error", message: "safe", param: null }, 503],
+    ["invalid param", { code: "sandbox_error", type: "environment_error", message: "safe", param: 1 }, 502],
+    ["extra error field", { code: "sandbox_error", type: "environment_error", message: "safe", param: null, output: "private" }, 502],
+  ])("keeps in-band error validation with %s", async (_label, error, status) => {
+    const onEvent = vi.fn();
+    const event = { type: "error", event_id: "evt_error", session_id: "session", error };
+    const client = new OpenAIAgentsClient({
+      fetch: recordingFetch(streamResponse([`event: error\ndata: ${JSON.stringify(event)}\n\n`]), []),
+    });
+
+    await expect(client.streamEvents("session", { onEvent })).rejects.toMatchObject({ status });
+    expect(onEvent).not.toHaveBeenCalled();
+  });
+
   it("creates a Session through chunked SSE and publishes its validated leading snapshot exactly once", async () => {
     const calls: FetchCall[] = [];
     const controller = new AbortController();
@@ -654,7 +698,7 @@ describe("OpenAIAgentsClient", () => {
       fetch: recordingFetch(jsonResponse({ error: {
         code: "idempotency_conflict",
         message: "Creation key conflicts with another request.",
-        type: "invalid_request_error",
+        type: "conflict_error",
       } }, 409), calls),
     });
 
@@ -665,7 +709,7 @@ describe("OpenAIAgentsClient", () => {
     )).rejects.toMatchObject({
       status: 409,
       code: "idempotency_conflict",
-      errorType: "invalid_request_error",
+      errorType: "conflict_error",
     });
     expect(calls).toHaveLength(1);
     expect(onOpen).not.toHaveBeenCalled();
@@ -1046,6 +1090,59 @@ describe("OpenAIAgentsClient", () => {
     expect(onEvent).toHaveBeenCalledTimes(events.length);
     expect(onEvent.mock.calls.map((call) => call[0]?.type)).toEqual(events.map((event) => event.type));
     expect(onEvent.mock.calls[2]?.[0]).toMatchObject({ item_id: "item_1", item: { id: "item_1", turn_id: "turn_1" } });
+  });
+
+  it("projects explicit wire nulls and accepts older Cores that omit them", async () => {
+    const user = {
+      id: "user_1", turn_id: "turn_1", type: "message", status: "completed", role: "user",
+      phase: null, content: [{ type: "input_text", text: "question" }],
+    };
+    const result = {
+      id: "result_1", turn_id: "turn_1", type: "function_call_output", status: "completed",
+      call_id: "call_1", output: null, error: null,
+    };
+    const session = { ...sessionResource(), agent: { ...agentSnapshot(), reasoning: { effort: null, summary: null } } };
+    const { phase: _omitted, ...legacyUser } = user;
+    const events = [
+      { type: "agent.session.idle", event_id: "idle", session_id: "session", session },
+      { type: "agent.session.turn.item.added", event_id: "user", session_id: "session", turn_id: "turn_1", output_index: null, item: user },
+      { type: "agent.session.turn.item.added", event_id: "result", session_id: "session", turn_id: "turn_1", output_index: null, item: result },
+      { type: "agent.session.turn.item.added", event_id: "legacy", session_id: "session", turn_id: "turn_1", item: { ...legacyUser, id: "user_2" } },
+      {
+        type: "agent.session.turn.item.added", event_id: "answer", session_id: "session", turn_id: "turn_1",
+        output_index: 0, item: messageItem({ content: [], phase: "final_answer" }),
+      },
+    ];
+    const onEvent = vi.fn();
+    const client = new OpenAIAgentsClient({
+      fetch: recordingFetch(streamResponse(events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`)), []),
+    });
+
+    await client.streamEvents("session", { onEvent });
+
+    const projected = onEvent.mock.calls.map((call) => call[0] as SessionEvent);
+    expect(projected).toHaveLength(events.length);
+    expect(projected[0]?.session?.agent.reasoning).toEqual({ effort: null, summary: null });
+    expect(projected[1]).toMatchObject({ output_index: null, item: { role: "user", phase: null } });
+    expect(projected[2]).toMatchObject({ output_index: null, item: { output: null, error: null } });
+    expect(Object.prototype.hasOwnProperty.call(projected[2]?.item, "output")).toBe(true);
+    expect(Object.prototype.hasOwnProperty.call(projected[3], "output_index")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(projected[3]?.item, "phase")).toBe(false);
+    expect(projected[4]).toMatchObject({ output_index: 0, item: { status: "in_progress", content: [], phase: "final_answer" } });
+
+    for (const invalid of [{ ...events[1], output_index: "0" }, { ...events[1], output_index: -1 }, { ...events[1], item: { ...user, phase: "draft" } }]) {
+      const rejected = new OpenAIAgentsClient({
+        fetch: recordingFetch(streamResponse([`data: ${JSON.stringify(invalid)}\n\n`]), []),
+      });
+      await expect(rejected.streamEvents("session", { onEvent: vi.fn() }))
+        .rejects.toMatchObject({ status: 502, code: "invalid_stream_event" });
+    }
+
+    const calls: FetchCall[] = [];
+    const listed = await new OpenAIAgentsClient({
+      fetch: recordingFetch(jsonResponse({ object: "list", data: [user, result], first_id: "user_1", last_id: "result_1", has_more: false }), calls),
+    }).listItems("session");
+    expect(listed.data).toEqual([user, result]);
   });
 
   const measuredUsage = {
@@ -1799,6 +1896,16 @@ describe("OpenAIAgentsClient", () => {
     await expect(missing.listEnvironmentFiles("environment", { path: "/workspace/missing" })).resolves.toEqual(empty);
   });
 
+  it("accepts exactly 5 MiB of inline Environment file data", async () => {
+    const calls: FetchCall[] = [];
+    const size = 5 * 1024 * 1024;
+    const result = { environment_id: "environment", object: "agent.environment.file", path: "/workspace/big.bin", size_bytes: size };
+    const client = new OpenAIAgentsClient({ fetch: recordingFetch(jsonResponse(result, 201), calls) });
+    await expect(client.createEnvironmentFile("environment", { type: "inline", data: btoa("a".repeat(size)), path: result.path }))
+      .resolves.toEqual(result);
+    expect(calls).toHaveLength(1);
+  });
+
   it("requires 201 Created for an Environment file and never retries another success status", async () => {
     const calls: FetchCall[] = [];
     const result = {
@@ -1829,6 +1936,11 @@ describe("OpenAIAgentsClient", () => {
       data: "YR==",
       path: "/workspace/file.txt",
     })).rejects.toThrow("strict standard Base64");
+    await expect(client.createEnvironmentFile("environment", {
+      type: "inline",
+      data: btoa("a".repeat(5 * 1024 * 1024 + 1)),
+      path: "/workspace/file.txt",
+    })).rejects.toThrow("at most 5 MiB");
     await expect(client.createEnvironmentFile("environment", {
       type: "file_id",
       file_id: "file-16e1f26e-8cf6-4272-9c31-d470b08d31af",
@@ -2052,13 +2164,13 @@ describe("OpenAIAgentsClient", () => {
       type: "agent.session.input.message",
       input: [{ role: "assistant", content: [{ type: "input_text", text: "hello" }] }],
     }] },
-    { label: "blank complete message", events: [{
+    { label: "empty text message", events: [{
       type: "agent.session.input.message",
-      input: [{ role: "user", content: [{ type: "input_text", text: " " }] }],
+      input: [{ role: "user", content: [{ type: "input_text", text: "" }] }],
     }] },
-    { label: "Core Unicode whitespace message", events: [{
+    { label: "all-empty text parts", events: [{
       type: "agent.session.input.message",
-      input: [{ role: "user", content: [{ type: "input_text", text: "\u0085" }] }],
+      input: [{ role: "user", content: [{ type: "input_text", text: "" }, { type: "input_text", text: "" }] }],
     }] },
     { label: "sparse message content", events: [{
       type: "agent.session.input.message",
@@ -2128,6 +2240,23 @@ describe("OpenAIAgentsClient", () => {
     expect(() => client.submitEvents("session", [unicodeOversize], "utf8-over"))
       .toThrow("Session input event request exceeds 1 MiB.");
     expect(calls).toHaveLength(2);
+  });
+
+  it("sends whitespace-only message text verbatim, as Core admits it", async () => {
+    const calls: FetchCall[] = [];
+    const client = new OpenAIAgentsClient({ fetch: recordingFetch(new Response(null, { status: 202 }), calls) });
+    const event: SessionInputEvent = {
+      type: "agent.session.input.message",
+      input: [
+        { role: "user", content: [{ type: "input_text", text: "   " }] },
+        { role: "user", content: [{ type: "input_text", text: "\n\t" }] },
+        { role: "user", content: [{ type: "input_text", text: "\u0085" }] },
+      ],
+    };
+
+    await client.submitEvents("session", [event], "whitespace-text");
+
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({ events: [event] });
   });
 
   it("does not invent JavaScript-only whitespace restrictions for message text", async () => {
@@ -2204,6 +2333,25 @@ describe("OpenAIAgentsClient", () => {
       key as unknown as string,
     )).toThrow("Idempotency key must be non-blank and at most 128 UTF-8 bytes.");
     expect(calls).toHaveLength(0);
+  });
+
+  it("surfaces function result conflicts and target errors with their official fields", async () => {
+    const input = { callId: "call", turnId: "turn", success: true, output: "value" };
+    for (const [status, type, code, message] of [
+      [409, "conflict_error", "conflict_error", "The tool call already has a different result."],
+      [409, "conflict_error", "conflict_error", "The Turn cannot accept this input in its current state."],
+      [400, "invalid_request_error", "invalid_request_error", "Unknown pending tool call."],
+      [400, "invalid_request_error", "invalid_request_error", "The tool call belongs to a different Turn."],
+    ] as const) {
+      const calls: FetchCall[] = [];
+      const client = new OpenAIAgentsClient({
+        fetch: recordingFetch(jsonResponse({ error: { type, code, message, param: null } }, status), calls),
+      });
+      const error = await client.submitFunctionResult("session", input, "result-key").catch((value: unknown) => value);
+      expect(error).toBeInstanceOf(AgentCoreError);
+      expect(error).toMatchObject({ status, code, errorType: type, param: null, message });
+      expect(calls).toHaveLength(1);
+    }
   });
 
   it("keeps the three legacy single-event helpers on the public batch wire", async () => {

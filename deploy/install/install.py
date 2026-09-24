@@ -22,6 +22,7 @@ import uuid
 
 from configuration import compose_config, core_environment, managed_config
 import native_service
+from distribution import DistributionError, artifact, obtain_artifact, runtime_archive, image_identities, ensure_docker_image
 
 
 class InstallError(Exception):
@@ -63,16 +64,18 @@ def verify_bundle(bundle):
             raise InstallError("Invalid distribution path")
         if digest(path) != expected:
             raise InstallError("Distribution checksum mismatch: " + name)
-    required = {"manifest.json", "install.sh", "install.py", "configuration.py", "native_service.py", "node_install.py", "runtime/seccomp.json"}
-    required.update(f"images/{name}.tar" for name in ("core", "web", "runtime", "database"))
-    required.update("native/bin/" + name for name in ("agents-api", "agents-api-migrate", "agents-api-microsandbox-provider", "parsar-sandbox-node"))
-    required.update("native/microsandbox/" + name for name in ("msb", "libkrunfw.so.5.6.1"))
+    required = {"manifest.json", "install.sh", "install.py", "configuration.py", "native_service.py", "node-install.pyz", "self-hosted-install.pyz", "distribution.py", "runtime/seccomp.json"}
+    required.update(f"images/{name}.tar" for name in ("core", "web", "database"))
+    required.update("native/bin/" + name for name in ("agents-api", "agents-api-migrate"))
     if not required.issubset(covered):
         raise InstallError("Distribution checksum list is incomplete")
     manifest = json.loads((bundle / "manifest.json").read_text())
-    for image in manifest["images"].values():
-        if not image.startswith("sha256:") or len(image) != 71:
-            raise InstallError("Distribution must select immutable images")
+    for name in ("core", "web", "database", "runtime"):
+        image_identities(manifest, name)
+    for name in ("images/runtime.tar.gz", "native/bin/parsar-sandbox-node",
+                 "native/bin/agents-api-microsandbox-provider", "native/microsandbox/msb",
+                 "native/microsandbox/libkrunfw.so.5.6.1"):
+        artifact(manifest, name)
     return manifest
 
 
@@ -145,10 +148,17 @@ def compose(root, *args, **kwargs):
 
 
 def wait_http(url, headers=None, attempts=60):
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, response_headers, newurl):
+            return None
+
+    # Probe credentials belong only to this endpoint, never a redirect or an
+    # ambient HTTP proxy. This also applies to the remote web-only Core probe.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
     for attempt in range(attempts):
         try:
             request = urllib.request.Request(url, headers=headers or {})
-            with urllib.request.urlopen(request, timeout=2) as response:
+            with opener.open(request, timeout=2) as response:
                 if response.status == 200:
                     return True
         except (urllib.error.URLError, TimeoutError):
@@ -194,6 +204,27 @@ def initialize(root, args, manifest):
         actual = (state["mode"], state["provider"], state["core_port"], state["web_port"], state.get("core_url"), state.get("public_url"))
         if wanted != actual or state["source_commit"] != manifest["source_commit"]:
             raise InstallError("Existing installation differs; preserve it and follow the upgrade/provider-change guide")
+        services = json.loads((root / "compose.json").read_text())["services"]
+        for service, config in services.items():
+            name = "core" if service == "migrate" else service
+            if config.get("image") != manifest["images"].get(name):
+                raise InstallError("Retained Docker image differs; preserve the installation and inspect its configuration")
+        if state["provider"] == "docker":
+            managed = json.loads((root / "config/managed-runtimes.json").read_text())
+            if managed.get("docker", {}).get("image") != manifest["images"]["runtime"]:
+                raise InstallError("Retained Runtime image differs; preserve the installation and inspect its configuration")
+        if state.get("console_auth") == "account":
+            # Never let Compose create replacement bind sources for lost auth
+            # state. An existing install must retain its account and setup key.
+            directory = root / "state/console"
+            setup = root / "config/console.setup.key"
+            if (not directory.is_dir() or directory.is_symlink() or
+                    stat.S_IMODE(directory.stat().st_mode) & 0o077 or
+                    not setup.is_file() or setup.is_symlink() or
+                    stat.S_IMODE(setup.stat().st_mode) & 0o077):
+                raise InstallError("Private console authentication state is missing or unsafe; restore the retained installation")
+            if (directory / "registered").exists() and not (directory / "admin.json").is_file():
+                raise InstallError("Registered console account is missing; restore its private state backup")
         return state
     if root.exists() and any(root.iterdir()):
         raise InstallError("Installation directory is not empty; refusing to overwrite existing state")
@@ -219,8 +250,12 @@ def initialize(root, args, manifest):
     directories = ["config"]
     if mode != "web-only":
         directories.append("admin")
+    if args.provider or mode != "core-only":
+        directories.append("state")
     if args.provider:
-        directories.extend(("state", "state/sandbox-node"))
+        directories.append("state/sandbox-node")
+    if mode != "core-only":
+        directories.append("state/console")
     if args.provider == "microsandbox":
         directories.append("state/msb")
     for name in directories:
@@ -247,7 +282,8 @@ def initialize(root, args, manifest):
             write_json(config / "managed-runtimes.json", managed_config(root, state, manifest))
     private_write(config / "caller.key", token)
     if mode != "core-only":
-        private_write(config / "console.password", secrets.token_hex(24))
+        state["console_auth"] = "account"
+        private_write(config / "console.setup.key", secrets.token_hex(32))
     password = (config / "database.password").read_text() if mode != "web-only" else ""
     write_json(root / "compose.json", compose_config(root, state, manifest, password))
     write_json(root / "installation.json", state)
@@ -259,10 +295,18 @@ def prepare_node_payload(root, state, bundle):
         return
     destination = root / "node-payload"
     # Public distribution files only. Never copy the private installation config.
-    names = ("node_install.py", "manifest.json", "SHA256SUMS", "images/runtime.tar",
-             "runtime/seccomp.json", "native/bin/parsar-sandbox-node",
-             "native/bin/agents-api-microsandbox-provider", "native/microsandbox/msb",
-             "native/microsandbox/libkrunfw.so.5.6.1")
+    names = ["node-install.pyz", "self-hosted-install.pyz", "manifest.json", "SHA256SUMS", "runtime/seccomp.json"]
+    manifest = json.loads((bundle / "manifest.json").read_text())
+    for logical in manifest.get("artifacts", {}):
+        entry = artifact(manifest, logical)
+        name = "artifacts/" + entry["filename"]
+        source = bundle / name
+        if source.exists():
+            if (source.is_symlink() or not source.is_file()
+                    or not source.resolve().is_relative_to(bundle.resolve())
+                    or source.stat().st_size != entry["size"] or digest(source) != entry["sha256"]):
+                raise InstallError("Offline artifact verification failed: " + logical)
+            names.append(name)
     for name in names:
         source, target = bundle / name, destination / name
         target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -313,26 +357,43 @@ def main(argv=None):
         raise InstallError("microsandbox requires host KVM; enable virtualization or explicitly choose --provider docker")
     bundle = Path(__file__).resolve().parent
     manifest = verify_bundle(bundle)
-    if args.provider == "microsandbox" and not args.web_only:
-        native_service.preflight(bundle)
-    state = initialize(root, args, manifest)
+    if args.provider and not args.web_only:
+        print("Preparing the selected local sandbox provider...", flush=True)
+        if args.provider == "microsandbox":
+            runtime_archive(manifest, bundle, bundle)
+            for name in ("native/bin/agents-api-microsandbox-provider", "native/microsandbox/msb",
+                         "native/microsandbox/libkrunfw.so.5.6.1"):
+                obtain_artifact(manifest, name, bundle / name, bundle)
+            native_service.preflight(bundle)
+    if args.web_only:
+        images = ["web"]
+    elif args.provider == "microsandbox":
+        images = ["database"]
+    else:
+        images = ["core", "database"]
+    if args.provider == "docker":
+        images.append("runtime")
+    if not args.core_only and not args.web_only:
+        images.append("web")
+    local_images = dict(manifest["images"])
+    for name in images:
+        if name == "runtime":
+            archive = lambda: runtime_archive(manifest, bundle, bundle)
+        else:
+            archive = lambda name=name: bundle / f"images/{name}.tar"
+        local_images[name] = ensure_docker_image(manifest, name, archive)
+    # Deployment configuration uses Docker's local IDs; published metadata is unchanged.
+    deployment = dict(manifest, images=local_images)
+    state = initialize(root, args, deployment)
     prepare_node_payload(root, state, bundle)
     if state["provider"] == "docker":
         seccomp = bundle / "runtime/seccomp.json"
         if not (root / "config/seccomp.json").exists():
             private_write(root / "config/seccomp.json", seccomp.read_text())
-    images = ["web"] if state["mode"] == "web-only" else ["core", "database"]
-    if state["provider"] == "docker":
-        images.append("runtime")
     if native_service.is_native(state):
-        images = ["database"]
         password = (root / "config/database.password").read_text()
         environment = core_environment(root, state, password)
         native_service.prepare(root, state, bundle, environment)
-    if state["mode"] == "all":
-        images.append("web")
-    for name in images:
-        run(["docker", "load", "--input", str(bundle / f"images/{name}.tar")], stdout=subprocess.DEVNULL)
     import_runtime(root, state, manifest, bundle)
     compose(root, "up", "--detach", "--wait")
     if native_service.is_native(state):
@@ -345,12 +406,28 @@ def main(argv=None):
         raise InstallError("Core did not become healthy. Use --status; retained state has not been removed")
     if state["mode"] != "core-only":
         url = f'http://127.0.0.1:{state["web_port"]}'
-        auth = base64.b64encode(("admin:" + (root / "config/console.password").read_text()).encode()).decode()
-        if not wait_http(url + "/v1/agents", {"Authorization": "Basic " + auth, "OpenAI-Beta": "agents=v1",
-                "Host": urlsplit(state.get("public_url") or url).netloc}):
-            raise InstallError("Web could not authenticate to Core. Inspect private configuration; no model was called")
-        print("Console: " + (state.get("public_url") or url) + " (user: admin)")
-        print("Console password file: " + str(root / "config/console.password"))
+        host = urlsplit(state.get("public_url") or url).netloc
+        if state.get("console_auth") == "account":
+            if not wait_http(url + "/console/auth", {"Host": host}):
+                raise InstallError("Web authentication is unavailable. Inspect private console state")
+            core_url = state.get("core_url") or f'http://127.0.0.1:{state["core_port"]}'
+            token = (root / "config/caller.key").read_text().strip()
+            if not wait_http(core_url + "/v1/agents", {"Authorization": "Bearer " + token,
+                    "OpenAI-Beta": "agents=v1"}):
+                raise InstallError("Core caller authentication failed. Inspect private configuration; no model was called")
+            print("Console: " + (state.get("public_url") or url))
+            if (root / "state/console/admin.json").exists():
+                print("Sign in with your administrator account. Keep its password and private state backup safe.")
+            else:
+                print("Open Web to register the administrator. Setup key file: " + str(root / "config/console.setup.key"))
+                print("Keep your administrator username and password safe; there is no email password reset.")
+        else:
+            auth = base64.b64encode(("admin:" + (root / "config/console.password").read_text()).encode()).decode()
+            if not wait_http(url + "/v1/agents", {"Authorization": "Basic " + auth, "OpenAI-Beta": "agents=v1",
+                    "Host": host}):
+                raise InstallError("Web could not authenticate to Core. Inspect private configuration; no model was called")
+            print("Console: " + (state.get("public_url") or url) + " (user: admin)")
+            print("Console password file: " + str(root / "config/console.password"))
     if state["mode"] != "web-only":
         print(f'API: http://127.0.0.1:{state["core_port"]}/v1')
         print("Caller key file: " + str(root / "config/caller.key"))
@@ -365,7 +442,7 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         main()
-    except (InstallError, RuntimeError, OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
+    except (InstallError, DistributionError, RuntimeError, OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         # Errors never include generated configuration or external process output.
-        print(str(error) if isinstance(error, (InstallError, RuntimeError)) else "Installation failed; inspect prerequisites and private deployment files", file=sys.stderr)
+        print(str(error) if isinstance(error, (InstallError, DistributionError, RuntimeError)) else "Installation failed; inspect prerequisites and private deployment files", file=sys.stderr)
         sys.exit(1)
