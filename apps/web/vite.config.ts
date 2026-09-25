@@ -2,6 +2,7 @@
 
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -38,14 +39,21 @@ export default defineConfig(({ command, mode }) => {
       __AGENTS_CORE_WEB_DOCKER_BACKEND_GUIDE__: JSON.stringify(localDockerBackendGuide),
     },
     envDir: repositoryRoot,
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
+    },
     test: {
       include: ["src/**/*.test.{ts,tsx}"],
       setupFiles: ["./src/i18n/test-setup.ts"],
     },
     server: {
       proxy: {
+        // The console service's own routes (sign-in, capability flags) and the
+        // management surfaces it forwards, as in production.
+        "/console": { target, changeOrigin: true },
         "/core/v1/sandbox": { target, changeOrigin: true },
+        "/core/v1/admin": { target, changeOrigin: true },
         "/v1": {
           target,
           changeOrigin: true,
