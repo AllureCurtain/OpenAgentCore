@@ -118,7 +118,7 @@ func TestRuntimeNodesEnrollmentAndEpoch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	input := RuntimeNodeEnrollment{NodeID: uuid.NewString(), Credential: strings.Repeat("x", 64), Name: "remote", Provider: "microsandbox", BackendFingerprint: strings.Repeat("b", 64), MaxActive: 2, MaxRetained: 4}
+	input := RuntimeNodeEnrollment{DeploymentGeneration: 1, SpecificationDigest: SandboxDeploymentTestSpec("docker").Digest("docker"), NodeID: uuid.NewString(), Credential: strings.Repeat("x", 64), Name: "remote", Provider: "microsandbox", BackendFingerprint: strings.Repeat("b", 64), MaxActive: 2, MaxRetained: 4}
 	if _, err := s.EnrollRuntimeNode(t.Context(), token, input); !errors.Is(err, ErrInvalidInput) {
 		t.Fatal("mixed provider accepted", err)
 	}
@@ -198,6 +198,7 @@ func TestRuntimeNodesLegacyAdoptionAndRetention(t *testing.T) {
 	if err := w.ConfigureRuntimeDeployment(t.Context(), &next, func(context.Context, RuntimeAllocation) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
+	legacyRuntimeSpecification(t, w, next.ProviderKind)
 	retained, err := s.GetRuntimeAllocation(t.Context(), tenant, environment.ID)
 	if err != nil || retained.NodeID != next.LocalNodeID || retained.ProviderKey != d.InstallationID || retained.ID != owner.ID {
 		t.Fatal("adoption lost identity", retained, err)

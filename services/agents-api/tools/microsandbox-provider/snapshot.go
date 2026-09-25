@@ -17,6 +17,7 @@ func (b backend) snapshotLabels(operation string, source wire.Compute) map[strin
 	labels["io.parsar.operation"] = operation
 	labels["io.parsar.source_id"] = source.ID
 	labels["io.parsar.source_generation"] = strconv.FormatUint(source.Generation, 10)
+	labels[resourceProofLabel] = resourceProof(b.q.Config)
 	return labels
 }
 
@@ -31,6 +32,10 @@ func (b backend) inspectSnapshot(ctx context.Context, operation string, source w
 		return nil, wire.SnapshotIdentity{}, sandbox.ErrOwnership
 	}
 	for key, value := range b.snapshotLabels(operation, source) {
+		// Drift must never block ownership-based artifact deletion.
+		if key == resourceProofLabel {
+			continue
+		}
 		if artifact.Labels()[key] != value {
 			return nil, wire.SnapshotIdentity{}, sandbox.ErrOwnership
 		}
@@ -62,13 +67,13 @@ func (b backend) verifiedSnapshot(ctx context.Context, want wire.SnapshotIdentit
 func (b backend) suspend(ctx context.Context, q wire.SuspendRequest) (wire.State, error) {
 	// The host allocation flock spans pause, capture, verification and source kill.
 	// A surviving completed artifact is observed, never overwritten or recaptured.
-	_, snap, e := b.inspectSnapshot(ctx, q.OperationID, q.Source)
+	artifact, snap, e := b.inspectSnapshot(ctx, q.OperationID, q.Source)
 	if sdk.IsKind(e, sdk.ErrSnapshotNotFound) {
 		if q.ObserveOnly {
 			if q.Snapshot != nil {
 				return wire.State{}, wire.ErrUnconfirmed
 			}
-			_, state, observeErr := b.inspect(ctx, q.Source)
+			_, state, observeErr := b.inspectOwned(ctx, q.Source)
 			if observeErr != nil {
 				return wire.State{}, observeErr
 			}
@@ -96,7 +101,7 @@ func (b backend) suspend(ctx context.Context, q wire.SuspendRequest) (wire.State
 		if err != nil {
 			return wire.State{}, err
 		}
-		_, snap, e = b.inspectSnapshot(ctx, q.OperationID, q.Source)
+		artifact, snap, e = b.inspectSnapshot(ctx, q.OperationID, q.Source)
 	}
 	if e != nil {
 		return wire.State{}, e
@@ -104,17 +109,20 @@ func (b backend) suspend(ctx context.Context, q wire.SuspendRequest) (wire.State
 	if q.Snapshot != nil && snap != *q.Snapshot {
 		return wire.State{}, sandbox.ErrOwnership
 	}
+	if q.ObserveOnly {
+		// A completed operation receipt remains observable for cleanup even if
+		// its source or resource proof is no longer qualified for execution.
+		return observeCapturedSnapshot(q.Source, snap, func(source wire.Compute) (wire.State, error) {
+			_, state, err := b.inspectOwned(ctx, source)
+			return state, err
+		})
+	}
+	if e = qualifySnapshotResources(b.q.Config, artifact.Labels()); e != nil {
+		return wire.State{}, e
+	}
 	h, _, e := b.inspect(ctx, q.Source)
 	if e != nil && !sdk.IsKind(e, sdk.ErrSandboxNotFound) {
 		return wire.State{}, e
-	}
-	if q.ObserveOnly {
-		stopped := sdk.IsKind(e, sdk.ErrSandboxNotFound) || (e == nil && terminal(h.Status()))
-		status := "suspended"
-		if !stopped {
-			status = string(h.Status())
-		}
-		return wire.State{Compute: q.Source, Status: status, BootstrapComplete: true, Snapshot: &snap, SourceStopped: stopped}, nil
 	}
 	if e == nil {
 		// Graceful stop could run the captured source after the checkpoint.
@@ -137,12 +145,12 @@ func (b backend) resume(ctx context.Context, q wire.ResumeRequest) (wire.State, 
 	if e != nil {
 		return wire.State{}, e
 	}
-	_, state, e := b.inspect(ctx, q.Target)
+	if e = qualifySnapshotResources(b.q.Config, artifact.Labels()); e != nil {
+		return wire.State{}, e
+	}
+	_, _, e = b.inspectOwned(ctx, q.Target)
 	if e == nil {
-		if state.Status != "running" || !state.BootstrapComplete {
-			return wire.State{}, wire.ErrUnconfirmed
-		}
-		return state, nil
+		return b.finishRestore(ctx, q.Target)
 	}
 	if !sdk.IsKind(e, sdk.ErrSandboxNotFound) {
 		return wire.State{}, e
@@ -167,14 +175,32 @@ func (b backend) resume(ctx context.Context, q wire.ResumeRequest) (wire.State, 
 	}
 	target := q.Target
 	target.ID = live.ID()
-	if e = live.Detach(context.Background()); e != nil {
-		return wire.State{}, e
+	// The same completion path handles a fresh target and a previous Restore
+	// whose response or derived proof write was interrupted.
+	state, err := b.finishRestore(ctx, target)
+	detachErr := live.Detach(context.Background())
+	if err != nil {
+		return wire.State{}, err
 	}
-	_, state, e = b.inspect(ctx, target)
-	if e == nil && (state.Status != "running" || !state.BootstrapComplete) {
-		return wire.State{}, wire.ErrUnconfirmed
+	if detachErr != nil {
+		return wire.State{}, detachErr
 	}
-	return state, e
+	return state, nil
+}
+
+// Observation consumes an already verified artifact identity and never changes
+// source state. Execution qualification belongs to capture and subsequent use.
+func observeCapturedSnapshot(source wire.Compute, snapshot wire.SnapshotIdentity, readOwned func(wire.Compute) (wire.State, error)) (wire.State, error) {
+	state, err := readOwned(source)
+	if err != nil && !sdk.IsKind(err, sdk.ErrSandboxNotFound) {
+		return wire.State{}, err
+	}
+	stopped := sdk.IsKind(err, sdk.ErrSandboxNotFound) || terminal(sdk.SandboxStatus(state.Status))
+	status := "suspended"
+	if !stopped {
+		status = state.Status
+	}
+	return wire.State{Compute: source, Status: status, BootstrapComplete: true, Snapshot: &snapshot, SourceStopped: stopped}, nil
 }
 
 func terminal(s sdk.SandboxStatus) bool {

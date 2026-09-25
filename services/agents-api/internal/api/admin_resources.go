@@ -13,6 +13,7 @@ import (
 type adminTenantContextKey struct{}
 
 type AdminManagementStore interface {
+	GetManagedSessionArchive(context.Context, string, string) (store.ManagedSessionArchive, error)
 	CopyAssets(context.Context, string, string, store.CopyAssetsInput) (store.CopyAssetsResult, error)
 	ReadAdminSummary(context.Context, string, store.AdminSummaryFilter, func(store.Session, *string) error) (store.AdminAssetCounts, error)
 	ListAdminRuntimeTargets(context.Context, []string, string, int, bool) (store.AdminRuntimeTargetPage, error)
@@ -79,6 +80,10 @@ func (h *Handler) registerAdminResourceRoutes(router chi.Router) {
 			r.Get("/projects/{project_id}/sessions", h.adminListSessions)
 			r.Get("/projects/{project_id}/sessions/{session_id}", h.adminGetSession)
 			r.Delete("/projects/{project_id}/sessions/{session_id}", h.adminDeleteSession)
+			if h.adminManagement != nil {
+				r.Post("/projects/{project_id}/sessions/{session_id}/archive", h.adminArchiveSession)
+				r.Get("/projects/{project_id}/sessions/{session_id}/archive", h.adminGetSessionArchive)
+			}
 			r.Get("/projects/{project_id}/sessions/{session_id}/turns", h.adminListTurns)
 			r.Get("/projects/{project_id}/sessions/{session_id}/turns/{turn_id}", h.adminGetTurn)
 			r.Get("/projects/{project_id}/sessions/{session_id}/items", h.adminListItems)

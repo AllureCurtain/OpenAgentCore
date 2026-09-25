@@ -37,6 +37,11 @@ definitions:
       object:
         type: string
     type: object
+  api.AdminSessionArchiveRequest:
+    properties:
+      expected_generation:
+        type: integer
+    type: object
   api.AdminSessionCounts:
     properties:
       failed:
@@ -130,6 +135,10 @@ definitions:
         type: integer
       provider:
         type: string
+      resources:
+        $ref: '#/definitions/sandbox.Resources'
+      runtime:
+        $ref: '#/definitions/sandbox.RuntimeRelease'
     type: object
   api.SandboxDeploymentInput:
     properties:
@@ -139,6 +148,10 @@ definitions:
         $ref: '#/definitions/api.SandboxE2BInput'
       provider:
         type: string
+      resources:
+        $ref: '#/definitions/sandbox.Resources'
+      runtime:
+        $ref: '#/definitions/sandbox.RuntimeRelease'
     type: object
   api.SandboxE2BInput:
     properties:
@@ -335,6 +348,39 @@ definitions:
       service:
         $ref: '#/definitions/coremetrics.ServiceState'
     type: object
+  sandbox.DeploymentSpec:
+    properties:
+      resources:
+        $ref: '#/definitions/sandbox.Resources'
+      runtime:
+        $ref: '#/definitions/sandbox.RuntimeRelease'
+    type: object
+  sandbox.Resources:
+    properties:
+      cpus:
+        type: integer
+      environment_disk_mib:
+        type: integer
+      memory_mib:
+        type: integer
+      root_disk_mib:
+        type: integer
+    type: object
+  sandbox.RuntimeRelease:
+    properties:
+      firmware_sha256:
+        type: string
+      image_id:
+        type: string
+      image_manifest_digest:
+        type: string
+      microsandbox_ref:
+        type: string
+      runtime_sha256:
+        type: string
+      source_commit:
+        type: string
+    type: object
   store.AdminAssetCounts:
     properties:
       agents:
@@ -456,6 +502,15 @@ definitions:
       revoked_at:
         type: string
     type: object
+  store.ManagedSessionArchive:
+    properties:
+      environment_id:
+        type: string
+      session_id:
+        type: string
+      state:
+        type: string
+    type: object
   store.Project:
     properties:
       active_key_count:
@@ -533,6 +588,10 @@ definitions:
         type: string
       resources:
         $ref: '#/definitions/store.SandboxDeploymentResources'
+      specification:
+        $ref: '#/definitions/sandbox.DeploymentSpec'
+      specification_digest:
+        type: string
     type: object
   store.RuntimeNode:
     properties:
@@ -598,12 +657,29 @@ definitions:
       tenant_id:
         type: string
     type: object
+  store.RuntimeNodeConfiguration:
+    properties:
+      core_url:
+        type: string
+      generation:
+        type: integer
+      installation_id:
+        type: string
+      provider:
+        type: string
+      specification:
+        $ref: '#/definitions/sandbox.DeploymentSpec'
+      specification_digest:
+        type: string
+    type: object
   store.RuntimeNodeEnrollment:
     properties:
       backend_fingerprint:
         type: string
       credential:
         type: string
+      deployment_generation:
+        type: integer
       max_active:
         type: integer
       max_retained:
@@ -614,20 +690,28 @@ definitions:
         type: string
       provider:
         type: string
+      specification_digest:
+        type: string
     type: object
   store.RuntimeNodeIdentity:
     properties:
+      deployment_generation:
+        type: integer
       installation_id:
         type: string
       node_id:
         type: string
       provider:
         type: string
+      specification_digest:
+        type: string
     type: object
   store.RuntimeNodeStatus:
     properties:
       connected:
         type: boolean
+      deployment_generation:
+        type: integer
       installation_id:
         type: string
       node_id:
@@ -636,6 +720,8 @@ definitions:
         type: string
       provider_ready:
         type: boolean
+      specification_digest:
+        type: string
     type: object
   store.RuntimeNodeUpdate:
     properties:
@@ -3769,6 +3855,113 @@ paths:
       summary: Retrieve an execution Session in a managed key space
       tags:
         - Sessions
+  /core/v1/admin/projects/{project_id}/sessions/{session_id}/archive:
+    get:
+      description: Deployment administrator only. Reports actual resource disposition, including expiry and failure cleanup. This is not archive provenance and does not assert active Turn settlement. Read this after an uncertain archive response; never infer released from a missing sandbox alone.
+      parameters:
+        - description: Project ID
+          in: path
+          name: project_id
+          required: true
+          type: string
+        - description: Session ID
+          in: path
+          name: session_id
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.ManagedSessionArchive'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: Retrieve a managed Session's resource cleanup state
+      tags:
+        - Core Administration
+    post:
+      consumes:
+        - application/json
+      description: Deployment administrator only. Requires maintenance and the current deployment generation. Permanently closes execution, requests cancellation and releases sandbox/snapshots through existing cleanup. Session history and persisted files/artifacts remain; unpersisted workspace contents are lost. A cleanup_pending response is not proof of resource release. Does not affect caller-managed Runtime.
+      parameters:
+        - description: Project ID
+          in: path
+          name: project_id
+          required: true
+          type: string
+        - description: Session ID
+          in: path
+          name: session_id
+          required: true
+          type: string
+        - description: Current deployment generation
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/api.AdminSessionArchiveRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.ManagedSessionArchive'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: Release a managed Session's execution resources while retaining history
+      tags:
+        - Core Administration
   /core/v1/admin/projects/{project_id}/sessions/{session_id}/artifacts:
     get:
       description: Deployment administrator only. Reuses the public resource projection and operation rules; the key selects the target space and does not authenticate.
@@ -5261,7 +5454,7 @@ paths:
     post:
       consumes:
         - application/json
-      description: Selects a provider and public Core origin. E2B credentials are write-only. Exact retries return the existing selection; differing selections and file-managed deployments reject. This does not create compute or execute work.
+      description: Selects a provider, enforced resource limits, pinned Runtime release and public Core origin. E2B credentials are write-only. Exact retries return the existing selection; differing selections and file-managed deployments reject. This does not create compute or execute work.
       parameters:
         - description: Deployment selection
           in: body
@@ -5341,7 +5534,7 @@ paths:
             $ref: '#/definitions/v1.ErrorResponse'
       security:
         - DeploymentAdminAuth: []
-      summary: Change a fully drained deployment's sandbox provider
+      summary: Change a fully drained deployment's sandbox configuration
       tags:
         - Sandbox Manager
   /core/v1/sandbox/deployment/maintenance:
@@ -5482,6 +5675,46 @@ paths:
       security:
         - DeploymentAdminAuth: []
       summary: Create a ten-minute one-use node enrollment token
+      tags:
+        - Sandbox Manager
+  /core/v1/sandbox/node/configuration:
+    get:
+      description: Authenticates with an unconsumed enrollment token, or a retained node credential with X-Parsar-Node-ID. Does not consume the token or expose E2B credentials. Node files cannot override this specification.
+      parameters:
+        - description: Retained node UUID
+          in: header
+          name: X-Parsar-Node-ID
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.RuntimeNodeConfiguration'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+        - NodeEnrollmentAuth: []
+      summary: Read the active configuration for node installation
       tags:
         - Sandbox Manager
   /core/v1/sandbox/node/identity:

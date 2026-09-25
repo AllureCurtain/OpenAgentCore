@@ -18,8 +18,7 @@ type backend struct{ q wire.Request }
 func (b backend) run(ctx context.Context) (wire.Response, error) {
 	switch b.q.Operation {
 	case "create":
-		s, e := b.create(ctx)
-		return wire.Response{State: &s}, e
+		return b.create(ctx)
 	case "inspect":
 		_, s, e := b.inspect(ctx, b.q.Compute)
 		return wire.Response{State: &s}, e
@@ -65,6 +64,14 @@ func (b backend) run(ctx context.Context) (wire.Response, error) {
 }
 
 func (b backend) inspect(ctx context.Context, c wire.Compute) (*sdk.SandboxHandle, wire.State, error) {
+	h, state, err := b.inspectOwned(ctx, c)
+	if err == nil {
+		err = qualifyConfiguration(b.q.Config, c, h.ConfigJSON(), false)
+	}
+	return h, state, err
+}
+
+func (b backend) inspectOwned(ctx context.Context, c wire.Compute) (*sdk.SandboxHandle, wire.State, error) {
 	state := wire.State{Compute: c}
 	h, e := sdk.GetSandbox(ctx, c.Name)
 	if e != nil {
@@ -74,7 +81,7 @@ func (b backend) inspect(ctx context.Context, c wire.Compute) (*sdk.SandboxHandl
 	return h, state, e
 }
 func (b backend) kill(ctx context.Context, c wire.Compute) error {
-	h, _, e := b.inspect(ctx, c)
+	h, _, e := b.inspectOwned(ctx, c)
 	if sdk.IsKind(e, sdk.ErrSandboxNotFound) {
 		return nil
 	}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -25,15 +24,12 @@ type managedSetup struct {
 		GetSandboxSetup(context.Context) (store.SandboxSetup, error)
 		ResolveRuntimeNode(context.Context, string, string) (string, error)
 	}
-	mu             sync.Mutex
 	hub            *node.Hub
 	installationID string
 	selected       atomic.Pointer[execution.RuntimeProvider]
 }
 
 func (s *managedSetup) load(ctx context.Context) (*execution.RuntimeProvider, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	setup, err := s.store.GetSandboxSetup(ctx)
 	if err != nil {
 		return nil, err
@@ -47,10 +43,49 @@ func (s *managedSetup) load(ctx context.Context) (*execution.RuntimeProvider, er
 	if selected := s.selected.Load(); selected != nil && selected.Generation == setup.Generation {
 		return selected, nil
 	}
-	provider, err := s.provider(setup)
+	candidate, err := s.configuration(setup)
 	if err != nil {
 		log.Warn(ctx, "Hosted provider is unavailable; administrator recovery remains available", "provider", setup.Provider, "error", err)
 		return nil, fmt.Errorf("%w: %v", execution.ErrExecutionUnavailable, err)
+	}
+	// A slower read cannot replace a generation that committed while this
+	// configuration was loading. Publication performs no external work.
+	for {
+		selected := s.selected.Load()
+		if selected != nil && selected.Generation >= setup.Generation {
+			return selected, nil
+		}
+		if s.selected.CompareAndSwap(selected, candidate.Config) {
+			return candidate.Config, nil
+		}
+	}
+}
+
+func (s *managedSetup) prepare(ctx context.Context, setup store.SandboxSetup) (execution.PreparedRuntimeDeployment, error) {
+	candidate, err := s.configuration(setup)
+	if err != nil {
+		return execution.PreparedRuntimeDeployment{}, err
+	}
+	if provider, ok := candidate.Config.Provider.(*e2b.Provider); ok {
+		if err := provider.ValidateDeployment(ctx); err != nil {
+			if errors.Is(err, sandbox.ErrInvalid) {
+				return execution.PreparedRuntimeDeployment{}, &store.SandboxConfigurationError{Message: "E2B configuration was rejected; select a ready fixed template build whose CPU and memory match the deployment specification"}
+			}
+			return execution.PreparedRuntimeDeployment{}, fmt.Errorf("%w: E2B validation could not be confirmed; verify the helper, credential, network and fixed template build before retrying", execution.ErrExecutionUnavailable)
+		}
+	}
+	return candidate, nil
+}
+
+// Loading an already committed selection must retain provider access to its
+// owned resources, even when a new-template validation would now fail.
+func (s *managedSetup) configuration(setup store.SandboxSetup) (execution.PreparedRuntimeDeployment, error) {
+	if setup.InstallationID != s.installationID {
+		return execution.PreparedRuntimeDeployment{}, errors.New("sandbox installation does not match setup")
+	}
+	provider, err := s.provider(setup)
+	if err != nil {
+		return execution.PreparedRuntimeDeployment{}, fmt.Errorf("%w: %v", execution.ErrExecutionUnavailable, err)
 	}
 	selected := &execution.RuntimeProvider{InstallationID: setup.InstallationID, ProviderKind: setup.Provider, Generation: setup.Generation, Mode: setup.Mode, Maintenance: setup.Maintenance,
 		CoreURL: setup.CoreURL + "/api/v1", BackendFingerprint: setup.BackendFingerprint, Provider: provider}
@@ -58,8 +93,7 @@ func (s *managedSetup) load(ctx context.Context) (*execution.RuntimeProvider, er
 		selected.Suspension = &execution.RuntimeSuspensionPolicy{IdleTimeout: time.Duration(setup.IdleSeconds) * time.Second,
 			Retention: time.Duration(setup.RetentionSeconds) * time.Second, MaxActive: 4, MaxRetained: 16}
 	}
-	s.selected.Store(selected)
-	return selected, nil
+	return execution.PreparedRuntimeDeployment{Config: selected, Publish: s.selected.Store}, nil
 }
 
 func (s *managedSetup) webSocketURL(fallback string) func(context.Context) (string, error) {
@@ -115,7 +149,7 @@ func (s *managedSetup) provider(setup store.SandboxSetup) (sandbox.Provider, err
 			binary = "/opt/parsar/e2b/agents-api-e2b-provider"
 		}
 		provider, err := e2b.New(e2b.Config{Binary: binary, StateDir: os.Getenv("AGENTS_API_E2B_STATE_DIR"),
-			InstallationID: setup.InstallationID, APIKey: setup.E2B.APIKey, Template: setup.E2B.Template, TimeoutSeconds: 3600})
+			Resources: &setup.Specification.Resources, InstallationID: setup.InstallationID, APIKey: setup.E2B.APIKey, Template: setup.E2B.Template, TimeoutSeconds: 3600})
 		if err != nil {
 			return nil, errors.New("E2B provider cannot load; check the installed helper and private state directory")
 		}

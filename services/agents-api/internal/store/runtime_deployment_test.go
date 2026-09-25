@@ -22,6 +22,23 @@ func deploymentConfigure(t *testing.T, w *Store, config *RuntimeDeployment) {
 	if err := w.ConfigureRuntimeDeployment(t.Context(), config, nil); err != nil {
 		t.Fatal(err)
 	}
+	if config != nil && config.ProviderKind != "" {
+		legacyRuntimeSpecification(t, w, config.ProviderKind)
+	}
+}
+
+// Lower-level legacy fixtures supply verified metadata without replaying the
+// configuration transition being tested. Web setup owns this write in production.
+func legacyRuntimeSpecification(t *testing.T, w *Store, provider string) {
+	t.Helper()
+	spec := SandboxDeploymentTestSpec(provider)
+	raw, _ := json.Marshal(spec)
+	if _, err := w.pool.Exec(t.Context(), "UPDATE runtime_deployment SET specification=$1", raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.pool.Exec(t.Context(), "UPDATE runtime_nodes SET deployment_generation=1,specification_digest=$1", spec.Digest(provider)); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestRuntimeDeploymentRequiresMaintenanceBeforeIdentityChange(t *testing.T) {

@@ -5,10 +5,30 @@ v0.7.2. Core stays a pure-Go binary and uses the provider-neutral
 `sandbox.CheckpointProvider` interface. There is no helper daemon, local lifecycle
 database, native agent adapter, or additional scheduler.
 
-The supported first deployment profile is native Linux Core plus this local
-helper, under one dedicated service user with KVM access. PostgreSQL may continue
-to run in Docker. The current Core distroless/static image cannot execute this
-glibc helper; copying the binary into that image is not a supported deployment.
+Managed creation checks the native CPU, memory, root disk and owned Environment
+disk configuration before bootstrap. Inspection and restore reject resource or
+image drift while ownership-based compute and snapshot deletion remain available.
+Full snapshots record a resource proof only after the source's limits match.
+The pinned native restore leaves managed root size unspecified in its config;
+the verified snapshot ancestry and matching proof establish inherited capacity.
+The restored target keeps that proof after its CPU, memory and Environment disk
+are checked. This does not claim a new direct root-capacity measurement on restore.
+
+The ordinary standalone sandbox node runs this helper natively on Linux amd64,
+under a dedicated service user with KVM access. Core owns lifecycle intent through
+the node protocol and can run in a container or on another host. Core's
+`distroless/static` image does not execute this glibc helper. The installer's local
+microsandbox opt-in still uses native Core packaging; that is an installation
+choice, not an architectural requirement.
+
+PostgreSQL owns the provider, per-sandbox resources and immutable Runtime release.
+The node installs that specification and retains its generation and digest; local
+provider files cannot override it. See the
+[deployment contract](../../../../contracts/agents-api/sandbox-deployment.md),
+[installation guide](../../../../docs/getting-started/install.md) and
+[Hosted Sandbox Manager](../../HOSTED-SANDBOX-MANAGER.md). Core no longer accepts a
+file-managed startup selection or automatically adopts an older file-managed
+database.
 
 ## Build and installation
 
@@ -43,8 +63,9 @@ For offline archives, `msb image load --tag repository@sha256:<digest>` must reg
 the digest reference explicitly; loading a mutable tag alone does not create it.
 Use the manifest digest from `image inspect`, not the Docker image config ID.
 The qualified image contains our existing daemon, Python 3, native harness and
-shared Runtime helpers. Provider Config explicitly sets VM resources and the
-complete host network policy. This adapter does not install registry credentials.
+shared Runtime helpers. Provider Config carries the saved VM resources and the
+node's explicit host network policy. Its Runtime and firmware hashes must match
+the database-owned release. This adapter does not install registry credentials.
 
 ## Bootstrap and network
 
@@ -65,6 +86,16 @@ mode as uid/gid 1000. The final provider-owned bootstrap label confirms only
 completion of these writes and launch, not authentication or native readiness.
 The receipt label uses the supported next-start modification policy to update
 persisted metadata without restarting the guest. v0.7.2 cannot update active labels.
+
+A private helper response can carry `CreateSettled` with a configuration rejection.
+This proof is emitted only after native Create has positively completed, the first
+inspection has verified the exact created compute ID and ownership, and resource
+qualification rejects it before bootstrap begins. The adapter preserves the
+original error and validates that initial compute identity before passing the
+proof to Core. It does not mark the sandbox ready. Ordinary inspection, uncertain
+Create outcomes, timeouts and ownership failures cannot acquire this proof. Core
+still requires authorized, ownership-checked cleanup before releasing the
+allocation; missing compute alone never proves creation settled.
 
 The private daemon control directory is `/run/parsar` (0700, uid/gid 1000).
 `PARSAR_DAEMON_SUSPEND_PID_FILE=/run/parsar/daemon-suspend.json` enables the
@@ -91,14 +122,25 @@ A completed matching artifact is inspected rather than captured again.
 
 After a lost response, Core uses `ObserveOnly`. This never starts capture or
 restore, and a suspended-operation observation never kills its source. Core can
-persist recovered snapshot evidence before KillCompute. If the artifact is absent but the exact source is still running or paused with settled bootstrap, observation returns that intact source with no snapshot, allowing Core to abort suspension and thaw/wake it. Missing state never
-authorizes replay of the original operation.
+persist recovered snapshot evidence before KillCompute. Observation verifies
+artifact integrity and source ownership independently of execution qualification,
+so resource drift cannot hide a retained artifact from cleanup. If the artifact
+is absent but the exact source is still running or paused with settled bootstrap,
+observation returns that source with no snapshot. Core can then abort suspension;
+thawing and subsequent execution still require resource qualification. Missing
+state never authorizes replay of the original operation.
 
 Restore verifies the exact artifact and creates the precommitted target name.
 Existing targets are adopted only when their immutable ID (if known) and
-persisted `snapshot_parent` agree. Restored labels are not synthesized.
-Unfinished restore intent is not bootstrap completion. There is no ordinary
-Start, replacement, disk-only restore, or cold-boot fallback.
+persisted `snapshot_parent` agree. Fresh restore and retry share completion:
+verify the original artifact and resource proof, inspect the running target's
+actual resources and ancestry, persist its missing derived resource-proof label,
+then strictly reread the same native ID. `ObserveOnly` may finish this receipt
+after an interrupted restore; it cannot restart a stopped target, change resources
+or issue another Restore. A conflicting proof remains an error. Native restore
+does not inherit source ownership labels; ancestry supplies that evidence.
+Unfinished restore intent is not bootstrap completion. There is no ordinary Start,
+replacement, disk-only restore, or cold-boot fallback.
 
 `ResumeCompute` only thaws the same resident source after an aborted suspension.
 The pinned Go handle method is name-based; the allocation flock plus ID checks
@@ -157,6 +199,10 @@ work before parking its daemon and suspending compute. The next Turn uses the
 same Session history, files and configuration without replaying initialization.
 This adapter does not promise that a native agent process persists across Turns.
 
+The following evidence describes earlier bounded single-host qualifications. It
+does not qualify the current database-managed node installation or every resource
+profile; those require their own acceptance evidence.
+
 SDK feasibility separately qualified exact IDs, full snapshot verification,
 snapshot_parent, source memory release, tmpfs/RAM restoration and stale-handle
 pause rejection. The published Go module's SDK sources and Linux amd64 FFI were
@@ -181,7 +227,8 @@ Retrying the second public input with the same idempotency key created no extra
 Turn or tool side effect. A subsequent public file upload/list woke generation 2
 without starting another Turn. Public Session deletion released its allocation;
 all qualification VMs and snapshots and temporary credentials were removed.
-This qualifies that model/profile, not every provider or broader isolation guarantees.
+That run qualified its historical model/profile, not the current installation
+path, every provider or broader isolation guarantees.
 
 The source VM was observed at 334304 KiB RSS before suspension and with zero RSS
 and no executable after exit. The qualification container's PID 1 left a zombie
