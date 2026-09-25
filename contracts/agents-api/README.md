@@ -11,6 +11,12 @@ The external reference is [openai-python beta/agents](https://github.com/openai/
 pinned in `upstream.json`. Its resource methods, corresponding types, pagination
 and streaming helpers define the compatibility target. This directory records
 the boundary; it does not imply that every upstream feature is implemented.
+`upstream-routes.json` and `upstream-fields.json` are extracted from that SDK by
+`scripts/extract-agents-api-upstream.py` (run it with the pinned SDK installed).
+Contract tests require `openapi.yaml` and the live router to have exactly those
+method and path pairs, every query parameter to be official, and every other
+field to sit inside `x_agents_core` on Agents and Sessions, whose only members are
+`harness` and `model_provider`.
 
 Parsar owns product Agents and Teams. This service owns upstream execution
 resources, including reusable Agents and protocol subagents. The OpenAI Agents
@@ -118,14 +124,16 @@ paths start at `/vaults`, not `/agents/vaults`.
 
 The operations below are implemented Core extensions. They are excluded
 from the 42-operation upstream inventory and must not be counted as OpenAI Agents
-compatibility.
+compatibility. None is under `/v1`: [upstream-routes.json](upstream-routes.json)
+pins the exact `/v1` route set, and `/v1` objects carry Core fields only inside
+`x_agents_core`.
 
 | Extension | Operations | Current coverage |
 | --- | --- | --- |
-| Administration | `/core/v1/admin/**` | Deployment-authenticated Projects with shared keys, read/delete projections, summary, runtime observations and audit. Separate from caller authority; see [Administrator API](admin-api.md). |
-| API-key provenance | Project-scoped `/core/v1/admin/projects/{project_id}/resource-owners` and `/write-operations` | Batch ownership and retained cursor-paginated write history; see [write provenance](write-audit.md). |
-| Runtime observations | `GET /v1/agents/runtime-observations`; `GET /v1/agents/sessions/{session_id}/runtime-observation` | Current, read-only, tenant-scoped Session contexts with stable Session-keyset pagination, bounded concurrent sampling, Docker and microsandbox metrics, explicit unsupported/unavailable states, strict `packages/agents-client` projection, and no lifecycle mutation. Kubernetes, E2B, self-hosted telemetry, and automatic idle policy remain unimplemented. See [Runtime observation API](runtime-observability-api.md). |
-| Runtime history | `GET /v1/agents/runtime-history/capabilities`; `GET /v1/agents/sessions/{session_id}/runtime-history` | Optional backend-neutral capability and bounded tenant/Session-scoped history contract with allocation/incarnation fencing, explicit coverage and strict client projection. Disabled by default until a production Reader and qualified periodic collection are configured; Durable Web rendering remains pending. See [Runtime history API](runtime-history-api.md). |
+| Administration | `/core/v1/**` | Core-key Projects with shared keys, read/delete projections, executor credentials, summary, metrics, runtime observations, audit and sandbox deployment. Separate from caller authority; see [Administrator API](admin-api.md). |
+| API-key provenance | Project-scoped `/core/v1/projects/{project_id}/resource-owners` and `/write-operations` | Batch ownership and retained cursor-paginated write history; see [write provenance](write-audit.md). |
+| Runtime observations | `GET /core/v1/sandbox/runtime-observations`; `GET /core/v1/projects/{project_id}/sessions/{session_id}/runtime-observation` | Administrator only; the `/v1` forms are removed. Current, read-only Session contexts labelled by Project, with stable Session-keyset pagination, bounded concurrent sampling, Docker and microsandbox metrics, explicit unsupported/unavailable states, strict `AdminClient` projection, and no lifecycle mutation. Kubernetes, E2B, self-hosted telemetry, and automatic idle policy remain unimplemented. See [Runtime observation API](runtime-observability-api.md). |
+| Runtime history | `GET /core/v1/projects/{project_id}/sessions/{session_id}/runtime-history` | Administrator only; the `/v1` forms and the capability read are removed. Optional backend-neutral bounded Project/Session-scoped history contract with allocation/incarnation fencing, explicit coverage and strict client projection. Disabled by default until a production Reader and qualified periodic collection are configured; Durable Web rendering remains pending. See [Runtime history API](runtime-history-api.md). |
 
 For each resource, verify the referenced request/response unions and observable
 behavior, not just the route. Non-text initial input, configuration
@@ -889,9 +897,8 @@ Project share the same scope and Session creator. Deployment configuration defin
 no Projects or business keys. Administrator credentials cannot authenticate `/v1`. Optional official organization/project headers
 must match the key's authorized scope; ambiguous or conflicting headers use the
 existing 401 response. Every Agents API 401 has type `invalid_request_error`, as observed
-officially; Beta routes report a null code, while Files, Skills and Core project
-extensions report `invalid_api_key` for a rejected Bearer credential and a null
-code without one. This scope-header policy is an implementation choice, not
+officially; Beta routes report a null code, while Files and Skills report
+`invalid_api_key` for a rejected Bearer credential and a null code without one. This scope-header policy is an implementation choice, not
 verified hosted error parity. Project resource access remains shared
 within the authorized project. New Sessions persist immutable creator kind/ID from
 the authenticated principal; ordinary and streaming creation retries require the
@@ -909,14 +916,12 @@ establish complete ownership, hosted key lifecycle or error compatibility. See t
 
 Core documents its optional [harness selection extension](harness-selection.md) separately from the pinned upstream contract.
 
-The [Core startup configuration extension](startup-configuration.md) exposes only
-safe build support and process configuration facts. It does not report Runtime,
-Session or Environment observations and is not a readiness endpoint.
+The former [Core startup configuration](startup-configuration.md) read is removed.
 
 Model endpoints and credentials may be supplied at Session creation through the
 [write-only execution extension](model-execution.md). Provider catalogs and their
 business permissions remain client/product responsibilities.
 
 API-key ownership and write history are documented in
-[write-audit.md](write-audit.md). These are deployment-authenticated Core console
-extensions; the pinned public `/v1` schema is unchanged.
+[write-audit.md](write-audit.md). These are Core-key `/core/v1` reads; the pinned
+public `/v1` schema is unchanged.

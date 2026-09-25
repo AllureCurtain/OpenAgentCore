@@ -57,7 +57,7 @@ func (h *Handler) writeAuditScope(w http.ResponseWriter, r *http.Request, allowe
 }
 
 // @Summary Batch lookup resource creation keys
-// @Description Deployment administrator only. The key path selects its independent space. Returns null for resources without recorded creation provenance, including historical and foreign resources. No key secret is returned.
+// @Description Core key only. The Project ID path selects its space. Returns null for resources without recorded creation provenance, including historical and foreign resources. No key secret is returned.
 // @Tags Write Audit
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -66,7 +66,7 @@ func (h *Handler) writeAuditScope(w http.ResponseWriter, r *http.Request, allowe
 // @Param resource_ids query string true "Comma-separated public resource IDs, maximum 100"
 // @Success 200 {object} api.ResourceOwnerList
 // @Failure 400,401,404,500 {object} v1.ErrorResponse
-// @Router /core/v1/admin/projects/{project_id}/resource-owners [get]
+// @Router /core/v1/projects/{project_id}/resource-owners [get]
 func (h *Handler) getResourceOwners(w http.ResponseWriter, r *http.Request) {
 	values, tenant, ok := h.writeAuditScope(w, r, "resource_type", "resource_ids")
 	if !ok {
@@ -95,7 +95,7 @@ func (h *Handler) getResourceOwners(w http.ResponseWriter, r *http.Request) {
 }
 
 // @Summary Query API-key write operations
-// @Description Deployment administrator only. Reverse chronological keyset pagination over committed writes. Creation records remain; other records follow configured retention. The key path selects its independent space, never a caller-supplied tenant.
+// @Description Core key only. Reverse chronological keyset pagination over committed writes. Creation records remain; other records follow configured retention. The key path selects its independent space, never a caller-supplied tenant.
 // @Tags Write Audit
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -109,7 +109,7 @@ func (h *Handler) getResourceOwners(w http.ResponseWriter, r *http.Request) {
 // @Param after query string false "Opaque next_cursor from the preceding page"
 // @Success 200 {object} store.WriteOperationPage
 // @Failure 400,401,404,500 {object} v1.ErrorResponse
-// @Router /core/v1/admin/projects/{project_id}/write-operations [get]
+// @Router /core/v1/projects/{project_id}/write-operations [get]
 func (h *Handler) listWriteOperations(w http.ResponseWriter, r *http.Request) {
 	values, tenant, ok := h.writeAuditScope(w, r, "key_id", "resource_type", "resource_id", "created_after", "created_before", "limit", "after")
 	if !ok {

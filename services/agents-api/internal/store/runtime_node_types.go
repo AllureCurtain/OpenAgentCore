@@ -69,14 +69,6 @@ type RuntimeNodeUpdate struct {
 	// Docker never suspends, so Core replaces this with max_active; microsandbox uses both limits.
 	MaxRetained int `json:"max_retained"`
 }
-type RuntimePlacement struct {
-	Diagnostic   string `json:"diagnostic"`
-	NodeID       string `json:"node_id"`
-	NodeName     string `json:"node_name"`
-	Available    bool   `json:"available"`
-	State        string `json:"state"`
-	ComputePhase string `json:"compute_phase"`
-}
 type SandboxDeploymentResources struct {
 	Allocations int64 `json:"allocations"`
 	Pending     int64 `json:"pending"`

@@ -27,36 +27,7 @@ func WithRuntimeHistory(service RuntimeHistoryService) Option {
 	return func(h *Handler) { h.runtimeHistory = service }
 }
 
-// @Summary Retrieve Runtime history capabilities
-// @Description Core extension advertising only safe backend-neutral Durable history availability and bounds. Available is true only when a query Reader and qualified periodic collection are both configured.
-// @Tags Runtime history
-// @Produce json
-// @Security BearerAuth
-// @Param OpenAI-Beta header string true "agents=v1"
-// @Success 200 {object} v1.RuntimeHistoryCapabilities
-// @Failure 400,401 {object} v1.ErrorResponse
-// @Router /agents/runtime-history/capabilities [get]
-func (h *Handler) getRuntimeHistoryCapabilities(w http.ResponseWriter, r *http.Request) {
-	if len(r.URL.Query()) != 0 {
-		writeError(w, http.StatusBadRequest, "unsupported_parameter", "Runtime history capabilities do not accept query parameters.")
-		return
-	}
-	writeJSON(w, http.StatusOK, runtimeHistoryCapabilitiesResponse(h.runtimeHistory))
-}
-
-// @Summary Retrieve Session Runtime history
-// @Description Core extension returning tenant-scoped stored Runtime observations for one Session. End is exclusive; the server selects a bounded resolution. Responses contain at most 1,000 series, 10,000 points per coverage/series array, and 100,000 total coverage plus series points. It never reads or changes live compute.
-// @Tags Runtime history
-// @Produce json
-// @Security BearerAuth
-// @Param OpenAI-Beta header string true "agents=v1"
-// @Param session_id path string true "Session ID"
-// @Param start query integer true "Inclusive Unix-second start" minimum(0) maximum(9007199254740991)
-// @Param end query integer true "Exclusive Unix-second end" minimum(1) maximum(9007199254740991)
-// @Param max_points query integer false "Maximum points per series; defaults to the lower of 120 and the advertised service maximum" minimum(2) maximum(10000)
-// @Success 200 {object} v1.RuntimeHistory
-// @Failure 400,401,404,409,503 {object} v1.ErrorResponse
-// @Router /agents/sessions/{session_id}/runtime-history [get]
+// getRuntimeHistory serves the administrator per-Session history read.
 func (h *Handler) getRuntimeHistory(w http.ResponseWriter, r *http.Request) {
 	if h.runtimeHistory == nil {
 		writeError(w, http.StatusServiceUnavailable, "runtime_history_unavailable", "Durable Runtime history is not configured on this service.")
@@ -126,45 +97,6 @@ func readRuntimeHistoryRange(w http.ResponseWriter, r *http.Request, capabilitie
 		return runtimehistory.Range{}, false
 	}
 	return runtimehistory.Range{Start: time.Unix(start, 0).UTC(), End: time.Unix(end, 0).UTC(), MaxPoints: points}, true
-}
-
-func runtimeHistoryCapabilitiesResponse(service RuntimeHistoryService) v1.RuntimeHistoryCapabilities {
-	response := v1.RuntimeHistoryCapabilities{Object: "agent.runtime_history_capabilities", Metrics: []string{}}
-	if service == nil {
-		reason := "not_configured"
-		response.Reason = &reason
-		return response
-	}
-	capabilities := service.Capabilities()
-	if capabilities.Validate() != nil {
-		reason := "not_configured"
-		response.Reason = &reason
-		return response
-	}
-	mode := string(capabilities.CollectionMode)
-	retention := int64(capabilities.Retention / time.Second)
-	minimumStep := int64(capabilities.MinimumStep / time.Second)
-	maximumRange := int64(capabilities.MaximumRange / time.Second)
-	maximumPoints := capabilities.MaximumPoints
-	response.CollectionMode = &mode
-	response.RetentionSeconds = &retention
-	response.MinimumStepSeconds = &minimumStep
-	response.MaximumRangeSeconds = &maximumRange
-	response.MaximumPoints = &maximumPoints
-	response.Metrics = make([]string, len(capabilities.Metrics))
-	for index, metric := range capabilities.Metrics {
-		response.Metrics[index] = string(metric)
-	}
-	if capabilities.SampleInterval > 0 {
-		seconds := int64(capabilities.SampleInterval / time.Second)
-		response.SampleIntervalSeconds = &seconds
-	}
-	response.Available = capabilities.Durable()
-	if !response.Available {
-		reason := "periodic_collection_required"
-		response.Reason = &reason
-	}
-	return response
 }
 
 func runtimeHistoryResponse(value runtimehistory.Response, expectedTenantID, expectedSessionID string, expectedRange runtimehistory.Range) (v1.RuntimeHistory, error) {

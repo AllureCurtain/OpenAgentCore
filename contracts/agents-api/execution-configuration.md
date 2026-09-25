@@ -1,12 +1,17 @@
 # Execution configuration queries
 
-These read-only Core extensions describe configuration, not execution health.
-They require the existing project bearer authentication and `OpenAI-Beta:
-agents=v1`. They never contact a model provider, start a Turn or wake a sandbox.
+This read-only administrator read describes configuration, not execution health.
+It requires the Core key. They never contact a model
+provider, start a Turn or wake a sandbox. The former project route
+`GET /v1/agents/sessions/{session_id}/execution-configuration` is removed. A
+Session read includes `agent.x_agents_core.harness` only when its Agent selected a
+harness, inline or saved; Sessions on the deployment default keep the official
+Agent shape, and no read returns the provider selection.
 
 ## Frozen Session selections
 
-`GET /v1/agents/sessions/{session_id}/execution-configuration` returns:
+`GET /core/v1/projects/{project_id}/sessions/{session_id}/execution-configuration`
+returns:
 
 ```json
 {
@@ -39,8 +44,7 @@ The provider's `status` describes visibility:
 - `available`: a safe Session- or Agent-supplied bundle. Configuration contains
   protocol, endpoint, configured-key flag and optional token limits.
 - `redacted`: deployment-owned configuration. Source is `deployment` and
-  configuration is null. Project bearer credentials do not grant deployment
-  secret access; this API has no endpoint-reveal override.
+  configuration is null; this read has no endpoint-reveal override.
 - `unavailable`: no trustworthy safe provider projection was recorded. Source is
   `unknown` and configuration is null. This does not mean that execution failed.
 
@@ -54,21 +58,19 @@ return the original Session and do not repair or overwrite its provenance.
 Historical Sessions without the projection report their persisted model/harness
 when present, with `unknown` sources; a missing value is null. Their provider view
 is `unavailable`, even if a private credential row exists. No backfill guesses
-provenance. Missing, deleted and foreign-tenant Session IDs share the existing
+provenance. Missing, deleted and other Projects' Session IDs share the existing
 not-found response. Responses are `Cache-Control: no-store`. Keys, ciphertext,
 secret references, native headers, query parameters and permissions are excluded.
 
 ## Discovery boundary
 
-Provider configuration discovery is not exposed. The Core startup-configuration
-extension retains its basic supported/configured deployment snapshot and accepts
-no query parameters, including the retired `include=configuration_capabilities`.
-Provider inputs are still validated against internal adapter-owned rules and Core
+Provider configuration discovery is not exposed, and the former Core startup
+configuration read is removed. Provider inputs are still validated against internal adapter-owned rules and Core
 admission policy. Removing discovery does not change the supported inputs or
 create/update/execute behavior.
 
-This Session query and the startup view are Core extensions, not OpenAI Agents
-API operations. Ordinary Agent and Session operations retain their pinned upstream
-contracts. Neither query mutates configuration, rotates keys, migrates Sessions,
+This Session query is an administrator read, not an OpenAI Agents API
+operation. Ordinary Agent and Session operations retain their pinned upstream
+contracts. The query never mutates configuration, rotates keys, migrates Sessions,
 exposes a model catalog or accepts arbitrary native options. See
 [model-execution.md](model-execution.md) for write and inheritance semantics.

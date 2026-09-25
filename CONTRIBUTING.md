@@ -28,21 +28,23 @@ fixes may use self-review, including focused corrections after a blind review;
 repeat independent review when a correction materially changes the design or risk.
 Fix in-scope blockers before delivery. Do not use `codex exec` as a substitute reviewer.
 
-The [API documentation index](docs/api/README.md) separates application,
-administrator and Runtime transport contracts. New or changed routes must identify
-their caller and authentication authority there, and link their detailed contract.
+The [API documentation index](docs/api/README.md) lists the three namespaces:
+`/v1` for applications (Project API key), `/core/v1` for Core Web's server and
+operator scripts (Core key) and `/api/v1` for machine connections (credentials
+issued through `/core/v1`). New or changed routes must identify their caller and
+credential there, and link their detailed contract.
 Keep current integration guidance separate from historical qualification evidence.
 
-The Core Web is an administrator console. Its server authenticates to the explicit
-`/core/v1/admin` management surface and existing sandbox administration, never to
-`/v1` on behalf of a browser. Applications use an API key issued inside a Project. One Project owns one execution
+The Core Web is an administrator console. Web calls only `/core/v1`, with the Core
+key held on its server, and never `/v1` or `/api/v1`. Applications use an API key issued inside a Project. One Project owns one execution
 tenant and principal; all its keys share assets and permissions while writes retain
 individual key provenance. Projects and keys are database-owned, with no static
 business keys or configuration synchronization. Revocation affects one key;
 archiving a Project revokes all its keys, retaining assets and admitted execution.
 Do not add Core users, roles, memberships or cross-Project sharing. Management
-provides safe reads, public deletion preconditions, explicit hosted Session archive
-and Project and key operations; it cannot copy, execute or edit arbitrary assets.
+provides safe reads, public deletion preconditions, explicit hosted Session archive,
+Project and key operations and credential issuance; it cannot copy, execute or edit
+arbitrary assets.
 Keep administrator target scope separate from caller principals. See
 [design principles](docs/design-principles.md) and the
 [administrator contract](contracts/agents-api/admin-api.md).
@@ -156,9 +158,8 @@ trailing slash kept, and other escapes such as `%2F` and `%5C` left encoded;
 or authorize on a path outside that wrapper. On the Beta
 group the constant OpenAI-Beta check (exactly one `agents=v1` value) runs before
 authentication, and authentication still precedes every Beta handler, 404 and 405.
-Every Agents API 401 has type `invalid_request_error`: null code on Beta routes; on Files,
-Skills and Core project extensions `invalid_api_key` only for a rejected Bearer
-credential. Agents API responses carry a fresh `X-Request-Id` (also in the log
+Every Agents API 401 has type `invalid_request_error`: null code on Beta routes; on Files
+and Skills `invalid_api_key` only for a rejected Bearer credential. Agents API responses carry a fresh `X-Request-Id` (also in the log
 context), `OpenAI-Version`, `OpenAI-Processing-Ms` and nosniff through the API
 router's own middleware, not the shared log middleware. HEAD runs GET routes;
 streaming, content-download, live directory, Runtime observation and Runtime
@@ -190,9 +191,9 @@ migrations. The public protocol schema is `contracts/agents-api/openapi.yaml`;
 there is no product swaggo contract in this repository. Preserve its pinned types,
 coverage ledgers and official SDK/raw HTTP tests when changing API behavior.
 Run `make openapi` after handler annotation changes. It reuses the original
-Core-only swaggo v1.16.4 generator, then separates project paths under `/v1` from
-`/core/v1` administration in `sandbox-manager.openapi.yaml` and `/api/v1` machine
-connections in `runtime.openapi.yaml` (both base path `/`), each keeping only the
+Core-only swaggo v1.16.4 generator, then splits the result by namespace: `/v1`
+into `openapi.yaml`, `/core/v1` into `core.openapi.yaml` and `/api/v1` into
+`runtime.openapi.yaml` (the last two with base path `/`), each keeping only the
 security schemes its operations use. All generated schemas remain free of product
 routes.
 
@@ -207,7 +208,7 @@ current validation entrypoints.
 
 ## Core operational metrics
 
-The administrator-only `/core/v1/admin/core-metrics` contract is documented in
+The Core-key-only `/core/v1/metrics` contract is documented in
 [core-metrics.md](contracts/agents-api/core-metrics.md). Keep this separate from
 Agent outcome and Sandbox capacity views. Instrument existing worker and job
 owners without changing scheduling, lease or retention behavior. Periodic pool
@@ -733,8 +734,8 @@ does not qualify its isolation or enable public creation.
 Default installation includes Core, Web and PostgreSQL but no execution node.
 It always creates the Core key. Core receives only its digest; the paired console
 server receives the private key, uses it for sign-in and injects it only on
-approved management routes after console login and same-origin checks. The
-browser never receives that key. Node and daemon connections use `/api/v1`
+`/core/v1` requests after console login and same-origin checks. The browser
+never receives that key. Node and daemon connections use `/api/v1`
 with their own credentials; the reverse proxy sends them directly to Core, never
 through Web. Zero-node Core receives neither the Docker socket nor KVM.
 The Web and deployment administrator API select one provider, public Core origin,
@@ -827,8 +828,8 @@ The [Hosted Sandbox Manager](services/agents-api/HOSTED-SANDBOX-MANAGER.md) is a
 deployment-level admin surface, separate from Project credentials. The paired
 console's Core key stays on its server. Enrollment credentials authorize
 initial node configuration reads and registration; durable node credentials authorize
-retained configuration reads and node transport. Project keys can read a narrow node
-directory and their own Session placement, never global allocations.
+retained configuration reads and node transport. Project keys cannot read nodes,
+placement or allocations.
 
 One execution owner manages local and remote nodes through the same finite
 Provider protocol. Local opt-in uses the same standalone node installer and
@@ -905,10 +906,8 @@ capacity transactions and revision/one-shot receipts remain authoritative, with
 no external operation holding a database lock.
 
 Commit environment-to-node placement with Session creation and its creation retry
-identity. Automatic selection chooses an eligible node; explicit
-`x_agents_core.sandbox_node_id` fails if unavailable or full. The optional
-model-provider extension remains independent. Existing retries keep their original
-node even when it is offline. Node capacity counts pending reservations and
+identity. Placement is automatic: Core chooses an eligible node, and callers cannot
+select one. Existing retries keep their original node even when it is offline. Node capacity counts pending reservations and
 unresolved resources; new placement and suspended-to-restoring admission share a
 database lock. Confirmed cleanup releases placement capacity. Retained ownership requires exact
 provider evidence; a socket path, missing instance or empty listing cannot prove
@@ -1770,11 +1769,15 @@ image containing a private test CA or model credential as a release input.
 Repository visibility is independent of publication. Do not add repository
 credentials to installed node/Runtime configuration to bypass download access.
 
-Project-authenticated executor-credential extensions remain outside the upstream
-API namespace and reuse the existing restricted issuer. They require the exact
-creator of a live self-hosted Environment; deployment administrator authority and
-shared Session read access do not grant credential issuance. The console does not
-serve these routes; callers reach Core directly. Self-hosted installation reuses
+Executor credentials are issued by the operator with the Core key, through Web or
+a Core-key script, under
+`/core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials`
+and reuse the existing restricted issuer. The target must be a self_hosted
+Environment of that Project whose Session exists; anything else is 404. The
+Project's principal is the credential's execution principal, its scope stays
+daemon enrollment and connection for that one Environment, and issue, rotate and
+revoke each record an administrator audit entry in the write's transaction without
+the secret. Project API keys cannot issue them. Self-hosted installation reuses
 Docker Runtime isolation, owns no sandbox node or Core allocation, and retains
 user-owned native history after uncertain launches. Report started, connected and real execution success separately.
 Self-hosted installation confirms connection through the private daemon transport
@@ -1842,18 +1845,18 @@ existing write-only model execution extension, with the installation's persisten
 credential encryption key. Provider identity/backend namespace and native history
 must not change on a repeated install.
 
-`services/core-console` serves the production Web build and proxies only finite
-administrator and sandbox-management routes after console login. It requires the
-private Core key file named by `CORE_CONSOLE_CORE_KEY_FILE` and holds no project
-caller credential. Every `/v1` and `/api/v1` request returns 404, including
-explicit Bearer and WebSocket requests; Web forwards no node or daemon transport.
-The installer mounts only the Core key into Web and only its digest
-(`AGENTS_API_CORE_KEY_DIGESTS_FILE`) into Core. The browser receives safe
-configuration, never that key. The deployment's TLS reverse proxy routes `/v1`
-(applications) and `/api/v1` (nodes and Runtime daemons, with their own
-credentials) directly to Core and everything else to Web, except the
-Project-authenticated `/core/v1/environments/*/executor-credentials` routes, which
-also go straight to Core.
+`services/core-console` serves the production Web build and, after console login
+and same-origin checks, forwards every `/core/v1` request with the Core key; Core
+decides whether the route exists. It requires the private Core key file named by
+`CORE_CONSOLE_CORE_KEY_FILE` and holds no project caller credential. Every `/v1`
+and `/api/v1` request returns 404, including explicit Bearer and WebSocket
+requests; Web forwards no node or daemon transport. The installer mounts only the
+Core key into Web and only its digest (`AGENTS_API_CORE_KEY_DIGESTS_FILE`) into
+Core. The browser receives safe configuration, never that key. The deployment's
+TLS reverse proxy routes `/v1` (applications) and `/api/v1` (nodes and Runtime
+daemons, with their own credentials) directly to Core and everything else,
+including `/core/v1`, to Web. Operator scripts call `/core/v1` on Core's loopback
+port.
 Nodes and Core come from one distribution; older nodes using the removed
 `/core/v1/sandbox` node paths cannot connect and are replaced through the drained
 upgrade and re-enrollment workflow.
@@ -1881,8 +1884,9 @@ The command verifies the installer checksum before execution, retains normal TLS
 verification, and passes the enrollment credential only to the installer process.
 
 
-Management proxy paths retain fixed-origin, cross-site, safe-path, redirect and Upgrade
-restrictions through the standard Go reverse proxy with streaming/cancellation.
+The `/core/v1` proxy retains fixed-origin, cross-site, safe-path, redirect and Upgrade
+restrictions through the standard Go reverse proxy with streaming/cancellation;
+literal or encoded dot segments can never move a request out of `/core/v1`.
 The console implements no product identity, resource semantics, Runtime discovery
 or execution loop. Signing in with the Core key grants the complete console
 surface; do not introduce Web accounts, roles, invitations or per-project Web
@@ -2236,16 +2240,16 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   retain one source. Project reads redact all deployment provider details. Old
   Sessions expose persisted model/harness with unknown sources and unavailable
   provider metadata, without backfill. Projection metadata does not alter retry
-  identity; retries cannot replace it. Keep this query separate from runtime
-  observations and do not touch activity or wake sandboxes. The versioned contract
-  is `contracts/agents-api/execution-configuration.md`.
+  identity; retries cannot replace it. Keep this administrator query separate from
+  runtime observations and do not touch activity or wake sandboxes. The versioned
+  contract is `contracts/agents-api/execution-configuration.md`.
 - Provider input validation uses the adapter-owned rules in `internal/harnessconfig`.
   Keep one internal registry for protocol and token-limit validation; Core owns
   credential environment and endpoint admission policy. These rules are not a
   public discovery API or Runtime registration descriptor. Operation qualification
   and live readiness retain their existing owners. The Core startup view keeps its
   basic supported/configured deployment snapshot and accepts no query parameters.
-  Session frozen execution-configuration reads remain a separate Core extension.
+  Session frozen execution-configuration reads remain a separate administrator read.
 - Public Agent updates use `POST /v1/agents/{agent_id}` with the same tenant/Beta
   boundary and shared saved-field validation. Preserve omission separately from
   null; only supplied fields replace saved values. Metadata is a separate whole-map
@@ -3448,8 +3452,7 @@ retain the official Agent response shape. See the [extension contract](contracts
 for null/retry behavior and operator configuration.
 
 Hosted provider selection belongs to deployment configuration and is independent
-of the engine. Session creation fixes a node through a Core extension or automatic
-placement; retained allocations keep that node and provider identity. Runtime images must satisfy their existing qualification rules.
+of the engine. Session creation fixes a node through automatic placement; retained allocations keep that node and provider identity. Runtime images must satisfy their existing qualification rules.
 Transient model options are partitioned by engine and must not expose another
 engine's credentials. Do not infer an engine from a model name or template.
 

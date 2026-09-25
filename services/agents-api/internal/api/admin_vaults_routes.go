@@ -2,8 +2,8 @@ package api
 
 import "net/http"
 
-// @Summary List Vaults in a managed key space
-// @Description Deployment administrator only. Reuses the public resource projection and operation rules; the key selects the target space and does not authenticate.
+// @Summary List Vaults in a Project
+// @Description Core key only. Reuses the public resource projection and operation rules; the Project ID selects the target space and does not authenticate.
 // @Tags Vaults
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -15,13 +15,13 @@ import "net/http"
 // @Success 200 {object} v1.VaultList
 // @Failure 400,401,404,500 {object} v1.ErrorResponse
 // @Param project_id path string true "Project ID"
-// @Router /core/v1/admin/projects/{project_id}/vaults [get]
+// @Router /core/v1/projects/{project_id}/vaults [get]
 func (h *Handler) adminListVaults(w http.ResponseWriter, r *http.Request) {
 	h.listVaults(w, r)
 }
 
-// @Summary Retrieve a Vault in a managed key space
-// @Description Deployment administrator only. Reuses the public resource projection and operation rules; the key selects the target space and does not authenticate.
+// @Summary Retrieve a Vault in a Project
+// @Description Core key only. Reuses the public resource projection and operation rules; the Project ID selects the target space and does not authenticate.
 // @Tags Vaults
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -29,13 +29,13 @@ func (h *Handler) adminListVaults(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} v1.Vault
 // @Failure 400,401,404,500 {object} v1.ErrorResponse
 // @Param project_id path string true "Project ID"
-// @Router /core/v1/admin/projects/{project_id}/vaults/{vault_id} [get]
+// @Router /core/v1/projects/{project_id}/vaults/{vault_id} [get]
 func (h *Handler) adminGetVault(w http.ResponseWriter, r *http.Request) {
 	h.getVault(w, r)
 }
 
-// @Summary Delete a Vault and all its Credentials in a managed key space
-// @Description Deployment administrator only. Reuses the public resource projection and operation rules; the key selects the target space and does not authenticate.
+// @Summary Delete a Vault and all its Credentials in a Project
+// @Description Core key only. Reuses the public resource projection and operation rules; the Project ID selects the target space and does not authenticate.
 // @Tags Vaults
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -43,13 +43,13 @@ func (h *Handler) adminGetVault(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} v1.VaultDeleted
 // @Failure 400,401,404,413,500 {object} v1.ErrorResponse
 // @Param project_id path string true "Project ID"
-// @Router /core/v1/admin/projects/{project_id}/vaults/{vault_id} [delete]
+// @Router /core/v1/projects/{project_id}/vaults/{vault_id} [delete]
 func (h *Handler) adminDeleteVault(w http.ResponseWriter, r *http.Request) {
 	h.deleteVault(w, r)
 }
 
-// @Summary List safe Vault Credential metadata in a managed key space
-// @Description Deployment administrator only. Reuses the public resource projection and operation rules; the key selects the target space and does not authenticate.
+// @Summary List safe Vault Credential metadata in a Project
+// @Description Core key only. Reuses the public resource projection and operation rules; the Project ID selects the target space and does not authenticate.
 // @Tags Credentials
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -62,13 +62,13 @@ func (h *Handler) adminDeleteVault(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} v1.CredentialList
 // @Failure 400,401,404,500 {object} v1.ErrorResponse
 // @Param project_id path string true "Project ID"
-// @Router /core/v1/admin/projects/{project_id}/vaults/{vault_id}/credentials [get]
+// @Router /core/v1/projects/{project_id}/vaults/{vault_id}/credentials [get]
 func (h *Handler) adminListCredentials(w http.ResponseWriter, r *http.Request) {
 	h.listCredentials(w, r)
 }
 
-// @Summary Retrieve safe Vault Credential metadata in a managed key space
-// @Description Deployment administrator only. Reuses the public resource projection and operation rules; the key selects the target space and does not authenticate.
+// @Summary Retrieve safe Vault Credential metadata in a Project
+// @Description Core key only. Reuses the public resource projection and operation rules; the Project ID selects the target space and does not authenticate.
 // @Tags Credentials
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -77,13 +77,13 @@ func (h *Handler) adminListCredentials(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} v1.Credential
 // @Failure 400,401,404,500 {object} v1.ErrorResponse
 // @Param project_id path string true "Project ID"
-// @Router /core/v1/admin/projects/{project_id}/vaults/{vault_id}/credentials/{credential_id} [get]
+// @Router /core/v1/projects/{project_id}/vaults/{vault_id}/credentials/{credential_id} [get]
 func (h *Handler) adminGetCredential(w http.ResponseWriter, r *http.Request) {
 	h.getCredential(w, r)
 }
 
-// @Summary Delete a Vault Credential in a managed key space
-// @Description Deployment administrator only. Reuses the public resource projection and operation rules; the key selects the target space and does not authenticate.
+// @Summary Delete a Vault Credential in a Project
+// @Description Core key only. Reuses the public resource projection and operation rules; the Project ID selects the target space and does not authenticate.
 // @Tags Credentials
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -92,7 +92,7 @@ func (h *Handler) adminGetCredential(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} v1.CredentialDeleted
 // @Failure 400,401,404,413,500 {object} v1.ErrorResponse
 // @Param project_id path string true "Project ID"
-// @Router /core/v1/admin/projects/{project_id}/vaults/{vault_id}/credentials/{credential_id} [delete]
+// @Router /core/v1/projects/{project_id}/vaults/{vault_id}/credentials/{credential_id} [delete]
 func (h *Handler) adminDeleteCredential(w http.ResponseWriter, r *http.Request) {
 	h.deleteCredential(w, r)
 }

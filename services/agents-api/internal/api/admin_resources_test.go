@@ -36,6 +36,30 @@ func (s *adminProjectFixture) ResolveProjectAPIKey(_ context.Context, _ string) 
 	return store.ProjectAPIKeyBinding{}, store.ErrNotFound
 }
 
+// adminTestHandler serves the administrator routes, authenticated by "Bearer
+// admin", for managementProjectID over the same recording store as testHandler.
+// It returns that Project's tenant.
+func adminTestHandler(t *testing.T, options ...Option) (http.Handler, *recordingStore, string) {
+	t.Helper()
+	key := callerBinding()
+	auth, err := NewAuthenticator([]APIKey{key})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin, err := NewDeploymentAuthenticator([]string{device.HashCredential("admin")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &recordingStore{}
+	h, err := NewHandler(s, auth, "codex", append([]Option{WithProjectAPIKeys(managementProjectStore(key), admin)}, options...)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h, s, key.TenantID
+}
+
+const adminSessionsPath = "/core/v1/projects/" + managementProjectID + "/sessions/"
+
 type adminReadFixture struct {
 	ResourceStore
 	seenTenant                   string
@@ -66,7 +90,7 @@ func TestAdminResourcesHaveExplicitTargetWithoutCallerImpersonation(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := "/core/v1/admin/projects/" + managementProjectID
+	base := "/core/v1/projects/" + managementProjectID
 	for _, test := range []struct {
 		method, path string
 		status       int
@@ -88,7 +112,7 @@ func TestAdminResourcesHaveExplicitTargetWithoutCallerImpersonation(t *testing.T
 	if resources.seenTenant != key.TenantID || !resources.administrative || resources.impersonated {
 		t.Fatal("administrator target became a caller or lost audit scope")
 	}
-	for _, path := range []string{base + "/agents", "/core/v1/admin/not-an-operation"} {
+	for _, path := range []string{base + "/agents", "/core/v1/not-an-operation"} {
 		for _, token := range []string{"caller", "issued-project-key", ""} {
 			if w := projectKeyHTTP(h, "GET", path, token, ""); w.Code != 401 {
 				t.Fatalf("unauthorized management path returned %d", w.Code)
@@ -130,7 +154,7 @@ func TestAdminSummaryUsesPublicStateAndNullUsageCoverage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	base := "/core/v1/admin/summary?project_id=" + managementProjectID + "&created_after=1970-01-01T00:00:00Z&created_before=2030-01-01T00:00:00Z"
+	base := "/core/v1/summary?project_id=" + managementProjectID + "&created_after=1970-01-01T00:00:00Z&created_before=2030-01-01T00:00:00Z"
 	for _, group := range []string{"project", "key", "agent"} {
 		w := projectKeyHTTP(h, http.MethodGet, base+"&group_by="+group, "admin", "")
 		var response AdminSummaryResponse

@@ -100,7 +100,7 @@ func TestCoreKeySignInSessionAndLogout(t *testing.T) {
 	if w := authRequest(h, "GET", "/console/auth", "", nil); w.Code != 200 || strings.TrimSpace(w.Body.String()) != `{"mode":"login"}` {
 		t.Fatalf("initial mode: %d %s", w.Code, w.Body)
 	}
-	for _, path := range []string{"/core/v1/admin/projects", "/console/config", "/core/v1/sandbox/nodes", "/private.txt"} {
+	for _, path := range []string{"/core/v1/projects", "/console/config", "/core/v1/sandbox/nodes", "/private.txt"} {
 		if w := authRequest(h, "GET", path, "", nil); w.Code != 401 {
 			t.Errorf("private path %s returned %d", path, w.Code)
 		}
@@ -124,7 +124,7 @@ func TestCoreKeySignInSessionAndLogout(t *testing.T) {
 	if w := authRequest(h, "GET", "/console/auth", "", cookie); strings.TrimSpace(w.Body.String()) != `{"mode":"authenticated"}` {
 		t.Fatalf("signed-in mode: %s", w.Body)
 	}
-	for _, path := range []string{"/core/v1/admin/projects", "/core/v1/sandbox/nodes", "/console/config"} {
+	for _, path := range []string{"/core/v1/projects", "/core/v1/sandbox/nodes", "/console/config"} {
 		w := authRequest(h, "GET", path, "", cookie)
 		if w.Code != 200 || strings.Contains(w.Body.String(), testCoreKey) {
 			t.Errorf("authenticated path %s failed or leaked the Core key: %d", path, w.Code)
@@ -140,7 +140,7 @@ func TestCoreKeySignInSessionAndLogout(t *testing.T) {
 	if logout.Code != 200 || strings.TrimSpace(logout.Body.String()) != `{"mode":"login"}` || logout.Result().Cookies()[0].MaxAge != -1 {
 		t.Fatal("logout response did not clear the session")
 	}
-	if w := authRequest(h, "GET", "/core/v1/admin/projects", "", cookie); w.Code != 401 {
+	if w := authRequest(h, "GET", "/core/v1/projects", "", cookie); w.Code != 401 {
 		t.Fatal("logged-out cookie retained authority")
 	}
 }
@@ -192,7 +192,7 @@ func TestCoreKeySignInRejectsMalformedAndCrossOriginRequests(t *testing.T) {
 	if w := authRequest(h, "POST", "/console/auth/setup", `{"username":"owner","password":"retired-password"}`, nil); w.Code != 404 {
 		t.Fatalf("retired setup route returned %d", w.Code)
 	}
-	r = httptest.NewRequest("GET", "/core/v1/admin/projects", nil)
+	r = httptest.NewRequest("GET", "/core/v1/projects", nil)
 	r.Host = h.host
 	r.SetBasicAuth("admin", testCoreKey)
 	w = httptest.NewRecorder()
@@ -237,7 +237,7 @@ func TestSecureCookieExpiry(t *testing.T) {
 		h.auth.sessions[key] = time.Now().Add(-time.Second)
 	}
 	h.auth.mu.Unlock()
-	if w := authRequest(h, "GET", "/core/v1/admin/projects", "", cookie); w.Code != 401 {
+	if w := authRequest(h, "GET", "/core/v1/projects", "", cookie); w.Code != 401 {
 		t.Fatal("expired session retained authority")
 	}
 }

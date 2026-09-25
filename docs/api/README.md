@@ -1,44 +1,68 @@
 # API documentation
 
-Choose the API by its caller and authority. A route prefix alone does not establish
-OpenAI compatibility: Core also has explicitly documented extensions under `/v1`.
+Core serves three namespaces. Each has one kind of caller and its own credential;
+no credential works in another namespace.
 
-| Surface | Caller and credential | Entry point | Reference |
-| --- | --- | --- | --- |
-| Public Agents API | Applications; a database-issued Project API key | Direct Core `/v1` | [Public API](public-agent-api.md) |
-| Project-scoped Core extensions | Applications; the same Project API key | Direct Core; extension-specific paths | [Extension index](public-agent-api.md#core-extensions) |
-| Administrator resources | Web's server or administrative automation; [Core key](../getting-started/operations.md#core-key) | Core `/core/v1/admin` | [Management contract](../../contracts/agents-api/admin-api.md) |
-| Hosted sandbox administration | Web's server or administrative automation; Core key | Core `/core/v1/sandbox` management routes | [Web API](web-management.md#sandbox-administration) |
-| Console authentication | Browser; Core key sign-in, then an HttpOnly session cookie | Console `/console/auth` | [Web API](web-management.md#browser-to-console) |
-| Node and daemon transport | Installed node/Runtime; its own enrollment or connection credential | Direct Core `/api/v1`: `/api/v1/sandbox-node/*` and `/api/v1/agent-daemon/*`, including WebSockets | [Runtime credentials](../../contracts/agents-api/environment-executor-credentials.md), [node operations](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#register-a-host), [machine OpenAPI](../../contracts/agents-api/runtime.openapi.yaml) |
+| Namespace | Caller | Credential | Contents | Reference |
+| --- | --- | --- | --- | --- |
+| `/v1` | Applications (business systems, SDKs) | Project API key | Exactly the pinned official Agents API routes. Core-only fields live only in `x_agents_core` (`harness`, `model_provider`) | [Public API](public-agent-api.md) |
+| `/core/v1` | Core Web's server and operator scripts | [Core key](../getting-started/operations.md#core-key) | Projects and keys, resource reads and deletion, Session archive, credential issuance, metrics, audit, sandbox deployment and nodes | [Core API](#core-api), [Web API](web-management.md), [Core OpenAPI](../../contracts/agents-api/core.openapi.yaml) |
+| `/api/v1` | Nodes, Runtime daemons, self-hosted executors | Machine credentials issued through `/core/v1` | Machine connections only: `/api/v1/sandbox-node/*` and `/api/v1/agent-daemon/*`, including WebSockets; each credential works only on its own routes | [Node operations](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#register-a-host), [executor credentials](../../contracts/agents-api/environment-executor-credentials.md), [machine OpenAPI](../../contracts/agents-api/runtime.openapi.yaml) |
 
-Projects own assets. Multiple equally privileged keys share the Project's assets
-and execution principal; provenance retains the key that performed each write.
-Projects and application keys live in PostgreSQL, never deployment configuration.
-The Core key cannot authenticate public Agent API operations, and Project keys
-cannot authenticate administrator operations.
+A Project API key gets 401 on `/core/v1` and `/api/v1`; the Core key gets 401 on
+`/v1` and `/api/v1`. Projects own assets. Multiple equally privileged keys share
+the Project's assets and execution principal; provenance retains the key that
+performed each write. Projects and application keys live in PostgreSQL, never
+deployment configuration.
 
-The console server stores the Core key privately and proxies only
-allowlisted management operations. Browsers do not receive it. Applications and
-machines call Core directly; the console returns 404 for `/v1` and `/api/v1`, even
-when given an application key or machine credential.
+The browser talks only to Web's server: `/console/auth` and `/console/config`,
+`/node-install/*`, the static pages, and `/core/v1/*`, which the server forwards
+with the Core key after sign-in and same-origin checks. Users sign in to Web with
+the Core key and get an HttpOnly session cookie; the browser never receives the
+key. Core decides which `/core/v1` routes
+exist; Web returns 404 for `/v1` and `/api/v1`, whatever credential a request
+carries.
+
+The deployment's reverse proxy sends `/v1`, `/v1/*` and `/api/v1/*` to Core and
+every other path, including `/core/v1/*`, to Web. Operator scripts call `/core/v1`
+with the Core key on Core's loopback port, not through the public entry.
+
+## Core API
+
+All routes are under `/core/v1` and require the Core key.
+
+| Routes | Contents | Contract |
+| --- | --- | --- |
+| `projects`, `projects/{project_id}[/archive]`, `projects/{project_id}/keys[/{key_id}]` | Projects and their API keys | [Administrator contract](../../contracts/agents-api/admin-api.md) |
+| `projects/{project_id}/{agents,environment-templates,skills,files,vaults,sessions}/**` | Resource reads and deletion, Session history, artifacts and archive | [Administrator contract](../../contracts/agents-api/admin-api.md) |
+| `projects/{project_id}/sessions/{session_id}/execution-configuration` | Committed harness and model selection | [Execution configuration](../../contracts/agents-api/execution-configuration.md) |
+| `projects/{project_id}/sessions/{session_id}/runtime-observation`, `sandbox/runtime-observations` | Current Runtime observations | [Runtime observations](../../contracts/agents-api/runtime-observability-api.md) |
+| `projects/{project_id}/sessions/{session_id}/runtime-history` | Stored Runtime history | [Runtime history](../../contracts/agents-api/runtime-history-api.md) |
+| `projects/{project_id}/{resource-owners,write-operations}`, `audit-log`, `summary` | Provenance, write history, administrator audit and usage summary | [Write audit](../../contracts/agents-api/write-audit.md), [administrator contract](../../contracts/agents-api/admin-api.md) |
+| `projects/{project_id}/environments/{environment_id}/executor-credentials[/{key_id}]` | Executor credentials for a self-hosted Environment | [Executor credentials](../../contracts/agents-api/environment-executor-credentials.md) |
+| `metrics` | Core's own process metrics | [Core metrics](../../contracts/agents-api/core-metrics.md) |
+| `sandbox/deployment[/maintenance]`, `sandbox/enrollment-tokens`, `sandbox/nodes[/{node_id}[/allocations]]` | Sandbox deployment, node enrollment tokens and nodes | [Sandbox deployment](../../contracts/agents-api/sandbox-deployment.md), [node operations](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md), [node host history](../../contracts/agents-api/node-host-history.md) |
 
 ## Contract sources
 
 - [Pinned upstream baseline](../../contracts/agents-api/upstream.json): OpenAI
   Python SDK 3.13.0, exact upstream commit and `agents=v1`.
+- [Pinned routes](../../contracts/agents-api/upstream-routes.json) and
+  [fields](../../contracts/agents-api/upstream-fields.json): extracted from the
+  pinned SDK by `scripts/extract-agents-api-upstream.py`. Contract tests require the
+  public OpenAPI to have exactly these routes and to keep every other field inside
+  `x_agents_core`.
 - [Public OpenAPI](../../contracts/agents-api/openapi.yaml): public schema snapshot;
   combine it with the fixed SDK and [operation evidence](../../contracts/agents-api/operation-evidence.md).
-- [Core extension OpenAPI](../../contracts/agents-api/sandbox-manager.openapi.yaml):
-  generated management and executor-credential routes. The filename does not mean
-  that all its routes are sandbox-administrator operations; use the authority table above.
+- [Core OpenAPI](../../contracts/agents-api/core.openapi.yaml): generated `/core/v1`
+  routes, all authenticated by the Core key.
 - [Machine connection OpenAPI](../../contracts/agents-api/runtime.openapi.yaml):
   generated `/api/v1` sandbox node routes. The node WebSocket and the private
   daemon transport are described in the node and Runtime credential guides.
 - [Administrator contract](../../contracts/agents-api/admin-api.md): Project/key
   lifecycle, resources, explicit hosted Session archive, summary,
   errors/deletion preconditions, audit and historical copy provenance.
-- [Web integration](web-management.md): browser/console/Core boundaries and frontend handoff.
+- [Web integration](web-management.md): browser, console and Core boundaries and frontend handoff.
 - [Design rules](../design-principles.md) and [contributor guide](../../CONTRIBUTING.md):
   ownership, security and change requirements.
 
@@ -46,6 +70,3 @@ Generated schemas do not establish complete compatibility or real execution
 support. The [coverage record](../../contracts/agents-api/README.md) identifies
 qualified workflows, native differences and unresolved behavior. Update the
 relevant contract and this index when adding or moving an API surface.
-
-Node host observations and retained charts are deployment-administrator reads;
-see [node host history](../../contracts/agents-api/node-host-history.md).

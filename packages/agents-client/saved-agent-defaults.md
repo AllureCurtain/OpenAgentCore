@@ -45,10 +45,13 @@ defers protocol compatibility to Session admission. Existing Sessions retain the
 configuration snapshots. Session inline `agent.x_agents_core` remains harness-only;
 one-off provider overrides belong in the Session's top-level `x_agents_core`.
 
-Inspect the configuration committed for one Session without reading credentials:
+A Session read includes `agent.x_agents_core.harness` only when its Agent selected
+a harness; Sessions on the deployment default keep the official Agent shape.
+Administrators can inspect the configuration committed for one Session, including
+the provider selection, without reading credentials:
 
 ```ts
-const frozen = await client.retrieveSessionExecutionConfiguration(session.id);
+const frozen = await admin.retrieveSessionExecutionConfiguration(projectId, session.id);
 console.log(frozen.model.value, frozen.model.source, frozen.harness.value);
 // Deployment details are redacted; historical provider snapshots may be unavailable.
 if (frozen.model_provider.status === "available") {

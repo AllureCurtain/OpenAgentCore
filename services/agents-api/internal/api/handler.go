@@ -64,7 +64,6 @@ type Handler struct {
 	subagents             SubagentStore
 	runtimeObservations   RuntimeObservationService
 	runtimeHistory        RuntimeHistoryService
-	startup               *v1.CoreStartupConfiguration
 }
 
 func NewHandler(s ResourceStore, auth *Authenticator, engine string, options ...Option) (http.Handler, error) {
@@ -102,18 +101,10 @@ func (h *Handler) routes() *chi.Mux {
 		r.Head("/v1/files/{file_id}/content", methodNotAllowed)
 		r.Delete("/v1/files/{file_id}", h.deleteSourceFile)
 	})
-	h.registerSandboxManagerRoutes(router)
-	if h.deploymentAuth != nil && h.projectKeys != nil {
-		router.Route("/core/v1/admin", func(r chi.Router) {
-			r.Use(h.deploymentAuth.authenticate)
-			h.registerProjectAPIKeyRoutes(r)
-			h.registerAdminResourceRoutes(r)
-		})
-	}
-	h.registerEnvironmentExecutorRoutes(router)
+	h.registerSandboxNodeRoutes(router)
+	h.registerCoreRoutes(router)
 	router.Route("/v1", func(r chi.Router) {
 		r.Use(h.authenticate)
-		h.registerSandboxProjectRoutes(r)
 		r.Post("/vaults", h.createVault)
 		r.Get("/vaults", h.listVaults)
 		r.Get("/vaults/{vault_id}", h.getVault)
@@ -128,7 +119,6 @@ func (h *Handler) routes() *chi.Mux {
 		r.Get("/agents/{agent_id}", h.getAgent)
 		r.Post("/agents/{agent_id}", h.updateAgent)
 		r.Delete("/agents/{agent_id}", h.deleteAgent)
-		r.Get("/agents/core/startup-configuration", h.getStartupConfiguration)
 		r.Post("/agents/environments/templates", h.createEnvironmentTemplate)
 		r.Get("/agents/environments/templates", h.listEnvironmentTemplates)
 		r.Get("/agents/environments/templates/{environment_template_id}", h.getEnvironmentTemplate)
@@ -141,14 +131,6 @@ func (h *Handler) routes() *chi.Mux {
 		r.Post("/agents/sessions", h.createSession)
 		r.Get("/agents/sessions", h.listSessions)
 		r.Get("/agents/sessions/{session_id}", h.getSession)
-		r.Get("/agents/sessions/{session_id}/execution-configuration", h.getSessionExecutionConfiguration)
-		r.Get("/agents/sessions/{session_id}/runtime-observation", h.getRuntimeObservation)
-		r.Head("/agents/sessions/{session_id}/runtime-observation", methodNotAllowed)
-		r.Get("/agents/runtime-observations", h.listRuntimeObservations)
-		r.Head("/agents/runtime-observations", methodNotAllowed)
-		r.Get("/agents/runtime-history/capabilities", h.getRuntimeHistoryCapabilities)
-		r.Get("/agents/sessions/{session_id}/runtime-history", h.getRuntimeHistory)
-		r.Head("/agents/sessions/{session_id}/runtime-history", methodNotAllowed)
 		r.Post("/agents/sessions/{session_id}", h.updateSession)
 		r.Delete("/agents/sessions/{session_id}", h.deleteSession)
 		r.Post("/agents/sessions/{session_id}/events", h.createEvents)
@@ -291,9 +273,6 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		ModelOptions:           providerOptions,
 		Creator:                sessionCreator(r), InitialFiles: input.initialFiles, Initialization: input.initialization,
 		Engine: selectedEngine, IdempotencyKey: key, Metadata: input.Metadata, Configuration: configuration, InitialInputs: initialInputs, CreationRequest: creationRequest,
-	}
-	if input.XAgentsCore != nil && input.XAgentsCore.SandboxNodeID != nil {
-		createInput.SandboxNodeID = *input.XAgentsCore.SandboxNodeID
 	}
 	if input.Stream {
 		h.createSessionStream(w, r, createInput)

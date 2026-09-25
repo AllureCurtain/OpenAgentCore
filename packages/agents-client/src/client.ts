@@ -1,8 +1,6 @@
-import { projectExecutionConfiguration } from "./execution-configuration-projection";
 import { exactFields, onlyFields, isRecord, hasOwn, canonicalUuid, isNonnegativeInteger, sameResourceId } from "./response-projection";
 import { projectTokenUsage } from "./usage-projection";
 import { projectAgentTurn, projectSessionItem, projectItemContent, projectHistoryPage, validateHistoryPageOptions } from "./history-projection";
-import { projectRuntimeHistory, projectRuntimeHistoryCapabilities } from "./runtime-history-projection";
 import { projectOpenAIHostedSessionEnvironment } from "./session-environment-projection";
 import { createSSEDecoder } from "./sse";
 import { projectVaultCredentialAuth, validCredentialURL } from "./vault-credential-auth";
@@ -51,10 +49,7 @@ import type {
   CreateAgentInput,
   CreateSessionInput,
   CreateSessionStreamOptions,
-  CoreStartupConfiguration,
-  SessionExecutionConfiguration,
   CoreHarnessKind,
-  CoreManagedSandboxProvider,
   FunctionResultContent,
   FunctionResultInput,
   InputMessage,
@@ -94,10 +89,6 @@ import type {
   UpdateAgentInput,
   ReplaceVaultCredentialTokenInput,
   RuntimeObservation,
-  RuntimeObservationList,
-  RuntimeHistory,
-  RuntimeHistoryCapabilities,
-  RuntimeHistoryQuery,
   Vault,
   VaultCredential,
   VaultCredentialDeleted,
@@ -176,83 +167,10 @@ function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
 
-const startupConfigurationFields = new Set(["object", "schema_version", "supported", "configured"]);
-const startupSupportedFields = new Set(["harnesses", "managed_sandbox_providers"]);
-const startupConfiguredFields = new Set(["default_harness", "enabled_harnesses", "daemon_gateway", "self_hosted", "managed_sandbox", "model_providers"]);
-const startupManagedSandboxFields = new Set(["enabled", "provider", "maintenance"]);
-const startupModelProviderFields = new Set(["harness", "endpoint_configured"]);
 const harnessKinds = new Set<CoreHarnessKind>(["claude_sdk", "codex", "mcode"]);
-const sandboxProviders = new Set<CoreManagedSandboxProvider>(["docker", "microsandbox"]);
 
 function isHarnessKind(value: unknown): value is CoreHarnessKind {
   return typeof value === "string" && harnessKinds.has(value as CoreHarnessKind);
-}
-
-function isSandboxProvider(value: unknown): value is CoreManagedSandboxProvider {
-  return typeof value === "string" && sandboxProviders.has(value as CoreManagedSandboxProvider);
-}
-
-function sortedUnique<T extends string>(value: unknown, accept: (entry: unknown) => entry is T): value is T[] {
-  return Array.isArray(value) && value.every(accept) && new Set(value).size === value.length &&
-    value.every((entry, index) => index === 0 || value[index - 1]! < entry);
-}
-
-function invalidStartupConfiguration(): never {
-  throw new AgentCoreError("Agent Core returned an invalid startup configuration.", 502, "invalid_startup_configuration");
-}
-
-function projectStartupConfiguration(value: unknown): CoreStartupConfiguration {
-  if (!isRecord(value) || !exactFields(value, startupConfigurationFields) || value.object !== "agents.core.startup_configuration" || value.schema_version !== 1 ||
-    !isRecord(value.supported) || !exactFields(value.supported, startupSupportedFields) ||
-    !sortedUnique(value.supported.harnesses, isHarnessKind) || !sortedUnique(value.supported.managed_sandbox_providers, isSandboxProvider) ||
-    !isRecord(value.configured) || !exactFields(value.configured, startupConfiguredFields) ||
-    !isHarnessKind(value.configured.default_harness) || !sortedUnique(value.configured.enabled_harnesses, isHarnessKind) || typeof value.configured.daemon_gateway !== "boolean" ||
-    typeof value.configured.self_hosted !== "boolean" || value.configured.self_hosted !== value.configured.daemon_gateway ||
-    !isRecord(value.configured.managed_sandbox) || !exactFields(value.configured.managed_sandbox, startupManagedSandboxFields) ||
-    typeof value.configured.managed_sandbox.enabled !== "boolean" || typeof value.configured.managed_sandbox.maintenance !== "boolean" ||
-    !Array.isArray(value.configured.model_providers)) {
-    return invalidStartupConfiguration();
-  }
-  const configured = value.configured;
-  const managed = configured.managed_sandbox as Record<string, unknown>;
-  const supportedHarnesses = value.supported.harnesses as CoreHarnessKind[];
-  const supportedSandboxProviders = value.supported.managed_sandbox_providers as CoreManagedSandboxProvider[];
-  const enabledHarnesses = configured.enabled_harnesses as CoreHarnessKind[];
-  if (configured.daemon_gateway
-    ? !enabledHarnesses.includes(configured.default_harness as CoreHarnessKind)
-    : enabledHarnesses.length !== 0) {
-    return invalidStartupConfiguration();
-  }
-  if (managed.enabled
-    ? !isSandboxProvider(managed.provider) || !supportedSandboxProviders.includes(managed.provider) || !configured.daemon_gateway
-    : managed.provider !== null || managed.maintenance) {
-    return invalidStartupConfiguration();
-  }
-  if (enabledHarnesses.some((harness) => !supportedHarnesses.includes(harness))) {
-    return invalidStartupConfiguration();
-  }
-  const modelProviders = configured.model_providers as unknown[];
-  if (modelProviders.length !== enabledHarnesses.length || modelProviders.some((entry, index) =>
-    !isRecord(entry) || !exactFields(entry, startupModelProviderFields) || entry.harness !== enabledHarnesses[index] || typeof entry.endpoint_configured !== "boolean")) {
-    return invalidStartupConfiguration();
-  }
-  const projectedProviders = modelProviders as Array<Record<string, unknown>>;
-  return {
-    object: "agents.core.startup_configuration",
-    schema_version: 1,
-    supported: {
-      harnesses: [...supportedHarnesses],
-      managed_sandbox_providers: [...supportedSandboxProviders],
-    },
-    configured: {
-      default_harness: configured.default_harness as CoreHarnessKind,
-      enabled_harnesses: [...enabledHarnesses],
-      daemon_gateway: configured.daemon_gateway as boolean,
-      self_hosted: configured.self_hosted as boolean,
-      managed_sandbox: { enabled: managed.enabled as boolean, provider: managed.provider as CoreManagedSandboxProvider | null, maintenance: managed.maintenance as boolean },
-      model_providers: projectedProviders.map((entry) => ({ harness: entry.harness as CoreHarnessKind, endpoint_configured: entry.endpoint_configured as boolean })),
-    },
-  };
 }
 
 export function createIdempotencyKey(): string {
@@ -1062,14 +980,6 @@ function invalidRuntimeObservation(message = "Agent Core returned an invalid Run
   throw new AgentCoreError(message, 502, "invalid_runtime_observation");
 }
 
-function invalidRuntimeHistoryCapabilities(message = "Agent Core returned invalid Runtime history capabilities."): never {
-  throw new AgentCoreError(message, 502, "invalid_runtime_history_capabilities");
-}
-
-function invalidRuntimeHistory(message = "Agent Core returned invalid Runtime history."): never {
-  throw new AgentCoreError(message, 502, "invalid_runtime_history");
-}
-
 function nullableRuntimeNumber(value: unknown): number | null {
   if (value === null) return null;
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
@@ -1203,28 +1113,6 @@ export function projectRuntimeObservation(value: unknown, expectedSessionId?: st
     allocation_created_at: allocationCreatedAt, resolved_at: value.resolved_at,
     observed_at: observedAt, started_at: startedAt, cpu, memory,
   } as RuntimeObservation;
-}
-
-function projectRuntimeObservationList(value: unknown, options?: PageOptions): RuntimeObservationList {
-  if (
-    !isRecord(value) || !exactFields(value, vaultListFields) || value.object !== "list" ||
-    !Array.isArray(value.data) || typeof value.has_more !== "boolean"
-  ) return invalidRuntimeObservation("Agent Core returned an invalid Runtime observation list.");
-  const limit = options?.limit ?? 20;
-  if (
-    !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
-    (options?.order !== undefined && options.order !== "asc" && options.order !== "desc") ||
-    value.data.length > limit
-  ) return invalidRuntimeObservation("Agent Core returned an invalid Runtime observation list.");
-  const data = value.data.map((entry) => projectRuntimeObservation(entry));
-  const firstId = data[0]?.id ?? null;
-  const lastId = data[data.length - 1]?.id ?? null;
-  if (
-    new Set(data.map((entry) => entry.id)).size !== data.length ||
-    value.first_id !== firstId || value.last_id !== lastId ||
-    (value.has_more && data.length === 0)
-  ) return invalidRuntimeObservation("Agent Core returned an invalid Runtime observation list.");
-  return { object: "list", data, has_more: value.has_more, first_id: firstId, last_id: lastId };
 }
 
 function projectStreamError(value: unknown): StreamError {
@@ -1950,11 +1838,6 @@ function skillVersionPath(skillId: string, version: string): string {
 }
 
 export class OpenAIAgentsClient implements AgentCore {
-  async retrieveStartupConfiguration(options?: ReadOptions): Promise<CoreStartupConfiguration> {
-    const value = await this.request<unknown>("/agents/core/startup-configuration", { signal: options?.signal }, 200);
-    return projectStartupConfiguration(value);
-  }
-
   private readonly baseUrl: string;
   private readonly token: OpenAIAgentsClientOptions["token"];
   private readonly fetchImpl: typeof fetch;
@@ -2222,58 +2105,6 @@ export class OpenAIAgentsClient implements AgentCore {
     return projectTolerantSessionList(value, options?.limit ?? defaultSessionListLimit, options?.order ?? "desc");
   }
 
-  async listRuntimeObservations(options?: PageOptions): Promise<RuntimeObservationList> {
-    if (
-      (options?.after !== undefined && canonicalUuid(options.after) === null) ||
-      (options?.limit !== undefined && (
-        !Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 100
-      )) ||
-      (options?.order !== undefined && options.order !== "asc" && options.order !== "desc")
-    ) throw new TypeError("Runtime observation pagination options are invalid.");
-    const params = new URLSearchParams();
-    addPageOptions(params, options);
-    const value = await this.request<unknown>(
-      withQuery("/agents/runtime-observations", params),
-      { signal: options?.signal },
-    );
-    return projectRuntimeObservationList(value, options);
-  }
-
-  async retrieveRuntimeObservation(sessionId: string, options?: ReadOptions): Promise<RuntimeObservation> {
-    const value = await this.request<unknown>(
-      `/agents/sessions/${encodeURIComponent(sessionId)}/runtime-observation`,
-      { signal: options?.signal },
-    );
-    return projectRuntimeObservation(value, sessionId);
-  }
-
-  async getRuntimeHistoryCapabilities(options?: ReadOptions): Promise<RuntimeHistoryCapabilities> {
-    const value = await this.request<unknown>(
-      "/agents/runtime-history/capabilities",
-      { signal: options?.signal },
-    );
-    return projectRuntimeHistoryCapabilities(value, invalidRuntimeHistoryCapabilities);
-  }
-
-  async retrieveRuntimeHistory(sessionId: string, query: RuntimeHistoryQuery): Promise<RuntimeHistory> {
-    const canonicalSessionId = canonicalUuid(sessionId);
-    if (
-      query == null || canonicalSessionId === null || !isNonnegativeInteger(query.start) || !isNonnegativeInteger(query.end) ||
-      query.end <= query.start || (query.maxPoints !== undefined && (
-        !Number.isSafeInteger(query.maxPoints) || query.maxPoints < 2 || query.maxPoints > 10_000
-      ))
-    ) throw new TypeError("Runtime history query is invalid.");
-    const params = new URLSearchParams();
-    params.set("start", String(query.start));
-    params.set("end", String(query.end));
-    if (query.maxPoints !== undefined) params.set("max_points", String(query.maxPoints));
-    const value = await this.request<unknown>(
-      withQuery(`/agents/sessions/${encodeURIComponent(canonicalSessionId)}/runtime-history`, params),
-      { signal: query.signal },
-    );
-    return projectRuntimeHistory(value, canonicalSessionId, query, invalidRuntimeHistory);
-  }
-
   async createSession(input: CreateSessionInput, idempotencyKey = createIdempotencyKey()): Promise<AgentSession> {
     if ((input as { stream?: boolean }).stream === true) {
       throw new TypeError("createSession only supports the JSON response; connect streamEvents after creation.");
@@ -2340,13 +2171,6 @@ export class OpenAIAgentsClient implements AgentCore {
 
         options.onEvent(projectStreamEventSession(event, createdSessionId, immutableSession));
       },
-    });
-  }
-
-  async retrieveSessionExecutionConfiguration(sessionId: string, options?: ReadOptions): Promise<SessionExecutionConfiguration> {
-    const value = await this.request<unknown>(`/agents/sessions/${encodeURIComponent(sessionId)}/execution-configuration`, { signal: options?.signal });
-    return projectExecutionConfiguration(value, sessionId, () => {
-      throw new AgentCoreError("Agent Core returned an invalid execution configuration.", 502, "invalid_execution_configuration");
     });
   }
 

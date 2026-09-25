@@ -36,7 +36,7 @@ type AdminRuntimeObservationList struct {
 }
 
 // @Summary List Runtime observations across managed Projects
-// @Description Deployment administrator only. Each observation is labelled with its owning Project ID. Uses the existing read-only Runtime sampler, with bounded concurrency and no execution or provisioning. A provider with a batch metrics read, such as E2B, samples the page's running sandboxes in one bounded request.
+// @Description Core key only. Each observation is labelled with its owning Project ID. Uses the existing read-only Runtime sampler, with bounded concurrency and no execution or provisioning. A provider with a batch metrics read, such as E2B, samples the page's running sandboxes in one bounded request.
 // @Tags Core Administration
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -45,7 +45,7 @@ type AdminRuntimeObservationList struct {
 // @Param order query string false "Session creation order" Enums(asc,desc) default(desc)
 // @Success 200 {object} api.AdminRuntimeObservationList
 // @Failure 400,401,404,500,503 {object} v1.ErrorResponse
-// @Router /core/v1/admin/runtime-observations [get]
+// @Router /core/v1/sandbox/runtime-observations [get]
 func (h *Handler) adminRuntimeObservations(w http.ResponseWriter, r *http.Request) {
 	if h.runtimeObservations == nil {
 		writeError(w, http.StatusServiceUnavailable, "execution_unavailable", "Runtime observation is not configured on this service.")

@@ -24,6 +24,12 @@ type IssuedExecutorCredential struct {
 
 // IssueExecutorCredential returns a new connect-only secret once, without replacing an existing ID.
 func (s *Store) IssueExecutorCredential(ctx context.Context, principal identity.Principal, keyID, environment string) (IssuedExecutorCredential, error) {
+	return s.issueExecutorCredential(ctx, principal, keyID, environment, nil)
+}
+
+// issueExecutorCredential runs before, when given, first in the issuing
+// transaction; its error aborts the issuance.
+func (s *Store) issueExecutorCredential(ctx context.Context, principal identity.Principal, keyID, environment string, before func(context.Context, *sqlc.Queries) error) (IssuedExecutorCredential, error) {
 	tenant, id, err := executorCredentialIdentity(principal, keyID)
 	if err != nil {
 		return IssuedExecutorCredential{}, err
@@ -48,6 +54,11 @@ func (s *Store) IssueExecutorCredential(ctx context.Context, principal identity.
 	}
 	var result IssuedExecutorCredential
 	err = s.withExecutorCredentialTarget(ctx, principal, restriction, func(ctx context.Context, q *sqlc.Queries) error {
+		if before != nil {
+			if err := before(ctx, q); err != nil {
+				return err
+			}
+		}
 		row, err := q.IssueExecutorCredential(ctx, sqlc.IssueExecutorCredentialParams{
 			KeyID: id, TenantID: tenant, SubjectKind: pgtype.Text{String: principal.SubjectKind, Valid: true}, SubjectID: pgtype.Text{String: principal.SubjectID, Valid: true},
 			OrganizationID: principal.OrganizationID, ProjectID: principal.ProjectID, EnvironmentID: restriction, TokenSha256: digest,
@@ -68,6 +79,12 @@ func (s *Store) IssueExecutorCredential(ctx context.Context, principal identity.
 }
 
 func (s *Store) RotateExecutorCredential(ctx context.Context, principal identity.Principal, keyID string) (IssuedExecutorCredential, error) {
+	return s.rotateExecutorCredential(ctx, principal, keyID, nil)
+}
+
+// rotateExecutorCredential runs before, when given, first in the rotating
+// transaction; its error aborts the rotation.
+func (s *Store) rotateExecutorCredential(ctx context.Context, principal identity.Principal, keyID string, before func(context.Context, *sqlc.Queries) error) (IssuedExecutorCredential, error) {
 	tenant, id, err := executorCredentialIdentity(principal, keyID)
 	if err != nil {
 		return IssuedExecutorCredential{}, err
@@ -82,6 +99,11 @@ func (s *Store) RotateExecutorCredential(ctx context.Context, principal identity
 	}
 	var result IssuedExecutorCredential
 	err = s.withExecutorCredentialTarget(ctx, principal, restriction, func(ctx context.Context, q *sqlc.Queries) error {
+		if before != nil {
+			if err := before(ctx, q); err != nil {
+				return err
+			}
+		}
 		row, err := q.RotateExecutorCredential(ctx, sqlc.RotateExecutorCredentialParams{KeyID: id, TenantID: tenant, SubjectKind: pgtype.Text{String: principal.SubjectKind, Valid: true}, SubjectID: pgtype.Text{String: principal.SubjectID, Valid: true}, TokenSha256: digest})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound

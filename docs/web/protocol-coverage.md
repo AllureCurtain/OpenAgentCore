@@ -6,8 +6,8 @@ that inventory, its pinned baseline and its evidence live in the
 [Agents API contract](../../contracts/agents-api/README.md).
 
 The console is a management tool. It reads and deletes each project's assets and
-manages projects and keys through the administrator API (`/core/v1/admin/**`), and
-it administers sandbox nodes through `/core/v1/sandbox/**`. It sends no request to
+manages projects and keys through the administrator API (`/core/v1/**`), and it
+administers sandbox nodes through `/core/v1/sandbox/**`. It sends no request to
 the Agents API (`/v1/**`). Routes, response shapes, pagination and audit records of
 the administrator API are defined by the [administrator API contract](../../contracts/agents-api/admin-api.md).
 
@@ -15,9 +15,9 @@ the administrator API are defined by the [administrator API contract](../../cont
 
 | Interface | Paths | Authentication | Console use |
 | --- | --- | --- | --- |
-| Console server | `/console/auth`, `/console/auth/{login,logout}`, `/console/config` | Core key at sign-in, then the console session cookie | Sign-in with the Core key and sign-out; non-secret capability flags such as `sandbox_admin` |
-| Administrator API | `/core/v1/admin/**` | Deployment administrator credential, added by the console server | Projects, keys, resource reads and deletion, provenance, summaries, Runtime observations |
-| Sandbox administration | `/core/v1/sandbox/**` | Deployment administrator credential, added by the console server | Nodes page; fleet and capacity figures on Overview and Sandbox metrics |
+| Console server | `/console/auth`, `/console/auth/{login,logout}`, `/console/config` | Core key at sign-in, then the console session cookie | Sign-in with the Core key and sign-out; the node installer (`node_installer`, `node_installer_sha256`) |
+| Administrator API | `/core/v1/**` outside `/core/v1/sandbox` | Core key, added by the console server | Projects, keys, resource reads and deletion, executor credentials, provenance, summaries, Core metrics |
+| Sandbox administration | `/core/v1/sandbox/**` | Core key, added by the console server | Nodes page; fleet and capacity figures on Overview and Sandbox metrics; Runtime observations of every project |
 | Agents API | `/v1/**` | Project API key | Not used. The first-run screen shows a `curl` example for `/v1/agents` with a `$PROJECT_API_KEY` placeholder; the console never sends it |
 
 Browser requests are same-origin and carry only the console session. The browser
@@ -30,13 +30,13 @@ value.
 
 | Operation | Route | Console use |
 | --- | --- | --- |
-| List projects | `GET /projects` | Project filter on every project-scoped page; Projects and keys list; first-run detection (no project opens the first-run screen) |
-| Create project | `POST /projects` | **Create project**; first run (default name `Default`) |
-| Rename project | `POST /projects/{project_id}` | **Rename** on an active project; the ID stays the same |
-| Archive project | `POST /projects/{project_id}/archive` | **Archive**: revokes every key; the project's assets stay readable and deletable |
-| List keys | `GET /projects/{project_id}/keys` | Key table of a project: name, prefix, status, creation and revocation time |
-| Issue key | `POST /projects/{project_id}/keys` | **Issue key** on an active project and the first-run screen; the plaintext is shown once |
-| Revoke key | `DELETE /projects/{project_id}/keys/{key_id}` | **Revoke**, with a warning when it is the project's last active key |
+| List projects | `GET /core/v1/projects` | Project filter on every project-scoped page; Projects and keys list; first-run detection (no project opens the first-run screen) |
+| Create project | `POST /core/v1/projects` | **Create project**; first run (default name `Default`) |
+| Rename project | `POST /core/v1/projects/{project_id}` | **Rename** on an active project; the ID stays the same |
+| Archive project | `POST /core/v1/projects/{project_id}/archive` | **Archive**: revokes every key; the project's assets stay readable and deletable |
+| List keys | `GET /core/v1/projects/{project_id}/keys` | Key table of a project: name, prefix, status, creation and revocation time |
+| Issue key | `POST /core/v1/projects/{project_id}/keys` | **Issue key** on an active project and the first-run screen; the plaintext is shown once |
+| Revoke key | `DELETE /core/v1/projects/{project_id}/keys/{key_id}` | **Revoke**, with a warning when it is the project's last active key |
 
 Names are checked for length (projects 1–128 characters, keys 1–80) and control
 characters before sending. An issued key's plaintext stays in component memory
@@ -45,9 +45,10 @@ storage, URLs or logs. There is no project deletion and no plaintext recovery.
 
 ## Project resources
 
-Routes are relative to `/core/v1/admin/projects/{project_id}` and return the same
+Routes are relative to `/core/v1/projects/{project_id}` and return the same
 objects as the corresponding public `/v1` operations, so the console applies the
-public client's strict projections. Archived projects remain readable.
+public client's strict projections. Runtime observation and history exist only
+here. Archived projects remain readable.
 
 | Resource | Reads used | Deletion | Creator | Console surface |
 | --- | --- | --- | --- | --- |
@@ -78,20 +79,40 @@ Resource-specific boundaries:
   skipped. The console does not read single Turns, Artifacts, execution
   configuration or Environment resources.
 
+## Executor credentials
+
+Core issues the credentials of a self_hosted executor, and the console is
+where the administrator does it: the **Executor credentials** section of a
+Session page, shown only when the Session's environment is `self_hosted`, for
+that Session's `project_id` and `environment.id`. The routes accept only the
+`self_hosted` environment of an existing (not deleted) Session in that project;
+anything else returns 404. Writes have two conflicts, both 409:
+`project_archived` (issuing or rotating in an archived project) and
+`executor_credential_exists` (issuing an existing `key_id` without
+`rotate: true`). In an archived project the section hides **Issue credential**
+and **Rotate** behind a note and keeps the list and **Revoke**, which Core still
+allows.
+
+| Operation | Route | Console use |
+| --- | --- | --- |
+| List credentials | `GET /core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials` | The section's table, through the query cache: each credential's short `key_id` with its copy button, creation time (`created_at`, which rotation does not change) and status (Active, or Revoked with its time), active first. The credential itself is never listed |
+| Issue or rotate | `POST /core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials` with `{"key_id", "rotate"}` | **Issue credential** generates `key_id` (`crypto.randomUUID()`) and keeps it before sending `rotate: false`. **Rotate**, confirmed (the old credential stops working immediately), sends an active credential's `key_id` with `rotate: true`. Core would also rotate a revoked credential, restoring it (`201`); the console hides Rotate on revoked rows by choice, so they have no actions. Core returns the credential once (`201`, `Cache-Control: no-store`); the console shows it once in a dialog as the executor's credential file (`{key_id, environment_id, executor_token}`) to copy or download (`executor-credential-<first 8 of environment_id>.json`), keeps it only in the section's state (never in browser storage or the query cache) and forgets it when the administrator presses **Done**; dismissing the dialog keeps it on the page until then. An existing `key_id` without `rotate: true` returns 409 `executor_credential_exists`. Other rejections show Core's reason in an error toast (issue) or in the confirmation dialog (rotate) |
+| Revoke | `DELETE /core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials/{key_id}` | **Revoke**, confirmed (the executor can no longer connect; a running process is not stopped), then the list is read again and shows the credential as Revoked; revoking again returns 204 |
+
 ## Provenance and monitoring
 
 | Operation | Route | Console use |
 | --- | --- | --- |
-| Resource owners | `GET /projects/{project_id}/resource-owners` | The Creator column of every resource list and the creator fact of detail pages, in batches of up to 100 IDs. An asset an administrator copied in an earlier release shows **Admin copy**; a resource without a record shows **Unknown** |
-| Write operations | `GET /projects/{project_id}/write-operations` | A project's write history, newest first, filtered by key and resource type, 50 per page |
-| Summary | `GET /summary` | Overview (per project), the Agents list (`group_by=agent`), a project's page (per project and `group_by=key`), Agent metrics (to skip idle projects, and usage by creating key since the start of the range), the Projects list (last activity) |
-| Runtime observations | `GET /runtime-observations` | Sandbox metrics: hosted Runtimes of every project, each labelled with its project; an E2B sandbox's dialog adds its `observation.disk` as used / limit (null elsewhere) |
-| Core metrics | `GET /core-metrics?range=` | Core metrics page; the Core popover on Overview. A Core without the route (404) is shown as not reporting; the popover then shows only Core's status. Measurements are defined in the [Core metrics contract](../../contracts/agents-api/core-metrics.md); the Process section's CPU and resident memory are a [requested extension](core-process-metrics-requirements.md) and show as missing until Core reports them |
+| Resource owners | `GET /core/v1/projects/{project_id}/resource-owners` | The Creator column of every resource list and the creator fact of detail pages, in batches of up to 100 IDs. An asset an administrator copied in an earlier release shows **Admin copy**; a resource without a record shows **Unknown** |
+| Write operations | `GET /core/v1/projects/{project_id}/write-operations` | A project's write history, newest first, filtered by key and resource type, 50 per page |
+| Summary | `GET /core/v1/summary` | Overview (per project), the Agents list (`group_by=agent`), a project's page (per project and `group_by=key`), Agent metrics (to skip idle projects, and usage by creating key since the start of the range), the Projects list (last activity) |
+| Core metrics | `GET /core/v1/metrics?range=` | Core metrics page; the Core popover on Overview. A Core without the route (404) is shown as not reporting; the popover then shows only Core's status. Measurements are defined in the [Core metrics contract](../../contracts/agents-api/core-metrics.md); the Process section's CPU and resident memory are a [requested extension](core-process-metrics-requirements.md) and show as missing until Core reports them |
 
 Summary figures are cumulative per Session and are not billing records. Sessions
 without reported usage count toward coverage but not toward token sums, and the
 console shows missing values as missing, never as zero. The administrator audit
-log (`GET /audit-log`) is not consumed; System shows the sandbox deployment only.
+log (`GET /core/v1/audit-log`) is not consumed; System shows the sandbox
+deployment only.
 
 ## Sandbox administration
 
@@ -105,8 +126,11 @@ log (`GET /audit-log`) is not consumed; System shows the sandbox deployment only
 | Enrollment | `POST /core/v1/sandbox/enrollment-tokens` | **Add node**: the administrator sets the node's sandbox limits (`max_active`; `max_retained` only for microsandbox, equal to `max_active` for Docker) before Core issues a single-use token inside a command that verifies the installer checksum |
 | Update node | `PATCH /core/v1/sandbox/nodes/{node_id}` | **Edit node**: the name and sandbox limits together (the retained limit only for microsandbox; under Docker, Core sets it to the active limit) |
 | Remove node | `DELETE /core/v1/sandbox/nodes/{node_id}` | Confirmed node removal; the row goes only after Core acknowledges the deletion |
+| Runtime observations | `GET /core/v1/sandbox/runtime-observations` | Sandbox metrics: hosted Runtimes of every project, each labelled with its project; an E2B sandbox's dialog adds its `observation.disk` as used / limit (null elsewhere) |
 
-These pages appear only when `/console/config` reports `sandbox_admin: true`. An E2B
+Signing in grants administration, so `/console/config` reports only the node
+installer (`node_installer`, `node_installer_sha256`). These pages appear unless
+the console has no `/console/config` (404) or reports `sandbox_admin: false`. An E2B
 deployment has no nodes; its API key is write-only. The Runtime release sent for
 Docker and microsandbox comes from the console's own `GET /node-install/manifest.json`
 (the distribution manifest the node installer uses); without it the administrator
@@ -120,7 +144,18 @@ enters the release under advanced settings.
   as uncertain and followed by a fresh read.
 - The console offers Session deletion only for idle or failed Sessions without
   required actions and never cancels work to make a Session deletable.
-- Project, key, deletion and sandbox writes are never retried automatically.
+- Project, key, executor credential, deletion and sandbox writes are never
+  retried automatically. An executor credential issuance with an unknown
+  outcome (no answer, a 30-second timeout, a 5xx) opens an error dialog whose
+  next step is **Refresh list**. If the kept `key_id` is then listed, it was
+  issued and its secret lost: the console offers to rotate it (`rotate: true`)
+  for a fresh secret, shown once. If it is not listed, the next Issue sends the
+  same `key_id` with `rotate: false`; should that return 409 because the first
+  request was issued after all, the console reads the list again and offers the
+  same rotation only if the credential is listed as active in an active project,
+  and otherwise reports the issuance as rejected. A kept `key_id` that is
+  already listed is never sent again, and rotating or revoking it from its row
+  forgets it: the next Issue generates a new `key_id`.
 
 ## Read bounds
 
@@ -142,7 +177,7 @@ The aggregate endpoints that would replace these browser reads are proposed in
   stream, message input, function results and cancellation.
 - Creation or update of Agents, Environment templates, Skills, Files, Vaults or
   Credentials, including uploads and Credential token replacement.
-- Environment resources, Environment Files, executor credentials and Artifacts.
+- Environment resources, Environment Files and Artifacts.
 
 ## Terminology
 
@@ -150,7 +185,7 @@ The aggregate endpoints that would replace these browser reads are proposed in
   [Agents guide](https://developers.openai.com/api/docs/guides/agents). Parsar Core
   implements part of its pinned beta resource shape under `/v1`.
 - **Administrator API** (also called the Web API) is Parsar Core's management
-  extension under `/core/v1/admin`. It is not part of the public Agents API.
+  extension under `/core/v1`. It is not part of the public Agents API.
 - **OpenAI Agents SDK** and **Responses API** are different interfaces and are not
   used by the console.
 
@@ -159,10 +194,10 @@ client tests and the console's fixtures in the same change.
 
 ## Evidence and changes
 
-The console's route allowlists live in
-[admin_routes.go](../../services/core-console/admin_routes.go) and
-[sandbox_admin.go](../../services/core-console/sandbox_admin.go); authentication,
-origin checks and header handling live in [server.go](../../services/core-console/server.go).
+The console's `/core/v1/*` prefix forwarding lives in
+[core_routes.go](../../services/core-console/core_routes.go); authentication, origin
+and path checks and header handling live in [server.go](../../services/core-console/server.go),
+with Core key sign-in in [auth.go](../../services/core-console/auth.go).
 Update this matrix when those boundaries or the console's reads change, and keep
 detailed wire semantics in the administrator contract.
 

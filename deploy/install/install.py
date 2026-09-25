@@ -382,7 +382,7 @@ def main(argv=None):
             raise InstallError("Web sign-in is unavailable. Use --status and inspect the Web service")
         core_url = state.get("core_url") or f'http://127.0.0.1:{state["core_port"]}'
         token = (root / "admin/core.key").read_text().strip()
-        if not wait_http(core_url + "/core/v1/admin/projects", {"Authorization": "Bearer " + token}):
+        if not wait_http(core_url + "/core/v1/projects", {"Authorization": "Bearer " + token}):
             raise InstallError("Core key authentication failed. Inspect private configuration; no model was called")
         print("Console: " + (state.get("public_url") or url))
         print("Sign in to Web with the Core key. Keep it private; it also authorizes the Core management API.")

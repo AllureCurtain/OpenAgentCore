@@ -454,7 +454,7 @@ func TestRuntimeComputePhaseChangedAt(t *testing.T) {
 func TestRuntimeComputePhaseChangedAtInNodeAllocations(t *testing.T) {
 	s, w, d := managerFixture(t, 1, 4)
 	tenant := uuid.NewString()
-	session, err := s.CreateSession(t.Context(), tenant, managerSessionInput("listed", d.LocalNodeID))
+	session, err := s.CreateSession(t.Context(), tenant, managerSessionInput("listed"))
 	if err != nil {
 		t.Fatal(err)
 	}

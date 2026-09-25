@@ -713,7 +713,7 @@ export interface TolerantSessionList {
 }
 
 export interface CreateSessionInput {
-  x_agents_core?: { sandbox_node_id?: string; model_provider?: ModelProviderInput | null };
+  x_agents_core?: { model_provider?: ModelProviderInput | null };
   agent_id?: string;
   agent?: InlineAgentInput;
   environment: AgentEnvironmentInput;
@@ -1098,29 +1098,6 @@ export type RuntimeObservation =
   | RuntimeNoneObservation
   | RuntimeSelfHostedObservation;
 
-export interface RuntimeObservationList extends ListPage<RuntimeObservation> {
-  object: "list";
-  first_id: string | null;
-  last_id: string | null;
-}
-
-export type RuntimeHistoryCollectionMode = "on_read" | "periodic";
-export type RuntimeHistoryCapabilityReason = "not_configured" | "periodic_collection_required";
-export type RuntimeHistoryMetric = "cpu" | "memory" | "tokens";
-
-export interface RuntimeHistoryCapabilities {
-  object: "agent.runtime_history_capabilities";
-  available: boolean;
-  reason: RuntimeHistoryCapabilityReason | null;
-  collection_mode: RuntimeHistoryCollectionMode | null;
-  sample_interval_seconds: number | null;
-  retention_seconds: number | null;
-  minimum_step_seconds: number | null;
-  maximum_range_seconds: number | null;
-  maximum_points: number | null;
-  metrics: RuntimeHistoryMetric[];
-}
-
 export interface RuntimeHistoryQuery extends ReadOptions {
   /** Inclusive Unix-second boundary. */
   start: number;
@@ -1206,7 +1183,6 @@ export interface RuntimeHistory {
 }
 
 export type CoreHarnessKind = "claude_sdk" | "codex" | "mcode";
-export type CoreManagedSandboxProvider = "docker" | "microsandbox";
 
 /** A complete replacement bundle. API keys are write-only. */
 export interface ModelProviderInput {
@@ -1258,33 +1234,7 @@ export interface SessionExecutionConfiguration {
   };
 }
 
-export interface CoreStartupConfiguration {
-  object: "agents.core.startup_configuration";
-  schema_version: 1;
-  supported: {
-    harnesses: CoreHarnessKind[];
-    managed_sandbox_providers: CoreManagedSandboxProvider[];
-  };
-  configured: {
-    default_harness: CoreHarnessKind;
-    enabled_harnesses: CoreHarnessKind[];
-    daemon_gateway: boolean;
-    self_hosted: boolean;
-    managed_sandbox: {
-      enabled: boolean;
-      provider: CoreManagedSandboxProvider | null;
-      maintenance: boolean;
-    };
-    model_providers: Array<{
-      harness: CoreHarnessKind;
-      endpoint_configured: boolean;
-    }>;
-  };
-}
-
 export interface AgentCore {
-  retrieveSessionExecutionConfiguration(sessionId: string, options?: ReadOptions): Promise<SessionExecutionConfiguration>;
-  retrieveStartupConfiguration(options?: ReadOptions): Promise<CoreStartupConfiguration>;
   listAgents(options?: PageOptions): Promise<ListPage<SavedAgent>>;
   createAgent(input: CreateAgentInput): Promise<SavedAgent>;
   retrieveAgent(agentId: string): Promise<SavedAgent>;
@@ -1302,10 +1252,6 @@ export interface AgentCore {
   listSessions(options?: PageOptions & { agentId?: string }): Promise<ListPage<AgentSession>>;
   /** Like listSessions, but a malformed Session is reported instead of failing the page. */
   listSessionsTolerant(options?: SessionListOptions): Promise<TolerantSessionList>;
-  listRuntimeObservations(options?: PageOptions): Promise<RuntimeObservationList>;
-  retrieveRuntimeObservation(sessionId: string, options?: ReadOptions): Promise<RuntimeObservation>;
-  getRuntimeHistoryCapabilities(options?: ReadOptions): Promise<RuntimeHistoryCapabilities>;
-  retrieveRuntimeHistory(sessionId: string, query: RuntimeHistoryQuery): Promise<RuntimeHistory>;
   createSession(input: CreateSessionInput, idempotencyKey?: string): Promise<AgentSession>;
   createSessionStream(
     input: Omit<CreateSessionInput, "stream">,

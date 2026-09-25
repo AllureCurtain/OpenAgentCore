@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -317,7 +318,7 @@ func TestEveryRouteAuthenticatesItsCanonicalPath(t *testing.T) {
 		}
 		routes++
 		clean := concretePath(route)
-		admin := strings.HasPrefix(route, "/core/v1/sandbox/") || strings.HasPrefix(route, "/core/v1/admin/")
+		admin := strings.HasPrefix(route, "/core/v1/")
 		betaGroup := strings.HasPrefix(route, "/v1/") && !strings.HasPrefix(route, "/v1/files") && !strings.HasPrefix(route, "/v1/skills")
 		for _, header := range credentials {
 			projectKey := header.Get("Authorization") == "Bearer "+routingKey || header.Get("Authorization") == "Bearer "+routingDerivedKey
@@ -345,8 +346,8 @@ func TestEveryRouteAuthenticatesItsCanonicalPath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, route := range []string{"GET /core/v1/admin/projects", "POST /core/v1/admin/projects",
-		"DELETE /core/v1/admin/projects/{project_id}/keys/{key_id}", "GET /core/v1/sandbox/nodes", "DELETE /core/v1/environments/{environment_id}/executor-credentials/{key_id}"} {
+	for _, route := range []string{"GET /core/v1/projects", "POST /core/v1/projects",
+		"DELETE /core/v1/projects/{project_id}/keys/{key_id}", "GET /core/v1/sandbox/nodes", "DELETE /core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials/{key_id}"} {
 		if !walked[route] {
 			t.Errorf("route %s was not walked", route)
 		}
@@ -355,6 +356,26 @@ func TestEveryRouteAuthenticatesItsCanonicalPath(t *testing.T) {
 		if !found {
 			t.Errorf("self-authenticated route %s is no longer registered", route)
 		}
+	}
+	// /v1 serves exactly the pinned official method and path set.
+	var pinned struct {
+		Routes []string `json:"routes"`
+	}
+	raw, err := os.ReadFile("../../../../contracts/agents-api/upstream-routes.json")
+	if err != nil || json.Unmarshal(raw, &pinned) != nil || len(pinned.Routes) == 0 {
+		t.Fatal("read pinned routes", err)
+	}
+	served := []string{}
+	for route := range walked {
+		method, path, _ := strings.Cut(route, " ")
+		if method != http.MethodHead && strings.HasPrefix(path, "/v1/") {
+			served = append(served, method+" "+regexp.MustCompile(`\{[^}]*\}`).ReplaceAllString(strings.TrimPrefix(path, "/v1"), "{}"))
+		}
+	}
+	slices.Sort(served)
+	slices.Sort(pinned.Routes)
+	if !slices.Equal(served, pinned.Routes) {
+		t.Errorf("/v1 routes differ from the pinned set:\nserved %v\npinned %v", served, pinned.Routes)
 	}
 	if routes < 73 || len(s.lookups) != 0 || len(s.updates) != 0 {
 		t.Fatalf("walked %d routes; store lookups %v updates %v", routes, s.lookups, s.updates)
@@ -372,10 +393,10 @@ func TestEveryRouteAuthenticatesItsCanonicalPath(t *testing.T) {
 		{"/core/v1/sandbox/%2E%2E/%2E%2E/%2E%2E/v1/agents", withHeaders([]string{"Authorization", "Bearer " + routingAdminKey}, beta), http.StatusUnauthorized, ""},
 		{"/core/v1/sandbox/nodes%2F..%2F..%2F..%2Fv1%2Fagents", withHeaders([]string{"Authorization", "Bearer " + routingAdminKey}, beta), http.StatusNotFound, ""},
 		// Project API key management keeps deployment administrator authority.
-		{"/v1/%2E%2E/core/v1/admin/projects/" + device.HashCredential(routingKey), withHeaders(project, beta), http.StatusUnauthorized, "invalid_admin_key"},
-		{"/v1/agents//../../core/v1/admin/projects/" + device.HashCredential(routingKey), withHeaders([]string{"Authorization", "Bearer " + routingDerivedKey}, beta), http.StatusUnauthorized, "invalid_admin_key"},
+		{"/v1/%2E%2E/core/v1/projects/" + device.HashCredential(routingKey), withHeaders(project, beta), http.StatusUnauthorized, "invalid_admin_key"},
+		{"/v1/agents//../../core/v1/projects/" + device.HashCredential(routingKey), withHeaders([]string{"Authorization", "Bearer " + routingDerivedKey}, beta), http.StatusUnauthorized, "invalid_admin_key"},
 		{"/v1/x{/..%2F..%2Fcore/v1/project-api-keys/" + device.HashCredential(routingKey), http.Header{}, http.StatusBadRequest, "invalid_beta"},
-		{"/core/v1/admin/projects/" + device.HashCredential(routingKey) + "/%2E%2E/%2E%2E/%2E%2E/%2E%2E/%2E%2E/v1/agents", withHeaders([]string{"Authorization", "Bearer " + routingAdminKey}, beta), http.StatusUnauthorized, ""},
+		{"/core/v1/projects/" + device.HashCredential(routingKey) + "/%2E%2E/%2E%2E/%2E%2E/%2E%2E/%2E%2E/v1/agents", withHeaders([]string{"Authorization", "Bearer " + routingAdminKey}, beta), http.StatusUnauthorized, ""},
 	} {
 		got := serve(handler, http.MethodGet, test.target, "", test.header)
 		if got.Code != test.status || (test.code != "" && !strings.Contains(got.Body.String(), `"code":"`+test.code+`"`)) {
@@ -422,8 +443,8 @@ func TestOpenAIBetaHeaderPrecedesAuthentication(t *testing.T) {
 }
 
 // Every 401 is invalid_request_error (HP-07). Beta 401s have a null code;
-// Files, Skills and Core project extensions report invalid_api_key only for a
-// rejected Bearer credential. WWW-Authenticate and the message are unchanged.
+// Files and Skills report invalid_api_key only for a rejected Bearer
+// credential. WWW-Authenticate and the message are unchanged.
 func TestUnauthorizedEnvelopes(t *testing.T) {
 	handler, _, s := routingFixture(t)
 	invalidKey := strings.Replace(unauthorizedV1, `"code":null`, `"code":"invalid_api_key"`, 1)
@@ -448,7 +469,6 @@ func TestUnauthorizedEnvelopes(t *testing.T) {
 			{http.MethodGet, "/v1/agents/" + s.agent.ID, unauthorizedV1},
 			{http.MethodGet, "/v1/files/file-missing", test.project},
 			{http.MethodGet, "/v1/skills/skill-missing", test.project},
-			{http.MethodDelete, "/core/v1/environments/" + uuid.NewString() + "/executor-credentials/" + uuid.NewString(), test.project},
 		} {
 			got := serve(handler, route.method, route.path, "", header)
 			if got.Code != http.StatusUnauthorized || got.Body.String() != route.want || got.Header().Get("WWW-Authenticate") != "Bearer" {
@@ -484,14 +504,15 @@ func TestMethodNotAllowedListsRouteMethods(t *testing.T) {
 		}
 	}
 	// Routes outside the Beta group and unknown methods use the same 405.
-	executor := "/core/v1/environments/" + uuid.NewString() + "/executor-credentials"
+	executor := "/core/v1/projects/" + uuid.NewString() + "/environments/" + uuid.NewString() + "/executor-credentials"
+	core := withHeaders([]string{"Authorization", "Bearer " + routingAdminKey})
 	for _, test := range []struct {
 		method, path, allow string
 		header              http.Header
 	}{
 		{http.MethodPost, "/healthz", "GET,HEAD", nil},
-		{http.MethodPut, executor, "POST", withHeaders(project)},
-		{http.MethodGet, executor + "/" + uuid.NewString(), "DELETE", withHeaders(project)},
+		{http.MethodPut, executor, "GET,HEAD,POST", core},
+		{http.MethodGet, executor + "/" + uuid.NewString(), "DELETE", core},
 		{"FOO", "/v1/agents", "GET,HEAD,POST", nil},
 		{"FOO", "/v1//agents/" + s.agent.ID, "GET,HEAD,POST,DELETE", nil},
 	} {
@@ -554,10 +575,6 @@ func TestHeadRequests(t *testing.T) {
 	for _, test := range []struct{ path, allow string }{
 		{session + "/events", "GET,POST"},
 		{"/v1/agents/environments/" + uuid.NewString() + "/files", "GET,POST"},
-		{session + "/runtime-observation", "GET"},
-		// POST and DELETE on this path route to Agent update and deletion.
-		{"/v1/agents/runtime-observations", "GET,POST,DELETE"},
-		{session + "/runtime-history", "GET"},
 		{session + "/artifacts/" + uuid.NewString() + "/content", "GET"},
 		{"/v1/files/file-missing/content", "GET"},
 		{"/v1/skills/skill-missing/content", "GET"},
@@ -570,6 +587,24 @@ func TestHeadRequests(t *testing.T) {
 		if head, _ := do(http.MethodHead, test.path, withHeaders(beta)); head.StatusCode != http.StatusUnauthorized {
 			t.Errorf("unauthenticated HEAD %s = %d", test.path, head.StatusCode)
 		}
+	}
+}
+
+// Retired Core extensions are unknown /v1 paths; the administrator reads stay
+// under /core/v1.
+func TestRetiredV1ExtensionsAreNotFound(t *testing.T) {
+	handler, _, _ := routingFixture(t)
+	session := "/v1/agents/sessions/" + uuid.NewString()
+	unknown := serve(handler, http.MethodGet, session+"/unknown", "", withHeaders(project, beta))
+	for _, path := range []string{"/v1/agents/core/startup-configuration", "/v1/agents/runtime-history/capabilities",
+		session + "/runtime-observation", session + "/runtime-history", session + "/execution-configuration", session + "/sandbox-placement", "/v1/sandbox/nodes"} {
+		if got := serve(handler, http.MethodGet, path, "", withHeaders(project, beta)); got.Code != http.StatusNotFound || got.Body.String() != unknown.Body.String() {
+			t.Errorf("GET %s = %d %s", path, got.Code, got.Body)
+		}
+	}
+	// This spelling is an Agent ID now.
+	if got := serve(handler, http.MethodGet, "/v1/agents/runtime-observations", "", withHeaders(project, beta)); got.Code != http.StatusNotFound {
+		t.Errorf("GET /v1/agents/runtime-observations = %d %s", got.Code, got.Body)
 	}
 }
 
@@ -758,9 +793,9 @@ var canonicalPathSeeds = []string{
 	"v1/x\\/..%5C..%5Ccore/v1/sandbox/nodes", "v1/\xc3\xa9/../../core/v1/sandbox/nodes", "v1/%2E%2E/core/v1/sandbox/nodes",
 	"v1/files/..%2F..%2Fv1/skills", "0\"%2F", "core/v1/sandbox/nodes{%2F..%2F..%2F..%2Fv1/agents", "v1/agents/%252F..",
 	"api/v1/agent-daemon/%2E%2E/%2E%2E/%2E%2E/v1/agents", "v1/x{/%2e./api/v1/sandbox-node/identity", "v1/agents/%7E%5F%2D%41",
-	"core/v1/environments/x/executor-credentials/%2E%2E/%2E%2E/%2E%2E/%2E%2E/core/v1/sandbox/nodes",
+	"core/v1/projects/x/environments/y/executor-credentials/%2E%2E/%2E%2E/%2E%2E/%2E%2E/%2E%2E/%2E%2E/%2E%2E/v1/agents",
 	"v1/x{/..%2F..%2Fcore/v1/project-api-keys/x", "core/v1/project-api-keys/x/%2E%2E/%2E%2E/%2E%2E/%2E%2E/v1/agents",
-	"v1/%2E%2E/core/v1/admin/projects/x/", "core/v1/project-api-keys//x/y",
+	"v1/%2E%2E/core/v1/projects/x/", "core/v1/project-api-keys//x/y",
 }
 
 // Differential property over arbitrary request paths: the routed outcome for

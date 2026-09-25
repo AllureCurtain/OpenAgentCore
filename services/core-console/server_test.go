@@ -101,7 +101,7 @@ func TestAuthenticationAndCrossSiteAdmission(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			r := consoleRequest(t, server, tc.method, "/core/v1/admin/projects")
+			r := consoleRequest(t, server, tc.method, "/core/v1/projects")
 			tc.change(r)
 			response, body := responseBody(t, server, r)
 			if response.StatusCode != tc.status {
@@ -140,7 +140,7 @@ func TestProxyUsesOnlyConfiguredCoreCredential(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"data":[]}`)
 	}))
-	r := consoleRequest(t, server, "POST", "/core/v1/admin/projects?limit=5")
+	r := consoleRequest(t, server, "POST", "/core/v1/projects?limit=5")
 	r.Header.Add("Cookie", "browser=private")
 	r.Header.Set("Authorization", "Bearer browser-token")
 	r.Header.Set("Proxy-Authorization", "Basic browser-secret")
@@ -157,7 +157,7 @@ func TestProxyUsesOnlyConfiguredCoreCredential(t *testing.T) {
 		}
 	}
 	request := <-observed
-	if request.URL.RequestURI() != "/core/v1/admin/projects?limit=5" || request.Header.Get("Authorization") != "Bearer private-core-key" || request.Header.Get("OpenAI-Beta") != "agents=v1" {
+	if request.URL.RequestURI() != "/core/v1/projects?limit=5" || request.Header.Get("Authorization") != "Bearer private-core-key" || request.Header.Get("OpenAI-Beta") != "agents=v1" {
 		t.Fatal("proxy changed the public request or failed to inject the Core key")
 	}
 	for _, name := range []string{"Cookie", "Proxy-Authorization", "Origin", "Referer", "Forwarded", "X-Forwarded-Host"} {
@@ -177,7 +177,7 @@ func TestProxyRejectsRedirectWithoutFollowingOrExposingIt(t *testing.T) {
 	server, _ := testConsole(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, destination.URL+"/?token=private-core-key", http.StatusTemporaryRedirect)
 	}))
-	response, body := responseBody(t, server, consoleRequest(t, server, "GET", "/core/v1/admin/projects"))
+	response, body := responseBody(t, server, consoleRequest(t, server, "GET", "/core/v1/projects"))
 	if response.StatusCode != 502 || response.Header.Get("Location") != "" || strings.Contains(body, "private-core-key") || destinationCalls.Load() != 0 {
 		t.Fatal("upstream redirect escaped the fixed proxy")
 	}
@@ -194,7 +194,7 @@ func TestArtifactProxyFlushesContentAndCancelsUpstream(t *testing.T) {
 	}))
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	r := consoleRequest(t, server, "GET", "/core/v1/admin/projects/key/sessions/session/artifacts/artifact/content").WithContext(ctx)
+	r := consoleRequest(t, server, "GET", "/core/v1/projects/key/sessions/session/artifacts/artifact/content").WithContext(ctx)
 	response, err := server.Client().Do(r)
 	if err != nil {
 		t.Fatal(err)

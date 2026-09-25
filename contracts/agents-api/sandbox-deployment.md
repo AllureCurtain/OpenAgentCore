@@ -12,25 +12,25 @@ A deployment can remain unconfigured, with no execution nodes or hosted admissio
 
 See [Hosted Sandbox Manager](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md)
 for the operator workflow. Generated schemas cover the
-[administrator routes](sandbox-manager.openapi.yaml) and the
+[administrator routes](core.openapi.yaml) and the
 [node machine connection routes](runtime.openapi.yaml).
 
 ## Authority and routes
 
 | Method and route | Authority | Effect |
 | --- | --- | --- |
-| `GET /core/v1/sandbox/deployment` | Deployment administrator | Read the safe active configuration and retained-resource counts |
-| `POST /core/v1/sandbox/deployment` | Deployment administrator | Select the initial provider, resources, Runtime and Core origin |
-| `PUT /core/v1/sandbox/deployment` | Deployment administrator | Replace a fully drained selection while maintenance is enabled |
-| `PATCH /core/v1/sandbox/deployment/maintenance` | Deployment administrator | Pause or resume fresh hosted admission at the expected generation |
+| `GET /core/v1/sandbox/deployment` | Core key | Read the safe active configuration and retained-resource counts |
+| `POST /core/v1/sandbox/deployment` | Core key | Select the initial provider, resources, Runtime and Core origin |
+| `PUT /core/v1/sandbox/deployment` | Core key | Replace a fully drained selection while maintenance is enabled |
+| `PATCH /core/v1/sandbox/deployment/maintenance` | Core key | Pause or resume fresh hosted admission at the expected generation |
 | `GET /api/v1/sandbox-node/configuration` | Enrollment token or retained node credential | Read the active node installation configuration without consuming enrollment |
 
-The paired console injects its administrator Bearer credential server-side for
-management routes. The browser never receives that credential. Node configuration
+The paired console injects the Core key server-side on every signed-in `/core/v1`
+request. The browser never receives that key. Node configuration
 and enrollment are machine connection routes under `/api/v1`, which the reverse
 proxy sends directly to Core; the console does not serve them. They use their own
-Bearer credential; a console login, the administrator credential or a Project key
-does not grant node enrollment authority.
+Bearer credential; a console login, the Core key or a Project key does not grant
+node enrollment authority.
 
 Node capacity is separate from the deployment specification. The administrator's
 `POST /core/v1/sandbox/enrollment-tokens` accepts optional `max_active` and
@@ -192,7 +192,7 @@ For a replacement:
    Resume requires the committed generation to be active.
 
 To release a retained hosted Session, explicitly POST
-`/core/v1/admin/projects/{project_id}/sessions/{session_id}/archive` with
+`/core/v1/projects/{project_id}/sessions/{session_id}/archive` with
 `{"expected_generation": N}` while maintenance is enabled. Poll GET on the same
 path until its resource state is `released`, then recheck the deployment counts.
 The [administrator archive contract](admin-api.md#administrative-session-archive)
@@ -249,7 +249,7 @@ Some fields keep one name across providers but differ in meaning, or do not appl
 Deployment fields come from `GET /core/v1/sandbox/deployment`; node and allocation
 fields from the administrator node routes; runtime fields from the
 [Runtime observation API](runtime-observability-api.md), with `disk` only in the
-administrator `GET /core/v1/admin/runtime-observations`, and the
+`GET /core/v1/sandbox/runtime-observations`, and the
 [Runtime history API](runtime-history-api.md).
 
 | Field | E2B | Docker | microsandbox |
