@@ -23,6 +23,11 @@ function configuredDeployment() {
   return { installation_id: "7f3c2a90-fixture", provider: "docker", core_url: `http://127.0.0.1:${port}`, maintenance: false, owner_epoch: 3, generation: 1, mode: "nodes", resources: { allocations: 0, pending: 0 }, specification: { resources: { cpus: 2, memory_mib: 4096 }, runtime: release }, specification_digest: "fixture" };
 }
 
+// E2B runs sandboxes in its cloud: no nodes, only what Core holds there.
+function e2bDeployment() {
+  return { ...configuredDeployment(), provider: "e2b", mode: "direct", resources: { allocations: 3, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 } }, e2b: { template: "parsar-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b", credential_configured: true } };
+}
+
 function reset(mode = "setup", fresh = false, sandbox = "configured") {
   const base = buildDemo();
   const now = Math.floor(Date.now() / 1000);
@@ -35,8 +40,9 @@ function reset(mode = "setup", fresh = false, sandbox = "configured") {
     auth: { mode, username: mode === "authenticated" ? "admin" : null, password: mode === "setup" ? null : "correct horse battery" },
     violations: [], writes: [], failNext: null, nextId: 1,
     // "none": the deployment is not configured yet, so the Nodes page offers setup.
-    deployment: sandbox === "none" ? null : configuredDeployment(),
+    deployment: sandbox === "none" ? null : sandbox === "e2b" ? e2bDeployment() : configuredDeployment(),
   };
+  if (sandbox === "e2b") Object.assign(state, { nodes: [], allocations: [] });
 }
 reset();
 
@@ -236,6 +242,15 @@ async function sandboxRoute(request, response, path) {
   if ((m = path.match(/^\/nodes\/([^/]+)$/)) && request.method === "GET") {
     const node = state.nodes.find((entry) => entry.id === m[1]);
     return node ? send(response, 200, nodeDetail(node)) : error(response, 404, "No such node.");
+  }
+  if ((m = path.match(/^\/nodes\/([^/]+)$/)) && request.method === "PATCH") {
+    // As Core: name and both limits together, with a retained limit of at least the active one.
+    const input = await body(request);
+    const node = state.nodes.find((entry) => entry.id === m[1]);
+    if (!node) return error(response, 404, "No such node.");
+    if (!input.name?.trim() || !(input.max_active >= 1) || !(input.max_retained >= input.max_active)) return error(response, 400, "Invalid node update.", "invalid_request");
+    Object.assign(node, { name: input.name, max_active: input.max_active, max_retained: input.max_retained });
+    return send(response, 200, { id: node.id, updated: true });
   }
   if ((m = path.match(/^\/nodes\/([^/]+)$/)) && request.method === "DELETE") {
     const index = state.nodes.findIndex((node) => node.id === m[1]);

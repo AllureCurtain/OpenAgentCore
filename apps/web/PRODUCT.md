@@ -69,9 +69,16 @@ workbench.
   write history), Nodes (sandbox setup as pages — where sandboxes run, the
   backend or E2B account, the size of each sandbox, a review, and advanced settings
   with the complete form — then the node list with each node's capacity, host
-  figures and allocations, enrollment and removal), System (only the sandbox
+  figures and allocations, enrollment, renaming, sandbox limits and removal), System (only the sandbox
   configuration every project shares: where sandboxes run, each sandbox's size, the
   Runtime or E2B template, the Core address and maintenance).
+- **E2B deployments** have no machines: the Nodes entry becomes Sandbox backend,
+  and Overview and Sandbox metrics show the sandboxes Core holds in E2B's cloud
+  (running, starting, size, template) instead of node capacity, with no node column
+  or Add node action.
+- **microsandbox** suspends idle sandboxes into snapshots, so its nodes show how
+  many sleep (Core's retained minus active) on the Nodes list, a node's page, Sandbox
+  metrics and Overview; Docker never suspends and shows none of it.
 - **First run**: after the administrator account is created and while no project
   exists, full-screen steps outside the shell create the first project (default name
   `Default`) and its first key, show the plaintext once with an example request,

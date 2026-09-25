@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import type { InitializeSandboxDeployment, SandboxDeployment, SandboxNode } from "@agents-core-web/agents-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Server, Trash2 } from "lucide-react";
+import { ArrowLeft, Pencil, Server, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { EmptyState, HelpTip, RefreshButton } from "../../components/console-ui";
@@ -17,6 +17,7 @@ import { SandboxDeploymentSettings } from "./SandboxDeploymentSettings";
 import { NodeEnrollment } from "./NodeEnrollment";
 import { NodeList } from "./NodeList";
 import { NodeDetail } from "./NodeDetail";
+import { NodeEditDialog } from "./NodeEditDialog";
 import "./SandboxManagerView.css";
 
 /** Nodes: the deployment provider, the node list and one node's detail (`#nodes?id=…`). */
@@ -28,14 +29,15 @@ export function SandboxManagerView() {
   </section>;
 }
 
-function NodesPageHeader({ title, count, back, actions }: { title?: ReactNode; count?: number; back?: () => void; actions?: ReactNode }) {
+/** The page header; an E2B deployment has no machines, so the page is its sandbox backend. */
+function NodesPageHeader({ title, count, back, actions, cloud = false }: { title?: ReactNode; count?: number; back?: () => void; actions?: ReactNode; cloud?: boolean }) {
   const { t } = useTranslation("sandbox");
   return <header className="page-header">
     <div className="console-page-heading">
       {back ? <button type="button" className="icon-button ghost back-button" aria-label={t("Back")} title={t("Back")} onClick={back}><ArrowLeft size={16} strokeWidth={1.6} aria-hidden="true" /></button> : null}
-      <h1>{title ?? t("Nodes")}</h1>
+      <h1>{title ?? t(cloud ? "Sandbox backend" : "Nodes")}</h1>
       {count === undefined ? null : <span className="heading-count">{count}</span>}
-      {back ? null : <HelpTip>{t("Your hosts for running sandboxes.")}</HelpTip>}
+      {back ? null : <HelpTip>{t(cloud ? "E2B runs this deployment's sandboxes in its cloud. There are no machines to add." : "Your hosts for running sandboxes.")}</HelpTip>}
     </div>
     {actions ? <div className="page-actions">{actions}</div> : null}
   </header>;
@@ -64,6 +66,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const [busy, setBusy] = useState(false);
   const [revision, setRevision] = useState(0);
   const [removeTarget, setRemoveTarget] = useState<SandboxNode | null>(null);
+  const [editTarget, setEditTarget] = useState<SandboxNode | null>(null);
   const [removing, setRemoving] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const initialCoreUrl = window.location.origin;
@@ -111,6 +114,8 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
         // A later visit reads the whole snapshot again; other pages re-read the deployment now.
         void queryClient.invalidateQueries({ queryKey: sandboxSnapshotQuery.queryKey, refetchType: "none" });
         void queryClient.invalidateQueries({ queryKey: sandboxDeploymentQuery.queryKey });
+        // Overview and Sandbox metrics read the fleet separately and lay out by provider.
+        void queryClient.invalidateQueries({ queryKey: ["sandbox-fleet"] });
       }
     } catch (error) {
       if (!controller.signal.aborted) {
@@ -194,6 +199,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
         title={selected ? selected.name || selected.id : params.id}
         actions={<>
           {refreshButton}
+          {selected ? <button type="button" className="button outline" disabled={busy || removing} onClick={() => setEditTarget(selected)}><Pencil size={14} aria-hidden="true" />{t("Edit node")}</button> : null}
           {selected ? <button type="button" className="button danger" disabled={busy || removing} onClick={() => askRemove(selected)}><Trash2 size={14} aria-hidden="true" />{t("Remove node")}</button> : null}
         </>}
       />
@@ -205,6 +211,21 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
       </div>
       {dialog}
       {writeDialog}
+      <NodeEditDialog
+        key={editTarget?.id ?? "closed"}
+        client={client}
+        node={editTarget}
+        onClose={() => setEditTarget(null)}
+        onSaved={() => {
+          const saved = editTarget;
+          setEditTarget(null);
+          toast.show(t("Node saved"), { tone: "success" });
+          refresh();
+          // Other pages read the fleet and the node's detail separately.
+          void queryClient.invalidateQueries({ queryKey: ["sandbox-fleet"] });
+          if (saved) void queryClient.invalidateQueries({ queryKey: ["sandbox-node", saved.id] });
+        }}
+      />
     </>;
   }
 
@@ -213,7 +234,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
     {hostedNodes && snapshot ? <NodeEnrollment key={snapshot.deployment.generation} client={client} consoleConfig={consoleConfig} deployment={snapshot.deployment} nodes={snapshot.nodes} disabled={busy || loading || !fresh || snapshot.deployment.maintenance} fresh={confirmed} onRefresh={refresh} /> : null}
   </>;
   return <>
-    <NodesPageHeader count={hostedNodes ? nodes.length : undefined} actions={actions} />
+    <NodesPageHeader count={hostedNodes ? nodes.length : undefined} actions={actions} cloud={snapshot?.deployment.provider === "e2b"} />
     <div className="console-page-body sandbox-content">
       {status}
       {snapshot && !snapshot.deployment.provider ? <SandboxSetupWizard key={revision} initialCoreUrl={initialCoreUrl} disabled={busy || loading || setupNeedsRefresh || error !== null} onSubmit={initialize} /> : null}
@@ -222,7 +243,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
         <SandboxDeploymentSettings key={`${snapshot.deployment.generation}:${snapshot.deployment.maintenance}:${revision}`} deployment={snapshot.deployment} fresh={confirmed} disabled={busy || loading || !fresh || setupNeedsRefresh} onMaintenance={maintenance} onUpdate={update} onRefresh={refresh} />
         {hostedNodes ? <section aria-label={t("Sandbox nodes")}>
           {nodes.length
-            ? <NodeList nodes={nodes} allocations={allocations} stale={!confirmed} disabled={busy || loading || removing} onOpen={(node) => navigate("nodes", { id: node.id })} onRemove={askRemove} />
+            ? <NodeList nodes={nodes} allocations={allocations} stale={!confirmed} disabled={busy || loading || removing} suspends={snapshot.deployment.provider === "microsandbox"} onOpen={(node) => navigate("nodes", { id: node.id })} onRemove={askRemove} />
             : <EmptyState icon={Server} title={t("Add your first node")} hint={t("No nodes registered. Add a node to provide hosted capacity.")} />}
         </section> : null}
       </> : null}

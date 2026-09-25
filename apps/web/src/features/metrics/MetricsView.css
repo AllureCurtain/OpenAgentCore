@@ -53,3 +53,10 @@
   display: grid;
   gap: 24px;
 }
+
+/* An E2B template build is long: the figure cuts it off, and the full build is in its tooltip. */
+.cloud-template {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+}
