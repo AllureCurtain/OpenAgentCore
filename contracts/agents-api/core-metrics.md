@@ -87,7 +87,7 @@ present.
   longer than 60 seconds reset the baseline; they never manufacture a zero.
 - `process.rss_bytes` is Linux `/proc/self/status` `VmRSS`, converted from KiB
   to bytes. `cpu_limit_cores` is the process's cgroup v2 `cpu.max` quota/period,
-  or `GOMAXPROCS` when its quota is `max`. `memory_limit_bytes` is that cgroup's
+  or `GOMAXPROCS` when its quota is `max` or the actual cgroup root has no quota interface. `memory_limit_bytes` is that cgroup's
   finite `memory.max`; `max` is null. Membership and mount information resolve
   the process's cgroup, including nested and subtree mounts. These are that
   cgroup's configured limits, not whole-host metrics or ancestor-limit discovery.

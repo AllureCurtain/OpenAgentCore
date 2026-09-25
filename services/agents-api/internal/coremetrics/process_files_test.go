@@ -55,7 +55,7 @@ func TestProcessCgroupDirectory(t *testing.T) {
 		{"specific mount", "0::/work/core\n", "1 0 0:1 / /sys/fs/cgroup rw - cgroup2 cgroup rw\n2 0 0:1 /work /run/cgroup rw - cgroup2 cgroup rw\n", "/run/cgroup/core"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if got := cgroupDirectory(test.membership, test.mountinfo); got != test.want {
+			if got, _ := cgroupDirectory(test.membership, test.mountinfo); got != test.want {
 				t.Fatalf("got %q, want %q", got, test.want)
 			}
 		})
@@ -101,5 +101,50 @@ func TestProcessLinuxFiles(t *testing.T) {
 	got = readProcessFiles(proc, 4)
 	if got.cpuLimitCores != nil || got.rssBytes != nil {
 		t.Fatal("missing or oversized reads must be unknown", got)
+	}
+}
+
+func TestProcessRootCgroupWithoutQuota(t *testing.T) {
+	dir := t.TempDir()
+	group := filepath.Join(dir, "cgroup")
+	if err := os.Mkdir(group, 0700); err != nil {
+		t.Fatal(err)
+	}
+	write := func(path, data string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	proc := filepath.Join(dir, "proc")
+	if err := os.Mkdir(proc, 0700); err != nil {
+		t.Fatal(err)
+	}
+	write(filepath.Join(proc, "cgroup"), "0::/\n")
+	write(filepath.Join(proc, "mountinfo"), "1 0 0:1 / "+group+" rw - cgroup2 cgroup rw\n")
+	write(filepath.Join(group, "cgroup.controllers"), "cpu memory\n")
+	got := readProcessFiles(proc, 3)
+	if got.cpuLimitCores == nil || *got.cpuLimitCores != 3 || got.memoryLimitBytes != nil {
+		t.Fatal("real root must use GOMAXPROCS", got)
+	}
+	write(filepath.Join(group, "cgroup.type"), "domain\n")
+	if got := readProcessFiles(proc, 3); got.cpuLimitCores != nil {
+		t.Fatal("namespace root missing quota must stay unknown", got)
+	}
+	if err := os.Remove(filepath.Join(group, "cgroup.type")); err != nil {
+		t.Fatal(err)
+	}
+	write(filepath.Join(group, "cpu.max"), "invalid\n")
+	if got := readProcessFiles(proc, 3); got.cpuLimitCores != nil {
+		t.Fatal("invalid quota became unlimited", got)
+	}
+	if err := os.Remove(filepath.Join(group, "cpu.max")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(group, "cpu.max"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if got := readProcessFiles(proc, 3); got.cpuLimitCores != nil {
+		t.Fatal("failed read became unlimited", got)
 	}
 }

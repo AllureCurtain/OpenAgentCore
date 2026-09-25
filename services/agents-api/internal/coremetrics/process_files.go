@@ -11,9 +11,19 @@ import (
 
 func readProcessFiles(procSelf string, cpus int) processReading {
 	reading := processReading{rssBytes: parseRSS(readBounded(filepath.Join(procSelf, "status"), 64<<10))}
-	group := cgroupDirectory(readBounded(filepath.Join(procSelf, "cgroup"), 64<<10), readBounded(filepath.Join(procSelf, "mountinfo"), 1<<20))
+	group, root := cgroupDirectory(readBounded(filepath.Join(procSelf, "cgroup"), 64<<10), readBounded(filepath.Join(procSelf, "mountinfo"), 1<<20))
 	if group != "" {
 		reading.cpuLimitCores = parseCPULimit(readBounded(filepath.Join(group, "cpu.max"), 4096), cpus)
+		// The actual v2 root has neither cpu.max nor cgroup.type. A namespace
+		// root backed by a non-root cgroup still has cgroup.type.
+		if root && reading.cpuLimitCores == nil && cpus > 0 {
+			_, quotaErr := os.Stat(filepath.Join(group, "cpu.max"))
+			_, typeErr := os.Stat(filepath.Join(group, "cgroup.type"))
+			_, controllerErr := os.Stat(filepath.Join(group, "cgroup.controllers"))
+			if os.IsNotExist(quotaErr) && os.IsNotExist(typeErr) && controllerErr == nil {
+				reading.cpuLimitCores = ptr(float64(cpus))
+			}
+		}
 		reading.memoryLimitBytes = parseMemoryLimit(readBounded(filepath.Join(group, "memory.max"), 4096))
 	}
 	return reading
@@ -83,21 +93,22 @@ func parseMemoryLimit(data string) *uint64 {
 
 // Resolve membership against the mounted cgroup v2 subtree. Do not assume that
 // the process belongs to the root or that cgroupfs is mounted at /sys/fs/cgroup.
-func cgroupDirectory(membership, mountinfo string) string {
+func cgroupDirectory(membership, mountinfo string) (string, bool) {
 	group := ""
 	for _, line := range strings.Split(membership, "\n") {
 		if strings.HasPrefix(line, "0::") {
 			if group != "" {
-				return ""
+				return "", false
 			}
 			group = strings.TrimPrefix(line, "0::")
 		}
 	}
 	if !canonicalAbsolute(group) {
-		return ""
+		return "", false
 	}
 	decode := strings.NewReplacer(`\040`, " ", `\011`, "\t", `\012`, "\n", `\134`, `\`)
 	selected, rootLength := "", -1
+	actualRootCandidate := false
 	for _, line := range strings.Split(mountinfo, "\n") {
 		left, right, ok := strings.Cut(line, " - ")
 		fields, fs := strings.Fields(left), strings.Fields(right)
@@ -120,9 +131,10 @@ func cgroupDirectory(membership, mountinfo string) string {
 		}
 		if len(root) > rootLength {
 			selected, rootLength = filepath.Join(point, relative), len(root)
+			actualRootCandidate = group == "/" && root == "/"
 		}
 	}
-	return selected
+	return selected, actualRootCandidate
 }
 
 func canonicalAbsolute(path string) bool {

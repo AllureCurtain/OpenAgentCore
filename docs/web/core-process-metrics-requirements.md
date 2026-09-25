@@ -47,7 +47,8 @@ independent readings, so a missing CPU interval does not hide measured memory.
 
 Linux resolves cgroup v2 membership using `/proc/self/cgroup` and
 `/proc/self/mountinfo`; it reads the process's own cgroup rather than assuming
-the mount root. Limits describe that cgroup's configuration; ancestor-limit
+the mount root. The actual cgroup v2 root has no quota interface and uses
+`GOMAXPROCS`; an unreadable interface remains unknown. Limits describe that cgroup's configuration; ancestor-limit
 discovery is outside this contract. Unreadable and malformed values stay null.
 All procfs and cgroup reads have byte bounds. Non-Linux builds return null for
 CPU usage, RSS and memory limit, with `GOMAXPROCS` as the CPU capacity fallback.
