@@ -105,7 +105,7 @@ func (s *Store) CreateRuntimeEnrollment(ctx context.Context, capacity RuntimeNod
 	token := hex.EncodeToString(bytes[:])
 	var expires time.Time
 	err := s.runtimeManagerTransaction(ctx, func(q *sqlc.Queries, d sqlc.RuntimeDeployment) error {
-		if d.Mode != "nodes" || d.Maintenance {
+		if d.Mode != "nodes" || d.Maintenance || unspecifiedNodeDeployment(d) {
 			return ErrSandboxDeploymentConflict
 		}
 		if err := q.CreateRuntimeEnrollment(ctx, sqlc.CreateRuntimeEnrollmentParams{TokenSha256: runtimeTokenDigest(token), InstallationID: d.InstallationID, MaxActive: int32(capacity.MaxActive), MaxRetained: int32(capacity.MaxRetained)}); err != nil {
@@ -189,6 +189,12 @@ func (s *Store) AuthenticateRuntimeNode(ctx context.Context, nodeID, credential 
 	}
 	if n.InstallationID != d.InstallationID || d.Mode != "nodes" {
 		return RuntimeNodeIdentity{}, ErrRuntimeNodeCredential
+	}
+	if unspecifiedNodeDeployment(d) {
+		if n.SpecificationDigest != "" || n.DeploymentGeneration != 0 {
+			return RuntimeNodeIdentity{}, ErrRuntimeSpecificationMismatch
+		}
+		return nodeIdentity(n, d.ProviderKind), nil
 	}
 	spec, err := deploymentSpecification(d)
 	if err != nil || n.SpecificationDigest != spec.Digest(d.ProviderKind) || n.DeploymentGeneration != d.Generation {
