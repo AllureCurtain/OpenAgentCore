@@ -79,7 +79,7 @@ configuration and a separately installed execution daemon are still required;
 these binaries do not establish full protocol coverage. For a standalone Linux
 container, see [Container deployment](CONTAINER.md).
 
-`make build-agents-api-release` packages the same four commands in a versioned
+`make build-agents-api-release` packages these commands and `parsar-sandbox-node` in a versioned
 Linux amd64 archive, with source/protocol identity, checksums, a license and
 [operator instructions](RELEASE.md). Build from a clean Git worktree with Go and
 Python 3.9+; output defaults to `~/.parsar/build/agents-api-release` (or
@@ -93,9 +93,12 @@ AGENTS_API_RELEASE_RUNTIME_IMAGE=sha256:<qualified-image-ID> make build-agents-a
 
 The resulting `agents-api-docker-<revision>-linux-amd64.tar.gz` also contains the
 Runtime image export, committed seccomp policy and [hosted guide](HOSTED-RELEASE.md).
-Consumers load the included image and start the extracted Core; no source checkout
-or compiler is needed. The builder records the selected image ID and file hashes;
-the exact Core/Runtime combination still needs deployment acceptance. The ordinary
+The builder records only the selected image ID and file hashes, not the complete
+Runtime release (six distribution identities) that a Docker deployment requires,
+so this package cannot configure hosted execution by itself. For Docker-hosted
+deployments, the Core distribution and its
+[installer](../../docs/getting-started/install.md) replace it: their manifest
+carries the complete release, and Docker nodes are added from Web. The ordinary
 archive remains Docker-free. Database/Docker setup and publication remain separate.
 
 ## Database ownership
@@ -157,19 +160,19 @@ incomplete. Durable acceptance is not an exactly-once side-effect guarantee.
 
 Run migrations first, then `go run ./services/agents-api/cmd/server`. The service
 uses `AGENTS_API_DATABASE_URL` for its dedicated database; it does not read the
-product database or accept product login cookies. Configure the Core key digest
-file through `AGENTS_API_CORE_KEY_DIGESTS_FILE` at startup to manage Projects and
-keys. The Core key cannot authenticate `/v1`, and application API keys cannot
-authenticate administrator routes.
+product database or accept product login cookies. It requires the Core key digest
+file named by `AGENTS_API_CORE_KEY_DIGESTS_FILE` at startup; the Core key
+authenticates `/core/v1`, where Projects and keys are managed. The Core key cannot
+authenticate `/v1`, and application API keys cannot authenticate `/core/v1`.
 
 Projects and API keys live only in the database. Configuration files contain
 infrastructure settings and deployment credentials, not business identities.
 Installation creates no Project or application key. Using the
 [administrator API](../../contracts/agents-api/admin-api.md), create a Project with
 `POST /core/v1/projects` and issue a named key with
-`POST /core/v1/projects/{project_id}/keys`. Both requests accept a JSON object containing `name`;
-Core generates the identifiers. The Web management screens still need migration;
-see [integration status](../../docs/web/README.md).
+`POST /core/v1/projects/{project_id}/keys`, or use Core Web's **Projects and
+keys** page. Both requests accept a JSON object containing `name`; Core generates
+the identifiers.
 
 A Project owns one tenant and one execution principal. All keys in it have equal
 access to its assets and share that principal; write provenance records the actual
