@@ -139,7 +139,7 @@ func Run(ctx context.Context, config AgentConfig) error {
 		}
 	}
 }
-func (a *agent) health(ctx context.Context) (Health, error) {
+func (a *agent) health(ctx context.Context, host *hostHealthSampler) (Health, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	h, e := a.config.Probe(ctx)
@@ -155,11 +155,10 @@ func (a *agent) health(ctx context.Context) (Health, error) {
 	}
 	h.ObservedAt = time.Now().UTC()
 	h.ActiveOperations = int(a.active.Load())
-	fillHostHealth(&h, a.config.StateDirectory)
+	host.fill(&h, a.config.StateDirectory)
 	return h, e
 }
 func (a *agent) connect(ctx context.Context) error {
-	health, _ := a.health(ctx)
 	endpointURL, err := endpoint(a.config.CoreURL, "/core/v1/sandbox/node/connect")
 	if err != nil {
 		return err
@@ -185,6 +184,8 @@ func (a *agent) connect(ctx context.Context) error {
 	}
 	defer conn.Close()
 	conn.SetReadLimit(MaxFrameBytes)
+	host := new(hostHealthSampler)
+	health, _ := a.health(ctx, host)
 	_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
 	if err = writeFrame(conn, frame{Type: "hello", Identity: &a.config.Identity, Health: &health}); err != nil {
 		return err
@@ -216,7 +217,7 @@ func (a *agent) connect(ctx context.Context) error {
 	defer cancel()
 	detach := context.AfterFunc(connectionCtx, current.close)
 	defer detach()
-	go a.heartbeats(connectionCtx, current)
+	go a.heartbeats(connectionCtx, current, host)
 	sequence := uint64(0)
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(35 * time.Second))
@@ -247,7 +248,7 @@ func (a *agent) connect(ctx context.Context) error {
 		}
 	}
 }
-func (a *agent) heartbeats(ctx context.Context, c *agentConnection) {
+func (a *agent) heartbeats(ctx context.Context, c *agentConnection, host *hostHealthSampler) {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
@@ -257,7 +258,7 @@ func (a *agent) heartbeats(ctx context.Context, c *agentConnection) {
 		case <-c.done:
 			return
 		case <-ticker.C:
-			h, _ := a.health(ctx)
+			h, _ := a.health(ctx, host)
 			if c.write(frame{Type: "heartbeat", ConnectionID: c.id, Health: &h}) != nil {
 				c.close()
 				return
