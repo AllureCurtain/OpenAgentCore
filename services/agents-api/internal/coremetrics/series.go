@@ -13,12 +13,14 @@ func (s *Service) series(view *View) {
 	count := int(view.Range.End.Sub(view.Range.Start) / step)
 	view.Execution.Series = make([]ExecutionBucket, count)
 	view.Database.Series = make([]DatabaseBucket, count)
+	view.Process.Series = make([]ProcessBucket, count)
 	pings := make([][]float64, count)
 	var allPings []float64
 	for i := 0; i < count; i++ {
 		start := view.Range.Start.Add(time.Duration(i) * step)
 		view.Execution.Series[i].Start = start
 		view.Database.Series[i].Start = start
+		view.Process.Series[i].Start = start
 	}
 	for _, sample := range s.samples {
 		if sample.At.Before(view.Range.Start) || !sample.At.Before(view.Range.End) || sample.At.IsZero() {
@@ -34,6 +36,8 @@ func (s *Service) series(view *View) {
 		maxInto(&view.Execution.Series[i].Queued, sample.Queued)
 		maxInto(&view.Execution.Series[i].InProgress, sample.InProgress)
 		maxInto(&view.Database.Series[i].PoolInUse, sample.PoolInUse)
+		maxInto(&view.Process.Series[i].CPUCores, sample.Process.CPUCores)
+		maxInto(&view.Process.Series[i].RSSBytes, sample.Process.RSSBytes)
 		if sample.PingMS != nil {
 			pings[i] = append(pings[i], *sample.PingMS)
 		}
@@ -54,7 +58,7 @@ func (s *Service) series(view *View) {
 		view.Execution.Unavailable = &total
 	}
 }
-func maxInto(target **int64, value *int64) {
+func maxInto[T int64 | uint64 | float64](target **T, value *T) {
 	if value != nil && (*target == nil || **target < *value) {
 		*target = ptr(*value)
 	}

@@ -33,6 +33,7 @@ type Service struct {
 	refusals   [sampleCapacity]refusalSlot
 	latest     Sample
 	jobs       map[string]Job
+	process    processSampler
 }
 
 func New(started time.Time, revision string, source Source) *Service {
@@ -88,7 +89,9 @@ func (s *Service) Run(ctx context.Context) {
 		probe, cancel := context.WithTimeout(ctx, 5*time.Second)
 		sample := s.source.Sample(probe)
 		cancel()
-		sample.At = s.now().UTC()
+		at := s.now()
+		sample.Process = s.process.sample(at, readProcess())
+		sample.At = at.UTC()
 		s.record(sample)
 		select {
 		case <-ctx.Done():
@@ -140,6 +143,7 @@ func (s *Service) Read(ctx context.Context, name string) (View, error) {
 		view.Execution.QueuedTurns, view.Execution.WaitingForDaemon, view.Execution.InProgressTurns = latest.Queued, latest.WaitingForDaemon, latest.InProgress
 		view.Execution.OldestQueuedSeconds = latest.OldestQueuedSeconds
 		view.Database.SizeBytes = latest.DatabaseSize
+		view.Process = latest.Process
 		if latest.Maintenance != nil && *latest.Maintenance && view.Service.Status == "running" {
 			view.Service.Status = "maintenance"
 		}
@@ -175,7 +179,8 @@ func (s *Service) Read(ctx context.Context, name string) (View, error) {
 	}
 	var memory runtime.MemStats
 	runtime.ReadMemStats(&memory)
-	view.Process = Process{MemoryBytes: ptr(memory.Alloc), Goroutines: ptr(int64(runtime.NumGoroutine()))}
+	view.Process.MemoryBytes = ptr(memory.Alloc)
+	view.Process.Goroutines = ptr(int64(runtime.NumGoroutine()))
 	return view, nil
 }
 func ptr[T any](v T) *T { return &v }

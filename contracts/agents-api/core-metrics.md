@@ -26,10 +26,11 @@ the current partial bucket is excluded from range aggregates and series.
 | 7d | 7200 seconds | 84 |
 
 Current gauges and range aggregates are intentionally different: current worker,
-connection pool and process values are read when requested; queue gauges, database
-size and deployment maintenance are sampled every 30 seconds with bounded I/O.
+connection pool, Go heap and goroutine values are read when requested; process
+CPU, RSS and limits, queue gauges, database size and deployment maintenance are
+sampled every 30 seconds with bounded I/O.
 Samples older than 60 seconds are not reported as current. Queue, running and
-pool series report the highest **observed** value in each bucket, not a claim
+pool and process series report the highest **observed** value in each bucket, not a claim
 that all intermediate peaks were captured. Missing observations and the process's
 partial first bucket stay null. Successful periodic ping samples produce linear
 interpolated p50/p95; there is no request-triggered ping.
@@ -79,6 +80,24 @@ present.
   one value does not turn it into zero.
 - `process.memory_bytes` is Go `runtime.MemStats.Alloc` (allocated heap bytes),
   not RSS or container memory. `goroutines` is `runtime.NumGoroutine()`.
+- `process.cpu_cores` is the increase in this process's user plus system CPU
+  time divided by elapsed sampling time. Linux uses `getrusage(RUSAGE_SELF)`;
+  subprocess and whole-host CPU are excluded. The first interval is null.
+  Missing/invalid counters, counter resets, nonpositive elapsed time and gaps
+  longer than 60 seconds reset the baseline; they never manufacture a zero.
+- `process.rss_bytes` is Linux `/proc/self/status` `VmRSS`, converted from KiB
+  to bytes. `cpu_limit_cores` is the process's cgroup v2 `cpu.max` quota/period,
+  or `GOMAXPROCS` when its quota is `max`. `memory_limit_bytes` is that cgroup's
+  finite `memory.max`; `max` is null. Membership and mount information resolve
+  the process's cgroup, including nested and subtree mounts. These are that
+  cgroup's configured limits, not whole-host metrics or ancestor-limit discovery.
+  Unreadable or malformed values remain null. Non-Linux builds report null CPU,
+  RSS and memory limit, with `GOMAXPROCS` as CPU capacity.
+- `process.series` always contains the range's complete buckets with `start`,
+  `cpu_cores` and `rss_bytes`. Each measurement uses its own observed maximum;
+  missing samples and the partial first bucket stay null. These samples share
+  the existing bounded ring and restart gaps. Unsupported process measurements
+  do not by themselves change execution or database health.
 
 ## Background jobs
 

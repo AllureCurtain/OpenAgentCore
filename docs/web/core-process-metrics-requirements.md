@@ -1,15 +1,15 @@
 # Core process CPU and memory: backend requirements
 
-Status: requested by Core Web (Monitor › Core metrics, the Process section). The
-page and the typed client (`packages/agents-client/src/core-metrics.ts`) read the
-fields below; until Core serves them they show as missing ("—", "No data").
+Status: implemented by the Core backend for Monitor > Core metrics, Process.
+The page and typed client (`packages/agents-client/src/core-metrics.ts`) consume
+the fields below. Unavailable measurements show as missing ("—", "No data").
 
 ## Why
 
 Core is one `agents-api` process. Operators size and alert on its CPU and
 resident memory, and today the response carries only the Go heap in use
 (`process.memory_bytes`, `runtime.MemStats.Alloc`) and the goroutine count, read
-when requested, with no history. The heap is neither what the operating system
+when requested. The heap is neither what the operating system
 charges the process nor what a container limit is compared against.
 
 ## Contract
@@ -17,6 +17,8 @@ charges the process nor what a container limit is compared against.
 Reuse `GET /core/v1/admin/core-metrics?range=1h|6h|24h|7d`: add fields to
 `process`; change nothing else. `memory_bytes` and `goroutines` keep their meaning.
 Every figure Core cannot measure is `null`, never `0`.
+Measured zero remains zero. New current values expire after 60 seconds without
+a sample. Go heap and goroutine values continue to be read when requested.
 
 ```json
 "process": {
@@ -37,6 +39,24 @@ Every figure Core cannot measure is `null`, never `0`.
 | `rss_bytes` | Resident memory (`VmRSS` in `/proc/self/status`) |
 | `memory_limit_bytes` | The cgroup v2 `memory.max`; null when it is `max` or unreadable |
 | `series` | Per bucket of the response's range, the highest `cpu_cores` and `rss_bytes` observed, recorded by the existing 30-second sampler in the same in-process ring as the queue and database samples. Missing observations stay null; a restart does not backfill |
+
+CPU uses Linux `getrusage(RUSAGE_SELF)`. Missing or invalid readings, counter
+resets, nonpositive elapsed time and sampling gaps over 60 seconds reset its
+baseline. The next valid interval supplies CPU again. RSS and limits are
+independent readings, so a missing CPU interval does not hide measured memory.
+
+Linux resolves cgroup v2 membership using `/proc/self/cgroup` and
+`/proc/self/mountinfo`; it reads the process's own cgroup rather than assuming
+the mount root. Limits describe that cgroup's configuration; ancestor-limit
+discovery is outside this contract. Unreadable and malformed values stay null.
+All procfs and cgroup reads have byte bounds. Non-Linux builds return null for
+CPU usage, RSS and memory limit, with `GOMAXPROCS` as the CPU capacity fallback.
+Unsupported process measurements do not mark execution or database health as
+degraded.
+
+All four existing ranges retain their bucket counts and exclude the active
+partial bucket. The process's partial first bucket stays null. Series report
+independent observed maxima, so they need not come from the same sample.
 
 Not requested: whole-host CPU, memory or disk (Core may share its host; those
 belong to host monitoring), per-request CPU profiles, or garbage-collector detail.
