@@ -25,9 +25,6 @@ existing Sessions retain their node across disconnects and resume.
 
 ## Start here
 
-The management backend requires the coordinated Web screen switch before a paired
-release; see [console integration status](docs/web/README.md).
-
 1. **Install Core and Web.** Obtain and verify a matching Linux amd64 bundle,
    then run its installer. For node access, choose a reachable HTTPS address
    before the first install and configure your DNS/TLS reverse proxy:
@@ -43,9 +40,8 @@ release; see [console integration status](docs/web/README.md).
 2. **Sign in to Web.** Open the console address printed by the installer and
    register your administrator account with a username and password. Keep them safe.
    Existing installations retain their `admin` / `console.password` login.
-   The console connects to Core automatically. Until the management screens migrate,
-   use the [administrator API](contracts/agents-api/admin-api.md) to create a Project,
-   then issue a key within it for your application. Save the one-time plaintext
+   The console connects to Core automatically. Create a Project in Web, then
+   issue a key within it for your application. Save the one-time plaintext
    response privately; Core stores its digest. Rotate by issuing another key in the
    same Project and revoking the old one.
 3. **Add a node.** Open **Hosted Sandbox Manager** and choose E2B cloud or
