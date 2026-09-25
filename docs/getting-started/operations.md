@@ -122,6 +122,23 @@ apply the existing Core migration workflow and replace matched service/Runtime
 artifacts while retaining identities and backend paths. Qualify recovery before
 claiming the upgrade complete; there is no downgrade or history migration promise.
 
+Upgrading to a release that serves node connections at `/api/v1/sandbox-node/*`:
+
+1. Core and its nodes must come from the same distribution; the node installer
+   refuses a mismatched release. Nodes from releases that used the removed
+   `/core/v1/sandbox/enroll` and `/core/v1/sandbox/node/*` paths cannot connect to
+   the new Core. For a Docker or microsandbox deployment, drain with the previous
+   release while its nodes are still connected (steps 1–2 below).
+2. When the new Core and Web go live, change the reverse proxy so that `/api/v1/*`,
+   including WebSocket upgrades, goes directly to Core instead of Web (see
+   [Expose Core and Web](install.md#expose-core-and-web)). The new Web returns 404
+   for `/api/v1`. With the old routing, node enrollment fails and so does every
+   Runtime daemon connection (`/api/v1/agent-daemon/ws`), for Docker, microsandbox,
+   self-hosted and E2B sandboxes alike.
+3. Complete steps 3–4 below with the new distribution's Runtime release. On each
+   node host, stop the old node service and move `~/.parsar/nodes/<installation-id>/`
+   aside as a backup before running the new command from Web.
+
 The installer refuses component/packaging flag changes on an existing installation.
 Rerunning it does not resize sandboxes or replace the database selection. Use Web
 or the administrator API for the initial selection and all later provider,
@@ -157,14 +174,20 @@ state. There is no automatic old-database conversion, force reset or resource de
 The supported current path uses a database-managed deployment.
 
 A Web-selected Docker or microsandbox deployment saved before deployment
-specifications existed has an empty specification after migration. Current Core
-loads it only to drain: nodes enrolled under the previous release reconnect with
-their existing node service, and their sandboxes stay reachable for archive and
-cleanup. Fresh sandbox creation, node configuration reads and enrollment are
-refused. Back up as above, replace Core and Web, then use steps 1–4 with a Runtime
-release from the new distribution. The replacement retires the old nodes. Stop each
-retired node service, move its identity directory aside as a backup, and add the
-host again with a new command from Web. Node IDs change; Session history and
+specifications existed has an empty specification after migration. Its nodes use
+the removed `/core/v1/sandbox` node paths, so draining it needs a Core that has the
+pre-specification drain mode (pull request #114) but still serves those paths. No such release
+has been published: build a distribution from main commit
+`7b66be236a627246c85658722314285e6b39d9b8`, or any commit that contains #114 but not
+the move to `/api/v1/sandbox-node`. That Core loads the deployment only to drain:
+nodes enrolled under the previous release reconnect with their existing node
+service, and their sandboxes stay reachable for archive and cleanup. Fresh sandbox
+creation, node configuration reads and enrollment are refused. Back up as above,
+replace Core and Web with that build and complete steps 1–2. Only then upgrade to
+this release, change the reverse proxy as described above and use steps 3–4 with
+its Runtime release. The replacement retires the old nodes. Stop each retired node
+service, move its identity directory aside as a backup, and add the host again
+with a new command from Web. Node IDs change; Session history and
 persisted Files/Artifacts remain. E2B deployments from that period are not covered.
 
 ## Exposure and network policy
@@ -173,12 +196,14 @@ API and console bind to host loopback. With native Core, PostgreSQL publishes an
 installation-specific loopback port; with container Core it has no published port.
 The production Web proxy forwards only allowlisted administrator and sandbox
 management routes after console login. Its deployment credential stays on the
-server. All `/v1` requests, including requests with an explicit API key, return 404
-at the console. Route public `/v1` and project executor-credential requests directly
-to Core through the TLS reverse proxy. Route console pages, authentication,
-administration and the existing node/daemon transport paths to Web. Those fixed
-transport paths retain their own authentication. `/node-install/` serves only the
-matched non-secret node payload. Web has no Docker or KVM authority.
+server. The TLS reverse proxy routes `/v1` (applications) and `/api/v1` (node and
+Runtime daemon connections) directly to Core, together with the project
+executor-credential API under `/core/v1/environments/`. Everything else, including
+console pages, authentication and administration, goes to Web. Web returns 404 for
+`/v1` and `/api/v1`, whatever credential a request carries, and forwards no node or
+daemon traffic. Machine routes keep their own enrollment and connection credentials.
+`/node-install/` serves only the matched non-secret node payload. Web has no Docker
+or KVM authority.
 It requires an independent administrator login and rejects untrusted browser origins.
 New installations store the administrator password hash in private console state;
 legacy installations retain Basic authentication. There is only one Web role,

@@ -32,7 +32,7 @@ class SpecificationTests(unittest.TestCase):
         opener = mock.Mock(return_value=self.response())
         self.assertEqual(node_spec.fetch(self.args, "once", None, opener), self.data)
         req = opener.call_args.args[0]
-        self.assertEqual(req.full_url, self.args.core_url + "/core/v1/sandbox/node/configuration")
+        self.assertEqual(req.full_url, self.args.core_url + "/api/v1/sandbox-node/configuration")
         self.assertEqual(dict(req.header_items()), {"Authorization": "Bearer once"})
         self.assertEqual(req.get_method(), "GET")
 
@@ -54,6 +54,14 @@ class SpecificationTests(unittest.TestCase):
             with self.assertRaises(node_spec.SpecificationError):
                 node_spec.fetch(self.args, token, self.retained, opener, allow_enrollment=allowed)
             self.assertEqual(opener.call_count, 1)
+
+    def test_failures_name_their_cause(self):
+        for failure, message in ((urllib.error.HTTPError("https://core.example", 404, "", {}, None), "route /api/v1"),
+                                 (urllib.error.HTTPError("https://core.example", 409, "", {}, None), "maintenance"),
+                                 (urllib.error.HTTPError("https://core.example", 401, "", {}, None), "credential"),
+                                 (urllib.error.URLError("refused"), "reverse proxy routes /api/v1")):
+            with self.assertRaisesRegex(node_spec.SpecificationError, message):
+                node_spec.fetch(self.args, "once", None, mock.Mock(side_effect=failure))
 
     def test_changed_generation_or_specification_rejects_retained_node(self):
         for change in (lambda: self.data.update(generation=4), lambda: self.spec["resources"].update(cpus=8)):
