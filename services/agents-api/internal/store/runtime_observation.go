@@ -35,7 +35,7 @@ func (s *Store) RuntimeNodeAvailable(ctx context.Context, node string) (bool, er
 	return runtimeNodeAvailable(ctx, s.queries, id)
 }
 func runtimeNodeAvailable(ctx context.Context, q *sqlc.Queries, node pgtype.UUID) (bool, error) {
-	nodes, err := q.ListRuntimeNodes(ctx)
+	nodes, err := q.ListRuntimeNodes(ctx, pgtype.UUID{})
 	if err != nil {
 		return false, err
 	}

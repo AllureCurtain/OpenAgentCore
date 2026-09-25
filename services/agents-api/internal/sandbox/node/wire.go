@@ -41,6 +41,9 @@ type Health struct {
 	ObservedAt           time.Time `json:"observed_at"`
 	ActiveOperations     int       `json:"active_operations"`
 	CPUCount             *int64    `json:"cpu_count,omitempty"`
+	CPUUtilization       *float64  `json:"cpu_utilization"`
+	TotalMemoryBytes     *int64    `json:"total_memory_bytes"`
+	EffectiveCPUCores    *float64  `json:"effective_cpu_cores"`
 	AvailableMemoryBytes *int64    `json:"available_memory_bytes,omitempty"`
 	AvailableDiskBytes   *int64    `json:"available_disk_bytes,omitempty"`
 }

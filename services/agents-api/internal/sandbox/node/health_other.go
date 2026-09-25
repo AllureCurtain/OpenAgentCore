@@ -2,4 +2,8 @@
 
 package node
 
-func fillHostHealth(*Health, string) {}
+type hostHealthSampler struct{}
+
+func (*hostHealthSampler) fill(h *Health, _ string) {
+	h.CPUUtilization, h.TotalMemoryBytes, h.EffectiveCPUCores = nil, nil, nil
+}

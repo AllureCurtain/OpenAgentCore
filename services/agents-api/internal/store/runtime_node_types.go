@@ -38,11 +38,12 @@ type RuntimeNodeEnrollment struct {
 	BackendFingerprint   string `json:"backend_fingerprint"`
 }
 type RuntimeNodeHealth struct {
-	Diagnostic           string `json:"diagnostic,omitempty"`
-	ProviderReady        bool   `json:"provider_ready"`
-	CPUCount             *int64 `json:"cpu_count"`
-	AvailableMemoryBytes *int64 `json:"available_memory_bytes"`
-	AvailableDiskBytes   *int64 `json:"available_disk_bytes"`
+	Host                 *RuntimeNodeHost `json:"-"`
+	Diagnostic           string           `json:"diagnostic,omitempty"`
+	ProviderReady        bool             `json:"provider_ready"`
+	CPUCount             *int64           `json:"cpu_count"`
+	AvailableMemoryBytes *int64           `json:"available_memory_bytes"`
+	AvailableDiskBytes   *int64           `json:"available_disk_bytes"`
 }
 type RuntimeNode struct {
 	RuntimeNodeHealth

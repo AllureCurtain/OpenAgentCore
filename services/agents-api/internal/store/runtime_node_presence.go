@@ -48,7 +48,10 @@ func (s *Store) HeartbeatRuntimeNode(ctx context.Context, nodeID, connectionID s
 			return ErrInvalidInput
 		}
 	}
-	raw, err := json.Marshal(health)
+	if err := validateRuntimeNodeHost(health.Host); err != nil {
+		return err
+	}
+	raw, err := json.Marshal(runtimeNodeHealthRecord{RuntimeNodeHealth: health, Host: health.Host})
 	if err != nil {
 		return err
 	}

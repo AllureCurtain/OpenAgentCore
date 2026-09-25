@@ -34,7 +34,7 @@ func reserveRuntimePlacement(ctx context.Context, q *sqlc.Queries, session pgtyp
 	if d.Maintenance {
 		return ErrRuntimeNodeUnavailable
 	}
-	rows, err := q.ListRuntimeNodes(ctx)
+	rows, err := q.ListRuntimeNodes(ctx, pgtype.UUID{})
 	if err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ func reserveRuntimeRestore(ctx context.Context, q *sqlc.Queries, node pgtype.UUI
 	if _, err := q.LockRuntimeDeployment(ctx); err != nil {
 		return err
 	}
-	nodes, err := q.ListRuntimeNodes(ctx)
+	nodes, err := q.ListRuntimeNodes(ctx, pgtype.UUID{})
 	if err != nil {
 		return err
 	}

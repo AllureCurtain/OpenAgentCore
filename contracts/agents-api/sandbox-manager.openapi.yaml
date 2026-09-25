@@ -304,12 +304,39 @@ definitions:
     type: object
   coremetrics.Process:
     properties:
+      cpu_cores:
+        type: number
+        x-nullable: true
+      cpu_limit_cores:
+        type: number
+        x-nullable: true
       goroutines:
         type: integer
         x-nullable: true
       memory_bytes:
         type: integer
         x-nullable: true
+      memory_limit_bytes:
+        type: integer
+        x-nullable: true
+      rss_bytes:
+        type: integer
+        x-nullable: true
+      series:
+        items:
+          $ref: '#/definitions/coremetrics.ProcessBucket'
+        type: array
+    type: object
+  coremetrics.ProcessBucket:
+    properties:
+      cpu_cores:
+        type: number
+        x-nullable: true
+      rss_bytes:
+        type: integer
+        x-nullable: true
+      start:
+        type: string
     type: object
   coremetrics.Range:
     properties:
@@ -516,6 +543,29 @@ definitions:
       state:
         type: string
     type: object
+  store.NodeHostHistory:
+    properties:
+      points:
+        items:
+          $ref: '#/definitions/store.NodeHostHistoryPoint'
+        type: array
+      resolution_seconds:
+        type: integer
+    type: object
+  store.NodeHostHistoryPoint:
+    properties:
+      available_disk_bytes_min:
+        type: integer
+        x-nullable: true
+      cpu_utilization_max:
+        type: number
+        x-nullable: true
+      memory_used_bytes_max:
+        type: integer
+        x-nullable: true
+      start:
+        type: string
+    type: object
   store.Project:
     properties:
       active_key_count:
@@ -681,6 +731,51 @@ definitions:
       specification_digest:
         type: string
     type: object
+  store.RuntimeNodeDetail:
+    properties:
+      active:
+        type: integer
+      available_disk_bytes:
+        type: integer
+      available_memory_bytes:
+        type: integer
+      cleanup_pending:
+        type: integer
+      cpu_count:
+        type: integer
+      created_at:
+        type: string
+      diagnostic:
+        type: string
+      history:
+        $ref: '#/definitions/store.NodeHostHistory'
+      host:
+        $ref: '#/definitions/store.RuntimeNodeHost'
+      id:
+        type: string
+      last_seen_at:
+        type: string
+      max_active:
+        type: integer
+      max_retained:
+        type: integer
+      name:
+        type: string
+      online:
+        type: boolean
+      provider:
+        type: string
+      provider_ready:
+        type: boolean
+      reserved:
+        type: integer
+      retained:
+        type: integer
+      running:
+        type: integer
+      snapshots:
+        type: integer
+    type: object
   store.RuntimeNodeEnrollment:
     properties:
       backend_fingerprint:
@@ -697,6 +792,27 @@ definitions:
         type: string
       specification_digest:
         type: string
+    type: object
+  store.RuntimeNodeHost:
+    properties:
+      available_disk_bytes:
+        type: integer
+        x-nullable: true
+      available_memory_bytes:
+        type: integer
+        x-nullable: true
+      cpu_utilization:
+        type: number
+        x-nullable: true
+      effective_cpu_cores:
+        type: number
+        x-nullable: true
+      observed_at:
+        type: string
+        x-nullable: true
+      total_memory_bytes:
+        type: integer
+        x-nullable: true
     type: object
   store.RuntimeNodeIdentity:
     properties:
@@ -5857,6 +5973,54 @@ paths:
       security:
         - DeploymentAdminAuth: []
       summary: Remove a sandbox node with no retained resources
+      tags:
+        - Sandbox Manager
+    get:
+      description: Deployment administrator only. Complete UTC buckets. Missing host measurements and offline history are null; reads never sample or backfill.
+      parameters:
+        - description: Sandbox node UUID
+          in: path
+          name: node_id
+          required: true
+          type: string
+        - description: Time range (default 1h)
+          enum:
+            - 1h
+            - 6h
+            - 24h
+          in: query
+          name: range
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.RuntimeNodeDetail'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/v1.ErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: Retrieve sandbox node and host history
       tags:
         - Sandbox Manager
     patch:

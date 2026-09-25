@@ -102,7 +102,12 @@ func (s *Store) ListRuntimeHistorySamples(ctx context.Context, tenantID, session
 }
 
 func (s *Store) PruneRuntimeHistorySamples(ctx context.Context, beforeNS int64) (int64, error) {
-	return s.queries.PruneRuntimeHistorySamples(ctx, beforeNS)
+	count, err := s.queries.PruneRuntimeHistorySamples(ctx, beforeNS)
+	if err != nil {
+		return count, err
+	}
+	nodes, err := s.queries.PruneNodeHostHistory(ctx, pgtype.Timestamptz{Time: time.Unix(0, beforeNS), Valid: true})
+	return count + nodes, err
 }
 
 func historyFloat(value *float64) pgtype.Float8 {

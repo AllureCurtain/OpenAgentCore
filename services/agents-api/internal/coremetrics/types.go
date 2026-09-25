@@ -64,8 +64,18 @@ type Job struct {
 	Failed    *int64     `json:"failed" extensions:"x-nullable"`
 }
 type Process struct {
-	MemoryBytes *uint64 `json:"memory_bytes" extensions:"x-nullable"`
-	Goroutines  *int64  `json:"goroutines" extensions:"x-nullable"`
+	MemoryBytes      *uint64         `json:"memory_bytes" extensions:"x-nullable"`
+	Goroutines       *int64          `json:"goroutines" extensions:"x-nullable"`
+	CPUCores         *float64        `json:"cpu_cores" extensions:"x-nullable"`
+	CPULimitCores    *float64        `json:"cpu_limit_cores" extensions:"x-nullable"`
+	RSSBytes         *uint64         `json:"rss_bytes" extensions:"x-nullable"`
+	MemoryLimitBytes *uint64         `json:"memory_limit_bytes" extensions:"x-nullable"`
+	Series           []ProcessBucket `json:"series"`
+}
+type ProcessBucket struct {
+	Start    time.Time `json:"start"`
+	CPUCores *float64  `json:"cpu_cores" extensions:"x-nullable"`
+	RSSBytes *uint64   `json:"rss_bytes" extensions:"x-nullable"`
 }
 type View struct {
 	Object    string       `json:"object"`
@@ -86,6 +96,7 @@ type Sample struct {
 	PoolInUse, DatabaseSize              *int64
 	Maintenance                          *bool
 	Healthy                              bool
+	Process                              Process
 }
 type Live struct {
 	SlotsInUse, SlotsTotal, ConnectedDaemons *int64
