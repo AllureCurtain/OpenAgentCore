@@ -70,10 +70,14 @@ func runtimeUUID(id pgtype.UUID) string {
 	return uuid.UUID(id.Bytes).String()
 }
 func (s *Store) ListRuntimeNodes(ctx context.Context) ([]RuntimeNode, error) {
-	rows, err := s.queries.ListRuntimeNodes(ctx)
+	rows, err := s.queries.ListRuntimeNodes(ctx, pgtype.UUID{})
 	if err != nil {
 		return nil, err
 	}
+	return runtimeNodeViews(rows)
+}
+
+func runtimeNodeViews(rows []sqlc.ListRuntimeNodesRow) ([]RuntimeNode, error) {
 	out := make([]RuntimeNode, 0, len(rows))
 	for _, n := range rows {
 		var seen *time.Time
@@ -221,7 +225,7 @@ func (s *Store) RemoveRuntimeNode(ctx context.Context, nodeID string) error {
 		return err
 	}
 	return s.runtimeManagerTransaction(ctx, func(q *sqlc.Queries, d sqlc.RuntimeDeployment) error {
-		rows, err := q.ListRuntimeNodes(ctx)
+		rows, err := q.ListRuntimeNodes(ctx, pgtype.UUID{})
 		if err != nil {
 			return err
 		}

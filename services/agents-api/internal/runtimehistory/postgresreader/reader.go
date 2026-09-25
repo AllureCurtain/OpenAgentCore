@@ -115,7 +115,8 @@ func (r *Reader) Query(ctx context.Context, query runtimehistory.Query) (runtime
 }
 
 // Prune expires old telemetry even when no Runtime is being sampled. Each call
-// deletes at most 4,096 rows in small lock-skipping batches under one deadline.
+// deletes at most 8,192 Runtime and node-host rows in small lock-skipping batches
+// under one deadline.
 func (r *Reader) Prune(ctx context.Context) (int64, error) {
 	ctx, cancel := context.WithTimeout(ctx, r.queryTimeout)
 	defer cancel()

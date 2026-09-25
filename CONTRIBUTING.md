@@ -218,6 +218,19 @@ response; never record request/response bodies or infer this count from every
 service or storage system is required. Keep the frontend response shape aligned
 with the paired console contract.
 
+Core process CPU, RSS and cgroup limits are sampled by the existing 30-second
+Core metrics loop; Go heap and goroutine reads retain their meaning. Process
+series use the same bounded ring and complete buckets, with null first CPU
+intervals and restart gaps. Do not substitute host usage for process usage.
+
+Administrator node detail adds host observations and history as documented in
+[node-host-history.md](contracts/agents-api/node-host-history.md). Keep the node
+list unchanged. Reuse authenticated heartbeat ownership, the Runtime sampling
+sweep and PostgreSQL retention cleanup; node observations have their own table
+because they do not belong to a Project, Session or Environment. History is
+best-effort telemetry, never scheduling truth. No read-triggered sampling or
+offline backfill is allowed.
+
 ## Architecture boundaries
 
 The following execution rules are retained from the source contributor guide.

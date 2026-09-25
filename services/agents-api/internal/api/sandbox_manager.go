@@ -48,6 +48,7 @@ func (h *Handler) registerSandboxManagerRoutes(r chi.Router) {
 		r.Put("/deployment", h.updateSandboxDeployment)
 		r.Patch("/deployment/maintenance", h.setSandboxMaintenance)
 		r.Get("/nodes", h.sandboxNodes)
+		r.Get("/nodes/{node_id}", h.sandboxNodeDetail)
 		r.Patch("/nodes/{node_id}", h.updateSandboxNode)
 		r.Delete("/nodes/{node_id}", h.removeSandboxNode)
 		r.Get("/nodes/{node_id}/allocations", h.sandboxAllocations)

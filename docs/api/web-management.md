@@ -124,3 +124,10 @@ Agent execution access. See the [exact measurement contract](../../contracts/age
 for complete buckets, null values, units and process-local retention. Frontend
 implementation is maintained separately; this backend change does not modify
 Agent metrics or the public Agent API.
+
+## Node host history
+
+Deployment administrators can read a node and its host history through
+`GET /core/v1/sandbox/nodes/{node_id}?range=1h|6h|24h`. See the
+[node host history contract](../../contracts/agents-api/node-host-history.md)
+for nullable observations, freshness and aggregation. The node list is unchanged.

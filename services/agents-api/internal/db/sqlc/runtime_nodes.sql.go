@@ -464,7 +464,8 @@ SELECT n.id, n.installation_id, n.name, n.backend_fingerprint, n.credential_sha2
  (SELECT count(*) FROM runtime_allocations a WHERE a.node_id=n.id AND a.state='running' AND a.compute_phase IN('running','disabled'))::bigint AS running,
  (SELECT count(*) FROM runtime_allocations a WHERE a.node_id=n.id AND a.state<>'released' AND a.compute_state->'snapshot' IS NOT NULL AND a.compute_state->'snapshot'<>'null'::jsonb)::bigint AS snapshots
 FROM runtime_nodes n CROSS JOIN runtime_deployment d
-WHERE n.removed_at IS NULL AND n.installation_id=d.installation_id ORDER BY n.id
+WHERE n.removed_at IS NULL AND n.installation_id=d.installation_id
+AND ($1::uuid IS NULL OR n.id=$1::uuid) ORDER BY n.id
 `
 
 type ListRuntimeNodesRow struct {
@@ -494,8 +495,8 @@ type ListRuntimeNodesRow struct {
 	Snapshots            int64              `json:"snapshots"`
 }
 
-func (q *Queries) ListRuntimeNodes(ctx context.Context) ([]ListRuntimeNodesRow, error) {
-	rows, err := q.db.Query(ctx, listRuntimeNodes)
+func (q *Queries) ListRuntimeNodes(ctx context.Context, nodeID pgtype.UUID) ([]ListRuntimeNodesRow, error) {
+	rows, err := q.db.Query(ctx, listRuntimeNodes, nodeID)
 	if err != nil {
 		return nil, err
 	}

@@ -42,3 +42,6 @@ Generated schemas do not establish complete compatibility or real execution
 support. The [coverage record](../../contracts/agents-api/README.md) identifies
 qualified workflows, native differences and unresolved behavior. Update the
 relevant contract and this index when adding or moving an API surface.
+
+Node host observations and retained charts are deployment-administrator reads;
+see [node host history](../../contracts/agents-api/node-host-history.md).

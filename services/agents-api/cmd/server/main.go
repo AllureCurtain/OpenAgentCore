@@ -244,7 +244,12 @@ func run() error {
 		sampler, err := runtimeobs.NewSampler(observationResolver, observationService, worker, runtimeobs.SamplerOptions{
 			Interval: history.SampleInterval,
 			Report: func(result runtimeobs.SweepResult) {
-				var sampleErr error
+				sampleCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+				sampleErr := worker.CheckOwnership(sampleCtx)
+				if sampleErr == nil {
+					_, sampleErr = executionStore.SampleNodeHostHistory(sampleCtx)
+				}
+				cancel()
 				if !result.Complete {
 					sampleErr = errors.New("incomplete Runtime sampling sweep")
 				}

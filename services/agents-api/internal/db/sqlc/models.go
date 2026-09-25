@@ -167,6 +167,14 @@ type InitialEnvironmentFile struct {
 	Contents  []byte      `json:"contents"`
 }
 
+type NodeHostHistorySample struct {
+	NodeID             pgtype.UUID        `json:"node_id"`
+	ObservedAt         pgtype.Timestamptz `json:"observed_at"`
+	CpuUtilization     pgtype.Float8      `json:"cpu_utilization"`
+	MemoryUsedBytes    pgtype.Int8        `json:"memory_used_bytes"`
+	AvailableDiskBytes pgtype.Int8        `json:"available_disk_bytes"`
+}
+
 type Project struct {
 	ID          pgtype.UUID        `json:"id"`
 	Name        string             `json:"name"`

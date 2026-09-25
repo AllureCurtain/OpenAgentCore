@@ -21,7 +21,8 @@ SELECT n.*, (n.connection_id IS NOT NULL AND n.connected_epoch=d.owner_epoch AND
  (SELECT count(*) FROM runtime_allocations a WHERE a.node_id=n.id AND a.state='running' AND a.compute_phase IN('running','disabled'))::bigint AS running,
  (SELECT count(*) FROM runtime_allocations a WHERE a.node_id=n.id AND a.state<>'released' AND a.compute_state->'snapshot' IS NOT NULL AND a.compute_state->'snapshot'<>'null'::jsonb)::bigint AS snapshots
 FROM runtime_nodes n CROSS JOIN runtime_deployment d
-WHERE n.removed_at IS NULL AND n.installation_id=d.installation_id ORDER BY n.id;
+WHERE n.removed_at IS NULL AND n.installation_id=d.installation_id
+AND (sqlc.narg(node_id)::uuid IS NULL OR n.id=sqlc.narg(node_id)::uuid) ORDER BY n.id;
 
 -- name: UpdateRuntimeNode :one
 UPDATE runtime_nodes SET name=$2,max_active=$3,max_retained=$4 WHERE id=$1 AND removed_at IS NULL RETURNING *;
