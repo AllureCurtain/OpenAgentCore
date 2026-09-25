@@ -32,8 +32,17 @@ type Sample struct {
 
 	CPUUsageSecondsTotal *float64
 	CPUCapacityCores     *float64
-	MemoryUsageBytes     *uint64
-	MemoryLimitBytes     *uint64
+	// CPUUtilizationRatio is a provider-reported share of CPUCapacityCores, for
+	// providers such as E2B that report a current rate instead of cumulative time.
+	// Newer fields are omitted when absent: node frames carry Sample, and an
+	// older Core decodes them with unknown fields disallowed.
+	CPUUtilizationRatio *float64 `json:",omitempty"`
+	MemoryUsageBytes    *uint64
+	MemoryLimitBytes    *uint64
+	// Disk values are current usage and capacity of the Runtime's disk, when
+	// the provider reports them (E2B). They are not part of the /v1 projection.
+	DiskUsageBytes *uint64 `json:",omitempty"`
+	DiskLimitBytes *uint64 `json:",omitempty"`
 }
 
 func (s Sample) validate(now time.Time) error {
@@ -46,6 +55,9 @@ func (s Sample) validate(now time.Time) error {
 	if s.CPUUsageSecondsTotal != nil && (*s.CPUUsageSecondsTotal < 0 || math.IsNaN(*s.CPUUsageSecondsTotal) || math.IsInf(*s.CPUUsageSecondsTotal, 0)) {
 		return errors.New("invalid Runtime CPU usage")
 	}
+	if s.CPUUtilizationRatio != nil && (*s.CPUUtilizationRatio < 0 || math.IsNaN(*s.CPUUtilizationRatio) || math.IsInf(*s.CPUUtilizationRatio, 0)) {
+		return errors.New("invalid Runtime CPU utilization")
+	}
 	if s.CPUCapacityCores != nil && (*s.CPUCapacityCores <= 0 || math.IsNaN(*s.CPUCapacityCores) || math.IsInf(*s.CPUCapacityCores, 0)) {
 		return errors.New("invalid Runtime CPU capacity")
 	}
@@ -55,6 +67,12 @@ func (s Sample) validate(now time.Time) error {
 	}
 	if s.MemoryLimitBytes != nil && (*s.MemoryLimitBytes == 0 || *s.MemoryLimitBytes > maxSafeJSONInteger) {
 		return errors.New("invalid Runtime memory limit")
+	}
+	if s.DiskUsageBytes != nil && *s.DiskUsageBytes > maxSafeJSONInteger {
+		return errors.New("Runtime disk usage exceeds the public JSON integer range")
+	}
+	if s.DiskLimitBytes != nil && (*s.DiskLimitBytes == 0 || *s.DiskLimitBytes > maxSafeJSONInteger) {
+		return errors.New("invalid Runtime disk limit")
 	}
 	return nil
 }
