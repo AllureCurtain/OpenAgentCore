@@ -81,7 +81,8 @@ it does not install or upgrade them.
 For a manual node installation, create a private, short runtime state path, for
 example `~/.parsar/msb`, with mode 0700. The ordinary installer instead selects
 `~/.parsar/m/<installation-hash-prefix>/` and stores node identity/configuration
-under `~/.parsar/nodes/<installation-id>/`. Keep these on persistent local storage
+under `~/.parsar/nodes/<installation-id>/`, both in the home of the account that runs
+the node (`/var/lib/parsar-node` for a node added with sudo). Keep these on persistent local storage
 reserved for this installation. Unix socket path limits apply. Runtime storage
 contains confidential disks, memory snapshots and SDK state; preserve it with the
 node identity and Core database when recovering the host.
