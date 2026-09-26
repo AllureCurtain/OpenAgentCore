@@ -523,6 +523,26 @@ request runs.
   Graphite hint for automation (`chmod 600`, `--credential-file`). Done is
   outline and forgets the credential; closing the dialog keeps it in a pending
   card, which points to the Connect a host command below.
+- **Add node**: the sandbox limits first, then the one-time command in a Terminal
+  block (expiry countdown and Copy command in its header), the three progress
+  steps, and, once the installer's minute passes, an amber card with the reason
+  and a copyable log command. Below, two folded Hairline disclosures: Host
+  requirements for the default command, which uses sudo (open until this browser
+  has shown it once, with notes that it creates the `parsar-node` system service
+  and, for Docker, that the docker group is root-equivalent), and "No sudo on this
+  host?", with what the node's own user needs and the command without sudo. The
+  log command follows the command last copied; after the no-sudo one it adds the
+  system service's, for a root shell. Until the installation is read, a line says
+  it is being checked; a failed read, a loopback public URL, or a console without
+  the provider's node files replaces the limits with one line saying why (the
+  failed read with Try again), and the footer offers nothing to generate.
+- **Clean up the host**: after a node is removed, a dialog gives the host's
+  uninstall command in the same Terminal block, a Graphite line that it deletes no
+  sandboxes, volumes or images (and, for microsandbox, keeps its image store and
+  data), and the no-sudo form behind an "Installed without sudo?" disclosure. A
+  node enrolled with an earlier Core address adds an "Old Core address gone?"
+  disclosure with the `--force` form; a loopback console carries Add node's amber
+  note. Done dismisses it and focus returns to the page heading.
 - **How to call**: wherever a new key is shown, a card under it gives three
   copyable samples, each a Margin Gray block with a Hairline and its label and copy
   button in a header row: a Shell block exporting `OPENAI_BASE_URL` (the
