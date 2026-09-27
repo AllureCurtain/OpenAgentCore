@@ -116,12 +116,16 @@ unfinished journal only as a retention-exchange candidate: it cannot prepare,
 probe, acquire or advertise that generation. A fresh correlated Core drop grant
 is required to resume; the journal itself never authorizes deletion.
 
-A successful complete native image inventory distinguishes absence from a CLI or
-daemon failure. Failed queries, malformed inventories, native in-use refusals and
+For an installation-private microsandbox store, a successful complete native image
+inventory distinguishes absence from a CLI failure. Failed queries, malformed inventories, native in-use refusals and
 unknown ownership retain the local bytes. Native completion is persisted before
 release-file cleanup, so a retry can finish a partly removed release without
-executing an already removed helper. Shared images/releases remain until their
-last local reference. The final digest-bound dropped marker follows durable file
+executing an already removed helper. Shared microsandbox images and private releases remain until their last local
+reference. Docker imported images belong to the shared host daemon and are retained,
+including when another installation has only an idle serving pin. Automatic node
+GC never runs Docker image removal or pruning. The host administrator may remove
+those images only after confirming that no installation on the host needs them;
+local generation collection does not claim physical Docker image GC. The final digest-bound dropped marker follows durable file
 cleanup and permanently prevents re-adoption. The small immutable configuration
 and ownership journals remain as local identity records.
 

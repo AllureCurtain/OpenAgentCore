@@ -22,9 +22,9 @@ func TestGenerationJournalRestartIdentity(t *testing.T) {
 		t.Run(suffix, func(t *testing.T) {
 			path := filepath.Join(directory, "9"+suffix)
 			if suffix == ".collecting" {
-				journal["image_removed"] = true
+				journal["native_complete"] = true
 			} else {
-				delete(journal, "image_removed")
+				delete(journal, "native_complete")
 			}
 			write := func(value map[string]any) {
 				raw, _ := json.Marshal(value)
@@ -45,6 +45,16 @@ func TestGenerationJournalRestartIdentity(t *testing.T) {
 					t.Fatal("accepted mismatched", field)
 				}
 				journal[field] = previous
+			}
+			journal["native_complete"] = nil
+			write(journal)
+			if _, err = generationLocalState(config, stateDir); err == nil {
+				t.Fatal("accepted null journal phase")
+			}
+			if suffix == ".collecting" {
+				journal["native_complete"] = true
+			} else {
+				delete(journal, "native_complete")
 			}
 			write(journal)
 			if err = os.Chmod(path, 0644); err != nil {

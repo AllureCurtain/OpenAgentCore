@@ -819,7 +819,10 @@ Interrupted node collection keeps an exact private generation journal and immuta
 configuration. Restart treats it only as a candidate for a fresh correlated Core
 drop grant, never as preparation or serving readiness. Persist native cleanup
 before removing its executable and durable file cleanup before the dropped marker;
-CLI errors and unknown native ownership cannot establish absence.
+CLI errors and unknown native ownership cannot establish absence. Docker daemon
+images are shared host content, so automatic node GC retains them; only the host
+administrator can establish whole-host authority to remove them. Microsandbox
+image GC remains scoped to the installation-private store.
 
 Use one E2B classifier. Omitted key preserves the current key; identical selection
 with omitted key is a no-op. Explicit key submission, including identical bytes,

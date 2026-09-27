@@ -49,22 +49,23 @@ class CollectionTests(unittest.TestCase):
         self.assertFalse(self.release.exists())
         self.assertTrue((self.directory / "1.dropped").exists())
         node_generations.collect(self.args, installer)
-        installer.checked.assert_called_once()
+        installer.checked.assert_not_called()
         final = lease.stat()
         self.assertEqual((original.st_dev, original.st_ino), (final.st_dev, final.st_ino))
 
     def test_collection_holds_exclusive_lease_during_deletion(self):
         lease = self.directory / "1.lease"
-        def remove(*_args, **_kwargs):
+        original = node_generations.shutil.rmtree
+        def remove(path):
             descriptor = os.open(lease, os.O_RDWR)
             try:
                 with self.assertRaises(BlockingIOError):
                     fcntl.flock(descriptor, fcntl.LOCK_SH | fcntl.LOCK_NB)
             finally:
                 os.close(descriptor)
-            return ""
-        installer.checked.side_effect = remove
-        node_generations.collect(self.args, installer)
+            return original(path)
+        with mock.patch.object(node_generations.shutil, "rmtree", side_effect=remove):
+            node_generations.collect(self.args, installer)
 
     def test_symlink_and_shared_inode_are_not_collection_authority(self):
         lease = self.directory / "1.lease"
@@ -81,28 +82,8 @@ class CollectionTests(unittest.TestCase):
             finally:
                 lease.unlink()
 
-    def test_restart_after_native_remove_uses_inventory_not_error_text(self):
-        present = [True]
-        removes = []
-        def native(command, *_args, **_kwargs):
-            if "ls" in command:
-                return self.value["docker"]["image"] + "\n" if present[0] else ""
-            self.assertIn("rm", command)
-            present[0] = False
-            removes.append(command)
-            # Model interruption after native commit but before the response.
-            raise installer.InstallError("interrupted after native mutation")
-        installer.checked.side_effect = native
-        with self.assertRaises(installer.InstallError):
-            node_generations.collect(self.args, installer)
-        self.assertFalse(json.loads((self.directory / "1.collecting").read_text())["image_removed"])
-        self.assertTrue(self.release.exists())
-        node_generations.collect(self.args, installer)
-        self.assertEqual(len(removes), 1)
-        self.assertFalse(self.release.exists())
-        self.assertTrue((self.directory / "1.dropped").exists())
-
     def test_native_inventory_failure_and_unknown_output_retain_every_byte(self):
+        self.micro_fixture()
         for failure in (installer.InstallError("daemon unavailable"), "not a verified image ID"):
             installer.checked.side_effect = failure if isinstance(failure, Exception) else None
             installer.checked.return_value = failure
@@ -110,7 +91,7 @@ class CollectionTests(unittest.TestCase):
                 node_generations.collect(self.args, installer)
             self.assertTrue((self.release / "artifact").exists())
             self.assertFalse((self.directory / "1.dropped").exists())
-            self.assertFalse(json.loads((self.directory / "1.collecting").read_text())["image_removed"])
+            self.assertFalse(json.loads((self.directory / "1.collecting").read_text())["native_complete"])
 
     def test_restart_after_partial_file_cleanup_skips_native_and_finishes(self):
         def interrupted(path):
@@ -119,7 +100,7 @@ class CollectionTests(unittest.TestCase):
         with mock.patch.object(node_generations.shutil, "rmtree", side_effect=interrupted):
             with self.assertRaises(OSError):
                 node_generations.collect(self.args, installer)
-        self.assertTrue(json.loads((self.directory / "1.collecting").read_text())["image_removed"])
+        self.assertTrue(json.loads((self.directory / "1.collecting").read_text())["native_complete"])
         self.assertFalse((self.directory / "1.dropped").exists())
         installer.checked.reset_mock()
         node_generations.collect(self.args, installer)
@@ -146,7 +127,7 @@ class CollectionTests(unittest.TestCase):
         for suffix in (".collecting", ".dropped", ".preparing"):
             path = self.directory / ("1" + suffix)
             value = node_generations.marker_identity(self.args)
-            if suffix == ".collecting": value["image_removed"] = True
+            if suffix == ".collecting": value["native_complete"] = True
             if suffix == ".preparing": value["import_started"] = False
             for field, invalid in (("installation_id", "foreign"), ("generation", 2), ("specification_digest", "a" * 64)):
                 node_generations.atomic_json(path, dict(value, **{field: invalid}))
@@ -167,6 +148,8 @@ class CollectionTests(unittest.TestCase):
         self.assertFalse(self.release.exists())
 
     def test_never_imported_generation_can_collect_missing_executable(self):
+        runtime, _, _ = self.micro_fixture()
+        runtime.unlink()
         node_generations.atomic_json(self.directory / "1.preparing", dict(node_generations.marker_identity(self.args), import_started=False))
         node_generations.collect(self.args, installer)
         installer.checked.assert_not_called()
@@ -180,7 +163,7 @@ class CollectionTests(unittest.TestCase):
         self.assertFalse((self.directory / "1.collecting").exists())
         self.assertTrue(self.release.exists())
 
-    def test_micro_interrupted_native_removal_and_missing_runtime_fail_closed(self):
+    def micro_fixture(self):
         self.value["provider"] = "microsandbox"
         del self.value["docker"]
         home = self.root / "micro-store"
@@ -193,6 +176,10 @@ class CollectionTests(unittest.TestCase):
         self.value["microsandbox"] = {"runtime_home": str(home), "runtime_path": str(runtime), "firmware_path": str(self.release / "firmware"), "runtime_sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(), "image": image}
         self.args.specification_digest = node_spec.digest("microsandbox", self.value["specification"])
         node_generations.atomic_json(self.root / "provider.json", self.value)
+        return runtime, image, home
+
+    def test_micro_interrupted_native_removal_and_missing_runtime_fail_closed(self):
+        runtime, image, home = self.micro_fixture()
         present = [True]
         def native(command, *_args, **_kwargs):
             if command[1:3] == ["image", "list"]: return image + "\n" if present[0] else ""
@@ -215,6 +202,27 @@ class CollectionTests(unittest.TestCase):
         node_generations.collect(self.args, installer)
         self.assertFalse(self.release.exists())
         self.assertTrue((home / "oac-installation.json").exists())
+
+    def test_docker_collection_preserves_another_installations_idle_serving_image(self):
+        second = self.root.parent / (self.root.name + "-second")
+        second.mkdir(mode=0o700)
+        self.addCleanup(lambda: node_generations.shutil.rmtree(second))
+        # The second installation's enrolled generation still backs an idle
+        # serving pin. No container is needed to protect its daemon-level image.
+        other = dict(self.value, installation_id="second-installation")
+        node_generations.atomic_json(second / "provider.json", other)
+        before = (second / "provider.json").read_bytes()
+        host_images = {self.value["docker"]["image"]}
+        def docker(command, *_args, **_kwargs):
+            if "rm" in command or "prune" in command: host_images.clear()
+            raise AssertionError("generation GC must not manage shared Docker images")
+        installer.checked.side_effect = docker
+        node_generations.collect(self.args, installer)
+        installer.checked.assert_not_called()
+        self.assertEqual(host_images, {other["docker"]["image"]})
+        self.assertEqual((second / "provider.json").read_bytes(), before)
+        self.assertFalse(self.release.exists())
+        self.assertEqual(node_generations.retained_configs(self.root, installer), {})
 
     def test_fifo_journal_is_refused_without_blocking(self):
         path = self.directory / "1.collecting"

@@ -85,8 +85,8 @@ def generation_marker(root, generation, suffix, digest, installation, installer)
         raise installer.InstallError("Invalid generation ownership journal")
     keys = set(expected)
     if suffix == ".collecting":
-        keys.add("image_removed")
-        if type(value.get("image_removed")) is not bool:
+        keys.add("native_complete")
+        if type(value.get("native_complete")) is not bool:
             raise installer.InstallError("Invalid generation collection journal")
     if suffix == ".preparing":
         keys.add("import_started")
@@ -326,16 +326,16 @@ def collect(args, installer):
         directory = root / "state/node/generations"
         journal = generation_marker(root, args.generation, ".collecting", args.specification_digest, args.installation_id, installer)
         if journal is None:
-            journal = dict(marker_identity(args), image_removed=False)
+            journal = dict(marker_identity(args), native_complete=False)
             atomic_json(directory / (str(args.generation) + ".collecting"), journal)
         others = [item for generation, item in configurations.items() if generation != args.generation]
-        if not journal["image_removed"]:
+        if not journal["native_complete"]:
             preparation = generation_marker(root, args.generation, ".preparing", args.specification_digest, args.installation_id, installer)
             if preparation is None or preparation["import_started"]:
                 collect_image(args, value, others, installer)
             # Persist native completion before deleting its executable. A fresh
             # Core grant is still required after restart to finish file cleanup.
-            journal["image_removed"] = True
+            journal["native_complete"] = True
             atomic_json(directory / (str(args.generation) + ".collecting"), journal)
         directory = root / "state/node/generations"
         installer.safe_directory(directory)
@@ -388,11 +388,7 @@ def collect_image(args, value, others, installer):
                 raise installer.InstallError("Microsandbox store ownership differs")
             # Native emptiness never authorizes discarding receipt/lock history.
     else:
-        image = value["docker"]["image"]
-        if not any(item["docker"]["image"] == image for item in others):
-            raw = installer.checked(list(installer.DOCKER) + ["image", "ls", "--quiet", "--no-trunc"], "Cannot verify Docker image inventory")
-            images = raw.splitlines()
-            if any(not re.fullmatch(r"sha256:[a-f0-9]{64}", item) for item in images):
-                raise installer.InstallError("Cannot verify Docker image inventory")
-            if image in images:
-                installer.checked(list(installer.DOCKER) + ["image", "rm", image], "Docker image is still in use")
+        # Docker imported content belongs to the host daemon, including idle
+        # serving pins in other installations. This installation has no authority
+        # to remove it; its private generation/release files can still be collected.
+        return

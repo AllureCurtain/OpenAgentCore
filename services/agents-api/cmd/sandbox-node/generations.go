@@ -228,10 +228,10 @@ func generationLocalState(config providerconfig.Config, stateDir string) (string
 			return "", sandbox.ErrOwnership
 		}
 		var journal struct {
-			InstallationID      string `json:"installation_id"`
-			Generation          uint64 `json:"generation"`
-			SpecificationDigest string `json:"specification_digest"`
-			ImageRemoved        *bool  `json:"image_removed,omitempty"`
+			InstallationID      string          `json:"installation_id"`
+			Generation          uint64          `json:"generation"`
+			SpecificationDigest string          `json:"specification_digest"`
+			NativeComplete      json.RawMessage `json:"native_complete,omitempty"`
 		}
 		decoder := json.NewDecoder(io.LimitReader(file, 4097))
 		decoder.DisallowUnknownFields()
@@ -244,7 +244,7 @@ func generationLocalState(config providerconfig.Config, stateDir string) (string
 		if statErr != nil || namedErr != nil || !os.SameFile(opened, named) {
 			return "", sandbox.ErrOwnership
 		}
-		if err != nil || end != io.EOF || journal.InstallationID != config.InstallationID || journal.Generation != config.Generation || journal.SpecificationDigest != config.Specification.Digest(config.Provider) || (suffix == ".collecting") != (journal.ImageRemoved != nil) {
+		if err != nil || end != io.EOF || journal.InstallationID != config.InstallationID || journal.Generation != config.Generation || journal.SpecificationDigest != config.Specification.Digest(config.Provider) || (suffix == ".collecting" && string(journal.NativeComplete) != "true" && string(journal.NativeComplete) != "false") || (suffix == ".dropped" && len(journal.NativeComplete) != 0) {
 			return "", sandbox.ErrOwnership
 		}
 		state = strings.TrimPrefix(suffix, ".")
