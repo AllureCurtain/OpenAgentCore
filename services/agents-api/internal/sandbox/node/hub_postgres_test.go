@@ -113,6 +113,7 @@ func TestHubPostgresBlockedOpeningIsBounded(t *testing.T) {
 			live := connectRawNode(t, server.URL, fast)
 			defer live.Close()
 			go serveRawInfo(live)
+			wait(t, func() bool { return hub.Online(fast.NodeID) })
 			start := time.Now()
 			beginRawNode(t, server.URL, slow)
 			var pid uint32
