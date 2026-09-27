@@ -192,7 +192,7 @@ func TestPendingPlacementGenerationSurvivesRepeatedUpdates(t *testing.T) {
 func TestGenerationMigrationBackfillsAndRejectsLossyDowngrade(t *testing.T) {
 	db, migrations := runtimeNamesMigrationSchema(t)
 	ctx := t.Context()
-	if _, err := migrations.UpTo(ctx, 79); err != nil {
+	if _, err := migrations.UpTo(ctx, 80); err != nil {
 		t.Fatal(err)
 	}
 	installation, node := uuid.NewString(), uuid.NewString()
@@ -214,7 +214,7 @@ func TestGenerationMigrationBackfillsAndRejectsLossyDowngrade(t *testing.T) {
 	exec(`INSERT INTO devices(id,tenant_id,name,credential_hash) VALUES($1,$2,'old',repeat('b',64))`, device, tenant)
 	exec(`INSERT INTO runtime_placements(environment_id,node_id) VALUES($1,$2)`, environment, node)
 	exec(`INSERT INTO runtime_allocations(id,environment_id,device_id,provider_key,node_id) VALUES($1,$2,$3,$4,$5)`, allocation, environment, device, installation, node)
-	if _, err := migrations.UpTo(ctx, 80); err != nil {
+	if _, err := migrations.UpTo(ctx, 81); err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range []string{"runtime_allocations", "runtime_placements"} {
@@ -230,21 +230,21 @@ func TestGenerationMigrationBackfillsAndRejectsLossyDowngrade(t *testing.T) {
 	if _, err := db.ExecContext(ctx, `UPDATE runtime_deployment SET generation=2`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := migrations.DownTo(ctx, 79); err == nil {
+	if _, err := migrations.DownTo(ctx, 80); err == nil {
 		t.Fatal("downgrade erased offline serving pin")
 	}
 	if _, err := db.ExecContext(ctx, `UPDATE runtime_nodes SET removed_at=clock_timestamp(),ready_generation=NULL`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := migrations.DownTo(ctx, 79); err == nil {
+	if _, err := migrations.DownTo(ctx, 80); err == nil {
 		t.Fatal("downgrade discarded held allocation/placement after pin removal")
 	}
 	exec(`UPDATE runtime_allocations SET state='released',released_at=clock_timestamp(),create_settled=true`)
-	if _, err := migrations.DownTo(ctx, 79); err == nil {
+	if _, err := migrations.DownTo(ctx, 80); err == nil {
 		t.Fatal("downgrade discarded unreleased placement")
 	}
 	exec(`UPDATE runtime_placements SET released_at=clock_timestamp()`)
-	if _, err := migrations.DownTo(ctx, 79); err != nil {
+	if _, err := migrations.DownTo(ctx, 80); err != nil {
 		t.Fatal("settled downgrade failed", err)
 	}
 }
@@ -263,7 +263,7 @@ func TestGenerationDowngradeRefusesOldAllocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = migrations.DownTo(t.Context(), 79); err == nil {
+	if _, err = migrations.DownTo(t.Context(), 80); err == nil {
 		t.Fatal("downgrade erased old owned allocation")
 	}
 	if _, err = w.RequestRuntimeCleanup(t.Context(), owner); err != nil {
@@ -275,7 +275,7 @@ func TestGenerationDowngradeRefusesOldAllocation(t *testing.T) {
 	if _, err = w.ReleaseRuntimeAllocation(t.Context(), owner); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = migrations.DownTo(t.Context(), 79); err != nil {
+	if _, err = migrations.DownTo(t.Context(), 80); err != nil {
 		t.Fatal("released history prevented safe downgrade", err)
 	}
 }
