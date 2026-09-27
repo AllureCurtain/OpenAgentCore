@@ -816,7 +816,11 @@ and a cached node snapshot cannot replace a newer reset or completion learned on
 Overview or System. Returning to Nodes reads the shared deployment immediately and
 refreshes node evidence separately. Only a successful authoritative read begun after
 the write settles can release the mutation block; an earlier or still-pending read
-cannot. Logout clears this connection-scoped state.
+cannot. Submitting consumes the reset confirmation even if its outcome is uncertain;
+recovery uses the separate read-and-review dialog. Observation retries preserve
+applicable non-secret configuration drafts. A changed installation, owner epoch,
+backend, mode or generation discards the prior draft and confirmation. Logout clears
+this connection-scoped state.
 
 ### System page
 Four sections, each saying where it changes. Installation: the public address, API

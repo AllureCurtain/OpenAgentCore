@@ -120,3 +120,5 @@
 .sandbox-rollout-compact .sandbox-summary > div { display: flex; align-items: baseline; gap: 6px; }
 .sandbox-rollout-compact .sandbox-summary dt { margin: 0; }
 .sandbox-rollout-nodes { border-top: 1px solid var(--line); padding-top: 12px; }
+
+.node-statuses { display: grid; gap: 4px; }

@@ -262,7 +262,7 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
         {rejection ? (
           <div className="wizard-rejection" role="alert">
             <p>{rejection}</p>
-            {resetRequired ? <p>{t("Cancel editing to use Reset deployment. Changing teams requires an explicit reset; the saved configuration is unchanged.")}</p> : null}
+            {resetRequired ? <p>{t("Cancel editing to use Reset deployment. This change requires an explicit reset; the saved configuration is unchanged.")}</p> : null}
             {addressRejected && configuration ? (
               <dl>
                 <div><dt>{t("Config file")}</dt><dd><CopyableId id={configuration.path} label={t("Copy path")} /></dd></div>

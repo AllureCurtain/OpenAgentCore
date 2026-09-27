@@ -104,8 +104,10 @@ export function NodeList({ nodes, allocations, coreUrl, stale, disabled, suspend
                   <NameCell name={node.name} id={node.id} onOpen={() => onOpen(node)} openLabel={t("Open {{name}}", { name })} idLabel={t("Node ID")} />
                 </th>
                 <td>
-                  <span className="status-with-help"><NodeStatus state={state} />{diagnostic ? <DiagnosticTip code={diagnostic} /> : null}</span>
-                  <NodeRolloutStatus node={node} stale={stale} />
+                  <div className="node-statuses">
+                    <span className="status-with-help"><NodeStatus state={state} />{diagnostic ? <DiagnosticTip code={diagnostic} /> : null}</span>
+                    <NodeRolloutStatus node={node} stale={stale} />
+                  </div>
                   {state === "old_address" ? <OldAddressHint /> : null}
                 </td>
                 <td className="numeric">{node.active} / {node.max_active}</td>

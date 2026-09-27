@@ -30,7 +30,7 @@ export function sandboxRequestError(error: unknown, locale: Locale): string {
     else if (error.code === "sandbox_configuration_unconfirmed") { if (refused) key = "Core rejected the E2B configuration."; }
     else if (refused) {
       if (error.code === "sandbox_generation_stale") return translate(locale, "Core has a newer sandbox configuration. Refresh and review it before submitting again.");
-      if (error.code === "sandbox_reset_required") return translate(locale, "Reset the sandbox deployment before changing its backend.");
+      if (error.code === "sandbox_reset_required") return translate(locale, "Reset the sandbox deployment before changing this configuration.");
       if (error.code === "sandbox_reset_in_progress") return translate(locale, "A sandbox reset is in progress. Refresh to see its current progress.");
       if (error.code === "sandbox_not_configured") return translate(locale, "The sandbox deployment is not configured. Refresh to start setup.");
       if (error.code === "sandbox_in_use") return translate(locale, "Hosted resources remain. Wait for confirmed cleanup before changing the configuration.");
@@ -70,7 +70,7 @@ const e2bErrors: Record<string, MessageKey> = {
 export function sandboxConfigurationRejection(error: unknown, locale: Locale = "en"): string | null {
   if (error instanceof AgentCoreError && !sandboxWriteUncertain(error) && error.code) {
     if (e2bErrors[error.code]) return translate(locale, e2bErrors[error.code]!);
-    if (error.code === "sandbox_reset_required") return translate(locale, "Reset the sandbox deployment before changing its backend.");
+    if (error.code === "sandbox_reset_required") return translate(locale, "Reset the sandbox deployment before changing this configuration.");
   }
   return error instanceof AgentCoreError && error.status === 409 && error.code === "sandbox_configuration_error" && error.message ? error.message : null;
 }

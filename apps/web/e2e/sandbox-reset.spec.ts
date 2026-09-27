@@ -135,6 +135,7 @@ test("an applied reset with a lost response stays blocked through failed reads a
   await dialog.getByRole("button", { name: "Reset deployment", exact: true }).click();
   const uncertain = page.getByRole("dialog", { name: "Couldn't confirm the sandbox change" });
   await expect(uncertain).toBeVisible();
+  await expect(dialog).toHaveCount(0);
   await uncertain.getByRole("button", { name: "Refresh sandbox state" }).click();
   await expect(page.getByRole("button", { name: "Reset deployment", exact: true })).toBeDisabled();
   expect(await writes(request)).toEqual([`POST ${resetPath}`]);

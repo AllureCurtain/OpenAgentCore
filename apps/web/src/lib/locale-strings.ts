@@ -33,7 +33,7 @@ export const chinese = {
   "The E2B API key was rejected. The saved configuration is unchanged.": "E2B API 密钥被拒绝。已保存的配置未改变。",
   "Select a ready immutable E2B template build with matching resources.": "请选择已就绪且资源匹配的不可变 E2B 模板构建。",
   "E2B verification could not be confirmed. Refresh before submitting again.": "无法确认 E2B 验证结果。请刷新后再提交。",
-  "Cancel editing to use Reset deployment. Changing teams requires an explicit reset; the saved configuration is unchanged.": "取消编辑后可使用“重置部署”。更换团队需要明确重置；已保存的配置未改变。",
+  "Cancel editing to use Reset deployment. This change requires an explicit reset; the saved configuration is unchanged.": "取消编辑后可使用“重置部署”。此更改需要明确重置；已保存的配置未改变。",
 
   "Sandbox state is unconfirmed. Refresh before issuing a node command.": "沙箱状态尚未确认。请刷新后再生成节点命令。",
   "Change resources": "修改资源",
@@ -74,7 +74,7 @@ export const chinese = {
   "Node enrollment is paused while reset is in progress.": "重置过程中暂停注册节点。",
   "Unsaved workspace contents may be lost.": "尚未保存的工作区内容可能丢失。",
   "Core has a newer sandbox configuration. Refresh and review it before submitting again.": "Core 的沙箱配置已更新。请刷新并检查后再提交。",
-  "Reset the sandbox deployment before changing its backend.": "请先重置沙箱部署，再更换运行后端。",
+  "Reset the sandbox deployment before changing this configuration.": "请先重置沙箱部署，再更改此配置。",
   "A sandbox reset is in progress. Refresh to see its current progress.": "沙箱正在重置。请刷新查看当前进度。",
   "The sandbox deployment is not configured. Refresh to start setup.": "沙箱部署尚未配置。请刷新以开始配置。",
   "Hosted resources remain. Wait for confirmed cleanup before changing the configuration.": "仍有托管资源。请等待 Core 确认清理完成后再修改配置。",

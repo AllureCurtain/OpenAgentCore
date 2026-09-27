@@ -34,11 +34,15 @@ export function SandboxResetControls({ deployment, disabled, stale, onStart, onC
     if (!dialog || blocked) return;
     setSubmitting(true);
     try {
-      const confirmed = dialog.action === "cancel"
-        ? await onCancel(dialog.generation)
-        : await onStart({ expected_generation: dialog.generation, clear: dialog.action === "force" ? "force" : clear, ...(dialog.action === "start" && clear === "auto" ? { deadline_seconds: Number(deadline) } : {}) });
-      if (confirmed) setDialog(null);
-    } finally { setSubmitting(false); }
+      await (dialog.action === "cancel"
+        ? onCancel(dialog.generation)
+        : onStart({ expected_generation: dialog.generation, clear: dialog.action === "force" ? "force" : clear, ...(dialog.action === "start" && clear === "auto" ? { deadline_seconds: Number(deadline) } : {}) }));
+    } finally {
+      // A submitted confirmation is consumed even if its outcome is uncertain.
+      // The shared write owner and error dialog govern reconciliation and retry.
+      setDialog(null);
+      setSubmitting(false);
+    }
   }
   const title = t(dialog?.action === "cancel" ? "Cancel reset?" : dialog?.action === "force" ? "Force reset now?" : "Reset sandbox deployment?");
   const label = t(dialog?.action === "cancel" ? "Cancel reset" : dialog?.action === "force" ? "Force reset now" : "Reset deployment");

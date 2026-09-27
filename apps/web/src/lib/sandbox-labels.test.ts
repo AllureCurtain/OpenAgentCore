@@ -28,6 +28,12 @@ describe("sandbox write outcome", () => {
 
 
 describe("reset conflict recovery", () => {
+  it("explains reset-required configuration changes without assuming a different backend or team", () => {
+    const error = new AgentCoreError("untrusted-provider-detail", 409, "sandbox_reset_required");
+    expect(sandboxConfigurationRejection(error, "en")).toBe("Reset the sandbox deployment before changing this configuration.");
+    expect(sandboxRequestError(error, "zh")).toBe("请先重置沙箱部署，再更改此配置。");
+  });
+
   it("gives bilingual safe recovery for known state conflicts without reflecting a server payload", () => {
     for (const code of ["sandbox_generation_stale", "sandbox_reset_required", "sandbox_reset_in_progress", "sandbox_not_configured", "sandbox_in_use"]) {
       const error = new AgentCoreError("untrusted-secret-like-payload", 409, code);
