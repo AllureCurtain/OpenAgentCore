@@ -66,7 +66,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual((state["mode"], state["native_core"], state["source_commit"]), ("all", False, "a" * 40))
         self.assertEqual(set(state["images"]), {"core", "database", "web"})
         self.assertEqual(set(state["secrets_sha256"]), {"credential.key", "database.password"})
-        names = {str(path.relative_to(self.root)) for path in self.root.rglob("*") if path.parent.name != "node-payload"
+        names = {str(path.relative_to(self.root)) for path in self.root.rglob("*") if "node-payload" not in path.relative_to(self.root).parts[:-1]
                  and "runtime" not in path.parts}
         self.assertEqual(names, {
             ".oac.lock", "config.json", "state.json", "oac", "node-payload", "secrets", "secrets/core.key",
@@ -319,13 +319,47 @@ class InstallerTests(unittest.TestCase):
 
     def test_node_payload_exports_only_matched_distribution_files(self):
         self.install()
-        payload = self.root / "node-payload"
+        payload = self.root / "node-payload/releases" / ("a" * 40)
         exported = {str(path.relative_to(payload)) for path in payload.rglob("*") if path.is_file()}
         self.assertEqual(exported, {"node-install.pyz", "self-hosted-install.pyz", "manifest.json", "SHA256SUMS",
                                     "runtime/seccomp.json"})
         (payload / "node-install.pyz").write_text("changed")
         with self.assertRaisesRegex(install.InstallError, "node payload differs"):
             install.prepare_node_payload(self.root, self.document("state.json"), self.bundle)
+
+    def test_node_payload_upgrade_retains_immutable_old_release(self):
+        self.install()
+        payload = self.root / "node-payload"
+        old = payload / "releases" / ("a" * 40)
+        snapshot = {str(p.relative_to(old)): p.read_bytes() for p in old.rglob("*") if p.is_file()}
+        manifest = dict(MANIFEST, source_commit="b" * 40)
+        bundle, _ = make_bundle(self.work / "bundle-b", manifest)
+        install.prepare_node_payload(self.root, self.document("state.json"), bundle, replace=True)
+        self.assertEqual(json.loads((payload / "active.json").read_text()), {"source_commit": "b" * 40})
+        self.assertEqual(snapshot, {str(p.relative_to(old)): p.read_bytes() for p in old.rglob("*") if p.is_file()})
+        self.assertTrue((payload / "releases" / ("b" * 40) / "node-install.pyz").is_file())
+        # A changed release cannot overwrite its immutable name or publication.
+        (bundle / "node-install.pyz").write_text("changed release")
+        with self.assertRaisesRegex(install.InstallError, "node payload differs"):
+            install.prepare_node_payload(self.root, self.document("state.json"), bundle, replace=True)
+        self.assertEqual(json.loads((payload / "active.json").read_text()), {"source_commit": "b" * 40})
+
+    def test_legacy_flat_payload_is_preserved_before_publication(self):
+        import shutil
+        self.install()
+        payload = self.root / "node-payload"
+        old = payload / "releases" / ("a" * 40)
+        for path in old.rglob("*"):
+            if path.is_file():
+                target = payload / path.relative_to(old)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, target)
+        shutil.rmtree(payload / "releases")
+        (payload / "active.json").unlink()
+        bundle, _ = make_bundle(self.work / "bundle-b", dict(MANIFEST, source_commit="b" * 40))
+        install.prepare_node_payload(self.root, self.document("state.json"), bundle, replace=True)
+        self.assertEqual((old / "node-install.pyz").read_bytes(), (self.bundle / "node-install.pyz").read_bytes())
+        self.assertEqual(json.loads((payload / "active.json").read_text()), {"source_commit": "b" * 40})
 
     def test_bundle_verifies_transferred_bytes_and_checksum_list(self):
         self.assertEqual(install.verify_bundle(self.bundle)["source_commit"], "a" * 40)

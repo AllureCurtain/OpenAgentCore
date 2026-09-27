@@ -63,6 +63,9 @@ func (h *console) resolveNodePayload(name string) (string, bool) {
 			return "", false
 		}
 	}
+	if prefix == "" && nodePayloadFiles[name] {
+		return name, true
+	}
 	if !nodePayloadFiles[name] && (!strings.HasPrefix(name, "artifacts/") || strings.Contains(strings.TrimPrefix(name, "artifacts/"), "/")) {
 		return "", false
 	}

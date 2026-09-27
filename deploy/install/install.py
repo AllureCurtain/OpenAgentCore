@@ -342,7 +342,7 @@ def prepare_node_payload(root, state, bundle, replace=False):
                     raise InstallError("Offline artifact verification failed: " + logical)
                 names.append(name)
         target = destination / "releases" / revision
-        if target.is_symlink():
+        if target.is_symlink() or target.parent.is_symlink():
             raise InstallError("Installed node payload differs; preserve it and inspect the distribution")
         target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if target.exists():
