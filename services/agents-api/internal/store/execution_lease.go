@@ -56,6 +56,26 @@ func (s *Store) CheckExecutionOwnership(ctx context.Context) error {
 	return s.executionLease.Ping(ctx)
 }
 
+// CancelExecutionOperations cancels coordinator-owned contexts between leased
+// operations. Canceling an in-flight pgx operation can close the connection that
+// owns the execution advisory lock. The callback must only invoke synchronous
+// context cancel functions; it must not perform database, provider or wait work.
+// Caller cancellation and operation deadlines keep their existing semantics.
+func (s *Store) CancelExecutionOperations(ctx context.Context, cancelOperations context.CancelFunc) error {
+	if s.executionLease == nil || cancelOperations == nil {
+		return ErrInvalidInput
+	}
+	ctx, cancel := context.WithTimeout(ctx, executionTransactionTimeout)
+	defer cancel()
+	return s.executionLease.withConn(ctx, func(conn *pgxpool.Conn) error {
+		if err := conn.Ping(ctx); err != nil {
+			return err
+		}
+		cancelOperations()
+		return nil
+	})
+}
+
 func (l *ExecutionLease) lock(ctx context.Context) error {
 	select {
 	case l.gate <- struct{}{}:

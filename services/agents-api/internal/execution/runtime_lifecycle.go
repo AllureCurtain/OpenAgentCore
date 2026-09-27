@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -40,18 +41,20 @@ type RuntimeProvider struct {
 }
 
 type runtimeLifecycle struct {
-	store         *store.Store
-	registry      *gateway.Registry
-	config        RuntimeProvider
-	nodeID        string
-	gate          chan struct{}
-	ctx           context.Context
-	stop          context.CancelFunc
-	cursor        string
-	pendingCursor string
-	connections   map[string]*runtimeConnection
-	initializing  *runtimeInitialization
-	wakeHints     chan struct{}
+	store           *store.Store
+	registry        *gateway.Registry
+	config          RuntimeProvider
+	nodeID          string
+	gate            chan struct{}
+	ctx             context.Context
+	stop            context.CancelFunc
+	cancelMu        sync.Mutex
+	reconcileCancel context.CancelFunc
+	cursor          string
+	pendingCursor   string
+	connections     map[string]*runtimeConnection
+	initializing    *runtimeInitialization
+	wakeHints       chan struct{}
 }
 
 func newRuntimeManager(s *store.Store, registry *gateway.Registry, config *RuntimeProvider) (*runtimeManager, error) {
@@ -262,13 +265,11 @@ func (w *Worker) ReconcileManagedRuntimes(ctx context.Context) error {
 }
 
 func (r *runtimeLifecycle) reconcile(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	detach := context.AfterFunc(r.ctx, cancel)
-	defer func() { detach(); cancel() }()
-	if err := r.lock(ctx); err != nil {
+	ctx, finish, err := r.beginReconcile(ctx)
+	if err != nil {
 		return err
 	}
-	defer func() { <-r.gate }()
+	defer finish()
 	rows, err := r.store.ListRuntimeAllocationsForNode(ctx, r.nodeID, r.cursor)
 	if err != nil {
 		return err

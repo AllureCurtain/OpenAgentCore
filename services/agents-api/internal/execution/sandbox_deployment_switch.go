@@ -33,14 +33,14 @@ func (m *runtimeManager) pauseDeployment(ctx context.Context) error {
 	}
 	if !m.switching {
 		m.switching = true
-		m.switchDrained = make(chan struct{})
+		m.switchDrained = &deploymentDrain{done: make(chan struct{})}
 		go m.drainDeployment(m.switchDrained)
 	}
 	drained := m.switchDrained
 	m.mu.Unlock()
 	select {
-	case <-drained:
-		return nil
+	case <-drained.done:
+		return drained.err
 	case <-ctx.Done():
 		return ctx.Err()
 	case <-m.ctx.Done():
@@ -50,8 +50,13 @@ func (m *runtimeManager) pauseDeployment(ctx context.Context) error {
 
 // One drain outlives the initiating HTTP request. A cancelled waiter cannot
 // permit a replacement generation while an old caller is still completing.
-func (m *runtimeManager) drainDeployment(done chan struct{}) {
-	defer close(done)
+type deploymentDrain struct {
+	done chan struct{}
+	err  error // Published by closing done; immutable afterwards.
+}
+
+func (m *runtimeManager) drainDeployment(result *deploymentDrain) {
+	defer close(result.done)
 	for _, gate := range []chan struct{}{m.setupGate, m.inventory} {
 		select {
 		case gate <- struct{}{}:
@@ -60,10 +65,14 @@ func (m *runtimeManager) drainDeployment(done chan struct{}) {
 		}
 	}
 	m.mu.Lock()
+	nodes := make([]*runtimeNode, 0, len(m.nodes))
 	for _, n := range m.nodes {
-		n.lifecycle.stop()
+		nodes = append(nodes, n)
 	}
 	m.mu.Unlock()
+	if result.err = m.cancelLifecycles(nodes); result.err != nil {
+		return
+	}
 	m.active.Wait()
 }
 
