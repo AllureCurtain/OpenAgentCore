@@ -1,4 +1,4 @@
-import type { InitializeSandboxDeployment, SandboxProvider, SandboxResources, SandboxRuntimeRelease, SandboxSpecification } from "@agents-core-web/agents-client";
+import { AgentCoreError, type InitializeSandboxDeployment, type UpdateSandboxDeployment, type SandboxProvider, type SandboxResources, type SandboxRuntimeRelease, type SandboxSpecification } from "@agents-core-web/agents-client";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
@@ -15,6 +15,7 @@ import { installationQuery } from "../../lib/installation";
 import type { MessageKey } from "../../lib/locale-strings";
 import { sandboxConfigurationRejection } from "../../lib/sandbox-labels";
 import { defaultSandboxResources, distributionRuntime, savedSpecification, validSandboxResources } from "./deployment-specification";
+import { e2bKeyReady, e2bUpdateSelection } from "./sandbox-update";
 import { isRuntimeRelease, isRuntimeReleaseField, RUNTIME_RELEASE_FIELDS } from "./runtime-release";
 import "./sandbox-wizard.css";
 
@@ -70,23 +71,22 @@ function presetOf(provider: SandboxProvider, resources: SandboxResources): Prese
  * release comes from this console's distribution manifest when it serves one.
  * `current` pre-selects the saved choices when a deployment changes. Keeping
  * the backend keeps its saved size and Runtime; another backend starts from its
- * defaults and this console's Runtime. An E2B key must be entered again.
+ * defaults and this console's Runtime. E2B updates can retain the saved key.
  * Docker isolates less than microsandbox, so choosing it takes a confirmation,
  * once per wizard session; a saved Docker deployment has already made it.
  * Core's address is config.json's `public_url`: the review only shows it, and
  * a configuration Core rejects for it is explained here, where it was saved.
  */
-export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disabled, editing = false, onSubmit }: {
-  /** The deployment's read-only Core address. */
+type WizardProps = {
   coreUrl: string;
   expectedGeneration: number;
   current?: { provider: SandboxProvider; specification?: SandboxSpecification; e2bTemplate?: string };
   disabled: boolean;
-  /** PR-R edits only the saved provider; changing backend requires reset first. */
-  editing?: boolean;
-  onSubmit: (input: InitializeSandboxDeployment) => Promise<void>;
-}) {
-  const { t } = useTranslation("sandbox");
+} & ({ editing: true; onSubmit: (input: UpdateSandboxDeployment) => Promise<void> } |
+  { editing?: false; onSubmit: (input: InitializeSandboxDeployment) => Promise<void> });
+
+export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disabled, editing, onSubmit }: WizardProps) {
+  const { t, i18n } = useTranslation("sandbox");
   const id = useId();
   const [step, setStep] = useState<Step>(editing ? current?.provider === "e2b" ? "e2b" : "size" : "where");
   const [where, setWhere] = useState<Where | null>(current ? (current.provider === "e2b" ? "direct" : "nodes") : null);
@@ -95,6 +95,7 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
   const [resources, setResources] = useState<SandboxResources>(current?.specification?.resources ?? defaultSandboxResources("docker"));
   const [size, setSize] = useState<Size>(current?.specification ? presetOf(current.provider, current.specification.resources) ?? "current" : "standard");
   const [apiKey, setApiKey] = useState("");
+  const [replacementRequested, setReplacementRequested] = useState(false);
   const [template, setTemplate] = useState(current?.e2bTemplate ?? "");
   const [runtime, setRuntime] = useState<Partial<SandboxRuntimeRelease>>({});
   const [busy, setBusy] = useState(false);
@@ -103,6 +104,8 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
   const keepMicrosandbox = useRef<HTMLButtonElement>(null);
   // Core's reason for rejecting the saved configuration, such as E2B with a loopback public_url.
   const [rejection, setRejection] = useState<string | null>(null);
+  const [resetRequired, setResetRequired] = useState(false);
+  const [addressRejected, setAddressRejected] = useState(false);
   const installation = useQuery(installationQuery);
   const address = coreUrl || installation.data?.public_url || null;
   const configuration = installation.data?.configuration ?? null;
@@ -114,8 +117,9 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
 
   const needsRuntime = provider === "docker" || provider === "microsandbox";
   const runtimeReady = !needsRuntime || isRuntimeRelease(release);
-  // Core keeps no key across a change: E2B always needs one.
-  const e2bReady = provider !== "e2b" || (apiKey.trim().length > 0 && validTemplate(template.trim()));
+  // Initial setup requires a key; an update may retain the committed key.
+  const keyReady = e2bKeyReady(Boolean(editing), replacementRequested, apiKey);
+  const e2bReady = provider !== "e2b" || (keyReady && validTemplate(template.trim()));
   // Core sizes E2B sandboxes from the template build, so E2B sends no resources.
   const sized = provider !== null && provider !== "e2b";
   const sizeReady = provider !== null && (!sized || validSandboxResources(provider, resources));
@@ -149,18 +153,20 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
     if (!ready || !provider) return;
     setBusy(true); setRejection(null);
     try {
-      await onSubmit({
-        provider,
-        expected_generation: expectedGeneration,
+      const selection = {
+        provider, expected_generation: expectedGeneration,
         ...(sized ? { resources } : {}),
         ...(needsRuntime ? { runtime: release as SandboxRuntimeRelease } : {}),
-        ...(provider === "e2b" ? { e2b: { api_key: apiKey.trim(), template: template.trim() } } : {}),
-      });
+      };
+      if (editing) await onSubmit({ ...selection, ...(provider === "e2b" ? { e2b: e2bUpdateSelection(template, apiKey) } : {}) });
+      else await onSubmit({ ...selection, ...(provider === "e2b" ? { e2b: { api_key: apiKey.trim(), template: template.trim() } } : {}) });
     } catch (error) {
       // A configuration Core rejected is explained here; the page reports every other failure.
-      const reason = sandboxConfigurationRejection(error);
+      const reason = sandboxConfigurationRejection(error, i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en");
       if (reason === null) throw error;
       setRejection(reason);
+      setResetRequired(error instanceof AgentCoreError && ["e2b_team_mismatch", "sandbox_reset_required"].includes(error.code ?? ""));
+      setAddressRejected(error instanceof AgentCoreError && error.code === "sandbox_configuration_error");
     } finally {
       setApiKey("");
       setBusy(false);
@@ -194,8 +200,8 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
     page = (
       <Question title={t("Connect E2B")}>
         <div className="wizard-fields">
-          <Field id={`${id}-key`} label={t("E2B API key")} help={t("The key is write-only: Core encrypts it and never shows it again.")}>
-            <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={(event) => setApiKey(event.target.value)} />
+          <Field id={`${id}-key`} label={t("E2B API key")} help={t(editing ? "Leave blank to keep the saved key. Any key you enter is verified as a replacement, even if unchanged." : "The key is write-only: Core encrypts it and never shows it again.")}>
+            <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={(event) => { setApiKey(event.target.value); setReplacementRequested(Boolean(event.target.value.trim())); }} />
           </Field>
           <Field id={`${id}-template`} label={t("Template build")} help={t("The exact ready build, as template-id:build-uuid. A template alias alone is not enough. Each sandbox gets the build's CPU and memory.")} error={template && !validTemplate(template.trim()) ? t("Enter a template ID and build UUID separated by a colon.") : null}>
             <input id={`${id}-template`} value={template} onChange={(event) => setTemplate(event.target.value)} placeholder="oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b" autoComplete="off" spellCheck={false} aria-invalid={Boolean(template && !validTemplate(template.trim()))} />
@@ -210,7 +216,7 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
     const kept = saved && provider && presetOf(provider, saved.resources) === null ? saved.resources : null;
     const disks = (value: SandboxResources) => (provider === "microsandbox" ? diskLabel(value) : undefined);
     page = (
-      <Question title={t("How big is each sandbox?")} help={t("Every sandbox of this deployment gets these limits. How many run at once on a machine is set per node.")}>
+      <Question title={t("How big is each sandbox?")} help={t("These limits apply to the selected configuration generation. Existing sandboxes keep their limits. Concurrency is set per node.")}>
         <div className={kept ? "wizard-choices wizard-choices-4" : "wizard-choices wizard-choices-3"}>
           {kept ? <Choice title={t("Current")} value={sizeLabel(kept)} detail={disks(kept)} selected={size === "current"} onClick={() => { setSize("current"); setResources(kept); setStep("review"); }} /> : null}
           {(Object.keys(options) as Preset[]).map((key) => (
@@ -237,9 +243,10 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
           <div><dt>{t("Sandboxes run on")}</dt><dd>{where === "direct" ? t("E2B cloud") : `${t("Own machines")} · ${provider === "docker" ? "Docker" : "microsandbox"}`}</dd></div>
           <div><dt>{t("Each sandbox")}</dt><dd>{sized ? sizeLabel(resources) : t("From the template build")}{provider === "microsandbox" ? <span className="wizard-review-sub">{diskLabel(resources)}</span> : null}</dd></div>
           {provider === "e2b" ? <div><dt>{t("Template build")}</dt><dd><code>{template || "—"}</code></dd></div> : null}
+          {provider === "e2b" && editing ? <div><dt>{t("E2B credential")}</dt><dd>{t(replacementRequested ? "Replace saved key" : "Keep saved key")}</dd></div> : null}
           {needsRuntime ? (
             <div>
-              <dt>{t("Runtime")}<HelpTip>{t("The Runtime release every node runs: the saved one while the backend stays the same, otherwise the one this console distributes.")}</HelpTip></dt>
+              <dt>{t("Runtime")}<HelpTip>{t("The target Runtime release. Existing sandboxes keep their owned release while nodes prepare the target.")}</HelpTip></dt>
               <dd>{runtimeReady ? <code>{release.source_commit!.slice(0, 12)}</code> : <span className="wizard-missing">{t("Runtime release needed")}<HelpTip>{t("This console serves no Runtime manifest. Enter the release under advanced settings.")}</HelpTip></span>}</dd>
             </div>
           ) : null}
@@ -255,7 +262,8 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
         {rejection ? (
           <div className="wizard-rejection" role="alert">
             <p>{rejection}</p>
-            {configuration ? (
+            {resetRequired ? <p>{t("Cancel editing to use Reset deployment. Changing teams requires an explicit reset; the saved configuration is unchanged.")}</p> : null}
+            {addressRejected && configuration ? (
               <dl>
                 <div><dt>{t("Config file")}</dt><dd><CopyableId id={configuration.path} label={t("Copy path")} /></dd></div>
                 <div><dt>{t("Then run")}</dt><dd><CopyableId id={configuration.apply_command} label={t("Copy command")} /></dd></div>
@@ -263,11 +271,12 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
             ) : null}
           </div>
         ) : null}
-        {/* Every save attempt clears the E2B key, so a second one needs it entered again. */}
-        {provider === "e2b" && !apiKey.trim() ? (
+        {/* Initial setup needs the cleared key re-entered; updates may keep the saved key. */}
+        {provider === "e2b" && !keyReady ? (
           <p className="wizard-key-again">
             {t("Enter the E2B key again to save.")}
             <button className="wizard-link" type="button" onClick={() => setStep("e2b")}>{t("Enter the key")}</button>
+            {editing ? <button className="wizard-link" type="button" onClick={() => setReplacementRequested(false)}>{t("Keep saved key")}</button> : null}
           </p>
         ) : null}
         <button className="wizard-link" type="button" onClick={() => setStep("advanced")}>

@@ -117,8 +117,22 @@ workbench.
   without undoing archives. Core alone reports progress and completion, including
   resources blocked on named offline nodes; force does not bypass their cleanup.
   Completion clears the backend configuration and retires old nodes/enrollment
-  credentials. A new configuration is then a separate deliberate save. Same-backend
-  editing currently requires zero held resources; online rollout is not available.
+  credentials. A new configuration is then a separate deliberate save.
+- **Online sandbox configuration** changes the same backend's resources, Runtime
+  or E2B template without retiring existing nodes or changing existing Sessions'
+  resource ownership. New placement follows Core's qualified capacity; saving a
+  target does not promise immediate placement on it. Configuration rollout shows
+  Core's target preparation and retained previous-generation sandbox count. A
+  settled rollout can still have failed, update-required or unknown nodes and old
+  resources. An offline node stays offline even when it has a recorded serving
+  generation. Node and allocation detail distinguish the serving pin, target
+  preparation and each resource's configuration generation.
+- **E2B credential replacement** uses the same configuration form. Setup requires
+  a key; leaving it blank during an update keeps the saved key. An explicit key,
+  even the same value, is verified as a replacement and advances the target generation
+  after successful verification.
+  Another backend or E2B team requires a deliberate reset. A rejected or uncertain
+  replacement never clears the committed configuration or replays the write.
 - **E2B deployments** have no machines: the Nodes entry becomes Sandbox backend,
   and Overview and Sandbox metrics show the sandboxes Core holds in E2B's cloud
   (running, starting, size, template build) instead of node capacity, with no node column

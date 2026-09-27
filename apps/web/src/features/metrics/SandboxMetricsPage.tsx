@@ -32,6 +32,9 @@ import { RUNTIME_SNAPSHOT_REFRESH_MS } from "../dashboard/runtime-snapshot";
 import { DiagnosticTip } from "../fleet/DiagnosticTip";
 import { capacitySummary, nodeHealth, suspendedSandboxes, type NodeHealth } from "../fleet/fleet-model";
 import { nodeDetailQuery } from "../fleet/fleet-queries";
+import { NodeRolloutStatus } from "../sandbox/NodeRolloutStatus";
+import { SandboxRolloutSummary } from "../sandbox/SandboxRolloutSummary";
+import { FleetReadNotice, fleetObservationStale } from "../fleet/FleetReadNotice";
 import { SandboxResetNotice } from "../fleet/SandboxResetNotice";
 import { fleetSnapshot, useSandboxFleet, type FleetState } from "../fleet/use-sandbox-fleet";
 import { sandboxSize, templateBuildStatus } from "../sandbox/deployment-specification";
@@ -130,6 +133,8 @@ export function SandboxMetricsPage() {
       />
       <PageBody>
         <SandboxResetNotice deployment={deployment.data} failed={deployment.isError} onRetry={() => void deployment.refetch()} />
+        {deployment.data ? <SandboxRolloutSummary deployment={deployment.data} stale={deployment.isError} compact onOpen={() => navigate("nodes")} /> : null}
+        <FleetReadNotice state={fleetState} onRetry={refreshFleet} />
         {cloud && fleet ? <CloudSection deployment={fleet.deployment} /> : <Section
           headingId="node-capacity-heading"
           title={t("sandbox.node")}
@@ -156,7 +161,7 @@ export function SandboxMetricsPage() {
                   {fleet.nodes.map((node) => (
                     <tr key={node.id} className="clickable-row" onClick={() => setOpenNode(node.id)}>
                       <th scope="row"><NameCell name={node.name} id={node.id} onOpen={() => setOpenNode(node.id)} openLabel={t("sandbox.nodeDialog.openLabel", { name: node.name || node.id })} /></th>
-                      <td><NodeHealthStatus node={node} /></td>
+                      <td><div className="metrics-node-status"><NodeHealthStatus node={node} /><NodeRolloutStatus node={node} stale={fleetObservationStale(fleetState)} /></div></td>
                       <td>
                         <span className="table-meter">
                           <Meter value={node.active} limit={node.max_active} label={t("sandbox.slotsOf", { name: node.name })} />
@@ -200,6 +205,7 @@ export function SandboxMetricsPage() {
       <NodeDialog
         node={fleet?.nodes.find((node) => node.id === openNode) ?? null}
         rows={rows}
+        stale={fleetObservationStale(fleetState)}
         load={runtimeState.load}
         range={range}
         onClose={() => setOpenNode(null)}
@@ -445,7 +451,8 @@ function useLast<T>(value: T | null): T | null {
  * A node in a dialog: the host figures it reports with each heartbeat, and
  * CPU and memory of the hosted sandboxes placed on it over the page's range.
  */
-function NodeDialog({ node, rows, load, range, onClose }: {
+function NodeDialog({ node, rows, load, range, stale, onClose }: {
+  stale: boolean;
   node: SandboxNode | null;
   rows: readonly HostedRuntimeRow[];
   load: HostedRuntimeLoad | null;
@@ -493,8 +500,11 @@ function NodeDialog({ node, rows, load, range, onClose }: {
     >
       {shown ? (
         <div className="metrics-dialog">
+          {stale ? <p className="detail-note" role="status">{t("sandbox.nodeObservationStale")}</p> : null}
           <dl className="resource-facts" aria-label={t("sandbox.nodeDialog.facts")}>
             <div><dt>{t("sandbox.status")}</dt><dd><NodeHealthStatus node={shown} /></dd></div>
+            <div><dt>{t("sandbox.targetPreparation")}</dt><dd><NodeRolloutStatus node={shown} stale={stale} /></dd></div>
+            <div><dt>{t("sandbox.servingGeneration")}</dt><dd><span className="status-with-help">{shown.rollout.ready_generation ?? MISSING}<HelpTip>{t("sandbox.servingGenerationHelp")}</HelpTip></span></dd></div>
             <div><dt>{t("sandbox.slots")}</dt><dd>{formatInteger(shown.active, locale)} / {formatInteger(shown.max_active, locale)}</dd></div>
             {shown.provider === "microsandbox" ? <div><dt>{t("sandbox.suspended")}</dt><dd>{formatInteger(suspendedSandboxes(shown), locale)}</dd></div> : null}
             {shown.provider === "microsandbox" ? <div><dt>{t("sandbox.nodeDialog.retainedSlots")}</dt><dd>{formatInteger(shown.retained, locale)} / {formatInteger(shown.max_retained, locale)}</dd></div> : null}
@@ -548,6 +558,7 @@ function RuntimeDialog({ row, showNode, onClose }: { row: HostedRuntimeRow | nul
             <div><dt>{tCommon("project.column")}</dt><dd><ProjectName project={byId.get(observation.project_id)} /></dd></div>
             {showNode ? <div><dt>{t("sandbox.node")}</dt><dd>{shown.node ? shown.node.name || shown.node.id : MISSING}</dd></div> : null}
             <div><dt>{t("sandbox.status")}</dt><dd><StatusDot tone={lifecycleTone(shown)} label={lifecycleLabel(shown, t)} /></dd></div>
+            <div><dt>{t("sandbox.configurationGeneration")}</dt><dd>{shown.deploymentGeneration ?? MISSING}</dd></div>
             <div><dt>{t("sandbox.uptime")}</dt><dd>{formatDuration(shown.uptimeSeconds)}</dd></div>
             {/* Only E2B reports a sandbox's disk. */}
             {observation.disk ? <div><dt>{t("sandbox.disk")}</dt><dd>{formatBytes(observation.disk.usage_bytes)} / {formatBytes(observation.disk.limit_bytes)}</dd></div> : null}

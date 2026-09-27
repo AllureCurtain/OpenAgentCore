@@ -9,6 +9,8 @@ import { nodeProviderDiagnostic } from "../../lib/sandbox-diagnostic";
 import { DiagnosticTip } from "../fleet/DiagnosticTip";
 import { nodeHealth, suspendedSandboxes } from "../fleet/fleet-model";
 
+import { NodeRolloutStatus } from "./NodeRolloutStatus";
+
 export type NodeState = "unconfirmed" | "old_address" | "offline" | "degraded" | "attention" | "available";
 
 /**
@@ -103,6 +105,7 @@ export function NodeList({ nodes, allocations, coreUrl, stale, disabled, suspend
                 </th>
                 <td>
                   <span className="status-with-help"><NodeStatus state={state} />{diagnostic ? <DiagnosticTip code={diagnostic} /> : null}</span>
+                  <NodeRolloutStatus node={node} stale={stale} />
                   {state === "old_address" ? <OldAddressHint /> : null}
                 </td>
                 <td className="numeric">{node.active} / {node.max_active}</td>

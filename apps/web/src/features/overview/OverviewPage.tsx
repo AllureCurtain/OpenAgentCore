@@ -26,6 +26,8 @@ import { useConsoleNavigation } from "../../lib/console-navigation";
 import { formatClock, formatCompact, formatInteger, formatPercent, formatRelative, MISSING } from "../../lib/format";
 import { ProjectName, useProjects } from "../../lib/projects";
 import { capacitySummary, coreStatus, type CoreStatus } from "../fleet/fleet-model";
+import { SandboxRolloutSummary } from "../sandbox/SandboxRolloutSummary";
+import { FleetReadNotice, fleetObservationStale } from "../fleet/FleetReadNotice";
 import { SandboxResetNotice } from "../fleet/SandboxResetNotice";
 import { fleetSnapshot, useSandboxFleet, type FleetSnapshot, type FleetState } from "../fleet/use-sandbox-fleet";
 import { type InProject } from "../metrics/project-sessions";
@@ -173,6 +175,8 @@ export function OverviewPage() {
       />
       <PageBody>
         <SandboxResetNotice deployment={deployment.data} failed={deployment.isError} onRetry={() => void deployment.refetch()} />
+        {deployment.data ? <SandboxRolloutSummary deployment={deployment.data} stale={deployment.isError} compact onOpen={() => navigate("nodes")} /> : null}
+        <FleetReadNotice state={fleetState} onRetry={refreshFleet} />
         <InstallationNotice installation={installation.data} />
         {installation.isError ? <ReadFailure onRetry={() => void installation.refetch()} partial={installation.data !== undefined} /> : null}
         <GettingStarted sandboxReset={deployment.isError ? "failed" : deployment.data ? deployment.data.reset !== null : undefined} fleet={fleetState} sessions={sessionCount} localOnly={installation.isError ? "failed" : installation.data?.local_only} onRetryInstallation={() => void installation.refetch()} />
@@ -349,7 +353,7 @@ function FleetCard({ fleetState, core, localOnly }: { fleetState: FleetState; co
           onOpenBackend={() => navigate("nodes")}
           coreLabel={t(`coreStatus.${core}`)}
           coreTone={coreTone[core]}
-          stale={fleetState.status === "ready" && fleetState.error !== null}
+          stale={fleetObservationStale(fleetState)}
           onOpenNode={(node) => navigate("nodes", { id: node.id })}
           onOpenSandboxMetrics={() => navigate("sandbox-metrics")}
           onOpenCoreMetrics={() => navigate("core-metrics")}

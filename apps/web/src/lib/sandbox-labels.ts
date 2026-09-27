@@ -22,6 +22,8 @@ export function sandboxStateLabel(state: string, locale: Locale): string {
 export function sandboxRequestError(error: unknown, locale: Locale): string {
   let key: MessageKey = "The sandbox request failed. Refresh to check the current state before trying again.";
   if (error instanceof AgentCoreError) {
+    const safe = error.code ? e2bErrors[error.code] : undefined;
+    if (safe) return translate(locale, safe);
     const refused = !sandboxWriteUncertain(error);
     if (error.code === "sandbox_admin_not_configured") key = "Sandbox administration is not configured on this console.";
     else if (error.status === 401) key = "Sign in to the console again to access sandbox management.";
@@ -58,7 +60,18 @@ export function sandboxWriteUncertain(error: unknown): boolean {
  * such as E2B with a loopback public_url; null for any other failure. Nothing
  * was saved, so the administrator corrects the cause and saves again.
  */
-export function sandboxConfigurationRejection(error: unknown): string | null {
+const e2bErrors: Record<string, MessageKey> = {
+  e2b_team_mismatch: "This E2B key cannot manage the retained deployment. Reset before changing teams.",
+  e2b_api_key_invalid: "The E2B API key was rejected. The saved configuration is unchanged.",
+  e2b_template_build_invalid: "Select a ready immutable E2B template build with matching resources.",
+  e2b_request_unconfirmed: "E2B verification could not be confirmed. Refresh before submitting again.",
+};
+
+export function sandboxConfigurationRejection(error: unknown, locale: Locale = "en"): string | null {
+  if (error instanceof AgentCoreError && !sandboxWriteUncertain(error) && error.code) {
+    if (e2bErrors[error.code]) return translate(locale, e2bErrors[error.code]!);
+    if (error.code === "sandbox_reset_required") return translate(locale, "Reset the sandbox deployment before changing its backend.");
+  }
   return error instanceof AgentCoreError && error.status === 409 && error.code === "sandbox_configuration_error" && error.message ? error.message : null;
 }
 

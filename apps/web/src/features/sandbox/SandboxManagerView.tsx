@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { type InitializeSandboxDeployment, type SandboxDeployment, type SandboxNode, type StartSandboxReset } from "@agents-core-web/agents-client";
+import { type InitializeSandboxDeployment, type UpdateSandboxDeployment, type SandboxDeployment, type SandboxNode, type StartSandboxReset } from "@agents-core-web/agents-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Pencil, Plus, Server, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -64,7 +64,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const { params, navigate, back: goBack } = useConsoleNavigation();
   const client = sandboxAdmin;
   const queryClient = useQueryClient();
-  const { ownership, deploymentQuery, query, deployment, compatible, inventoryLoading, snapshot } = useSandboxManagerState();
+  const { ownership, deploymentQuery, query, deployment, compatible, inventoryOlder, inventoryLoading, snapshot } = useSandboxManagerState();
   const { refetch: refetchSnapshot } = query;
   const installation = useQuery(installationQuery);
   const localOnly = installation.data?.local_only === true;
@@ -143,7 +143,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   async function initialize(input: InitializeSandboxDeployment) {
     if (await changeDeployment((signal) => client.initializeDeployment(input, { signal }), true) && input.provider !== "e2b" && !localOnly) setAdding(true);
   }
-  async function update(input: InitializeSandboxDeployment) {
+  async function update(input: UpdateSandboxDeployment) {
     await changeDeployment((signal) => client.updateDeployment({ ...input, expected_generation: snapshot!.deployment.generation }, { signal }), true);
   }
   const startReset = (input: StartSandboxReset) => changeDeployment((signal) => client.startReset(input, { signal }));
@@ -185,7 +185,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
     } finally { if (!controller.signal.aborted) setRemoving(false); }
   }
 
-  const nodesConfirmed = confirmed && compatible && !query.isError && !snapshot?.nodesError;
+  const nodesConfirmed = confirmed && compatible && !inventoryOlder && !query.isError && !snapshot?.nodesError;
   const nodes = snapshot?.nodes ?? [];
   const allocations = snapshot?.allocations ?? [];
   const hostedNodes = Boolean(snapshot?.deployment.provider && snapshot.deployment.provider !== "e2b");
@@ -206,6 +206,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const status = <>
     <InstallationNotice installation={installation.data} />
     {!snapshot && (loading || deploymentQuery.isPending) ? <p role="status">{t("Loading sandbox state…")}</p> : null}
+    {inventoryOlder ? <p role="status" className="sandbox-notice">{t("Node observations are from an earlier configuration generation. Refreshing does not change their owned sandboxes.")}</p> : null}
     {snapshot?.nodesError ? <ErrorState title={t("Node state could not be read")} detail={sandboxRequestError(snapshot.nodesError, locale)} onRetry={refresh} /> : null}
     {snapshot && deploymentQuery.isError ? <p role="alert" className="sandbox-error">{t("Refresh failed; showing the last loaded state.")}</p> : null}
     {setupNeedsRefresh ? <p role="alert" className="sandbox-error">{t("Refresh sandbox state to confirm whether the change was saved before submitting again.")}</p> : null}
@@ -250,7 +251,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
       />
       <div className="console-page-body sandbox-content">
         {status}
-        {selected ? <NodeDetail node={selected} allocations={allocations} coreUrl={snapshot?.deployment.core_url ?? ""} stale={!nodesConfirmed} suspension={snapshot?.deployment.suspension ?? null} /> : snapshot && nodesConfirmed && !loading ? (
+        {selected ? <NodeDetail node={selected} allocations={allocations} coreUrl={snapshot?.deployment.core_url ?? ""} targetGeneration={snapshot?.deployment.generation} stale={!nodesConfirmed} suspension={snapshot?.deployment.suspension ?? null} /> : snapshot && nodesConfirmed && !loading ? (
           <EmptyState icon={Server} title={t("Node not found")} hint={t("This node is not registered. It may have been removed.")} action={<button type="button" className="button outline" onClick={back}>{t("Back")}</button>} />
         ) : null}
       </div>

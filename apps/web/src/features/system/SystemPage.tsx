@@ -14,6 +14,7 @@ import { InstallationNotice } from "../../components/InstallationNotice";
 import { installationQuery } from "../../lib/installation";
 import { sandboxSize, templateBuildSize, templateBuildStatus } from "../sandbox/deployment-specification";
 import { sandboxDeploymentQuery } from "../sandbox/sandbox-queries";
+import { SandboxRolloutSummary } from "../sandbox/SandboxRolloutSummary";
 import { SandboxResetNotice } from "../fleet/SandboxResetNotice";
 import { DefaultModelsSection } from "./DefaultModelsSection";
 import { Fact } from "./Fact";
@@ -145,6 +146,7 @@ export function SystemPage() {
         {facts}
         <DefaultModelsSection />
         <SandboxResetNotice deployment={deployment.data} failed={deployment.isError && !!deployment.data} onRetry={() => void deployment.refetch()} />
+        {deployment.data ? <SandboxRolloutSummary deployment={deployment.data} stale={deployment.isError} compact onOpen={() => navigate("nodes")} /> : null}
         {body}
         {about ? <StartupSettings configuration={about.configuration} /> : installation.isError ? null : <TableSkeleton rows={4} columns={3} />}
       </PageBody>

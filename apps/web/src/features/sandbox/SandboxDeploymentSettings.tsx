@@ -1,11 +1,12 @@
 import { useState } from "react";
-import type { InitializeSandboxDeployment, SandboxDeployment, StartSandboxReset } from "@agents-core-web/agents-client";
+import type { UpdateSandboxDeployment, SandboxDeployment, StartSandboxReset } from "@agents-core-web/agents-client";
 import { useTranslation } from "react-i18next";
 import { HelpTip } from "../../components/console-ui";
 import { formatBytes, formatPeriod, MISSING } from "../../lib/format";
 import type { MessageKey } from "../../lib/locale-strings";
 import { sandboxProviderLabel } from "../../lib/sandbox-labels";
 import { sandboxSize, templateBuildSize, templateBuildStatus } from "./deployment-specification";
+import { SandboxRolloutSummary } from "./SandboxRolloutSummary";
 import { SandboxResetControls } from "./SandboxResetControls";
 import { SandboxSetupWizard } from "./SandboxSetupWizard";
 
@@ -18,7 +19,7 @@ export function SandboxDeploymentSettings({ deployment, disabled, fresh, onReset
   fresh: boolean;
   onReset: (input: StartSandboxReset) => Promise<boolean>;
   onCancelReset: (expectedGeneration: number) => Promise<boolean>;
-  onUpdate: (input: InitializeSandboxDeployment) => Promise<void>;
+  onUpdate: (input: UpdateSandboxDeployment) => Promise<void>;
 }) {
   const { t, i18n } = useTranslation("sandbox");
   const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
@@ -29,7 +30,7 @@ export function SandboxDeploymentSettings({ deployment, disabled, fresh, onReset
   const build = deployment.e2b?.template_build;
   const buildSize = templateBuildSize(deployment);
   const sizeLabel = (value: { cpus: number; memory_mib: number }) => t("{{cpus}} CPU · {{memory}}", { cpus: value.cpus, memory: formatBytes(value.memory_mib * MIB) });
-  const clean = fresh && !deployment.reset && deployment.resources?.allocations === 0 && deployment.resources?.pending === 0;
+  const canEdit = fresh && !deployment.reset;
   return <section className="sandbox-provider-settings form-stack" aria-labelledby="sandbox-provider-heading">
     <div className="sandbox-provider-title">
       <h2 id="sandbox-provider-heading">{t("Deployment provider")}</h2>
@@ -60,23 +61,24 @@ export function SandboxDeploymentSettings({ deployment, disabled, fresh, onReset
         <div><dt>{t("E2B credential")}</dt><dd>{t(deployment.e2b?.credential_configured ? "Configured" : "Not configured")}</dd></div>
       </dl>
     </div> : null}
+    <SandboxRolloutSummary deployment={deployment} stale={!fresh} />
     {!deployment.reset ? <>
       <div className="sandbox-actions">
-        <button type="button" className="button outline" disabled={disabled || !clean || changing} onClick={() => setChanging(true)}>{t("Change resources")}</button>
-        <HelpTip>{t("Editing keeps the current provider and requires zero allocated resources and pending environments. It is not an online upgrade.")}</HelpTip>
+        <button type="button" className="button outline" disabled={disabled || !canEdit || changing} onClick={() => setChanging(true)}>{t("Change resources")}</button>
+        <HelpTip>{t("Changes keep this backend and existing Sessions and nodes. Core prepares the new target for future work; placement may continue on qualified earlier generations.")}</HelpTip>
       </div>
-      {!clean ? <p>{t("Changes require Core to confirm that no hosted resources remain.")}</p> : null}
+
       {changing ? <>
         <SandboxSetupWizard
           coreUrl={deployment.core_url}
           expectedGeneration={deployment.generation}
           current={deployment.provider ? { provider: deployment.provider, specification: deployment.specification, e2bTemplate: deployment.e2b?.template } : undefined}
-          disabled={disabled || !clean}
+          disabled={disabled || !canEdit}
           editing
           onSubmit={onUpdate}
         />
-        <p>{t(deployment.provider === "e2b" ? "Saving changes only this provider's configuration; it does not confirm execution readiness." : "Saving retires existing node identities and enrollment commands. Add the nodes again after saving.")}</p>
-        <button type="button" className="button outline" disabled={disabled} onClick={() => setChanging(false)}>{t("Cancel")}</button>
+        <p>{t("Existing sandboxes keep their configuration generation. Saving does not move them or prove the target is ready.")}</p>
+        <button type="button" className="button outline" disabled={disabled} onClick={() => setChanging(false)}>{t("Cancel editing")}</button>
       </> : null}
     </> : null}
     <SandboxResetControls deployment={deployment} disabled={disabled || (changing && !deployment.reset)} stale={!fresh} onStart={onReset} onCancel={onCancelReset} />

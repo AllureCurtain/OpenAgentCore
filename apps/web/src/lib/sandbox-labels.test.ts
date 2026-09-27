@@ -1,9 +1,20 @@
 import { AgentCoreError } from "@agents-core-web/agents-client";
 import { describe, expect, it } from "vitest";
 
-import { sandboxRequestError, sandboxWriteUncertain } from "./sandbox-labels";
+import { sandboxConfigurationRejection, sandboxRequestError, sandboxWriteUncertain } from "./sandbox-labels";
 
 describe("sandbox write outcome", () => {
+  it("uses fixed bilingual E2B errors without reflecting provider text or secrets", () => {
+    for (const [code, status] of [["e2b_team_mismatch", 409], ["e2b_api_key_invalid", 400], ["e2b_template_build_invalid", 400], ["e2b_request_unconfirmed", 503]] as const) {
+      const error = new AgentCoreError("secret-provider-response", status, code);
+      for (const locale of ["en", "zh"] as const) {
+        expect(sandboxRequestError(error, locale)).not.toContain("secret-provider-response");
+        if (status < 500) expect(sandboxConfigurationRejection(error, locale)).toBe(sandboxRequestError(error, locale));
+        else expect(sandboxConfigurationRejection(error, locale)).toBeNull();
+      }
+    }
+  });
+
   it("is uncertain without a response, on a timeout or a 5xx, and certain on any other 4xx, a withheld E2B reason included", () => {
     expect(sandboxWriteUncertain(new TypeError("Failed to fetch"))).toBe(true);
     expect(sandboxWriteUncertain(new AgentCoreError("Unavailable.", 503))).toBe(true);

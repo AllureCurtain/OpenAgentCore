@@ -38,9 +38,9 @@ export const sandboxDeploymentQuery = queryOptions<SandboxDeployment>({
   refetchIntervalInBackground: false,
 });
 
-/** Reset progress is Core-owned; a completed or absent reset needs no polling. */
+/** Only Core reports active work; retained older sandboxes do not keep polling alive. */
 export function sandboxResetPollInterval(deployment: SandboxDeployment | undefined): 5000 | false {
-  return deployment?.reset ? 5000 : false;
+  return deployment?.reset || deployment?.rollout.state === "preparing" ? 5000 : false;
 }
 
 /**
@@ -81,6 +81,12 @@ export const sandboxSnapshotQuery = queryOptions<SandboxSnapshot>({
       return { deployment, nodes, allocations: allocations.flatMap((page) => page.data), nodesError: null, readAt };
     } catch (nodesError) {
       signal.throwIfAborted();
+      const previous = client.getQueryData(sandboxSnapshotQuery.queryKey);
+      if (previous && sandboxSnapshotMatchesDeployment(previous, deployment)) {
+        // Online updates retain older ownership. A failed supplemental refresh
+        // keeps that evidence visibly stale; it cannot erase existing resources.
+        return { ...previous, nodesError };
+      }
       return { deployment, nodes, allocations: [], nodesError, readAt };
     }
   },
@@ -90,7 +96,7 @@ export const sandboxSnapshotQuery = queryOptions<SandboxSnapshot>({
 export function sandboxSnapshotMatchesDeployment(snapshot: SandboxSnapshot, deployment: SandboxDeployment): boolean {
   const previous = snapshot.deployment;
   return previous.installation_id === deployment.installation_id && previous.owner_epoch === deployment.owner_epoch &&
-    previous.generation === deployment.generation && previous.provider === deployment.provider &&
+    previous.provider === deployment.provider && previous.mode === deployment.mode &&
     previous.reset?.requested_at === deployment.reset?.requested_at && previous.reset?.clear === deployment.reset?.clear &&
     previous.reset?.forced_at === deployment.reset?.forced_at;
 }

@@ -750,16 +750,42 @@ read-only: it is config.json's `public_url`, and the console never asks for it. 
 loopback address carries an amber line under it: only the Core machine reaches it.
 When Core rejects the configuration for it (E2B with a loopback `public_url`), a
 red-tinted block under the review keeps Core's message and adds the config file and
-apply command as copyable values. A save attempt clears the E2B key, so the review
-then says to enter it again, with a link to that step.
+apply command as copyable values. A save attempt clears the transient E2B key. Initial setup then asks for it again,
+with a link to that step; an update may leave it blank to keep the committed key.
 Advanced settings, one link away, hold the complete form: resources (not for
 E2B), the Runtime release and the E2B template. A change keeps the saved size
 and Runtime while the backend stays the same (a saved size outside the presets is
 offered as Current). Same-backend editing starts at size or E2B credentials with
-the provider fixed, and is available only with zero held resources;
-changing the backend requires reset and then a new setup. E2B always needs its key
-again. Optional explanations sit behind help tips; errors and safety consequences
-remain visible.
+the provider fixed. It is an online configuration update, including when older
+sandboxes remain: existing node identities and resource ownership are retained.
+Changing the backend or E2B team requires reset and then a new setup. E2B updates
+can omit the key to retain it; every explicitly entered key takes the verified
+replacement path and advances the target generation on success, including the same
+value. Rejections remain inline with a safe
+reason and a deliberate way back to reset; never infer teams from a key, auto-reset
+or auto-resubmit. Optional explanations sit behind help tips; errors and safety
+consequences remain visible.
+
+### Configuration generations
+Use the existing compact fact panel for Core's target generation, previous-generation
+sandboxes and rollout counts. Poll rapidly only while Core reports preparing, or
+while the independent reset is active. Settled is preparation state, not proof that
+all nodes are ready or all older Sessions have ended. Retained old resources alone
+must not keep rapid polling alive. Render failed, update-required and unknown target
+states distinctly. Keep offline/live-provider status separate from a node's durable
+serving-generation pin; the pin alone never means the node is online or ready.
+Node detail shows the serving generation and target preparation; allocation detail
+shows the owned configuration generation. Do not calculate rollout completion from
+these rows or promise immediate placement on the target.
+
+A generation-only update within the same installation/backend lifecycle retains
+compatible previous node/allocation evidence while refreshing. Failed or pending
+reads visibly qualify those observations; never replace them with fabricated zeros.
+Reset, backend and installation lifecycle changes still discard incompatible data.
+The shared deployment query and write ownership below continue to govern navigation,
+late reads, explicit retries and login isolation. This final online experience ships
+only with the qualified node-generation protocol; fixture results alone do not
+establish native online-upgrade capability.
 
 ### Sandbox reset
 The deployment section offers explicit reset rather than maintenance/resume. Reuse
@@ -777,7 +803,8 @@ never offer a browser-side force-release shortcut. Poll the deployment every fiv
 seconds only while its reset is non-null. A passed deadline does not establish force
 or completion; only a Core response does. Completion opens the existing setup flow,
 with a new explicit save using the generation read from Core, including zero on a
-fresh install. No automatic configuration replay or online-rollout progress exists.
+fresh install. Reset and online configuration rollout have independent authoritative
+progress; neither automatically replays configuration.
 
 Read deployment progress independently of node details. Partial failures retain
 successful facts with a visible stale/unavailable notice. An uncertain write opens

@@ -113,6 +113,10 @@ export const overview = {
     offline: "Offline",
   },
   fleet: {
+    servingGeneration: "Serving generation",
+    servingGenerationHelp: "Core retains this generation for the node. The pin alone does not confirm a live connection, available capacity or readiness for the target.",
+    previousGeneration: "Inventory was read for configuration generation {{observed}}; the current target is {{target}}. These are earlier observations.",
+    targetPreparation: "Target configuration",
     title: "Fleet",
     cloudHelp: "Core and the sandboxes it holds in E2B’s cloud. Select Core or E2B for a summary.",
     help: "Core and its connection to each sandbox node: solid lines are online, dashed lines offline. The figure on a node is active sandboxes / limit. Select Core or a node for a summary.",

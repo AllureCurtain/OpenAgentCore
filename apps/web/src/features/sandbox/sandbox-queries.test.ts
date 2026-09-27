@@ -2,7 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import type { SandboxDeployment, SandboxReset } from "@agents-core-web/agents-client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { node } from "../overview/test-fixtures";
-import { sandboxAdmin, sandboxResetPollInterval, sandboxSnapshotQuery, sandboxScope } from "./sandbox-queries";
+import { sandboxAdmin, sandboxDeploymentQuery, sandboxResetPollInterval, sandboxSnapshotQuery, sandboxScope } from "./sandbox-queries";
 
 const reset: SandboxReset = {
   clear: "auto", requested_at: "2026-09-27T10:00:00Z", deadline_at: "2026-09-27T11:00:00Z", forced_at: null,
@@ -17,6 +17,32 @@ const cache = () => { const client = new QueryClient({ defaultOptions: { queries
 afterEach(() => { for (const client of clients.splice(0)) client.clear(); vi.restoreAllMocks(); });
 
 describe("sandbox reset reads", () => {
+  it("polls only Core preparation or reset, never settled old resources or failed/unknown nodes", () => {
+    const settled = deployment({ reset: null, rollout: { state: "settled", previous_generation_sandboxes: 9, nodes: { ready: 0, preparing: 0, failed: 2, update_required: 1, unknown: 3 } } });
+    expect(sandboxResetPollInterval(settled)).toBe(false);
+    expect(sandboxResetPollInterval({ ...settled, rollout: { ...settled.rollout, state: "preparing" } })).toBe(5000);
+    expect(sandboxResetPollInterval({ ...settled, reset })).toBe(5000);
+  });
+
+  it("keeps owned node and allocation evidence when an online generation's inventory cannot be refreshed", async () => {
+    const client = cache(); const first = deployment({ reset: null });
+    const read = vi.spyOn(sandboxAdmin, "retrieveDeployment").mockResolvedValue(first);
+    const nodes = vi.spyOn(sandboxAdmin, "listNodes").mockResolvedValue({ data: [node("node-a")] });
+    const allocation = { id: "owned", node_id: "node-a", tenant_id: "tenant", session_id: "session", environment_id: "environment", state: "active", compute_phase: "running", compute_phase_changed_at: null, diagnostic: "" as const, initialization: "ready", created_at: "2026-09-27T10:00:00Z", deployment_generation: first.generation };
+    vi.spyOn(sandboxAdmin, "listAllocations").mockResolvedValue({ data: [allocation] });
+    await client.fetchQuery(sandboxSnapshotQuery);
+    read.mockResolvedValue({ ...first, generation: first.generation + 1 });
+    nodes.mockRejectedValue(new Error("node read unavailable"));
+    const observed = await client.fetchQuery(sandboxSnapshotQuery);
+    expect(observed.nodes).toHaveLength(1); expect(observed.allocations).toEqual([allocation]);
+    expect(observed.deployment.generation).toBe(first.generation);
+    expect(observed.nodesError).toBeInstanceOf(Error);
+    expect(client.getQueryData(sandboxDeploymentQuery.queryKey)?.generation).toBe(first.generation + 1);
+    read.mockResolvedValue({ ...first, owner_epoch: 2 });
+    const replaced = await client.fetchQuery(sandboxSnapshotQuery);
+    expect(replaced.nodes).toEqual([]); expect(replaced.allocations).toEqual([]);
+  });
+
   it("keeps Core reset and offline blockers when nodes cannot be read", async () => {
     const saved = deployment(); const error = new Error("offline");
     vi.spyOn(sandboxAdmin, "retrieveDeployment").mockResolvedValue(saved);

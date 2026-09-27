@@ -110,3 +110,13 @@
 .sandbox-reset-options > label:not(.field) { display: flex; align-items: center; gap: 8px; }
 .sandbox-reset-options input[type="number"] { max-width: 180px; }
 .sandbox-reset-dialog p { line-height: 1.6; }
+
+/* Shared rollout summaries keep target facts ahead of the secondary node partition. */
+.sandbox-rollout { min-width: 0; gap: 12px; }
+.sandbox-rollout h3 { margin: 0; font-size: 13px; font-weight: 600; }
+.sandbox-rollout p { margin: 0; font-size: 13px; color: var(--fg-muted); }
+.sandbox-rollout > .text-action { align-self: flex-start; }
+.sandbox-rollout-compact .sandbox-summary { display: flex; flex-wrap: wrap; gap: 8px 24px; }
+.sandbox-rollout-compact .sandbox-summary > div { display: flex; align-items: baseline; gap: 6px; }
+.sandbox-rollout-compact .sandbox-summary dt { margin: 0; }
+.sandbox-rollout-nodes { border-top: 1px solid var(--line); padding-top: 12px; }

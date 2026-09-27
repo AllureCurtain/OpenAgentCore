@@ -1,4 +1,4 @@
-import type { SandboxDeployment } from "@agents-core-web/agents-client";
+import type { SandboxDeployment, SandboxNodeRollout } from "@agents-core-web/agents-client";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 const fixture = `http://127.0.0.1:${process.env.AGENTS_FIXTURE_PORT ?? 18092}`;
@@ -39,7 +39,7 @@ export async function failNext(request: APIRequestContext, failure: { method: st
 }
 
 /** Registers a node, or changes one, as a host running the last enrollment command (or, with its `enrollment_id`, another one) would. */
-export async function setNode(request: APIRequestContext, node: { id: string; name?: string; online?: boolean; provider_ready?: boolean; diagnostic?: string; enrollment_id?: string }) {
+export async function setNode(request: APIRequestContext, node: { id: string; name?: string; online?: boolean; provider_ready?: boolean; diagnostic?: string; enrollment_id?: string; rollout?: SandboxNodeRollout }) {
   await request.post(`${fixture}/__fixture/node`, { data: node });
 }
 

@@ -177,6 +177,11 @@ export const metrics = {
     },
   },
   sandbox: {
+    nodeObservationStale: "These node facts are earlier observations. Refresh the fleet to confirm its current state.",
+    servingGeneration: "Serving generation",
+    servingGenerationHelp: "Core retains this generation for the node. The pin alone does not confirm a live connection, available capacity or readiness for the target.",
+    targetPreparation: "Target configuration",
+    configurationGeneration: "Sandbox configuration generation",
     title: "Sandbox metrics",
     description: "Host capacity of the whole deployment, and the hosted Runtimes of every project.",
     cloudDescription: "Sandboxes Core holds in E2B’s cloud, and hosted Runtime observations across projects.",

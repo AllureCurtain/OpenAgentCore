@@ -106,7 +106,7 @@ export const system = {
     size: "{{count}} CPU · {{memory}}", size_one: "{{count}} CPU · {{memory}}", size_other: "{{count}} CPUs · {{memory}}",
     disks: "Root disk {{root}} · data disk {{data}} at /environment",
     runtime: "Runtime",
-    runtimeHelp: "The Runtime release every node runs; nodes accept no other.",
+    runtimeHelp: "The target Runtime release. Existing sandboxes keep their owned release while nodes prepare the target.",
     e2bTemplate: "E2B template",
     templateBuild: "Template build",
     templateBuildHelp: "The fixed E2B build every sandbox starts from, as Core read it when the selection was saved. Each sandbox gets its CPU, memory and disk.",

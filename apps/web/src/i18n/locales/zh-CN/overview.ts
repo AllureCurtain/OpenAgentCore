@@ -113,6 +113,10 @@ export const overview = {
     offline: "离线",
   },
   fleet: {
+    servingGeneration: "保留的服务代次",
+    servingGenerationHelp: "Core 为该节点保留的配置代次。仅凭此记录不能确认当前连接、可用容量或目标配置就绪。",
+    previousGeneration: "资源清单读取于配置代次 {{observed}}，当前目标为 {{target}}。这里保留的是较早的观测。",
+    targetPreparation: "目标配置",
     title: "机群",
     cloudHelp: "Core 与它在 E2B 云端持有的沙箱。选择 Core 或 E2B 可查看摘要。",
     help: "Core 与各沙箱节点的连接：实线为在线，虚线为离线。节点上的数字是活跃沙箱 / 上限。点击 Core 或节点查看概况。",

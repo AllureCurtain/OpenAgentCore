@@ -16,7 +16,7 @@ function cache() {
 }
 function Probe() {
   const state = useSandboxManagerState();
-  return <div data-read={state.deploymentQuery.isError ? "failed" : "confirmed"} data-compatible={String(state.compatible)} data-owner={state.ownership.data.phase} data-inventory-loading={String(state.inventoryLoading)} data-inventory-failed={String(Boolean(state.snapshot?.nodesError))}>
+  return <div data-read={state.deploymentQuery.isError ? "failed" : "confirmed"} data-compatible={String(state.compatible)} data-older={String(state.inventoryOlder)} data-owner={state.ownership.data.phase} data-inventory-loading={String(state.inventoryLoading)} data-inventory-failed={String(Boolean(state.snapshot?.nodesError))}>
     {state.snapshot?.deployment.provider || "setup"}/{state.snapshot?.deployment.reset?.clear ?? "none"}/{state.snapshot?.nodes.length ?? 0}
   </div>;
 }
@@ -65,10 +65,13 @@ describe("Nodes shared deployment evidence", () => {
     expect(client.getQueryState(sandboxSnapshotQuery.queryKey)?.status).toBe("success");
   });
 
-  it("retains nodes only within the same installation, owner, generation and reset lifecycle", () => {
+  it("retains older generation nodes but rejects a different installation, owner, provider or reset lifecycle", () => {
     const client = cache(); client.setQueryData(sandboxDeploymentQuery.queryKey, configured);
     expect(render(client)).toContain("docker/none/1");
-    for (const change of [{ installation_id: "next" }, { owner_epoch: 2 }, { generation: 2 }, { provider: "e2b" as const }]) {
+    client.setQueryData(sandboxDeploymentQuery.queryKey, { ...configured, generation: 2 });
+    expect(render(client)).toContain("docker/none/1");
+    expect(render(client)).toContain('data-older="true"');
+    for (const change of [{ installation_id: "next" }, { owner_epoch: 2 }, { mode: "direct" as const }, { provider: "e2b" as const }]) {
       client.setQueryData(sandboxDeploymentQuery.queryKey, { ...configured, ...change });
       expect(render(client)).toContain('data-compatible="false"');
     }

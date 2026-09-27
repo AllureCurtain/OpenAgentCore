@@ -108,7 +108,7 @@ export const system: TranslationShape<typeof english> = {
     size: "{{count}} 核 · {{memory}}", size_one: "{{count}} 核 · {{memory}}", size_other: "{{count}} 核 · {{memory}}",
     disks: "根盘 {{root}} · 数据盘 {{data}}（/environment）",
     runtime: "Runtime",
-    runtimeHelp: "每个节点运行的 Runtime 版本；节点只接受这一个。",
+    runtimeHelp: "目标 Runtime 版本。节点准备目标配置时，已有沙箱保留其所属版本。",
     e2bTemplate: "E2B 模板",
     templateBuild: "模板构建",
     templateBuildHelp: "每个沙箱启动时使用的固定 E2B 构建，是保存选择时 Core 读到的信息。每个沙箱按它分配 CPU、内存和磁盘。",

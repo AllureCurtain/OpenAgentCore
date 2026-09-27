@@ -10,6 +10,7 @@ import { DashboardSkeleton, TableSkeleton } from "../../components/Skeleton";
 import { useFailureToast } from "../../components/Toast";
 import { EmptyState, Kpi, KpiStrip, PageBody, PageHeader, RefreshButton, Section, SegmentedControl, StatusDot, type Tone } from "../../components/console-ui";
 import { formatBucket, formatBytes, formatClock, formatDuration, formatInteger, formatRelative, MISSING } from "../../lib/format";
+import { FleetReadNotice } from "../fleet/FleetReadNotice";
 import { fleetSnapshot, useSandboxFleet } from "../fleet/use-sandbox-fleet";
 import { coreMetricsQuery } from "./metrics-queries";
 import "./MetricsView.css";
@@ -123,7 +124,8 @@ function CoreMetricsBody({ metrics }: { metrics: CoreMetrics }) {
   const integer = (value: number) => formatInteger(value, locale);
   const slotsFull = execution.slots_in_use !== null && execution.slots_total !== null && execution.slots_in_use >= execution.slots_total;
   // Sandbox nodes hold their own connection to Core, as daemons do; E2B deployments have none.
-  const fleet = fleetSnapshot(useSandboxFleet({ poll: true }).state);
+  const { state: fleetState, refresh: refreshFleet } = useSandboxFleet({ poll: true });
+  const fleet = fleetSnapshot(fleetState);
   const nodeBacked = fleet ? fleet.deployment.mode === "nodes" : false;
   const online = fleet ? fleet.nodes.filter((node) => node.online).length : null;
 
@@ -166,6 +168,7 @@ function CoreMetricsBody({ metrics }: { metrics: CoreMetrics }) {
           tone={nearLimit(process.rss_bytes, process.memory_limit_bytes, 0.85) ? "warning" : undefined}
         />
       </KpiStrip>
+      <FleetReadNotice state={fleetState} onRetry={refreshFleet} />
 
       <Section
         headingId="core-execution-heading"

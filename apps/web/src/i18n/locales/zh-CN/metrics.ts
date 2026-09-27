@@ -177,6 +177,11 @@ export const metrics = {
     },
   },
   sandbox: {
+    nodeObservationStale: "这些节点数据是较早的观测，请刷新节点清单以确认当前状态。",
+    servingGeneration: "保留的服务代次",
+    servingGenerationHelp: "Core 为该节点保留的配置代次。仅凭此记录不能确认当前连接、可用容量或目标配置就绪。",
+    targetPreparation: "目标配置",
+    configurationGeneration: "沙箱配置代次",
     title: "沙箱监控",
     description: "整个部署的宿主机容量，以及所有项目的托管运行时。",
     cloudDescription: "Core 在 E2B 云端持有的沙箱，以及各项目的托管 Runtime 观测。",

@@ -9,12 +9,23 @@ const deployment = (overrides: Partial<SandboxDeployment> = {}): SandboxDeployme
   rollout: { state: "settled", previous_generation_sandboxes: 0, nodes: { ready: 1, preparing: 0, failed: 0, update_required: 0, unknown: 0 } }, installation_id: "i", provider: "docker", core_url: "http://core", reset: null, owner_epoch: 1, generation: 1, mode: "nodes",
   resources: { allocations: 0, pending: 0 }, suspension: null, ...overrides,
 });
-const fleet = (value: SandboxDeployment, nodes = [node("n1")]): FleetState => ({ status: "ready", snapshot: { deployment: value, nodes, allocations: [], loadedAt: 0 }, refreshing: false, error: null });
+const fleet = (value: SandboxDeployment, nodes = [node("n1")]): FleetState => ({ status: "ready", snapshot: { deployment: value, nodes, allocations: [], loadedAt: 0 }, targetGeneration: value.generation, refreshing: false, error: null });
 const sandboxes = (state: FleetState) => gettingStartedSteps({ sandboxReset: false, fleet: state, localOnly: false, projects: [], sessions: 0, harnesses: [] }).sandboxes;
 const provider = { object: "core.model_provider", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, updated_at: "2026-09-25T00:00:00Z" } as const;
 const harness = (id: CoreHarness["id"], fields: Partial<CoreHarness> = {}): CoreHarness => ({ object: "core.harness", id, enabled: true, default: false, model_provider: null, ...fields });
 
 describe("Getting started steps", () => {
+  it("uses live provider readiness independently of target state or a durable pin", () => {
+    for (const state of ["preparing", "failed", "update_required", "unknown"] as const) {
+      const serving = node("n1", { rollout: { state, ready_generation: 1 } });
+      expect(sandboxes(fleet(deployment({ generation: 2 }), [serving])).state).toBe("done");
+      expect(sandboxes(fleet(deployment({ generation: 2 }), [{ ...serving, provider_ready: false }])).state).toBe("todo");
+    }
+    expect(sandboxes(fleet(deployment(), [node("n1", { online: false, rollout: { state: "unknown", ready_generation: 1 } })])).state).toBe("todo");
+    expect(sandboxes(fleet(deployment(), [node("n1", { rollout: { state: "unknown", ready_generation: 1 } })])).state).toBe("done");
+    expect(sandboxes(fleet(deployment(), [node("n1", { provider_ready: false, rollout: { state: "preparing", ready_generation: null } })])).state).toBe("todo");
+  });
+
   it("does not report ready during reset or an unreadable deployment, even with ready nodes", () => {
     for (const backend of ["docker", "e2b"] as const) {
       const input = { fleet: fleet(deployment({ provider: backend })), localOnly: false, projects: [project("p")], sessions: 1,

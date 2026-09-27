@@ -71,26 +71,26 @@ function installation() {
   };
 }
 
-/** Settled generation fields required by the strict client; this fixture does not simulate online preparation. */
-function settledRollout(mode) {
-  const nodes = mode === "nodes" ? { ready: 0, preparing: 0, failed: 0, update_required: 0, unknown: 0 } : null;
-  if (nodes) for (const node of state.nodes) nodes[node.rollout.state] += 1;
-  return { state: "settled", previous_generation_sandboxes: 0, nodes };
+const noNodeRollout = () => ({ state: "settled", previous_generation_sandboxes: 0, nodes: null });
+function nodeRollout(previous = 0) {
+  const nodes = { ready: 0, preparing: 0, failed: 0, update_required: 0, unknown: 0 };
+  for (const node of state.nodes) nodes[node.rollout.state]++;
+  return { state: nodes.preparing > 0 ? "preparing" : "settled", previous_generation_sandboxes: previous, nodes };
 }
 
 function unconfiguredDeployment(generation = 0, ownerEpoch = 3) {
-  return { installation_id: INSTALLATION_ID, provider: "", core_url: publicUrl(), rollout: settledRollout(""), reset: null, owner_epoch: ownerEpoch, generation, mode: "", resources: { allocations: 0, pending: 0 }, suspension: null };
+  return { installation_id: INSTALLATION_ID, provider: "", core_url: publicUrl(), reset: null, rollout: noNodeRollout(), owner_epoch: ownerEpoch, generation, mode: "", resources: { allocations: 0, pending: 0 }, suspension: null };
 }
 
 function configuredDeployment() {
-  return { installation_id: INSTALLATION_ID, provider: "docker", core_url: publicUrl(), rollout: settledRollout("nodes"), reset: null, owner_epoch: 3, generation: 1, mode: "nodes", resources: { allocations: 0, pending: 0 }, specification: { resources: { cpus: 2, memory_mib: 4096 }, runtime: release }, specification_digest: "fixture", suspension: null };
+  return { installation_id: INSTALLATION_ID, provider: "docker", core_url: publicUrl(), reset: null, rollout: nodeRollout(), owner_epoch: 3, generation: 1, mode: "nodes", resources: { allocations: 0, pending: 0 }, specification: { resources: { cpus: 2, memory_mib: 4096 }, runtime: release }, specification_digest: "fixture", suspension: null };
 }
 /** The E2B template build as Core read it when the selection was saved. */
 const templateBuild = { status: "ready", resources: { cpus: 2, memory_mib: 2048, root_disk_mib: 10240 } };
 
 // E2B runs sandboxes in its cloud: no nodes, only what Core holds there.
 function e2bDeployment() {
-  return { ...configuredDeployment(), provider: "e2b", mode: "direct", rollout: settledRollout("direct"), resources: { allocations: 3, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 } }, e2b: { template: "oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b", credential_configured: true, template_build: templateBuild } };
+  return { ...configuredDeployment(), provider: "e2b", mode: "direct", rollout: noNodeRollout(), resources: { allocations: 3, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 } }, e2b: { template: "oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b", credential_configured: true, template_build: templateBuild } };
 }
 
 function reset(mode = "login", fresh = false, sandbox = "configured", nodes = "demo", address = "public", credentials = "configured", installers = true, artifacts = "docker,microsandbox") {
@@ -356,19 +356,37 @@ async function sandboxRoute(request, response, path, url) {
     if (input.expected_generation !== state.deployment.generation) return error(response, 409, "The sandbox configuration changed. Refresh before submitting again.", "sandbox_generation_stale");
     if (state.deployment.reset) return error(response, 409, "A sandbox reset is in progress.", "sandbox_reset_in_progress");
     if (!initialize && input.provider !== state.deployment.provider) return error(response, 409, "Reset before changing the sandbox backend.", "sandbox_reset_required");
-    if (!initialize && state.deployment.resources.allocations + state.deployment.resources.pending > 0) return error(response, 409, "Sandbox resources remain.", "sandbox_in_use");
     if (initialize && state.deployment.provider) return error(response, 409, "The sandbox deployment is already configured.", "sandbox_deployment_conflict");
     if (!initialize && !state.deployment.provider) return error(response, 409, "The sandbox deployment is not configured.", "sandbox_deployment_conflict");
     const e2b = input.provider === "e2b";
     if (!e2b && (!input.resources || !input.runtime)) return error(response, 400, "resources and runtime are required.", "invalid_sandbox_configuration");
     // As Core (ErrSandboxPublicURLUnreachable): E2B sandboxes reach Core over the internet, which a loopback public_url cannot serve.
     if (e2b && state.installation === "local") return error(response, 409, "E2B sandboxes reach Core over the internet. Set an HTTPS public URL that is not loopback (public_url in config.json, OAC_PUBLIC_URL for Core).", "sandbox_configuration_error");
+    // Synthetic classifier outcomes only; never persist or echo submitted keys.
+    if (e2b) {
+      if (!input.e2b?.template || (initialize && !input.e2b.api_key) || (Object.hasOwn(input.e2b ?? {}, "api_key") && !input.e2b.api_key)) return error(response, 400, "The E2B API key was rejected.", "e2b_api_key_invalid");
+      if (input.e2b.api_key === "fixture-other-team-key") return error(response, 409, "This E2B key cannot manage the retained deployment. Reset before changing teams.", "e2b_team_mismatch");
+      if (input.e2b.api_key === "fixture-invalid-key") return error(response, 400, "The E2B API key was rejected.", "e2b_api_key_invalid");
+    }
     // As Core: E2B may omit resources and adopt its template build's CPU and memory; only microsandbox suspends.
     const resources = input.resources ?? { cpus: templateBuild.resources.cpus, memory_mib: templateBuild.resources.memory_mib };
+    const previous = state.deployment;
+    const specification = { resources, ...(input.runtime ? { runtime: input.runtime } : {}) };
+    const explicitKey = e2b && Object.hasOwn(input.e2b, "api_key");
+    const sameSelection = !initialize && JSON.stringify(specification) === JSON.stringify(previous.specification) && (!e2b || input.e2b.template === previous.e2b?.template);
+    // Omission can be a no-op; every explicit key, including identical bytes,
+    // takes the verified replacement path and advances the target generation.
+    if (sameSelection && !explicitKey) return send(response, 200, previous);
+    if (!initialize && !e2b) {
+      for (const node of state.nodes) node.rollout = { state: node.online ? "preparing" : "unknown", ready_generation: node.rollout.ready_generation };
+    }
+    const held = initialize ? { allocations: 0, pending: 0 } : previous.resources;
     state.deployment = {
-      ...configuredDeployment(), provider: input.provider, mode: e2b ? "direct" : "nodes", rollout: settledRollout(e2b ? "direct" : "nodes"),
-      generation: state.deployment.generation + 1, owner_epoch: state.deployment.owner_epoch,
-      specification: { resources, ...(input.runtime ? { runtime: input.runtime } : {}) },
+      ...configuredDeployment(), provider: input.provider, mode: e2b ? "direct" : "nodes",
+      generation: previous.generation + 1, owner_epoch: previous.owner_epoch,
+      resources: held,
+      rollout: e2b ? { ...noNodeRollout(), previous_generation_sandboxes: held.allocations + held.pending } : nodeRollout(held.allocations + held.pending),
+      specification,
       ...(e2b ? { e2b: { template: input.e2b?.template ?? "", credential_configured: true, template_build: templateBuild } } : {}),
       suspension: input.provider === "microsandbox" ? { idle_seconds: 300, retention_seconds: 86400 } : null,
     };
@@ -408,7 +426,7 @@ async function sandboxRoute(request, response, path, url) {
     const index = state.nodes.findIndex((node) => node.id === m[1]);
     if (index < 0) return error(response, 404, "No such node.");
     state.nodes.splice(index, 1);
-    state.deployment.rollout = settledRollout(state.deployment.mode);
+    if (state.deployment.mode === "nodes") state.deployment.rollout = nodeRollout(state.deployment.rollout.previous_generation_sandboxes);
     return send(response, 200, { id: m[1], deleted: true });
   }
   return error(response, 404, "Not found.");
@@ -568,11 +586,14 @@ async function fixtureRoute(request, response, url) {
     let node = state.nodes.find((entry) => entry.id === nodeId);
     if (!node) state.nodes.push(node = registeredNode(nodeId));
     Object.assign(node, fields);
-    if (!fields.rollout) node.rollout = !node.online ? { state: "unknown", ready_generation: node.rollout.ready_generation }
-      : node.provider_ready ? { state: "ready", ready_generation: state.deployment.generation }
-        : node.diagnostic ? { state: "failed", ready_generation: node.rollout.ready_generation, diagnostic: node.diagnostic }
-          : { state: "unknown", ready_generation: node.rollout.ready_generation };
-    state.deployment.rollout = settledRollout(state.deployment.mode);
+    // A control may supply an explicit target observation. Existing enrollment
+    // cases only supply connection facts, so give that newly joined target a pin.
+    if (!fields.rollout && ("online" in fields || "provider_ready" in fields || "diagnostic" in fields)) {
+      node.rollout = !node.online ? { state: "unknown", ready_generation: node.rollout.ready_generation }
+        : node.provider_ready ? { state: "ready", ready_generation: state.deployment.generation }
+        : { state: "failed", ready_generation: node.rollout.ready_generation, diagnostic: node.diagnostic || "provider_unavailable" };
+    }
+    if (state.deployment.mode === "nodes") state.deployment.rollout = nodeRollout(state.deployment.rollout.previous_generation_sandboxes);
     if (!node.diagnostic) delete node.diagnostic;
     return send(response, 200, node);
   }

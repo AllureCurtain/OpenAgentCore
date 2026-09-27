@@ -9,6 +9,14 @@ const allocation = (nodeId: string, diagnostic: SandboxAllocation["diagnostic"])
 const core = "https://core.example";
 
 describe("node state", () => {
+  it("keeps live serving health independent of target preparation and durable pins", () => {
+    for (const state of ["unknown", "preparing", "failed", "update_required"] as const) {
+      const serving = node("a", { online: true, provider_ready: true, rollout: { state, ready_generation: 1 } });
+      expect(nodeState(serving, [], false, core)).toBe("available");
+      expect(nodeState({ ...serving, online: false }, [], false, core)).toBe("offline");
+    }
+  });
+
   it("reports stale data, an old address and reachability before anything else", () => {
     expect(nodeState(node("a", { online: false }), [], true, core)).toBe("unconfirmed");
     expect(nodeState(node("a", { core_url: "https://core-old.example" }), [], false, core)).toBe("old_address");

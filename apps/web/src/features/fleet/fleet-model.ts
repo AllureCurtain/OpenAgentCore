@@ -13,6 +13,11 @@ export function nodeHealth(node: SandboxNode): NodeHealth {
   return node.provider_ready && !node.diagnostic ? "available" : "degraded";
 }
 
+/** Live provider evidence is independent of target preparation and durable serving pins. */
+export function nodeServingReady(node: SandboxNode): boolean {
+  return node.online && node.provider_ready;
+}
+
 export interface CapacitySummary {
   nodes: number;
   online: number;

@@ -1,6 +1,7 @@
 import type { CoreHarness } from "@agents-core-web/agents-client";
 
 import { type Project } from "../../lib/admin-view";
+import { nodeServingReady } from "../fleet/fleet-model";
 import { type FleetState } from "../fleet/use-sandbox-fleet";
 import { templateBuildStatus } from "../sandbox/deployment-specification";
 
@@ -70,7 +71,7 @@ function sandboxStep(fleet: FleetState): GettingStartedSteps["sandboxes"] {
   if (deployment.provider === "e2b") {
     return { state: templateBuildStatus(deployment.e2b?.template_build) === "notReady" ? "todo" : "done", action: "nodes", cloud: true };
   }
-  if (nodes.some((node) => node.online && node.provider_ready)) return { state: "done", action: "nodes", cloud: false };
+  if (nodes.some(nodeServingReady)) return { state: "done", action: "nodes", cloud: false };
   return { state: "todo", action: nodes.length ? "nodes" : "add-node", cloud: false };
 }
 
