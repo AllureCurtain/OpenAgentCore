@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/db/sqlc"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -46,17 +47,17 @@ func reserveRuntimePlacement(ctx context.Context, q *sqlc.Queries, session pgtyp
 	var chosen *sqlc.ListRuntimeNodesRow
 	for i := range rows {
 		n := &rows[i]
-		if !n.Online || !n.ProviderReady || n.Active >= int64(n.MaxActive) || n.Retained >= int64(n.MaxRetained) || (d.WebManaged && n.CoreUrl != publicURL) {
+		if !n.Online || !n.ServingReady || !n.ReadyGeneration.Valid || n.Active >= int64(n.MaxActive) || n.Retained >= int64(n.MaxRetained) || (d.WebManaged && n.CoreUrl != publicURL) {
 			continue
 		}
-		if chosen == nil || n.Active < chosen.Active {
+		if chosen == nil || n.ReadyGeneration.Int64 > chosen.ReadyGeneration.Int64 || n.ReadyGeneration.Int64 == chosen.ReadyGeneration.Int64 && n.Active < chosen.Active {
 			chosen = n
 		}
 	}
 	if chosen == nil {
 		return ErrRuntimeNodeUnavailable
 	}
-	return q.CreateSessionRuntimePlacement(ctx, sqlc.CreateSessionRuntimePlacementParams{SessionID: session, NodeID: chosen.ID})
+	return q.CreateSessionRuntimePlacement(ctx, sqlc.CreateSessionRuntimePlacementParams{SessionID: session, NodeID: chosen.ID, Generation: chosen.ReadyGeneration.Int64})
 }
 
 // ResolveRuntimeNode includes deleted Sessions so owned cleanup remains routable.
@@ -70,7 +71,7 @@ func (s *Store) ResolveRuntimeNode(ctx context.Context, tenant, environment stri
 	}
 	return allocation.NodeID, nil
 }
-func reserveRuntimeRestore(ctx context.Context, q *sqlc.Queries, node pgtype.UUID) error {
+func reserveRuntimeRestore(ctx context.Context, q *sqlc.Queries, node pgtype.UUID, generation pgtype.Int8) error {
 	if !node.Valid {
 		return nil
 	}
@@ -83,11 +84,27 @@ func reserveRuntimeRestore(ctx context.Context, q *sqlc.Queries, node pgtype.UUI
 	}
 	for _, n := range nodes {
 		if n.ID == node {
-			if !n.Online || !n.ProviderReady || n.Active >= int64(n.MaxActive) {
+			ready, err := q.NodeGenerationReady(ctx, sqlc.NodeGenerationReadyParams{NodeID: node, Generation: generation.Int64})
+			if err != nil {
+				return err
+			}
+			if !generation.Valid || !n.Online || !ready || n.Active >= int64(n.MaxActive) {
 				return ErrRuntimeNodeUnavailable
 			}
 			return nil
 		}
 	}
 	return ErrRuntimeNodeUnavailable
+}
+
+// ResolveRuntimeGeneration includes deleted Sessions and never substitutes the target.
+func (s *Store) ResolveRuntimeGeneration(ctx context.Context, ref sandbox.Reference) (string, uint64, error) {
+	a, err := s.GetRuntimeAllocation(ctx, ref.TenantID, ref.EnvironmentID)
+	if err != nil {
+		return "", 0, err
+	}
+	if a.ID != ref.AllocationID || a.NodeID == "" || a.DeploymentGeneration == 0 {
+		return "", 0, ErrRuntimeNodeUnavailable
+	}
+	return a.NodeID, a.DeploymentGeneration, nil
 }

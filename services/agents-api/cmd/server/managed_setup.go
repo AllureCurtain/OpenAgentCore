@@ -23,7 +23,7 @@ import (
 type managedSetup struct {
 	store interface {
 		GetSandboxSetup(context.Context) (store.SandboxSetup, error)
-		ResolveRuntimeNode(context.Context, string, string) (string, error)
+		ResolveRuntimeGeneration(context.Context, sandbox.Reference) (string, uint64, error)
 	}
 	hub            *node.Hub
 	installationID string
@@ -182,9 +182,7 @@ func (s *managedSetup) provider(setup store.SandboxSetup) (sandbox.Provider, err
 		if s.hub == nil {
 			return nil, errors.New("sandbox node transport is unavailable")
 		}
-		return s.hub.Provider(setup.Provider, func(ctx context.Context, ref sandbox.Reference) (string, error) {
-			return s.store.ResolveRuntimeNode(ctx, ref.TenantID, ref.EnvironmentID)
-		}), nil
+		return s.hub.GenerationProvider(setup.Provider, s.store.ResolveRuntimeGeneration), nil
 	case "e2b":
 		if setup.E2B == nil {
 			return nil, errors.New("E2B deployment configuration is unavailable")

@@ -14,6 +14,9 @@ SELECT * FROM runtime_nodes WHERE id=$1 AND removed_at IS NULL;
 -- name: ListRuntimeNodes :many
 SELECT n.*, (n.connection_id IS NOT NULL AND n.connected_epoch=d.owner_epoch AND n.last_seen_at > clock_timestamp()-interval '45 seconds')::boolean AS online,
  d.provider_kind, d.generation AS target_generation,
+ EXISTS(SELECT 1 FROM runtime_node_generation_status g WHERE g.node_id=n.id AND g.generation=n.ready_generation AND g.connection_id=n.connection_id AND g.owner_epoch=d.owner_epoch AND g.state='ready')::boolean AS serving_ready,
+ COALESCE((SELECT g.state FROM runtime_node_generation_status g WHERE g.node_id=n.id AND g.generation=d.generation AND g.connection_id=n.connection_id AND g.owner_epoch=d.owner_epoch),'')::text AS target_state,
+ COALESCE((SELECT g.diagnostic FROM runtime_node_generation_status g WHERE g.node_id=n.id AND g.generation=d.generation AND g.connection_id=n.connection_id AND g.owner_epoch=d.owner_epoch),'')::text AS target_diagnostic,
  (SELECT count(*) FROM runtime_placements p LEFT JOIN runtime_allocations a ON a.environment_id=p.environment_id WHERE p.node_id=n.id AND p.released_at IS NULL AND (a.id IS NULL OR a.compute_phase <> 'suspended'))::bigint AS active,
  (SELECT count(*) FROM runtime_placements p WHERE p.node_id=n.id AND p.released_at IS NULL)::bigint AS retained,
  (SELECT count(*) FROM runtime_placements p WHERE p.node_id=n.id AND p.released_at IS NULL AND NOT EXISTS(SELECT 1 FROM runtime_allocations a WHERE a.environment_id=p.environment_id))::bigint AS reserved,
@@ -60,7 +63,7 @@ SELECT * FROM runtime_node_enrollments WHERE token_sha256=$1;
 INSERT INTO runtime_placements(environment_id,node_id,deployment_generation) VALUES($1,$2,(SELECT generation FROM runtime_deployment));
 
 -- name: GetRuntimePlacement :one
-SELECT p.*, n.name, (n.provider_ready AND n.connection_id IS NOT NULL AND n.connected_epoch=d.owner_epoch AND n.last_seen_at>clock_timestamp()-interval '45 seconds' AND n.removed_at IS NULL)::boolean AS available,
+SELECT p.*, n.name, (EXISTS(SELECT 1 FROM runtime_node_generation_status g WHERE g.node_id=n.id AND g.generation=p.deployment_generation AND g.connection_id=n.connection_id AND g.owner_epoch=d.owner_epoch AND g.state='ready') AND n.connection_id IS NOT NULL AND n.connected_epoch=d.owner_epoch AND n.last_seen_at>clock_timestamp()-interval '45 seconds' AND n.removed_at IS NULL)::boolean AS available,
  COALESCE(a.observation_error,'')::text AS observation_error, COALESCE(a.state,'reserved')::text AS state, COALESCE(a.compute_phase,'disabled')::text AS compute_phase
 FROM runtime_placements p JOIN runtime_nodes n ON n.id=p.node_id CROSS JOIN runtime_deployment d
 LEFT JOIN runtime_allocations a ON a.environment_id=p.environment_id WHERE p.environment_id=$1;
@@ -96,7 +99,7 @@ WHERE a.node_id=$1 AND a.state<>'released' ORDER BY a.created_at,a.id LIMIT 1000
 
 -- name: CreateSessionRuntimePlacement :exec
 INSERT INTO runtime_placements(environment_id,node_id,deployment_generation)
-SELECT id,$2,(SELECT generation FROM runtime_deployment) FROM environments WHERE session_id=$1;
+SELECT id,$2,sqlc.arg(generation)::bigint FROM environments WHERE session_id=$1;
 
 -- name: SetRuntimeObservation :exec
 UPDATE runtime_allocations SET observation_error=$4 WHERE id=$1 AND compute_revision=$2 AND state=$3 AND state<>'released';

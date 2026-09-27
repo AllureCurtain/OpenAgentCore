@@ -14,6 +14,8 @@ import (
 )
 
 type HubOptions struct {
+	Generations  func(context.Context, Identity, string, uint64, Health) error
+	Retention    func(context.Context, Identity, string, uint64, []sandbox.GenerationReference) (sandbox.NodeDeployment, []sandbox.GenerationRetention, error)
 	Authenticate func(context.Context, string, string) (Identity, error)
 	OwnerEpoch   func(context.Context) (uint64, error)
 	Connected    func(context.Context, Identity, string, uint64) error
@@ -33,18 +35,21 @@ type Hub struct {
 }
 
 type peer struct {
-	identity Identity
-	id       string
-	epoch    uint64
-	conn     *websocket.Conn
-	send     chan struct{}
-	mu       sync.Mutex
-	sequence uint64
-	ready    bool
-	pending  map[string]chan response
-	done     chan struct{}
-	once     sync.Once
-	cancel   context.CancelFunc
+	version         int
+	generations     map[uint64]sandbox.GenerationStatus
+	controlSequence uint64
+	identity        Identity
+	id              string
+	epoch           uint64
+	conn            *websocket.Conn
+	send            chan struct{}
+	mu              sync.Mutex
+	sequence        uint64
+	ready           bool
+	pending         map[string]chan response
+	done            chan struct{}
+	once            sync.Once
+	cancel          context.CancelFunc
 }
 
 func NewHub(options HubOptions) *Hub {
@@ -153,7 +158,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = conn.Close()
 		return
 	}
-	p := &peer{identity: identity, id: uuid.NewString(), epoch: epoch, conn: conn, cancel: cancel, send: make(chan struct{}, 1), pending: map[string]chan response{}, ready: hello.Health.ProviderReady, done: make(chan struct{})}
+	p := &peer{version: hello.Version, generations: map[uint64]sandbox.GenerationStatus{}, identity: identity, id: uuid.NewString(), epoch: epoch, conn: conn, cancel: cancel, send: make(chan struct{}, 1), pending: map[string]chan response{}, ready: hello.Health.ProviderReady, done: make(chan struct{})}
 	stopPeerClose := context.AfterFunc(ctx, p.close)
 	defer stopPeerClose()
 	presenceAttempted := false
@@ -182,16 +187,18 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if h.options.Heartbeat != nil {
-		presenceAttempted = true
-		err = callback(ctx, func(ctx context.Context) error {
-			return h.options.Heartbeat(ctx, identity, p.id, p.epoch, *hello.Health)
-		})
+	if err = h.recordHealth(ctx, p, *hello.Health); err != nil {
+		return
+	}
+	welcome := frame{Version: p.version, Type: "welcome", ConnectionID: p.id, OwnerEpoch: epoch}
+	if p.version == GenerationProtocolVersion {
+		deployment, _, err := h.retention(ctx, p, nil)
 		if err != nil {
 			return
 		}
+		welcome.Deployment = &deployment
 	}
-	if ctx.Err() != nil || writeFrame(conn, frame{Type: "welcome", ConnectionID: p.id, OwnerEpoch: epoch}) != nil {
+	if ctx.Err() != nil || writeFrame(conn, welcome) != nil {
 		return
 	}
 	h.mu.Lock()
@@ -205,7 +212,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(35 * time.Second))
 		f, e := readFrame(conn)
-		if e != nil {
+		if e != nil || f.Version != p.version {
 			return
 		}
 		switch f.Type {
@@ -234,20 +241,58 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if e != nil || current != epoch {
 				return
 			}
-			if h.options.Heartbeat != nil && callback(ctx, func(ctx context.Context) error { return h.options.Heartbeat(ctx, identity, p.id, p.epoch, *f.Health) }) != nil {
+			if p.version == GenerationProtocolVersion && f.OwnerEpoch != p.epoch {
 				return
 			}
-			p.mu.Lock()
-			p.ready = f.Health.ProviderReady
-			p.mu.Unlock()
+			if h.recordHealth(ctx, p, *f.Health) != nil {
+				return
+			}
 			if e = p.lockSend(ctx); e != nil {
 				return
 			}
-			e = writeFrame(conn, frame{Type: "heartbeat_ack", ConnectionID: p.id})
+			ack := frame{Version: p.version, Type: "heartbeat_ack", ConnectionID: p.id, OwnerEpoch: p.epoch}
+			if p.version == GenerationProtocolVersion {
+				deployment, _, readErr := h.retention(ctx, p, nil)
+				if readErr != nil {
+					p.unlockSend()
+					return
+				}
+				ack.Deployment = &deployment
+			}
+			e = writeFrame(conn, ack)
 			p.unlockSend()
 			if e != nil {
 				return
 			}
+		case "retention":
+			if p.version != GenerationProtocolVersion || f.Control == nil {
+				return
+			}
+			c := f.Control
+			if c.ConnectionID != p.id || c.OwnerEpoch != p.epoch || c.Sequence != p.controlSequence+1 {
+				return
+			}
+			p.controlSequence = c.Sequence
+			deployment, grants, readErr := h.retention(ctx, p, c.References)
+			if readErr != nil {
+				return
+			}
+			ack := frame{Version: p.version, Type: "retention_ack", Deployment: &deployment, Control: &generationControl{ID: c.ID, Sequence: c.Sequence, ConnectionID: p.id, OwnerEpoch: p.epoch, Retentions: grants}}
+			if err := p.lockSend(ctx); err != nil {
+				return
+			}
+			err := writeFrame(conn, ack)
+			p.unlockSend()
+			if err != nil {
+				return
+			}
+			p.mu.Lock()
+			for _, g := range grants {
+				if !g.Keep {
+					delete(p.generations, g.Generation)
+				}
+			}
+			p.mu.Unlock()
 		default:
 			return
 		}
@@ -284,9 +329,19 @@ func (h *Hub) call(ctx context.Context, id string, q request) (response, error) 
 	}
 	p.mu.Lock()
 	ready := p.ready
+	if p.version == GenerationProtocolVersion {
+		status, ok := p.generations[q.DeploymentGeneration]
+		ready = ok && status.State == "ready"
+	} else if q.DeploymentGeneration != 0 && q.DeploymentGeneration != p.identity.DeploymentGeneration {
+		p.mu.Unlock()
+		return response{}, uncertain(q.Operation, ErrUnavailable)
+	}
 	p.mu.Unlock()
 	if requiresReady(q) && !ready {
 		return response{}, uncertain(q.Operation, ErrUnavailable)
+	}
+	if p.version == ProtocolVersion {
+		q.DeploymentGeneration = 0
 	}
 	deadline, _ := ctx.Deadline()
 	q.ID, q.ConnectionID, q.OwnerEpoch = uuid.NewString(), p.id, p.epoch
@@ -314,7 +369,7 @@ func (h *Hub) call(ctx context.Context, id string, q request) (response, error) 
 		} else if err = q.setTimeout(deadline); err == nil {
 			p.sequence++
 			q.Sequence = p.sequence
-			err = writeFrame(p.conn, frame{Type: "request", Request: &q})
+			err = writeFrame(p.conn, frame{Version: p.version, Type: "request", Request: &q})
 		}
 	}
 	p.unlockSend()
@@ -337,3 +392,55 @@ func (h *Hub) call(ctx context.Context, id string, q request) (response, error) 
 }
 
 type Resolver func(context.Context, sandbox.Reference) (string, error)
+
+func (h *Hub) recordHealth(ctx context.Context, p *peer, health Health) error {
+	if p.version == GenerationProtocolVersion {
+		if h.options.Generations == nil {
+			return sandbox.ErrInvalid
+		}
+		if err := callback(ctx, func(ctx context.Context) error { return h.options.Generations(ctx, p.identity, p.id, p.epoch, health) }); err != nil {
+			return err
+		}
+		refs := make([]sandbox.GenerationReference, 0, len(health.Generations))
+		for _, g := range health.Generations {
+			refs = append(refs, sandbox.GenerationReference{Generation: g.Generation, SpecificationDigest: g.SpecificationDigest})
+		}
+		_, grants, err := h.retention(ctx, p, refs)
+		if err != nil {
+			return err
+		}
+		p.mu.Lock()
+		for i, g := range health.Generations {
+			if grants[i].Keep {
+				p.generations[g.Generation] = g
+			} else {
+				delete(p.generations, g.Generation)
+			}
+		}
+		p.mu.Unlock()
+		return nil
+	}
+	if h.options.Heartbeat != nil {
+		if err := callback(ctx, func(ctx context.Context) error { return h.options.Heartbeat(ctx, p.identity, p.id, p.epoch, health) }); err != nil {
+			return err
+		}
+	}
+	p.mu.Lock()
+	p.ready = health.ProviderReady
+	p.mu.Unlock()
+	return nil
+}
+func (h *Hub) retention(ctx context.Context, p *peer, refs []sandbox.GenerationReference) (sandbox.NodeDeployment, []sandbox.GenerationRetention, error) {
+	if h.options.Retention == nil {
+		return sandbox.NodeDeployment{}, nil, sandbox.ErrInvalid
+	}
+	type result struct {
+		deployment sandbox.NodeDeployment
+		grants     []sandbox.GenerationRetention
+	}
+	value, err := callbackValue(ctx, func(ctx context.Context) (result, error) {
+		d, g, err := h.options.Retention(ctx, p.identity, p.id, p.epoch, refs)
+		return result{d, g}, err
+	})
+	return value.deployment, value.grants, err
+}

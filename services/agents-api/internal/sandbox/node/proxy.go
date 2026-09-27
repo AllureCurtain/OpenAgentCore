@@ -6,9 +6,10 @@ import (
 )
 
 type provider struct {
-	hub     *Hub
-	resolve Resolver
-	kind    string
+	hub               *Hub
+	resolve           Resolver
+	resolveGeneration func(context.Context, sandbox.Reference) (string, uint64, error)
+	kind              string
 }
 type checkpointProvider struct{ *provider }
 
@@ -27,7 +28,13 @@ func (h *Hub) Proxy(id, kind string) sandbox.Provider {
 	return h.Provider(kind, func(context.Context, sandbox.Reference) (string, error) { return id, nil })
 }
 func (p *provider) call(ctx context.Context, q request) (response, error) {
-	id, err := p.resolve(ctx, q.Reference)
+	var id string
+	var err error
+	if p.resolveGeneration != nil {
+		id, q.DeploymentGeneration, err = p.resolveGeneration(ctx, q.Reference)
+	} else {
+		id, err = p.resolve(ctx, q.Reference)
+	}
 	if err != nil {
 		return response{}, err
 	}
@@ -139,4 +146,14 @@ func (p *checkpointProvider) RunCommandCompute(ctx context.Context, r sandbox.Re
 }
 func (p *checkpointProvider) ResumeCompute(ctx context.Context, r sandbox.Reference, c sandbox.Compute) (sandbox.ComputeState, error) {
 	return p.state(ctx, request{Operation: "resume_compute", Reference: r, Compute: &c})
+}
+
+// GenerationProvider routes every operation with allocation-owned generation,
+// distinct from the request's compute generation.
+func (h *Hub) GenerationProvider(kind string, resolve func(context.Context, sandbox.Reference) (string, uint64, error)) sandbox.Provider {
+	p := &provider{hub: h, kind: kind, resolveGeneration: resolve}
+	if kind == "microsandbox" {
+		return &checkpointProvider{p}
+	}
+	return p
 }

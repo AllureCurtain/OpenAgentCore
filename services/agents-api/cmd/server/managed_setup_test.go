@@ -205,3 +205,7 @@ func (s *setupStore) SandboxGenerationPage(context.Context, int64) ([]store.Sand
 func (s *setupStore) SandboxCredentialAllocationPage(context.Context, string) ([]store.RuntimeAllocation, error) {
 	return nil, nil
 }
+
+func (s *setupStore) ResolveRuntimeGeneration(context.Context, sandbox.Reference) (string, uint64, error) {
+	return "", 0, errors.New("unexpected node generation lookup")
+}

@@ -34,6 +34,7 @@ import uuid
 
 import distribution
 import node_spec
+import node_generations
 
 
 class InstallError(Exception):
@@ -197,7 +198,7 @@ def fetch(source, name):
             time.sleep(attempt + 1)
 
 
-def metadata(source, bundle=None):
+def metadata(source, bundle=None, prefix=""):
     if bundle is not None:
         def read(name):
             path = bundle / name
@@ -205,7 +206,7 @@ def metadata(source, bundle=None):
                 raise InstallError("Invalid local distribution metadata")
             return path.open("rb")
     else:
-        read = lambda name: fetch(source, name)
+        read = lambda name: fetch(source, prefix + name)
     with read("SHA256SUMS") as response:
         raw = response.read(1024 * 1024 + 1)
     if len(raw) > 1024 * 1024:
@@ -228,7 +229,7 @@ def metadata(source, bundle=None):
     for name in (COMMON[0], "images/runtime.tar.gz") + MICRO:
         distribution.artifact(manifest, name)
     # Nodes download only from their console, never from a release URL the build recorded.
-    manifest["artifact_base_url"] = source + "/node-install/artifacts" if source else ""
+    manifest["artifact_base_url"] = source + "/node-install/" + prefix + "artifacts" if source else ""
     return manifest, sums
 
 
@@ -315,7 +316,7 @@ def provider_config(root, args, manifest, runtime_image):
         result["microsandbox"] = {
             "helper_path": str(root / MICRO[0]), "runtime_path": str(root / MICRO[1]), "firmware_path": str(root / MICRO[2]),
             "runtime_sha256": manifest["microsandbox"]["runtime_sha256"], "firmware_sha256": manifest["microsandbox"]["firmware_sha256"],
-            "runtime_home": str(micro_home(args.installation_id)), "image": manifest["runtime_ref"],
+            "runtime_home": str(getattr(args, "runtime_home", micro_home(args.installation_id))), "image": manifest["runtime_ref"],
             **args.configuration["specification"]["resources"],
             "network": {"default_egress": "deny", "default_ingress": "deny", "rules": core_rules + [
                 {"action": "allow", "direction": "egress", "destination": "public"},
@@ -342,7 +343,7 @@ def prepare_runtime(root, args, manifest):
             output = result.stdout.decode()
             if "not found" in output or (result.returncode and "statically linked" not in output and "not a dynamic executable" not in output):
                 raise InstallError("Install the microsandbox host shared-library prerequisites")
-        env = dict(os.environ, MSB_BACKEND="local", MSB_HOME=str(micro_home(args.installation_id)),
+        env = dict(os.environ, MSB_BACKEND="local", MSB_HOME=str(getattr(args, "runtime_home", micro_home(args.installation_id))),
                    MSB_PATH=str(root / MICRO[1]), MSB_LIBKRUNFW_PATH=str(root / MICRO[2]))
         inspect = [str(root / MICRO[1]), "image", "inspect", manifest["runtime_ref"], "--format", "json"]
         def matches():
@@ -438,6 +439,7 @@ def register_node(root, args, token):
             existing_file(target)
             distribution.obtain_artifact(manifest, name, target, getattr(args, "bundle", None))
             os.chmod(target, 0o700)
+    node_generations.install_helper(root, args, sys.modules[__name__])
     safe_directory(root / "state/node")
     print("Checking the sandbox runtime...", flush=True)
     runtime_image = prepare_runtime(root, args, manifest)
@@ -1425,6 +1427,9 @@ def main(argv=None):
     parser.add_argument("--provider", choices=("docker", "microsandbox"), help="Optional assertion; Core owns provider selection")
     parser.add_argument("--installation-id", required=True)
     parser.add_argument("--enrollment-token-stdin", action="store_true", help="Read the one-time enrollment token from standard input")
+    parser.add_argument("--generation-action", choices=("prepare", "collect"), help=argparse.SUPPRESS)
+    parser.add_argument("--generation", type=int, help=argparse.SUPPRESS)
+    parser.add_argument("--specification-digest", help=argparse.SUPPRESS)
     parser.add_argument("--uninstall", action="store_true", help="Remove this host's node after it was removed on the Nodes page")
     parser.add_argument("--force", action="store_true", help="With --uninstall: skip the Core check, for a Core that no longer exists")
     args = parser.parse_args(argv)
@@ -1433,6 +1438,11 @@ def main(argv=None):
                        "--enrollment-token-stdin.\n")
     if str(uuid.UUID(args.installation_id)) != args.installation_id:
         raise InstallError("Installation ID must be a canonical UUID")
+    if args.generation_action:
+        if args.generation is None or not 1 <= args.generation <= 9223372036854775807 or not re.fullmatch(r"[0-9a-f]{64}", args.specification_digest or ""):
+            parser.error("Invalid generation authorization")
+        (node_generations.prepare if args.generation_action == "prepare" else node_generations.collect)(args, sys.modules[__name__])
+        return
     if args.uninstall:
         if args.source_url or args.bundle or args.core_url or args.provider or args.enrollment_token_stdin:
             parser.error("--uninstall takes only --installation-id and --force")

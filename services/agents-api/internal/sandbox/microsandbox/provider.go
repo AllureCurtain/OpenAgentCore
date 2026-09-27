@@ -214,3 +214,9 @@ func (p *Provider) NewCompute(ctx context.Context, r sandbox.Reference, generati
 	}
 	return c, nil
 }
+
+// Quiescent includes a helper that outlived the caller's canceled context.
+func (p *Provider) Quiescent() bool {
+	v, ok := p.caller.(interface{ Quiescent() bool })
+	return ok && v.Quiescent()
+}

@@ -133,16 +133,17 @@ func (q *Queries) CreateRuntimePlacement(ctx context.Context, arg CreateRuntimeP
 
 const createSessionRuntimePlacement = `-- name: CreateSessionRuntimePlacement :exec
 INSERT INTO runtime_placements(environment_id,node_id,deployment_generation)
-SELECT id,$2,(SELECT generation FROM runtime_deployment) FROM environments WHERE session_id=$1
+SELECT id,$2,$3::bigint FROM environments WHERE session_id=$1
 `
 
 type CreateSessionRuntimePlacementParams struct {
-	SessionID pgtype.UUID `json:"session_id"`
-	NodeID    pgtype.UUID `json:"node_id"`
+	SessionID  pgtype.UUID `json:"session_id"`
+	NodeID     pgtype.UUID `json:"node_id"`
+	Generation int64       `json:"generation"`
 }
 
 func (q *Queries) CreateSessionRuntimePlacement(ctx context.Context, arg CreateSessionRuntimePlacementParams) error {
-	_, err := q.db.Exec(ctx, createSessionRuntimePlacement, arg.SessionID, arg.NodeID)
+	_, err := q.db.Exec(ctx, createSessionRuntimePlacement, arg.SessionID, arg.NodeID, arg.Generation)
 	return err
 }
 
@@ -219,7 +220,7 @@ func (q *Queries) GetRuntimeEnrollment(ctx context.Context, tokenSha256 string) 
 }
 
 const getRuntimeNode = `-- name: GetRuntimeNode :one
-SELECT id, installation_id, name, backend_fingerprint, credential_sha256, max_active, max_retained, connection_id, provider_ready, health, connected_epoch, last_seen_at, created_at, removed_at, specification_digest, deployment_generation, core_url, enrollment_id, ready_generation FROM runtime_nodes WHERE id=$1 AND removed_at IS NULL
+SELECT id, installation_id, name, backend_fingerprint, credential_sha256, max_active, max_retained, connection_id, provider_ready, health, connected_epoch, last_seen_at, created_at, removed_at, specification_digest, deployment_generation, core_url, enrollment_id, ready_generation, protocol_version FROM runtime_nodes WHERE id=$1 AND removed_at IS NULL
 `
 
 func (q *Queries) GetRuntimeNode(ctx context.Context, id pgtype.UUID) (RuntimeNode, error) {
@@ -245,12 +246,13 @@ func (q *Queries) GetRuntimeNode(ctx context.Context, id pgtype.UUID) (RuntimeNo
 		&i.CoreUrl,
 		&i.EnrollmentID,
 		&i.ReadyGeneration,
+		&i.ProtocolVersion,
 	)
 	return i, err
 }
 
 const getRuntimePlacement = `-- name: GetRuntimePlacement :one
-SELECT p.environment_id, p.node_id, p.reserved_at, p.released_at, p.deployment_generation, n.name, (n.provider_ready AND n.connection_id IS NOT NULL AND n.connected_epoch=d.owner_epoch AND n.last_seen_at>clock_timestamp()-interval '45 seconds' AND n.removed_at IS NULL)::boolean AS available,
+SELECT p.environment_id, p.node_id, p.reserved_at, p.released_at, p.deployment_generation, n.name, (EXISTS(SELECT 1 FROM runtime_node_generation_status g WHERE g.node_id=n.id AND g.generation=p.deployment_generation AND g.connection_id=n.connection_id AND g.owner_epoch=d.owner_epoch AND g.state='ready') AND n.connection_id IS NOT NULL AND n.connected_epoch=d.owner_epoch AND n.last_seen_at>clock_timestamp()-interval '45 seconds' AND n.removed_at IS NULL)::boolean AS available,
  COALESCE(a.observation_error,'')::text AS observation_error, COALESCE(a.state,'reserved')::text AS state, COALESCE(a.compute_phase,'disabled')::text AS compute_phase
 FROM runtime_placements p JOIN runtime_nodes n ON n.id=p.node_id CROSS JOIN runtime_deployment d
 LEFT JOIN runtime_allocations a ON a.environment_id=p.environment_id WHERE p.environment_id=$1
@@ -316,7 +318,7 @@ func (q *Queries) HeartbeatRuntimeNode(ctx context.Context, arg HeartbeatRuntime
 
 const insertRuntimeNode = `-- name: InsertRuntimeNode :one
 INSERT INTO runtime_nodes(id,installation_id,name,backend_fingerprint,credential_sha256,max_active,max_retained,specification_digest,deployment_generation,core_url,enrollment_id,ready_generation)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$9) RETURNING id, installation_id, name, backend_fingerprint, credential_sha256, max_active, max_retained, connection_id, provider_ready, health, connected_epoch, last_seen_at, created_at, removed_at, specification_digest, deployment_generation, core_url, enrollment_id, ready_generation
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$9) RETURNING id, installation_id, name, backend_fingerprint, credential_sha256, max_active, max_retained, connection_id, provider_ready, health, connected_epoch, last_seen_at, created_at, removed_at, specification_digest, deployment_generation, core_url, enrollment_id, ready_generation, protocol_version
 `
 
 type InsertRuntimeNodeParams struct {
@@ -368,6 +370,7 @@ func (q *Queries) InsertRuntimeNode(ctx context.Context, arg InsertRuntimeNodePa
 		&i.CoreUrl,
 		&i.EnrollmentID,
 		&i.ReadyGeneration,
+		&i.ProtocolVersion,
 	)
 	return i, err
 }
@@ -484,8 +487,11 @@ func (q *Queries) ListNodeRuntimeAllocations(ctx context.Context, nodeID pgtype.
 }
 
 const listRuntimeNodes = `-- name: ListRuntimeNodes :many
-SELECT n.id, n.installation_id, n.name, n.backend_fingerprint, n.credential_sha256, n.max_active, n.max_retained, n.connection_id, n.provider_ready, n.health, n.connected_epoch, n.last_seen_at, n.created_at, n.removed_at, n.specification_digest, n.deployment_generation, n.core_url, n.enrollment_id, n.ready_generation, (n.connection_id IS NOT NULL AND n.connected_epoch=d.owner_epoch AND n.last_seen_at > clock_timestamp()-interval '45 seconds')::boolean AS online,
+SELECT n.id, n.installation_id, n.name, n.backend_fingerprint, n.credential_sha256, n.max_active, n.max_retained, n.connection_id, n.provider_ready, n.health, n.connected_epoch, n.last_seen_at, n.created_at, n.removed_at, n.specification_digest, n.deployment_generation, n.core_url, n.enrollment_id, n.ready_generation, n.protocol_version, (n.connection_id IS NOT NULL AND n.connected_epoch=d.owner_epoch AND n.last_seen_at > clock_timestamp()-interval '45 seconds')::boolean AS online,
  d.provider_kind, d.generation AS target_generation,
+ EXISTS(SELECT 1 FROM runtime_node_generation_status g WHERE g.node_id=n.id AND g.generation=n.ready_generation AND g.connection_id=n.connection_id AND g.owner_epoch=d.owner_epoch AND g.state='ready')::boolean AS serving_ready,
+ COALESCE((SELECT g.state FROM runtime_node_generation_status g WHERE g.node_id=n.id AND g.generation=d.generation AND g.connection_id=n.connection_id AND g.owner_epoch=d.owner_epoch),'')::text AS target_state,
+ COALESCE((SELECT g.diagnostic FROM runtime_node_generation_status g WHERE g.node_id=n.id AND g.generation=d.generation AND g.connection_id=n.connection_id AND g.owner_epoch=d.owner_epoch),'')::text AS target_diagnostic,
  (SELECT count(*) FROM runtime_placements p LEFT JOIN runtime_allocations a ON a.environment_id=p.environment_id WHERE p.node_id=n.id AND p.released_at IS NULL AND (a.id IS NULL OR a.compute_phase <> 'suspended'))::bigint AS active,
  (SELECT count(*) FROM runtime_placements p WHERE p.node_id=n.id AND p.released_at IS NULL)::bigint AS retained,
  (SELECT count(*) FROM runtime_placements p WHERE p.node_id=n.id AND p.released_at IS NULL AND NOT EXISTS(SELECT 1 FROM runtime_allocations a WHERE a.environment_id=p.environment_id))::bigint AS reserved,
@@ -517,9 +523,13 @@ type ListRuntimeNodesRow struct {
 	CoreUrl              string             `json:"core_url"`
 	EnrollmentID         pgtype.UUID        `json:"enrollment_id"`
 	ReadyGeneration      pgtype.Int8        `json:"ready_generation"`
+	ProtocolVersion      int32              `json:"protocol_version"`
 	Online               bool               `json:"online"`
 	ProviderKind         string             `json:"provider_kind"`
 	TargetGeneration     int64              `json:"target_generation"`
+	ServingReady         bool               `json:"serving_ready"`
+	TargetState          string             `json:"target_state"`
+	TargetDiagnostic     string             `json:"target_diagnostic"`
 	Active               int64              `json:"active"`
 	Retained             int64              `json:"retained"`
 	Reserved             int64              `json:"reserved"`
@@ -557,9 +567,13 @@ func (q *Queries) ListRuntimeNodes(ctx context.Context, nodeID pgtype.UUID) ([]L
 			&i.CoreUrl,
 			&i.EnrollmentID,
 			&i.ReadyGeneration,
+			&i.ProtocolVersion,
 			&i.Online,
 			&i.ProviderKind,
 			&i.TargetGeneration,
+			&i.ServingReady,
+			&i.TargetState,
+			&i.TargetDiagnostic,
 			&i.Active,
 			&i.Retained,
 			&i.Reserved,
@@ -652,7 +666,7 @@ func (q *Queries) SetRuntimeObservation(ctx context.Context, arg SetRuntimeObser
 }
 
 const updateRuntimeNode = `-- name: UpdateRuntimeNode :one
-UPDATE runtime_nodes SET name=$2,max_active=$3,max_retained=$4 WHERE id=$1 AND removed_at IS NULL RETURNING id, installation_id, name, backend_fingerprint, credential_sha256, max_active, max_retained, connection_id, provider_ready, health, connected_epoch, last_seen_at, created_at, removed_at, specification_digest, deployment_generation, core_url, enrollment_id, ready_generation
+UPDATE runtime_nodes SET name=$2,max_active=$3,max_retained=$4 WHERE id=$1 AND removed_at IS NULL RETURNING id, installation_id, name, backend_fingerprint, credential_sha256, max_active, max_retained, connection_id, provider_ready, health, connected_epoch, last_seen_at, created_at, removed_at, specification_digest, deployment_generation, core_url, enrollment_id, ready_generation, protocol_version
 `
 
 type UpdateRuntimeNodeParams struct {
@@ -690,6 +704,7 @@ func (q *Queries) UpdateRuntimeNode(ctx context.Context, arg UpdateRuntimeNodePa
 		&i.CoreUrl,
 		&i.EnrollmentID,
 		&i.ReadyGeneration,
+		&i.ProtocolVersion,
 	)
 	return i, err
 }

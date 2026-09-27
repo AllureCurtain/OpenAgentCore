@@ -131,7 +131,7 @@ func runtimeNodeViews(rows []sqlc.ListRuntimeNodesRow) ([]RuntimeNode, error) {
 		if err := json.Unmarshal(n.Health, &health); err != nil {
 			return nil, err
 		}
-		health.ProviderReady = n.ProviderReady
+		health.ProviderReady = n.Online && n.ServingReady
 		out = append(out, RuntimeNode{Rollout: nodeRollout(n), RuntimeNodeHealth: health, Running: n.Running, Snapshots: n.Snapshots, ID: runtimeUUID(n.ID), Name: n.Name, CoreURL: n.CoreUrl, EnrollmentID: optionalUUID(n.EnrollmentID), Provider: n.ProviderKind, Online: n.Online, LastSeenAt: seen, MaxActive: int(n.MaxActive), MaxRetained: retainedLimit(n.ProviderKind, int(n.MaxActive), int(n.MaxRetained)), Active: n.Active, Reserved: n.Reserved, Retained: n.Retained, CleanupPending: n.CleanupPending, CreatedAt: n.CreatedAt.Time})
 	}
 	return out, nil
@@ -264,8 +264,10 @@ func (s *Store) AuthenticateRuntimeNode(ctx context.Context, nodeID, credential 
 		}
 		return nodeIdentity(n, d.ProviderKind), nil
 	}
-	spec, err := deploymentSpecification(d)
-	if err != nil || n.SpecificationDigest != spec.Digest(d.ProviderKind) || n.DeploymentGeneration != d.Generation {
+	// Reset retires nodes before another backend lineage can be selected.
+	// Enrollment generation and digest remain immutable identity history; the
+	// current target and per-generation readiness do not replace that history.
+	if n.DeploymentGeneration <= 0 || !validRuntimeDigest(n.SpecificationDigest) {
 		return RuntimeNodeIdentity{}, ErrRuntimeSpecificationMismatch
 	}
 	return nodeIdentity(n, d.ProviderKind), nil
@@ -358,18 +360,16 @@ func nodeRollout(n sqlc.ListRuntimeNodesRow) SandboxNodeRollout {
 	if !n.Online {
 		return out
 	}
-	if n.DeploymentGeneration != n.TargetGeneration {
+	if n.ProtocolVersion == 1 && n.DeploymentGeneration != n.TargetGeneration {
 		out.State = "update_required"
 		return out
 	}
-	if n.ProviderReady && n.ReadyGeneration.Valid && n.ReadyGeneration.Int64 == n.TargetGeneration {
-		out.State = "ready"
-		return out
+	switch n.TargetState {
+	case "ready", "preparing", "failed":
+		out.State = n.TargetState
 	}
-	var health RuntimeNodeHealth
-	if json.Unmarshal(n.Health, &health) == nil && health.Diagnostic != "" {
-		out.State = "failed"
-		out.Diagnostic = sandbox.NormalizeNodeDiagnostic(health.Diagnostic)
+	if out.State == "failed" && n.TargetDiagnostic != "" {
+		out.Diagnostic = sandbox.NormalizeNodeDiagnostic(n.TargetDiagnostic)
 	}
 	return out
 }

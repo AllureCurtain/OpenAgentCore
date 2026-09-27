@@ -323,36 +323,90 @@ def prepare_node_payload(root, state, bundle, replace=False):
     if state["mode"] == "core-only":
         return
     destination = root / "node-payload"
-    # Public distribution files only. Never copy the private installation config.
-    names = ["node-install.pyz", "self-hosted-install.pyz", "manifest.json", "SHA256SUMS", "runtime/seccomp.json"]
-    manifest = json.loads((bundle / "manifest.json").read_text())
-    for logical in manifest.get("artifacts", {}):
-        entry = artifact(manifest, logical)
-        name = "artifacts/" + entry["filename"]
-        source = bundle / name
-        if source.exists():
-            if (source.is_symlink() or not source.is_file()
-                    or not source.resolve().is_relative_to(bundle.resolve())
-                    or source.stat().st_size != entry["size"] or digest(source) != entry["sha256"]):
-                raise InstallError("Offline artifact verification failed: " + logical)
-            names.append(name)
-    if replace and destination.is_dir() and not destination.is_symlink():
-        shutil.rmtree(destination)
-    for name in names:
-        source, target = bundle / name, destination / name
+    # Each release remains immutable and addressable while old nodes retain it.
+    # The only mutable publication is a small, atomically replaced active pointer.
+    def publish(source):
+        manifest = json.loads((source / "manifest.json").read_text())
+        revision = manifest.get("source_commit", "")
+        if not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise InstallError("Invalid node payload release identity")
+        names = ["node-install.pyz", "self-hosted-install.pyz", "manifest.json", "SHA256SUMS", "runtime/seccomp.json"]
+        for logical in manifest.get("artifacts", {}):
+            entry = artifact(manifest, logical)
+            name = "artifacts/" + entry["filename"]
+            path = source / name
+            if path.exists():
+                if (path.is_symlink() or not path.is_file()
+                        or not path.resolve().is_relative_to(source.resolve())
+                        or path.stat().st_size != entry["size"] or digest(path) != entry["sha256"]):
+                    raise InstallError("Offline artifact verification failed: " + logical)
+                names.append(name)
+        target = destination / "releases" / revision
+        if target.is_symlink():
+            raise InstallError("Installed node payload differs; preserve it and inspect the distribution")
         target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if target.exists():
-            if target.is_symlink() or not target.is_file() or digest(target) != digest(source):
-                raise InstallError("Installed node payload differs; preserve it and inspect the distribution")
-        else:
-            descriptor, temporary = tempfile.mkstemp(prefix=".payload-", dir=target.parent)
+            for name in names:
+                previous = target / name
+                if previous.is_symlink() or not previous.is_file() or digest(previous) != digest(source / name):
+                    raise InstallError("Installed node payload differs; preserve it and inspect the distribution")
+            return revision
+        with tempfile.TemporaryDirectory(prefix=".payload-", dir=target.parent) as temporary:
+            stage = Path(temporary) / "release"
+            stage.mkdir(mode=0o700)
+            for name in names:
+                path = source / name
+                if path.is_symlink() or not path.is_file():
+                    raise InstallError("Invalid node payload source file")
+                copied = stage / name
+                copied.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                with path.open("rb") as incoming, copied.open("xb") as outgoing:
+                    os.chmod(copied, 0o600)
+                    shutil.copyfileobj(incoming, outgoing)
+                    outgoing.flush()
+                    os.fsync(outgoing.fileno())
+            os.rename(stage, target)
+        return revision
+
+    if destination.is_symlink():
+        raise InstallError("Invalid node payload directory")
+    destination.mkdir(mode=0o700, exist_ok=True)
+    # Preserve the legacy flat release before first publication. Its checksum
+    # list authenticates the files we copy; unrelated private files are excluded.
+    if not (destination / "active.json").exists() and (destination / "manifest.json").exists():
+        sums = {}
+        for line in (destination / "SHA256SUMS").read_text().splitlines():
+            value, name = line.split("  ", 1)
+            sums[name] = value
+        for name in ("node-install.pyz", "self-hosted-install.pyz", "manifest.json", "runtime/seccomp.json"):
+            path = destination / name
+            if path.is_symlink() or not path.is_file() or digest(path) != sums.get(name):
+                raise InstallError("Legacy node payload checksum differs; preserve it before upgrade")
+        publish(destination)
+    revision = publish(bundle)
+    pointer = destination / "active.json"
+    if pointer.is_symlink():
+        raise InstallError("Invalid active node payload pointer")
+    if pointer.exists() and not replace:
+        if json.loads(pointer.read_text()) != {"source_commit": revision}:
+            raise InstallError("Installed node payload differs; preserve it and inspect the distribution")
+        return
+    descriptor, temporary = tempfile.mkstemp(prefix=".active-", dir=destination)
+    try:
+        with os.fdopen(descriptor, "w") as stream:
+            json.dump({"source_commit": revision}, stream)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, pointer)
+        descriptor = os.open(destination, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
             os.close(descriptor)
-            try:
-                shutil.copyfile(source, temporary)
-                os.replace(temporary, target)
-            finally:
-                if os.path.exists(temporary):
-                    os.unlink(temporary)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def install_oac(root, bundle):

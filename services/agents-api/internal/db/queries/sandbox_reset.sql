@@ -84,11 +84,10 @@ held AS (
 ), rollout_nodes AS (
     SELECT CASE
         WHEN n.connection_id IS NULL OR n.connected_epoch <> d.owner_epoch OR n.last_seen_at IS NULL OR n.last_seen_at <= observed.as_of - interval '45 seconds' THEN 'unknown'
-        WHEN n.deployment_generation <> d.generation THEN 'update_required'
-        WHEN n.provider_ready AND n.ready_generation = d.generation THEN 'ready'
-        WHEN COALESCE(n.health->>'diagnostic','') <> '' THEN 'failed'
-        ELSE 'unknown' END AS state
+        WHEN n.protocol_version=1 AND n.deployment_generation <> d.generation THEN 'update_required'
+        ELSE COALESCE(g.state,'unknown') END AS state
     FROM runtime_nodes n CROSS JOIN runtime_deployment d CROSS JOIN observed
+    LEFT JOIN runtime_node_generation_status g ON g.node_id=n.id AND g.generation=d.generation AND g.connection_id=n.connection_id AND g.owner_epoch=d.owner_epoch
     WHERE n.removed_at IS NULL AND n.installation_id=d.installation_id
 ), offline AS (
     SELECT node_id, name, count(*)::bigint AS resources FROM classified WHERE offline GROUP BY node_id, name
@@ -103,11 +102,11 @@ SELECT sqlc.embed(d),
         'on_offline_nodes', (SELECT count(*) FROM classified WHERE offline),
         'offline_nodes', COALESCE((SELECT jsonb_agg(jsonb_build_object('node_id', node_id, 'name', name, 'resources', resources) ORDER BY node_id) FROM offline), '[]'::jsonb)
     )::jsonb AS remaining,
-    jsonb_build_object('state','settled',
+    jsonb_build_object('state',CASE WHEN EXISTS(SELECT 1 FROM rollout_nodes WHERE state='preparing') THEN 'preparing' ELSE 'settled' END,
         'previous_generation_sandboxes',(SELECT count(*) FROM held h WHERE h.deployment_generation <> d.generation),
         'nodes',CASE WHEN d.mode='nodes' THEN jsonb_build_object(
             'ready',(SELECT count(*) FROM rollout_nodes WHERE state='ready'),
-            'preparing',0,
+            'preparing',(SELECT count(*) FROM rollout_nodes WHERE state='preparing'),
             'failed',(SELECT count(*) FROM rollout_nodes WHERE state='failed'),
             'update_required',(SELECT count(*) FROM rollout_nodes WHERE state='update_required'),
             'unknown',(SELECT count(*) FROM rollout_nodes WHERE state='unknown')) ELSE NULL END

@@ -253,9 +253,10 @@ def bootstraps(bundle, epoch):
                 shutil.copyfile(bundle / original, target)
                 os.utime(target, (int(epoch), int(epoch)))
             if source == "node_install.py":
-                target = pathlib.Path(directory) / "node_spec.py"
-                shutil.copyfile(bundle / "node_spec.py", target)
-                os.utime(target, (int(epoch), int(epoch)))
+                for name in ("node_spec.py", "node_generations.py"):
+                    target = pathlib.Path(directory) / name
+                    shutil.copyfile(bundle / name, target)
+                    os.utime(target, (int(epoch), int(epoch)))
             zipapp.create_archive(directory, bundle / output, compressed=True)
     with tempfile.TemporaryDirectory(dir=bundle.parent) as directory:
         for name in OAC_CLI_MODULES:

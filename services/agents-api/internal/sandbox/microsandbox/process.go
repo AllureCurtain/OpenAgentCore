@@ -9,14 +9,17 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync/atomic"
 )
 
 // ProcessCaller never kills a mutating helper on a Core response timeout.
 // The helper retains its allocation flock until the SDK mutation settles,
 // including after Core exits. Output is still drained and bounded by this waiter.
-type ProcessCaller struct{}
+type ProcessCaller struct{ active atomic.Int64 }
 
-func (*ProcessCaller) Call(ctx context.Context, q Request) (Response, error) {
+func (p *ProcessCaller) Quiescent() bool { return p.active.Load() == 0 }
+
+func (p *ProcessCaller) Call(ctx context.Context, q Request) (Response, error) {
 	data, e := json.Marshal(q)
 	if e != nil || len(data) > MaxRequestBytes {
 		return Response{}, errors.New("invalid helper request")
@@ -27,11 +30,13 @@ func (*ProcessCaller) Call(ctx context.Context, q Request) (Response, error) {
 	stdout := &limitBuffer{limit: MaxResponseBytes}
 	stderr := &limitBuffer{limit: MaxOutputBytes}
 	cmd.Stdout, cmd.Stderr = stdout, stderr
+	p.active.Add(1)
 	if e := cmd.Start(); e != nil {
+		p.active.Add(-1)
 		return Response{}, errors.New("helper unavailable")
 	}
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	go func() { err := cmd.Wait(); p.active.Add(-1); done <- err }()
 	select {
 	case <-ctx.Done():
 		return Response{}, ctx.Err()
