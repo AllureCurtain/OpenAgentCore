@@ -1,14 +1,13 @@
 # Feature integration follow-up
 
-This candidate documents the actual maintenance and drain model at source
-`75bf4484ba957344ae374354858bbdfe104f5c4f`. It is not final documentation for design 50.
-The Core error-envelope foundation is included; the later configuration validators and
-diagnostic endpoints are not. Do not replace current procedures with the planned
-behavior before the features land.
+This candidate documents durable reset and the interim zero-resource same-provider
+update rule at source `f36ac3592bfe9f77a2172680aa52b14c6f525062`.
+The Core error-envelope foundation is included; online generations, later configuration
+validators and diagnostic endpoints are not. Do not replace current procedures with
+planned behavior before those features land.
 
 | Feature dependency | Site pages to reconcile | Source and verification work |
 | --- | --- | --- |
-| Reset replaces maintenance (design 50 PR-R) | configure, hosted-providers, troubleshooting, admin-api, observability, API reference/core | Regenerate the canonical guides and management contract; describe reset admission, cleanup, failures, archive preconditions and offline-node limits from merged code. Remove retired maintenance instructions only after their replacement exists. |
 | Online generations and E2B changes (design 50 PR-G) | configure, hosted-providers, troubleshooting, execution-model, API reference/core | Document actual generation/rollout states, the supported change matrix and existing-sandbox behavior. Verify PUT examples against the final contract. |
 | Node update protocol (design 50 PR-N) | hosted-providers, troubleshooting, API reference/machine | Explain the implemented update command, old-node handling and ownership preservation. Do not claim an update command now. |
 | Later configuration/error changes (design 40 and remaining installer work) | install, configure, troubleshooting, quickstart | Regenerate current configuration fields and revise diagnostics against merged code; keep secrets out of examples. |

@@ -123,7 +123,7 @@ refuses. `rotate-core-key` refuses to run on a Web-only installation.
 ## Projects and API keys
 
 Create Projects and issue their keys in Web, on **Projects and keys**, or with the
-[Core API](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/contracts/agents-api/admin-api.md) under `/core/v1/projects`. A key's
+[Core API](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/contracts/agents-api/admin-api.md) under `/core/v1/projects`. A key's
 plaintext is shown once; Core stores only its digest. All keys of a Project share its
 assets and execution principal, and each write records the key that made it.
 
@@ -195,10 +195,12 @@ The latter rename their directory, project and payload without copying a databas
 
 Preflight reports generated-file edits, invalid configuration, destination conflicts,
 insufficient database-copy space, and every available drain blocker. It reads the
-old Core with its Core key. When that Core is stopped and static checks pass, it
-announces a temporary start using only the existing files. Refusal restores the
-services this probe started; a restoration failure is reported explicitly. No
-installation conversion happens before confirmation.
+old Core with its Core key. Start the previous release yourself before conversion:
+a stopped or unreadable Core is refused without starting services. This is required
+to identify the provider before any conversion writes. E2B conversion is currently
+refused, including interrupted journal resumes; keep the previous release until
+the safe Core-owned E2B upgrade transition is available. No installation conversion
+happens before confirmation.
 
 The confirmation prints the backup command for the old project and the directory
 and secret moves. For a config.json installation, take the backup before confirming:
@@ -223,9 +225,11 @@ The new state format is 2; config.json's schema format remains 1. Ports, public 
 secrets, Core key, installation ID and database contents are preserved. The old
 `parsar` path becomes a stub naming the new `oac` command. New services use `OAC_*`
 settings and `io.oac.inputs` labels. Docker and microsandbox deployments retain
-their resources, replace their Runtime with the bundle's release through the normal
-maintenance-only API, then resume admission. E2B remains in maintenance: rebuild its
-template with this release's `build-template.py`, replace it in Web, then resume.
+their resources and replace their Runtime with the bundle's exact release through
+an expected-generation same-provider PUT. New Core must report reset null and zero
+held resources; conversion reads back the exact specification and generation.
+Ordinary migration retires old maintenance and resumes admission, which is why E2B
+conversion remains blocked until its safe upgrade preparation is implemented.
 
 Rerun `./install.sh --convert` with the **same bundle** after any interruption,
 including after the directory move. For a custom directory, repeat `--install-dir`.
@@ -252,7 +256,7 @@ replacement:
 | `AGENTS_API_EXECUTION_OPTIONS_FILE` | Default models, set per harness in Web (**System**, **Default model**) or with `PUT /core/v1/harnesses/{harness}/model-provider` | `config/core.env`. `--convert` does not carry it over; it leaves the file, which may hold model keys, and reports it. Delete the file once the defaults are set |
 | `AGENTS_API_DAEMON_WS_URL` (a `wss://…/api/v1/agent-daemon/ws` URL) | `OAC_PUBLIC_URL` (the origin, such as `https://core.example`), or `public_url` in `config.json` | `config/core.env` |
 | `AGENTS_API_CONFIG_FILE` | None; delete the line | `config/core.env` |
-| `AGENTS_API_MANAGED_RUNTIMES_FILE` | The sandbox deployment in the database, set in Web | `config/core.env`; see [older file-managed installations](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/services/agents-api/HOSTED-SANDBOX-MANAGER.md#older-file-managed-installations) |
+| `AGENTS_API_MANAGED_RUNTIMES_FILE` | The sandbox deployment in the database, set in Web | `config/core.env`; see [older file-managed installations](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/services/agents-api/HOSTED-SANDBOX-MANAGER.md#older-file-managed-installations) |
 | `admin/sandbox-admin.key`, `admin/digests.json` | `admin/core.key`, `admin/core-key-digests.json` (conversion then moves them to `secrets/` and `generated/`) | Files and their `compose.json` mounts |
 | `AGENTS_API_SANDBOX_ADMIN_DIGESTS_FILE` | `OAC_CORE_KEY_DIGESTS_FILE` | `config/core.env` |
 | `CORE_CONSOLE_ADMIN_TOKEN_FILE`, `install.sh --admin-token-file` | `OAC_WEB_CORE_KEY_FILE`, `--core-key-file` | Web environment; installer flag |
@@ -329,10 +333,11 @@ Nodes from releases that used the removed `/core/v1/sandbox/enroll` and
 microsandbox deployment:
 
 1. Drain with the previous release while its nodes are connected: enter maintenance,
-   archive retained hosted Sessions and wait until nothing is retained (the
-   [maintenance procedure](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-maintenance)).
+   archive retained hosted Sessions and wait until nothing is retained using that
+   previous release's maintenance procedure.
 2. Upgrade Core and Web, and change the routing as above.
-3. Save the new release's Runtime, resume, and add the nodes again. On each node host,
+3. Reset a drained selection that lacks a specification, then configure the new
+   release's Runtime and add nodes again. On each node host,
    stop the old node service and move its state directory aside as a backup first.
 
 A Web-selected Docker or microsandbox deployment saved before deployment specifications
@@ -399,9 +404,9 @@ Core records which key made each public resource write, for the console. Set
 `core.write_audit_retention` in `config.json` (Go duration, at least `1h`, default
 `2160h`) to control how long non-creation history is kept; creation ownership is kept
 for good. Removing keys or resources does not delete these records. See the
-[query contract](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/contracts/agents-api/write-audit.md); administrator mutations
+[query contract](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/contracts/agents-api/write-audit.md); administrator mutations
 have a separate
-[audit log](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/contracts/agents-api/admin-api.md#monitoring-and-audit). Neither
+[audit log](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/contracts/agents-api/admin-api.md#monitoring-and-audit). Neither
 logs bodies or secrets.
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/docs/getting-started/operations.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/docs/getting-started/operations.md)

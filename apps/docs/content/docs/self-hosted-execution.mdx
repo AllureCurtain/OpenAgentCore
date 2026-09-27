@@ -143,7 +143,7 @@ key_id=$(python3 -c 'import uuid; print(uuid.uuid4())'); echo "credential ID: $k
 Rotate with `{"key_id":"…","rotate":true}` on the same route; revoke with
 `DELETE …/executor-credentials/<key_id>`. After an uncertain response, list the
 credentials with `GET` before trying again. The
-[credential contract](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/contracts/agents-api/environment-executor-credentials.md)
+[credential contract](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/contracts/agents-api/environment-executor-credentials.md)
 has every rule and error.
 
 
@@ -166,4 +166,4 @@ Credential replacement for executors created by the new installer still updates
 and restarts the same owned container. The legacy refusal does not authorize
 adopting an old container to replace its credential.
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/docs/getting-started/self-hosted.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/docs/getting-started/self-hosted.md)

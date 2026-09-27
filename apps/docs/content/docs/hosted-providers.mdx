@@ -10,7 +10,7 @@ With E2B you need no nodes. Self-hosted executors, which applications run for th
 own Sessions, are a different thing; see [Self-hosted executors](/self-hosted-execution).
 
 You add a node by generating a command in Web and pasting it on the host. The
-[operator reference](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/services/agents-api/HOSTED-SANDBOX-MANAGER.md) covers the
+[operator reference](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/services/agents-api/HOSTED-SANDBOX-MANAGER.md) covers the
 node protocol, manual registration, placement and failure handling.
 
 ## Before you add a node
@@ -187,7 +187,7 @@ The installation ID is in the command (`--installation-id`) and on the **System*
 1. In Web, open **Nodes** and choose **Remove node** on the node's page, or
    **Remove** in its list row, then **Confirm removal**. Core refuses while the node
    still holds sandboxes, snapshots or pending cleanup; let them finish, or
-   [archive their Sessions](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-maintenance)
+   [archive their Sessions](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
    through the Core API. Removal is permanent: the host can come back only as a new
    node.
 2. Web then shows **Clean up the host** with the uninstall command. Run it on the host:
@@ -271,7 +271,7 @@ this flow will change in a coming release. A change applies to the whole deploym
 and retires every node. Retired nodes drop out of the list, so there is nothing to
 remove in Web: on each host, run the [uninstall command](#remove-a-node) (Core no longer
 accepts the node, so it needs no `--force`), then add the host again with a new command.
-The [operator reference](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-maintenance)
+The [operator reference](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
 describes today's procedure and API.
 
 
@@ -306,4 +306,4 @@ installation's resources:
 Then use the new Core's Add node command. The new account, service and state use
 `oac-node` and `~/.oac/nodes`; historical Core Session records remain in Core.
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/docs/getting-started/nodes.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/docs/getting-started/nodes.md)
