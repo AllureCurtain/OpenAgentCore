@@ -71,19 +71,26 @@ function installation() {
   };
 }
 
+/** Settled generation fields required by the strict client; this fixture does not simulate online preparation. */
+function settledRollout(mode) {
+  const nodes = mode === "nodes" ? { ready: 0, preparing: 0, failed: 0, update_required: 0, unknown: 0 } : null;
+  if (nodes) for (const node of state.nodes) nodes[node.rollout.state] += 1;
+  return { state: "settled", previous_generation_sandboxes: 0, nodes };
+}
+
 function unconfiguredDeployment(generation = 0, ownerEpoch = 3) {
-  return { installation_id: INSTALLATION_ID, provider: "", core_url: publicUrl(), reset: null, owner_epoch: ownerEpoch, generation, mode: "", resources: { allocations: 0, pending: 0 }, suspension: null };
+  return { installation_id: INSTALLATION_ID, provider: "", core_url: publicUrl(), rollout: settledRollout(""), reset: null, owner_epoch: ownerEpoch, generation, mode: "", resources: { allocations: 0, pending: 0 }, suspension: null };
 }
 
 function configuredDeployment() {
-  return { installation_id: INSTALLATION_ID, provider: "docker", core_url: publicUrl(), reset: null, owner_epoch: 3, generation: 1, mode: "nodes", resources: { allocations: 0, pending: 0 }, specification: { resources: { cpus: 2, memory_mib: 4096 }, runtime: release }, specification_digest: "fixture", suspension: null };
+  return { installation_id: INSTALLATION_ID, provider: "docker", core_url: publicUrl(), rollout: settledRollout("nodes"), reset: null, owner_epoch: 3, generation: 1, mode: "nodes", resources: { allocations: 0, pending: 0 }, specification: { resources: { cpus: 2, memory_mib: 4096 }, runtime: release }, specification_digest: "fixture", suspension: null };
 }
 /** The E2B template build as Core read it when the selection was saved. */
 const templateBuild = { status: "ready", resources: { cpus: 2, memory_mib: 2048, root_disk_mib: 10240 } };
 
 // E2B runs sandboxes in its cloud: no nodes, only what Core holds there.
 function e2bDeployment() {
-  return { ...configuredDeployment(), provider: "e2b", mode: "direct", resources: { allocations: 3, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 } }, e2b: { template: "oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b", credential_configured: true, template_build: templateBuild } };
+  return { ...configuredDeployment(), provider: "e2b", mode: "direct", rollout: settledRollout("direct"), resources: { allocations: 3, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 } }, e2b: { template: "oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b", credential_configured: true, template_build: templateBuild } };
 }
 
 function reset(mode = "login", fresh = false, sandbox = "configured", nodes = "demo", address = "public", credentials = "configured", installers = true, artifacts = "docker,microsandbox") {
@@ -359,7 +366,7 @@ async function sandboxRoute(request, response, path, url) {
     // As Core: E2B may omit resources and adopt its template build's CPU and memory; only microsandbox suspends.
     const resources = input.resources ?? { cpus: templateBuild.resources.cpus, memory_mib: templateBuild.resources.memory_mib };
     state.deployment = {
-      ...configuredDeployment(), provider: input.provider, mode: e2b ? "direct" : "nodes",
+      ...configuredDeployment(), provider: input.provider, mode: e2b ? "direct" : "nodes", rollout: settledRollout(e2b ? "direct" : "nodes"),
       generation: state.deployment.generation + 1, owner_epoch: state.deployment.owner_epoch,
       specification: { resources, ...(input.runtime ? { runtime: input.runtime } : {}) },
       ...(e2b ? { e2b: { template: input.e2b?.template ?? "", credential_configured: true, template_build: templateBuild } } : {}),
@@ -401,6 +408,7 @@ async function sandboxRoute(request, response, path, url) {
     const index = state.nodes.findIndex((node) => node.id === m[1]);
     if (index < 0) return error(response, 404, "No such node.");
     state.nodes.splice(index, 1);
+    state.deployment.rollout = settledRollout(state.deployment.mode);
     return send(response, 200, { id: m[1], deleted: true });
   }
   return error(response, 404, "Not found.");
@@ -454,7 +462,7 @@ async function executorCredentialRoute(request, response, projectId, environment
  */
 function registeredNode(nodeId) {
   const { enrollment_id = null, ...limits } = state.enrollment ?? { max_active: 1, max_retained: 1 };
-  return { id: nodeId, name: nodeId, provider: state.deployment?.provider ?? "docker", core_url: publicUrl(), enrollment_id, online: false, provider_ready: false, cpu_count: null, available_memory_bytes: null, available_disk_bytes: null, running: 0, snapshots: 0, last_seen_at: null, ...limits, active: 0, reserved: 0, retained: 0, cleanup_pending: 0, created_at: new Date().toISOString() };
+  return { rollout: { state: "unknown", ready_generation: null }, id: nodeId, name: nodeId, provider: state.deployment?.provider ?? "docker", core_url: publicUrl(), enrollment_id, online: false, provider_ready: false, cpu_count: null, available_memory_bytes: null, available_disk_bytes: null, running: 0, snapshots: 0, last_seen_at: null, ...limits, active: 0, reserved: 0, retained: 0, cleanup_pending: 0, created_at: new Date().toISOString() };
 }
 
 const HARNESS_PROVIDER = /^\/harnesses\/([^/]+)\/model-provider$/;
@@ -557,6 +565,11 @@ async function fixtureRoute(request, response, url) {
     let node = state.nodes.find((entry) => entry.id === nodeId);
     if (!node) state.nodes.push(node = registeredNode(nodeId));
     Object.assign(node, fields);
+    if (!fields.rollout) node.rollout = !node.online ? { state: "unknown", ready_generation: node.rollout.ready_generation }
+      : node.provider_ready ? { state: "ready", ready_generation: state.deployment.generation }
+        : node.diagnostic ? { state: "failed", ready_generation: node.rollout.ready_generation, diagnostic: node.diagnostic }
+          : { state: "unknown", ready_generation: node.rollout.ready_generation };
+    state.deployment.rollout = settledRollout(state.deployment.mode);
     if (!node.diagnostic) delete node.diagnostic;
     return send(response, 200, node);
   }

@@ -65,7 +65,7 @@ describe("hosted Runtime projections", () => {
   });
 
   it("places each Runtime on its host and derives uptime only from a current sample", () => {
-    const allocation = { id: "alloc_a", node_id: "n1" } as SandboxAllocation;
+    const allocation = { id: "alloc_a", node_id: "n1", deployment_generation: 1 } as SandboxAllocation;
     const rows = hostedRuntimeRows(load, "", { nodes: [node("n1", { name: "core-01" })], allocations: [allocation] });
     expect(rows.map((row) => [row.observation.session_id, row.node?.name ?? null, row.uptimeSeconds])).toEqual([["a", "core-01", 600], ["b", null, 600], ["c", null, null]]);
     expect(hostedRuntimeRows(load, "", null)[0]?.node).toBeNull();

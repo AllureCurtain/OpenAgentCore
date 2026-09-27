@@ -6,7 +6,7 @@ import { checklistStorageKey, checklistView, gettingStartedSteps, nextStepAfterN
 import { node, project } from "./test-fixtures";
 
 const deployment = (overrides: Partial<SandboxDeployment> = {}): SandboxDeployment => ({
-  installation_id: "i", provider: "docker", core_url: "http://core", reset: null, owner_epoch: 1, generation: 1, mode: "nodes",
+  rollout: { state: "settled", previous_generation_sandboxes: 0, nodes: { ready: 1, preparing: 0, failed: 0, update_required: 0, unknown: 0 } }, installation_id: "i", provider: "docker", core_url: "http://core", reset: null, owner_epoch: 1, generation: 1, mode: "nodes",
   resources: { allocations: 0, pending: 0 }, suspension: null, ...overrides,
 });
 const fleet = (value: SandboxDeployment, nodes = [node("n1")]): FleetState => ({ status: "ready", snapshot: { deployment: value, nodes, allocations: [], loadedAt: 0 }, refreshing: false, error: null });

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { node } from "../overview/test-fixtures";
 import { nodeState } from "./NodeList";
 
-const allocation = (nodeId: string, diagnostic: SandboxAllocation["diagnostic"]) => ({ id: `alloc_${nodeId}`, node_id: nodeId, diagnostic }) as SandboxAllocation;
+const allocation = (nodeId: string, diagnostic: SandboxAllocation["diagnostic"]) => ({ id: `alloc_${nodeId}`, node_id: nodeId, deployment_generation: 1, diagnostic }) as SandboxAllocation;
 
 const core = "https://core.example";
 
