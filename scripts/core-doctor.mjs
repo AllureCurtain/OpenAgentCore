@@ -16,7 +16,7 @@ export const CORE_DOCTOR_EXIT_CODES = Object.freeze({
 export const PARSAR_PROTOCOL_BASELINE_REVISION = "0438880ab21aa16d05cb91a4c7f91cc0abc12358";
 
 const DEFAULT_TARGET = "http://127.0.0.1:8091";
-const DEFAULT_TOKEN_FILE = "~/.parsar/agents-api/web-token";
+const DEFAULT_TOKEN_FILE = "~/.oac/dev/web-token";
 const DEFAULT_PROFILE = "default";
 const DEFAULT_TIMEOUT_MS = 3_000;
 const MAX_CONFIG_BYTES = 1024 * 1024;
@@ -24,14 +24,19 @@ const MAX_RESPONSE_BYTES = 1024 * 1024;
 const MAX_COMMAND_OUTPUT_BYTES = 256 * 1024;
 const PROFILE_PATTERN = /^[a-zA-Z0-9._-]{1,64}$/;
 const CONFIG_KEYS = new Set([
-  "AGENTS_API_PROXY_TARGET",
-  "AGENTS_API_PROXY_TOKEN",
-  "AGENTS_API_PROXY_TOKEN_FILE",
+  "OAC_WEB_DEV_PROXY_TARGET",
+  "OAC_WEB_DEV_PROXY_TOKEN",
+  "OAC_WEB_DEV_PROXY_TOKEN_FILE",
 ]);
-const PATH_CONFIG_KEYS = new Set(["AGENTS_API_PROXY_TOKEN_FILE"]);
+const PATH_CONFIG_KEYS = new Set(["OAC_WEB_DEV_PROXY_TOKEN_FILE"]);
+const RETIRED_PROXY_SETTINGS = Object.freeze({
+  AGENTS_API_PROXY_TARGET: "OAC_WEB_DEV_PROXY_TARGET",
+  AGENTS_API_PROXY_TOKEN: "OAC_WEB_DEV_PROXY_TOKEN",
+  AGENTS_API_PROXY_TOKEN_FILE: "OAC_WEB_DEV_PROXY_TOKEN_FILE",
+});
 const SAFE_PATH_EXPANSION_KEYS = new Set(["HOME", "OAC_RUNTIME_HOME"]);
 
-const HELP = `Agents Core Doctor (read-only)
+const HELP = `OpenAgentCore Doctor (read-only)
 
 Usage:
   pnpm core:doctor -- [--parsar <checkout>] [--profile <name>] [--timeout-ms <milliseconds>]
@@ -57,6 +62,7 @@ Exit codes:
 `;
 
 class CoreDoctorUsageError extends Error {}
+class CoreDoctorRetiredSettingsError extends Error {}
 
 function optionValue(argv, index, option) {
   const value = argv[index + 1];
@@ -193,7 +199,16 @@ function expandConfiguredValue(key, value, env) {
   return expandDotEnvValue(value, safeEnvironment, {}).replace(/\\\$/g, "$");
 }
 
+function rejectRetiredProxySettings(env, parsed = {}) {
+  // Diagnostics contain only allowlisted names, never configuration values.
+  const retired = Object.entries(RETIRED_PROXY_SETTINGS).filter(([name]) => Object.hasOwn(env, name) || Object.hasOwn(parsed, name));
+  if (retired.length) {
+    throw new CoreDoctorRetiredSettingsError(`Retired Web settings: ${retired.map(([name, replacement]) => `${name} is no longer supported; use ${replacement}`).join(". ")}.`);
+  }
+}
+
 export async function loadCoreDoctorConfig({ env, cwd }) {
+  rejectRetiredProxySettings(env);
   const parsed = {};
   const dotenvFiles = [".env", ".env.local", ".env.development", ".env.development.local"];
 
@@ -201,9 +216,14 @@ export async function loadCoreDoctorConfig({ env, cwd }) {
     try {
       Object.assign(parsed, parseEnv(await readSmallText(join(cwd, name))));
     } catch (error) {
-      if (error?.code !== "ENOENT") throw new CoreDoctorUsageError("local environment file is unreadable or unsafe");
+      if (error?.code !== "ENOENT") {
+        rejectRetiredProxySettings(env, parsed);
+        throw new CoreDoctorUsageError("local environment file is unreadable or unsafe");
+      }
     }
   }
+
+  rejectRetiredProxySettings(env, parsed);
 
   const loaded = {};
   for (const key of CONFIG_KEYS) {
@@ -258,7 +278,7 @@ function createReport() {
     },
     render(exitCode) {
       const lines = [
-        "Agents Core Doctor (read-only)",
+        "OpenAgentCore Doctor (read-only)",
         `Parsar protocol baseline: ${PARSAR_PROTOCOL_BASELINE_REVISION}`,
         "",
       ];
@@ -316,8 +336,8 @@ async function inspectPrivateFile(path, label, { platform, report }) {
 }
 
 export async function inspectCoreCredentials({ config, cwd, homeDir, platform, report }) {
-  const configuredToken = config.AGENTS_API_PROXY_TOKEN?.trim() ?? "";
-  const configuredTokenFile = config.AGENTS_API_PROXY_TOKEN_FILE?.trim() ?? "";
+  const configuredToken = config.OAC_WEB_DEV_PROXY_TOKEN?.trim() ?? "";
+  const configuredTokenFile = config.OAC_WEB_DEV_PROXY_TOKEN_FILE?.trim() ?? "";
   let exitCode = CORE_DOCTOR_EXIT_CODES.ok;
   let token;
   let tokenFile;
@@ -824,43 +844,38 @@ export async function runCoreDoctor({
   const report = createReport();
   let exitCode = CORE_DOCTOR_EXIT_CODES.ok;
   let config;
-  let configLoaded = true;
   try {
     config = await loadCoreDoctorConfig({ env, cwd });
-  } catch {
-    report.add("FAIL", "Configuration", "local environment configuration is unreadable or unsafe.");
-    exitCode = CORE_DOCTOR_EXIT_CODES.diagnosticFailure;
-    config = {};
-    configLoaded = false;
+  } catch (error) {
+    report.add("FAIL", "Configuration", error instanceof CoreDoctorRetiredSettingsError
+      ? error.message : "local environment configuration is unreadable or unsafe.");
+    const exitCode = CORE_DOCTOR_EXIT_CODES.diagnosticFailure;
+    stdout.write(report.render(exitCode));
+    return { exitCode, checks: report.checks };
   }
 
   let target;
-  if (configLoaded) {
-    try {
-      target = parseCoreTarget(config.AGENTS_API_PROXY_TARGET || DEFAULT_TARGET);
-      report.add("PASS", "Configuration", `proxy target is configured (${target.displayOrigin}).`);
-    } catch {
-      report.add("FAIL", "Configuration", "proxy target must be credential-free HTTPS or a loopback HTTP origin.");
-      exitCode = CORE_DOCTOR_EXIT_CODES.diagnosticFailure;
-    }
+  try {
+    target = parseCoreTarget(config.OAC_WEB_DEV_PROXY_TARGET || DEFAULT_TARGET);
+    report.add("PASS", "Configuration", `proxy target is configured (${target.displayOrigin}).`);
+  } catch {
+    report.add("FAIL", "Configuration", "proxy target must be credential-free HTTPS or a loopback HTTP origin.");
+    const exitCode = CORE_DOCTOR_EXIT_CODES.diagnosticFailure;
+    stdout.write(report.render(exitCode));
+    return { exitCode, checks: report.checks };
   }
 
   const credentials = await inspectCoreCredentials({ config, cwd, homeDir, platform, report });
   exitCode = Math.max(exitCode, credentials.exitCode);
 
-  if (target) {
-    const core = await probeCore({
-      target,
-      token: credentials.token,
-      timeoutMs: options.timeoutMs,
-      fetchImpl,
-      report,
-    });
-    exitCode = Math.max(exitCode, core.exitCode);
-  } else {
-    report.add("WARN", "Core liveness", "network checks skipped because the proxy target is invalid.");
-    report.add("WARN", "Core API", "authenticated read skipped because the proxy target is invalid.");
-  }
+  const core = await probeCore({
+    target,
+    token: credentials.token,
+    timeoutMs: options.timeoutMs,
+    fetchImpl,
+    report,
+  });
+  exitCode = Math.max(exitCode, core.exitCode);
 
   const daemon = await inspectDaemon({
     parsarPath: options.parsarPath,

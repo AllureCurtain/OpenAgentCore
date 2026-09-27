@@ -16,12 +16,12 @@ test("signs in with the Core key, keeps it out of the browser, and signs out and
   await page.addInitScript(() => window.localStorage.setItem("agents-core-web.language", "en"));
   await page.goto("/");
 
-  await expect(page.getByRole("heading", { name: "Sign in to Parsar Core" })).toBeVisible();
-  await expect(page.getByText("cat ~/.parsar/core/secrets/core.key", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in to OpenAgentCore" })).toBeVisible();
+  await expect(page.getByText("cat ~/.oac/core/secrets/core.key", { exact: true })).toBeVisible();
   await expect(page.getByText("For a custom installation directory, replace the path in this command.")).toBeVisible();
   await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.getByRole("button", { name: "Copy key read command" }).click();
-  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("cat ~/.parsar/core/secrets/core.key");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe("cat ~/.oac/core/secrets/core.key");
   await signIn(page, "not-the-core-key");
   await expect(page.getByRole("alert")).toHaveText("This Core key is not correct. Check it and try again.");
   await signIn(page, FIXTURE_CORE_KEY);
@@ -29,7 +29,7 @@ test("signs in with the Core key, keeps it out of the browser, and signs out and
   expect(await browserStorage(page)).not.toContain(FIXTURE_CORE_KEY);
 
   await page.getByRole("button", { name: "Sign out" }).click();
-  await expect(page.getByRole("heading", { name: "Sign in to Parsar Core" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sign in to OpenAgentCore" })).toBeVisible();
   await signIn(page, FIXTURE_CORE_KEY);
   await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
 

@@ -30,7 +30,7 @@ export const vaults = {
     newToken: "New bearer token", token: "Bearer token", tokenHelp: "Write only. It is sent once, immediately cleared, and never stored in browser state, metadata, previews, or logs.",
   },
   errors: {
-    storageUnavailable: "Credential encryption is not configured on this Core. Configure AGENTS_API_CREDENTIAL_KEY_FILE and restart Core before creating or replacing a token.",
+    storageUnavailable: "Credential encryption is not configured on this Core. Configure OAC_CREDENTIAL_KEY_FILE and restart Core before creating or replacing a token.",
     auth: "Core authentication failed. The Credential was not confirmed.", missing: "The Vault or Credential is no longer available. Refresh before trying again.",
     tooLarge: "The Credential request exceeded Core's accepted size.", invalidFields: "Core rejected the Credential fields. Check the name, exact HTTPS URL, and token format.",
     credentialUncertain: "The Credential write outcome was not confirmed. The catalog was refreshed; review it before explicitly trying again.",
@@ -39,7 +39,7 @@ export const vaults = {
     createUncertain: "Vault creation was not confirmed. Your draft is unchanged. Review current Core state before explicitly trying again.",
     vaultName: "Name must contain 1 to 256 UTF-8 bytes.", metadataUnknown: "Metadata could not be validated.", metadataJson: "Metadata must be valid JSON.",
     metadataShape: "Metadata must be a JSON object whose values are strings.", metadataStrings: "Metadata values must all be strings; nested values, arrays, numbers, booleans, and null are not supported.",
-    metadataLarge: "Metadata must be at most 64 KiB after UTF-8 JSON encoding.", mismatchedMetadata: "Agent Core returned mismatched Vault metadata.",
+    metadataLarge: "Metadata must be at most 64 KiB after UTF-8 JSON encoding.", mismatchedMetadata: "OpenAgentCore returned mismatched Vault metadata.",
     uniqueAttachments: "Vault attachments must be unique.", catalogIncomplete: "Credential metadata is not fully loaded from this Core.", vaultMissing: "A selected Vault is no longer available in the current catalog.",
     credentialMismatch: "MCP server {{server}} references an unavailable or URL-mismatched Credential.", credentialVaultMissing: "MCP server {{server}} references a Credential whose Vault is unavailable.",
     multipleCredentials: "Anonymous MCP server {{server}} matches multiple Credentials in the selected Vaults. Select a single matching Vault or configure one Credential explicitly.", matchedVaultMissing: "MCP server {{server}} matched a Credential whose Vault is unavailable.",

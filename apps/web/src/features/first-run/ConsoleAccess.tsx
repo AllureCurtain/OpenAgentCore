@@ -16,7 +16,7 @@ import "./console-access.css";
  * directory, and that file under the default installation directory. The
  * visible sign-in instructions name both; the actual custom path is not public.
  */
-const CORE_KEY_LOCATION = { file: "secrets/core.key", defaultPath: "~/.parsar/core/secrets/core.key" } as const;
+const CORE_KEY_LOCATION = { file: "secrets/core.key", defaultPath: "~/.oac/core/secrets/core.key" } as const;
 
 const ConsoleAccountContext = createContext<{ logout: () => Promise<void> } | null>(null);
 export const useConsoleAccount = () => useContext(ConsoleAccountContext);
@@ -127,7 +127,7 @@ function CoreKeyForm({ onAuthenticated }: {
   }
 
   return <form className="console-auth-form form-stack" onSubmit={(event) => void submit(event)}>
-    <h2>{t("Sign in to Parsar Core")}</h2>
+    <h2>{t("Sign in to OpenAgentCore")}</h2>
     <div className="field">
       <span className="field-label-row"><label htmlFor={`${id}-key`}>{t("Core key")}</label>
         <HelpTip>{t("The Core key is an administration credential: it cannot call the /v1 Agents API, and the console never keeps it in your browser.")}</HelpTip></span>

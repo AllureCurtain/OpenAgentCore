@@ -8,7 +8,7 @@ web
 
 ## Users
 
-The primary user is the administrator who deployed Parsar Core: a self-hosted,
+The primary user is the administrator who deployed OpenAgentCore: a self-hosted,
 OpenAI Agents API compatible execution service. After signing in to the paired
 console they need to answer quickly: is the service healthy, is there enough
 sandbox capacity, how much is each project using, and where is work failing.
@@ -23,7 +23,7 @@ run things on a caller's behalf.
 
 ## Product Purpose
 
-A management console for one Parsar Core deployment. Success: the administrator
+A management console for one OpenAgentCore deployment. Success: the administrator
 lands on health, capacity, usage and failures across every project; inspects any
 project's Agents, Environment templates, Skills, Files, Vaults and Session history
 together with the API key that created each of them; deletes assets (for example a
@@ -43,10 +43,10 @@ workbench.
 - Paired console (`services/core-console`): the administrator signs in with the
   deployment's Core key, the administration credential the installer writes to
   `secrets/core.key` under the installation directory (by default
-  `~/.parsar/core/secrets/core.key`; keeping and rotating it is described in
+  `~/.oac/core/secrets/core.key`; keeping and rotating it is described in
   [Core key](../../docs/getting-started/operations.md#core-key)). There are no
   console accounts or usernames. Sign-in shows the default file location and a
-  copyable `cat ~/.parsar/core/secrets/core.key` command for the Core host, with a
+  copyable `cat ~/.oac/core/secrets/core.key` command for the Core host, with a
   reminder to substitute a custom installation directory. The browser sends the key only to sign in and
   keeps only the session cookie; the console server holds the Core key and forwards
   the Web API (`/core/v1/**`, including sandbox administration under
@@ -211,10 +211,18 @@ workbench.
 
 ## Brand Commitments
 
-- Product name: Parsar Core. Parsar mark assets in `apps/web/public/`.
-- Keep the Parsar visual identity shared with the public landing (`site/`):
+- Product name: OpenAgentCore. OpenAgentCore mark assets in `apps/web/public/`.
+- Keep the OpenAgentCore visual identity shared with the public landing (`site/`):
   neutral grays and a quiet indigo accent. The console uses Inter and Geist Mono
   on Beautiful UI's foundation tokens and structure; `DESIGN.md` records the system.
+
+Development and build settings use `OAC_WEB_*`. The Vite proxy uses the
+server-only `OAC_WEB_DEV_PROXY_TARGET`, `OAC_WEB_DEV_PROXY_TOKEN` and
+`OAC_WEB_DEV_PROXY_TOKEN_FILE`, defaulting to `~/.oac/dev/web-token` for its private
+token file. Retired `AGENTS_CORE_WEB_*` and the three `AGENTS_API_PROXY_*`
+settings stop startup or build with replacement names, without logging values
+or falling back to the old token path. Browser definitions contain only the
+existing capability flags and validated, non-secret Docker guide profiles.
 
 ## Evidence on Hand
 
