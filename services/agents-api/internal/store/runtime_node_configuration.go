@@ -54,6 +54,9 @@ func (s *Store) RuntimeNodeConfiguration(ctx context.Context, nodeID, token stri
 		if !runtimeDeploymentInitialized(d) {
 			return ErrRuntimeNodeUnavailable
 		}
+		if node == nil && d.ResetClear.Valid {
+			return ErrSandboxResetInProgress
+		}
 		if d.Mode != "nodes" {
 			return ErrSandboxDeploymentConflict
 		}
@@ -61,7 +64,7 @@ func (s *Store) RuntimeNodeConfiguration(ctx context.Context, nodeID, token stri
 		if err != nil {
 			return err
 		}
-		if node == nil && d.Maintenance {
+		if node == nil && d.AdmissionPaused {
 			return ErrSandboxDeploymentConflict
 		}
 		if node != nil && (node.DeploymentGeneration != d.Generation || node.SpecificationDigest != spec.Digest(d.ProviderKind)) {

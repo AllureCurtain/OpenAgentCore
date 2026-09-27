@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"errors"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/adminaudit"
+	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/db/sqlc"
 	"github.com/jackc/pgx/v5"
@@ -21,6 +23,18 @@ type ManagedSessionArchive struct {
 // public Session, history and persisted files. The lifecycle owner performs the
 // external cleanup; only its existing confirmation can release an allocation.
 func (s *Store) ArchiveManagedSession(ctx context.Context, tenantID, sessionID string, expectedGeneration uint64) (ManagedSessionArchive, error) {
+	return s.archiveManagedSession(ctx, tenantID, sessionID, expectedGeneration, nil)
+}
+
+// A reset instance is identified by its persisted request time as well as its
+// generation, preventing a cancelled clear's candidates from affecting its successor.
+func (s *Store) ArchiveSandboxResetSession(ctx context.Context, tenantID, sessionID string, generation uint64, requestedAt time.Time) (ManagedSessionArchive, error) {
+	return s.archiveManagedSession(ctx, tenantID, sessionID, generation, &requestedAt)
+}
+
+var ErrSandboxResetSessionBusy = errors.New("the hosted Session is busy")
+
+func (s *Store) archiveManagedSession(ctx context.Context, tenantID, sessionID string, expectedGeneration uint64, resetRequestedAt *time.Time) (ManagedSessionArchive, error) {
 	if s.executionLease == nil {
 		return ManagedSessionArchive{}, ErrInvalidInput
 	}
@@ -30,6 +44,20 @@ func (s *Store) ArchiveManagedSession(ctx context.Context, tenantID, sessionID s
 	}
 	var result ManagedSessionArchive
 	err = s.withPublicSession(ctx, tenantID, sessionID, func(ctx context.Context, q *sqlc.Queries, session pgtype.UUID) error {
+		// Session precedes deployment, matching Turn, allocation and input admission.
+		deployment, err := q.LockRuntimeDeployment(ctx)
+		if err != nil {
+			return err
+		}
+		if uint64(deployment.Generation) != expectedGeneration {
+			return &SandboxGenerationStaleError{uint64(deployment.Generation)}
+		}
+		if !deployment.WebManaged || !deployment.InstallationID.Valid {
+			return ErrSandboxDeploymentConflict
+		}
+		if deployment.ProviderKind == "" {
+			return ErrSandboxNotConfigured
+		}
 		environment, err := q.GetSessionEnvironment(ctx, sqlc.GetSessionEnvironmentParams{TenantID: tenant, ID: session})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrInvalidInput
@@ -41,13 +69,33 @@ func (s *Store) ArchiveManagedSession(ctx context.Context, tenantID, sessionID s
 		if err != nil || kind != "openai_hosted" {
 			return ErrInvalidInput
 		}
-		// Allocation and input admission take these locks in the same order.
-		deployment, err := q.LockRuntimeDeployment(ctx)
-		if err != nil {
-			return err
-		}
-		if !deployment.WebManaged || !deployment.InstallationID.Valid || deployment.ProviderKind == "" || !deployment.Maintenance || uint64(deployment.Generation) != expectedGeneration {
-			return ErrSandboxDeploymentConflict
+		if resetRequestedAt != nil {
+			if !deployment.ResetClear.Valid || !deployment.ResetRequestedAt.Time.Equal(*resetRequestedAt) {
+				return ErrSandboxDeploymentConflict
+			}
+			if deployment.ResetClear.String == "auto" {
+				busy, err := q.SessionBlocksAutoReset(ctx, session)
+				if err != nil {
+					return err
+				}
+				if busy {
+					return ErrSandboxResetSessionBusy
+				}
+			}
+			if environment.Environment.Status == "failed" || environment.Environment.Status == "expired" {
+				result, err = getManagedSessionArchive(ctx, q, tenant, session)
+				return err
+			}
+			source, err := sandboxResetAudit(deployment)
+			if err != nil {
+				return err
+			}
+			project, err := q.GetSandboxResetProject(ctx, tenant)
+			if err != nil {
+				return err
+			}
+			source.ProjectID = runtimeUUID(project)
+			ctx = adminaudit.WithSource(ctx, source)
 		}
 		allocation, err := q.GetRuntimeAllocation(ctx, sqlc.GetRuntimeAllocationParams{TenantID: tenant, EnvironmentID: environment.Environment.ID})
 		allocated := err == nil

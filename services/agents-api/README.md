@@ -640,4 +640,4 @@ not changes to the pinned official protocol.
 The release includes `oac-node` for local and remote hosts. Add nodes with
 Web's one-command flow in the [nodes guide](../../docs/getting-started/nodes.md); the
 [operator reference](HOSTED-SANDBOX-MANAGER.md) covers provider selection, manual
-registration, administrator credentials, fixed Session placement and maintenance.
+registration, administrator credentials, fixed Session placement and reset.

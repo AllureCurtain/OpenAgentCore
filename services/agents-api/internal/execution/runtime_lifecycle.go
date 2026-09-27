@@ -20,6 +20,8 @@ import (
 // RuntimeProvider binds one deployment to one sandbox installation.
 // BackendFingerprint identifies its namespace independently of mutable sizing.
 type RuntimeProvider struct {
+	// PublishUnconfigured updates the shared observation cache after reset commit.
+	PublishUnconfigured              func(uint64)
 	Generation                       uint64
 	Mode                             string
 	loadDeployment                   func(context.Context) (*RuntimeProvider, error)
@@ -33,7 +35,7 @@ type RuntimeProvider struct {
 	InstallationID                   string
 	BackendFingerprint               string
 	Provider                         sandbox.Provider
-	Maintenance                      bool
+	AdmissionPaused                  bool
 	Suspension                       *RuntimeSuspensionPolicy
 }
 
@@ -70,7 +72,7 @@ func newRuntimeManager(s *store.Store, registry *gateway.Registry, config *Runti
 		}
 	}
 	ctx, stop := context.WithCancel(context.Background())
-	return &runtimeManager{store: s, registry: registry, config: copied, setupInstallationID: config.InstallationID, loadDeployment: config.loadDeployment, prepareDeployment: config.prepareDeployment, setupGate: make(chan struct{}, 1), mutationGate: make(chan struct{}, 1), ctx: ctx, cancel: stop, nodes: make(map[string]*runtimeNode), failed: make(chan error, 1), inventory: make(chan struct{}, 1)}, nil
+	return &runtimeManager{store: s, registry: registry, config: copied, setupInstallationID: config.InstallationID, loadDeployment: config.loadDeployment, prepareDeployment: config.prepareDeployment, publishUnconfigured: config.PublishUnconfigured, setupGate: make(chan struct{}, 1), mutationGate: make(chan struct{}, 1), ctx: ctx, cancel: stop, nodes: make(map[string]*runtimeNode), failed: make(chan error, 1), inventory: make(chan struct{}, 1)}, nil
 }
 
 func validatedRuntimeProvider(config *RuntimeProvider, registry *gateway.Registry) (RuntimeProvider, error) {
@@ -173,7 +175,7 @@ func (r *runtimeLifecycle) provision(ctx context.Context, tenant, environment, p
 		return store.RuntimeAllocation{}, sandbox.ErrInvalid
 	}
 	if _, err := r.store.GetRuntimeAllocation(ctx, tenant, environment); errors.Is(err, store.ErrNotFound) {
-		if r.config.Maintenance && r.config.Generation == 0 {
+		if r.config.AdmissionPaused && r.config.Generation == 0 {
 			return store.RuntimeAllocation{}, ErrExecutionUnavailable
 		}
 		if err := r.computeFreshCapacity(ctx, providerKey); err != nil {

@@ -21,6 +21,11 @@ func TestPairedConsoleProxiesOnlyAdministration(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer server-admin" {
 			t.Errorf("incorrect upstream authority for %s", r.URL.Path)
 		}
+		if r.URL.Path == "/core/v1/sandbox/deployment/maintenance" {
+			w.WriteHeader(http.StatusNotFound)
+		} else if r.Method == "DELETE" && r.URL.RawQuery != "expected_generation=7" {
+			t.Error("reset cancellation query was lost")
+		}
 		_, _ = io.WriteString(w, "{}")
 	}))
 	defer upstream.Close()
@@ -45,8 +50,11 @@ func TestPairedConsoleProxiesOnlyAdministration(t *testing.T) {
 		{"POST", "/core/v1/sandbox/deployment", "none", 401},
 		{"PUT", "/core/v1/sandbox/deployment", "session", 200},
 		{"PUT", "/core/v1/sandbox/deployment", "none", 401},
-		{"PATCH", "/core/v1/sandbox/deployment/maintenance", "session", 200},
+		{"PATCH", "/core/v1/sandbox/deployment/maintenance", "session", 404},
 		{"PATCH", "/core/v1/sandbox/deployment/maintenance", "none", 401},
+		{"POST", "/core/v1/sandbox/deployment/reset", "session", 200},
+		{"DELETE", "/core/v1/sandbox/deployment/reset?expected_generation=7", "session", 200},
+		{"DELETE", "/core/v1/sandbox/deployment/reset?expected_generation=7", "none", 401},
 		{"GET", "/core/v1/sandbox/nodes", "node", 401},
 		{"GET", "/core/v1/projects", "session", 200},
 		{"POST", "/api/v1/sandbox-node/enroll", "node", 404},
@@ -81,7 +89,7 @@ func TestPairedConsoleProxiesOnlyAdministration(t *testing.T) {
 			t.Fatalf("console configuration = %s", body)
 		}
 	}
-	if calls.Load() != 4 {
+	if calls.Load() != 6 {
 		t.Fatalf("unexpected upstream requests: %d", calls.Load())
 	}
 	r := consoleRequest(t, server, "POST", "/core/v1/sandbox/deployment")

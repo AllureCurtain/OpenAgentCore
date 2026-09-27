@@ -67,12 +67,7 @@ func (s *coreMetricsSource) Sample(ctx context.Context) coremetrics.Sample {
 	} else {
 		sample.DatabaseSize = &size
 	}
-	deployment, err := s.store.GetRuntimeDeployment(ctx)
-	if err != nil {
-		sample.Healthy = false
-	} else {
-		sample.Maintenance = metricPtr(deployment.Maintenance)
-	}
+
 	return sample
 }
 func (s *coreMetricsSource) History(ctx context.Context, start, end time.Time, step time.Duration) (coremetrics.History, error) {

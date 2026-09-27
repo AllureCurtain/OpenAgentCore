@@ -2,6 +2,9 @@ package execution
 
 import (
 	"context"
+	"errors"
+	"time"
+
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 )
@@ -87,6 +90,10 @@ func (m *runtimeManager) activateDeployment(ctx context.Context, expected store.
 	if err != nil {
 		return err
 	}
+	if config == nil && expected.Provider == "" {
+		m.publishEmptyDeployment(expected)
+		return nil
+	}
 	if config == nil || config.InstallationID != expected.InstallationID || config.Generation != expected.Generation || config.Mode != expected.Mode || config.ProviderKind != expected.Provider || config.loadDeployment != nil || config.LocalNodeID != "" {
 		return sandbox.ErrInvalid
 	}
@@ -124,35 +131,45 @@ func (w *Worker) UpdateSandboxDeployment(ctx context.Context, input store.Sandbo
 		return store.RuntimeDeploymentView{}, err
 	}
 	if err := m.pauseDeployment(ctx); err != nil {
-		return store.RuntimeDeploymentView{}, err
+		return store.RuntimeDeploymentView{}, errors.Join(err, m.restoreCommittedDeployment())
 	}
 	input.SandboxDeploymentSetupRequest = withTemplateBuild(input.SandboxDeploymentSetupRequest, candidate)
 	result, err := m.store.UpdateSandboxDeployment(ctx, m.setupInstallationID, input)
 	if err != nil {
-		return store.RuntimeDeploymentView{}, err
+		return store.RuntimeDeploymentView{}, errors.Join(err, m.restoreCommittedDeployment())
 	}
 	m.publishDeployment(candidate, result)
 	return result, nil
 }
 
-func (w *Worker) SetSandboxMaintenance(ctx context.Context, input store.SandboxMaintenanceRequest) (store.RuntimeDeploymentView, error) {
-	unlock, err := w.runtimes.lockMutation(ctx)
+// Recovery belongs to the owner, not a cancelled HTTP request. Failure keeps the
+// drain barrier closed and stops the owner rather than admitting an unknown provider.
+func (m *runtimeManager) restoreCommittedDeployment() error {
+	ctx, cancel := context.WithTimeout(m.ctx, 5*time.Second)
+	defer cancel()
+	committed, err := m.store.GetRuntimeDeployment(ctx)
+	if err == nil {
+		err = m.activateDeployment(ctx, committed)
+	}
 	if err != nil {
-		return store.RuntimeDeploymentView{}, err
-	}
-	defer unlock()
-	m := w.runtimes
-	if !input.Maintenance {
-		expected, err := m.store.GetRuntimeDeployment(ctx)
-		if err != nil {
-			return store.RuntimeDeploymentView{}, err
-		}
-		if expected.Generation != input.ExpectedGeneration {
-			return store.RuntimeDeploymentView{}, store.ErrSandboxDeploymentConflict
-		}
-		if err := m.activateDeployment(ctx, expected); err != nil {
-			return store.RuntimeDeploymentView{}, err
+		select {
+		case m.failed <- err:
+		default:
 		}
 	}
-	return m.store.SetSandboxMaintenance(ctx, m.setupInstallationID, input)
+	return err
+}
+
+// Empty-state publication is infallible after commit, even if the request was
+// cancelled. Loader, preparer and installation ownership stay on the manager.
+func (m *runtimeManager) publishEmptyDeployment(committed store.RuntimeDeploymentView) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.config = RuntimeProvider{InstallationID: committed.InstallationID, Generation: committed.Generation}
+	m.nodes = make(map[string]*runtimeNode)
+	if m.publishUnconfigured != nil {
+		m.publishUnconfigured(committed.Generation)
+	}
+	m.switching = false
+	m.switchDrained = nil
 }

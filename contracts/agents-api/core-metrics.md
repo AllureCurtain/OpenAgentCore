@@ -26,7 +26,7 @@ the current partial bucket is excluded from range aggregates and series.
 
 Current gauges and range aggregates are intentionally different: current worker,
 connection pool, Go heap and goroutine values are read when requested; process
-CPU, RSS and limits, queue gauges, database size and deployment maintenance are
+CPU, RSS and limits, queue gauges, database size are
 sampled every 30 seconds with bounded I/O.
 Samples older than 60 seconds are not reported as current. Queue, running and
 pool and process series report the highest **observed** value in each bucket, not a claim
@@ -53,8 +53,8 @@ present.
   by the standalone builder's `-ldflags`. Manual builds without a valid revision
   report null. `started_at` records process initialization. `execution_owner`
   reflects the execution worker's existing lease checks, with unknown ownership
-  represented as null. `maintenance` means the saved deployment is in maintenance;
-  measurement or job failures take precedence as `degraded`.
+  represented as null. Measurement or job failures report `degraded`; sandbox reset
+  is reported separately by the deployment contract, not a service status.
 - `execution.slots_in_use` is the worker's active Session reservation set. Its
   configured capacity is four; environment input, Turns and file work share it.
   It does not count native harness subprocesses. Worker-disabled installations

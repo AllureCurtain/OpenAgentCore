@@ -210,7 +210,7 @@ class InstallerTests(unittest.TestCase):
     def test_a_new_installation_selects_microsandbox_at_web_standard_size(self):
         self.install("--public-url", "https://core.example")
         standard = json.loads(STANDARD_SIZES.read_text())
-        self.assertEqual(self.host.deployment_posts, [{"provider": "microsandbox", "resources": standard["microsandbox"],
+        self.assertEqual(self.host.deployment_posts, [{"provider": "microsandbox", "expected_generation": 0, "resources": standard["microsandbox"],
                                                        "runtime": node_spec.release(self.manifest)}])
         self.assertIn("\nSandboxes: microsandbox, Standard (2 CPUs, 4 GiB). Its nodes need KVM (/dev/kvm); this host "
                       "needs it only if you add it as a node.\nAdd nodes: in Web, open Nodes and choose Add node, then "
@@ -246,11 +246,11 @@ class InstallerTests(unittest.TestCase):
                      "without KVM"):
             self.assertIn(risk, output)
         standard = json.loads(STANDARD_SIZES.read_text())
-        docker = {"provider": "docker", "resources": standard["docker"], "runtime": node_spec.release(self.manifest)}
+        docker = {"provider": "docker", "expected_generation": 0, "resources": standard["docker"], "runtime": node_spec.release(self.manifest)}
         prompt = self.install_docker("--core-only", "--accept-docker-risks")
         prompt.assert_not_called()
         self.assertEqual(self.host.deployment_posts, [docker])
-        self.root, self.host.deployment = self.work / "confirmed", {"provider": ""}
+        self.root, self.host.deployment = self.work / "confirmed", {"provider": "", "generation": 0, "reset": None}
         prompt = self.install_docker(answer="y")
         prompt.assert_called_once_with("Use Docker sandboxes anyway? [y/N] ")
         self.assertEqual(self.host.deployment_posts, [docker, docker])
@@ -279,7 +279,7 @@ class InstallerTests(unittest.TestCase):
             self.assertFalse(self.root.exists())
         key.chmod(0o600)
         self.install("--sandbox", "e2b", "--e2b-api-key-file", key, "--e2b-template", BUILD, "--public-url", "https://core.example")
-        self.assertEqual(self.host.deployment_posts, [{"provider": "e2b", "e2b": {"api_key": secret, "template": BUILD}}])
+        self.assertEqual(self.host.deployment_posts, [{"provider": "e2b", "expected_generation": 0, "e2b": {"api_key": secret, "template": BUILD}}])
         self.assertIn(f"Sandboxes: E2B template {BUILD} (2 CPUs, 2 GiB). E2B runs them; no nodes are needed.",
                       self.output.getvalue())
         self.assertNotIn(secret, self.output.getvalue() + (self.root / "config.json").read_text()

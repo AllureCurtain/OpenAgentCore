@@ -192,10 +192,12 @@ The latter rename their directory, project and payload without copying a databas
 
 Preflight reports generated-file edits, invalid configuration, destination conflicts,
 insufficient database-copy space, and every available drain blocker. It reads the
-old Core with its Core key. When that Core is stopped and static checks pass, it
-announces a temporary start using only the existing files. Refusal restores the
-services this probe started; a restoration failure is reported explicitly. No
-installation conversion happens before confirmation.
+old Core with its Core key. Start the previous release yourself before conversion:
+a stopped or unreadable Core is refused without starting services. This is required
+to identify the provider before any conversion writes. E2B conversion is currently
+refused, including interrupted journal resumes; keep the previous release until
+the safe Core-owned E2B upgrade transition is available. No installation conversion
+happens before confirmation.
 
 The confirmation prints the backup command for the old project and the directory
 and secret moves. For a config.json installation, take the backup before confirming:
@@ -220,9 +222,11 @@ The new state format is 2; config.json's schema format remains 1. Ports, public 
 secrets, Core key, installation ID and database contents are preserved. The old
 `parsar` path becomes a stub naming the new `oac` command. New services use `OAC_*`
 settings and `io.oac.inputs` labels. Docker and microsandbox deployments retain
-their resources, replace their Runtime with the bundle's release through the normal
-maintenance-only API, then resume admission. E2B remains in maintenance: rebuild its
-template with this release's `build-template.py`, replace it in Web, then resume.
+their resources and replace their Runtime with the bundle's exact release through
+an expected-generation same-provider PUT. New Core must report reset null and zero
+held resources; conversion reads back the exact specification and generation.
+Ordinary migration retires old maintenance and resumes admission, which is why E2B
+conversion remains blocked until its safe upgrade preparation is implemented.
 
 Rerun `./install.sh --convert` with the **same bundle** after any interruption,
 including after the directory move. For a custom directory, repeat `--install-dir`.
@@ -326,10 +330,11 @@ Nodes from releases that used the removed `/core/v1/sandbox/enroll` and
 microsandbox deployment:
 
 1. Drain with the previous release while its nodes are connected: enter maintenance,
-   archive retained hosted Sessions and wait until nothing is retained (the
-   [maintenance procedure](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-maintenance)).
+   archive retained hosted Sessions and wait until nothing is retained using that
+   previous release's maintenance procedure.
 2. Upgrade Core and Web, and change the routing as above.
-3. Save the new release's Runtime, resume, and add the nodes again. On each node host,
+3. Reset a drained selection that lacks a specification, then configure the new
+   release's Runtime and add nodes again. On each node host,
    stop the old node service and move its state directory aside as a backup first.
 
 A Web-selected Docker or microsandbox deployment saved before deployment specifications

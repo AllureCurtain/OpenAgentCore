@@ -2,7 +2,7 @@
 
 This reference is for operators who need the details behind Web's **Nodes** page
 (shown as **Sandbox backend** when the deployment uses E2B): the node protocol,
-manual registration, placement, maintenance and failure handling. To add, remove or
+manual registration, placement, reset and failure handling. To add, remove or
 troubleshoot a node, start with the [nodes guide](../../docs/getting-started/nodes.md).
 
 One Core execution owner manages sandbox nodes on its own host and on other Linux
@@ -194,7 +194,7 @@ for the host:
   encoded bytes; the installer rejects a longer path before creating node state, so
   use a service account with a shorter persistent home.
 
-The node file has no `max_active`, `max_retained`, idle-policy or maintenance
+The node file has no `max_active`, `max_retained`, idle-policy or reset
 override, and a node never receives arbitrary host paths from the browser. Editing the
 downloaded specification does not change Core: the node validates its content and file
 hashes, and Core compares its digest at enrollment and on every connection. A mismatch
@@ -258,7 +258,7 @@ keepalives no longer authorizes cleanup of a node-managed allocation. Reconnect 
 and continue its existing resources. Unknown creation, initialization, capture
 and restore results do not authorize request replay or a replacement sandbox.
 
-## Removal and maintenance
+## Removal and reset
 
 There is no per-node drain switch. Online, eligible nodes participate
 automatically. A node with instances, retained snapshots, pending allocations,
@@ -276,45 +276,43 @@ an unreachable Core or a 403 from a proxy in front of it, restart the service ev
 5 seconds without a start limit. Ordinary disconnects and host restarts reuse the
 original identity.
 
-Provider, resource-limit and Runtime changes share one deployment-wide procedure:
+Same-provider resource/Runtime or E2B key/build edits currently require zero
+unreleased allocations and pending hosted Environments, no reset and the current
+generation. PUT the complete selection once. Core validates before draining, then
+rechecks and commits the generation and node/token retirement together. A failed
+commit recovers the previous provider. There is no online rollout in this release.
 
-1. Enter maintenance. This blocks new hosted Sessions and allocations while allowing
-   existing work, queries and cleanup.
-2. Verify the deployment's allocation and pending-Environment counts are zero.
-   Stopped compute, snapshots, unknown creates and pending cleanup still block
-   switching. Explicitly archive retained Sessions as described below.
-3. Once cleanup is verified, submit the complete replacement. Core validates the
-   candidate before changing the database or draining current workers. It then
-   drains existing manager calls and repeats the resource/generation checks in the
-   commit transaction. A changed selection advances the generation and retires old
-   nodes and unused enrollments atomically; history remains intact.
-4. Explicitly resume with the returned generation. A rejected candidate preserves
-   the old configuration and maintenance state. After an uncertain response, refresh
-   before another write. Saving never automatically deletes compute.
+Changing backend requires an explicit reset. POST
+`/core/v1/sandbox/deployment/reset` with `expected_generation` and `clear: auto`
+(default deadline 3600 seconds, configurable from 300 to 86400) or `clear: force`
+(without a deadline). Auto archives idle, queued and suspended hosted Sessions,
+waits for work in progress/waiting and pending file writes, then escalates at its
+durable deadline. Force requests cancellation and ordinary verified cleanup.
+Self-hosted work is excluded. Fresh hosted admission closes during reset; existing
+live input, known receipts, restoration and cleanup continue.
 
-During maintenance, explicitly archive each retained Core-managed hosted Session
-through `POST /core/v1/projects/{project_id}/sessions/{session_id}/archive`
-with the current `expected_generation`. This requests cancellation and revokes
-Runtime authority; the existing lifecycle releases compute and snapshots after
-provider verification. Poll GET on the same path for `released`, then verify both
-deployment counts are zero. Unknown cleanup remains a blocker. Resource release
-does not prove that an active Turn has finalized.
+Read `reset.remaining` for busy/idle/cleanup and the authoritative offline-node
+subset. Offline or failed cleanup still blocks completion. Bring those nodes back
+for cleanup; a node with resources cannot be removed. Once verified counts reach
+zero Core clears the selection, retires nodes/tokens and advances generation while
+preserving installation identity, history and persisted Files/Artifacts. Then POST
+a new selection with the returned generation. Cancel with DELETE on the reset route
+and `expected_generation` query; it stops remaining archives, not cleanup already
+requested, and does not restore workspace or revive archived Sessions.
 
-Archive preserves Session history and persisted Files/Artifacts. Unpersisted
-workspace contents are lost and the original Session cannot resume. Public Session
-deletion has different retention behavior and is not needed for this workflow.
-After an uncertain archive response, read its disposition before another explicit
-write; never automatically retry. See the
-[administrator archive contract](../../contracts/agents-api/admin-api.md#administrative-session-archive).
-Maintenance and configuration changes alone perform no cleanup.
+Explicitly archive an individual hosted Session at any time through
+`POST /core/v1/projects/{project_id}/sessions/{session_id}/archive` with its current
+deployment generation. Poll GET on that path for `released`; resource release does
+not prove an active Turn has finished cancellation. History and persisted
+Files/Artifacts survive, but unpersisted workspace is lost and the original Session
+cannot resume. See the [archive contract](../../contracts/agents-api/admin-api.md#administrative-session-archive).
 
-`GET /core/v1/sandbox/deployment` reports the safe configuration, `generation` and
-`resources` counts. `PATCH /core/v1/sandbox/deployment/maintenance` takes
-`maintenance` and `expected_generation`; `PUT /core/v1/sandbox/deployment` takes
-the provider, complete `resources`/`runtime` selection, any E2B input and
-`expected_generation`. Both require deployment admin
-authority. Neither request takes a Core address. E2B is not
-combined with own-machine nodes, and existing Sessions never migrate providers.
+After any uncertain mutation, refresh authoritative state before another explicit
+write; do not replay automatically. Every setup/update/reset/cancel write uses the
+observed generation, including zero for initial setup. The retired maintenance PATCH
+returns authenticated 404. See the [sandbox deployment contract](../../contracts/agents-api/sandbox-deployment.md)
+for precise reset, concurrency and error semantics. None of these requests changes
+the installation's public Core address or migrates existing Sessions.
 
 This release has one Core execution owner. It does not add Core multi-active,
 cross-node snapshot restore, automatic failover, Kubernetes or autoscaling.

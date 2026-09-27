@@ -71,18 +71,24 @@ func (s *Store) GetRuntimeDeployment(ctx context.Context) (RuntimeDeploymentView
 
 // deploymentView reports the public URL as the deployment's read-only core_url.
 func (s *Store) deploymentView(ctx context.Context, q *sqlc.Queries) (RuntimeDeploymentView, error) {
-	d, err := q.GetRuntimeDeployment(ctx)
+	row, err := q.GetSandboxDeploymentSnapshot(ctx)
 	if err != nil {
 		return RuntimeDeploymentView{}, err
 	}
-	resources, err := q.CountRuntimeDeploymentResources(ctx)
-	if err != nil {
-		return RuntimeDeploymentView{}, err
-	}
+	d := row.RuntimeDeployment
 	result := runtimeDeploymentView(d, s.publicURL)
-	result.Resources = SandboxDeploymentResources{Allocations: resources.Allocations, Pending: resources.Pending}
+	result.Resources = SandboxDeploymentResources{Allocations: row.Allocations, Pending: row.Pending}
+	if d.ResetClear.Valid {
+		remaining := SandboxResetRemaining{}
+		if err := json.Unmarshal(row.Remaining, &remaining); err != nil {
+			return RuntimeDeploymentView{}, err
+		}
+		result.Reset = &SandboxResetView{Clear: d.ResetClear.String, RequestedAt: d.ResetRequestedAt.Time,
+			DeadlineAt: resetTimestamp(d.ResetDeadlineAt), ForcedAt: resetTimestamp(d.ResetForcedAt), Remaining: remaining}
+	}
 	return result, nil
 }
+
 func (s *Store) RuntimeOwnerEpoch(ctx context.Context) (uint64, error) {
 	d, err := s.queries.GetRuntimeDeployment(ctx)
 	return uint64(d.OwnerEpoch), err
@@ -145,7 +151,10 @@ func (s *Store) CreateRuntimeEnrollment(ctx context.Context, capacity RuntimeNod
 		if err := validateRuntimeNode("enrollment", capacity.MaxActive, capacity.MaxRetained); err != nil {
 			return err
 		}
-		if d.Mode != "nodes" || d.Maintenance || unspecifiedNodeDeployment(d) {
+		if d.ResetClear.Valid {
+			return ErrSandboxResetInProgress
+		}
+		if d.Mode != "nodes" || d.AdmissionPaused || unspecifiedNodeDeployment(d) {
 			return ErrSandboxDeploymentConflict
 		}
 		if err := q.CreateRuntimeEnrollment(ctx, sqlc.CreateRuntimeEnrollmentParams{ID: pgtype.UUID{Bytes: id, Valid: true}, TokenSha256: runtimeTokenDigest(result.Token), InstallationID: d.InstallationID, MaxActive: int32(capacity.MaxActive), MaxRetained: int32(capacity.MaxRetained)}); err != nil {
@@ -183,7 +192,10 @@ func (s *Store) EnrollRuntimeNode(ctx context.Context, token string, input Runti
 		if !runtimeDeploymentInitialized(d) {
 			return ErrRuntimeNodeUnavailable
 		}
-		if d.Mode != "nodes" || d.Maintenance || input.Provider != d.ProviderKind {
+		if d.ResetClear.Valid {
+			return ErrSandboxResetInProgress
+		}
+		if d.Mode != "nodes" || d.AdmissionPaused || input.Provider != d.ProviderKind {
 			return ErrInvalidInput
 		}
 		spec, err := deploymentSpecification(d)

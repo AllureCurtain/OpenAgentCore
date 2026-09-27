@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/gateway"
-	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox/node"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 	"github.com/google/uuid"
@@ -151,7 +150,7 @@ func TestSandboxManagerCancelledSwitchCannotResumeBeforeDrain(t *testing.T) {
 	}
 }
 
-func TestSandboxSetupRetryCannotBypassOutstandingDrain(t *testing.T) {
+func TestSandboxActivationCannotBypassOutstandingDrain(t *testing.T) {
 	hub := node.NewHub(node.HubOptions{})
 	defer hub.Close()
 	id := uuid.NewString()
@@ -176,9 +175,8 @@ func TestSandboxSetupRetryCannotBypassOutstandingDrain(t *testing.T) {
 	cancel()
 	ctx, cancel = context.WithTimeout(t.Context(), 10*time.Millisecond)
 	defer cancel()
-	w := &Worker{runtimes: m}
-	_, err = w.InitializeSandboxDeployment(ctx, store.SandboxDeploymentSetupRequest{Provider: "e2b", E2B: &store.SandboxE2BConfiguration{APIKey: "fixture-key", Template: "runtime:" + uuid.NewString()}, DeploymentSpec: sandbox.DeploymentSpec{Resources: sandbox.Resources{CPUs: 2, MemoryMiB: 1024}}})
+	err = m.activateDeployment(ctx, store.RuntimeDeploymentView{InstallationID: id, Generation: 1, Provider: "e2b", Mode: "direct"})
 	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatal("setup retry bypassed the unfinished drain", err)
+		t.Fatal("activation bypassed the unfinished drain", err)
 	}
 }

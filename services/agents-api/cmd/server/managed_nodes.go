@@ -83,6 +83,7 @@ func configureManagedNodes(s *store.Store, publicURL string, owner func(context.
 	})
 	result.setup = &managedSetup{store: s, hub: result.hub, installationID: setupID, publicURL: publicURL}
 	result.runtime = execution.NewDeferredRuntimeProvider(setupID, result.setup.load, result.setup.prepare)
+	result.runtime.PublishUnconfigured = result.setup.publishUnconfigured
 	success = true
 	return result, nil
 }

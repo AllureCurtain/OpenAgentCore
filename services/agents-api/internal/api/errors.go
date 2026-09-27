@@ -95,7 +95,22 @@ func writeStoreError(w http.ResponseWriter, r *http.Request, err error, notFound
 	var cursor *store.InvalidCursorError
 	var selection *store.MCPCredentialSelectionError
 	var sandboxConfiguration *store.SandboxConfigurationError
+	var stale *store.SandboxGenerationStaleError
+	var resetRequired *store.SandboxResetRequiredError
+	var inUse *store.SandboxInUseError
 	switch {
+	case errors.As(err, &stale):
+		writeCoreError(w, http.StatusConflict, "sandbox_generation_stale", "The sandbox deployment generation changed. Refresh before submitting again.", CoreErrorDetails{"current_generation": CoreErrorNumber(float64(stale.CurrentGeneration))})
+	case errors.As(err, &resetRequired):
+		writeCoreError(w, http.StatusConflict, "sandbox_reset_required", "Reset the sandbox deployment before changing its backend.", CoreErrorDetails{"current_provider": CoreErrorString(resetRequired.CurrentProvider), "requested_provider": CoreErrorString(resetRequired.RequestedProvider)})
+	case errors.As(err, &inUse):
+		writeCoreError(w, http.StatusConflict, "sandbox_in_use", "Hosted sandbox resources still belong to this deployment.", CoreErrorDetails{"allocations": CoreErrorNumber(float64(inUse.Resources.Allocations)), "pending": CoreErrorNumber(float64(inUse.Resources.Pending))})
+	case errors.Is(err, store.ErrSandboxResetAdmission):
+		writeError(w, http.StatusServiceUnavailable, "sandbox_reset_in_progress", "A sandbox reset is in progress.")
+	case errors.Is(err, store.ErrSandboxResetInProgress):
+		writeError(w, http.StatusConflict, "sandbox_reset_in_progress", "A sandbox reset is in progress.")
+	case errors.Is(err, store.ErrSandboxNotConfigured):
+		writeError(w, http.StatusConflict, "sandbox_not_configured", "The sandbox deployment is not configured.")
 	case errors.As(err, &sandboxConfiguration):
 		writeError(w, http.StatusBadRequest, "invalid_sandbox_configuration", sandboxConfiguration.Message)
 	case errors.Is(err, store.ErrSandboxPublicURLUnreachable):
@@ -115,13 +130,13 @@ func writeStoreError(w http.ResponseWriter, r *http.Request, err error, notFound
 	case errors.Is(err, store.ErrSandboxCredentialUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "sandbox_credential_unavailable", "Sandbox credentials are unavailable. Check the service credential encryption configuration.")
 	case errors.Is(err, store.ErrSandboxDeploymentConflict):
-		writeError(w, http.StatusConflict, "sandbox_deployment_conflict", "The sandbox deployment cannot change in its current state. Refresh the configuration, enter maintenance and finish resource cleanup before switching.")
+		writeError(w, http.StatusConflict, "sandbox_deployment_conflict", "The sandbox deployment cannot change in its current state. Refresh the configuration and inspect its reset and resource state.")
 	case errors.Is(err, store.ErrRuntimeNodeCredential):
 		writeError(w, http.StatusUnauthorized, "invalid_node_credential", "A valid sandbox node enrollment or node credential is required.")
 	case errors.Is(err, store.ErrRuntimeNodeInUse):
 		writeError(w, http.StatusConflict, "runtime_node_in_use", "The sandbox node retains allocations, snapshots, reservations or pending cleanup.")
 	case errors.Is(err, store.ErrRuntimeLocalNodeConfigured):
-		writeError(w, http.StatusConflict, "runtime_local_node_configured", "The local sandbox node is enabled in deployment configuration. Disable it through provider maintenance and restart Core before removing it.")
+		writeError(w, http.StatusConflict, "runtime_local_node_configured", "The local sandbox node is enabled in deployment configuration. Drain it with the previous release and remove its file-managed configuration before replacing it.")
 	case errors.Is(err, store.ErrRuntimeNodeUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "runtime_node_unavailable", "The selected sandbox node is unavailable or has no capacity.")
 

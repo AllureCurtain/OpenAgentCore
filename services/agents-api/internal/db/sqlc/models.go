@@ -246,7 +246,7 @@ type RuntimeDeployment struct {
 	Singleton              bool               `json:"singleton"`
 	InstallationID         pgtype.UUID        `json:"installation_id"`
 	BackendFingerprint     string             `json:"backend_fingerprint"`
-	Maintenance            bool               `json:"maintenance"`
+	AdmissionPaused        bool               `json:"admission_paused"`
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
 	ProviderKind           string             `json:"provider_kind"`
 	LocalNodeID            pgtype.UUID        `json:"local_node_id"`
@@ -263,6 +263,11 @@ type RuntimeDeployment struct {
 	E2bTemplateCpus        pgtype.Int4        `json:"e2b_template_cpus"`
 	E2bTemplateMemoryMib   pgtype.Int4        `json:"e2b_template_memory_mib"`
 	E2bTemplateRootDiskMib pgtype.Int4        `json:"e2b_template_root_disk_mib"`
+	ResetClear             pgtype.Text        `json:"reset_clear"`
+	ResetRequestedAt       pgtype.Timestamptz `json:"reset_requested_at"`
+	ResetDeadlineAt        pgtype.Timestamptz `json:"reset_deadline_at"`
+	ResetForcedAt          pgtype.Timestamptz `json:"reset_forced_at"`
+	ResetAudit             []byte             `json:"reset_audit"`
 }
 
 type RuntimeDeviceAuthority struct {

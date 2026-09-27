@@ -35,7 +35,7 @@ type RuntimeDeploymentPreparer func(context.Context, store.SandboxSetup) (Prepar
 
 // NewDeferredRuntimeProvider enables Web setup for one fixed installation. The
 // loader returns nil until selection, then the committed immutable generation.
-// Replacement is serialized by the deployment maintenance and drain flow.
+// Replacement is serialized by the deployment mutation gate and drain flow.
 func NewDeferredRuntimeProvider(installationID string, load func(context.Context) (*RuntimeProvider, error), prepare ...RuntimeDeploymentPreparer) *RuntimeProvider {
 	config := &RuntimeProvider{InstallationID: installationID, loadDeployment: load}
 	if len(prepare) == 1 {
@@ -51,6 +51,9 @@ func (w *Worker) InitializeSandboxDeployment(ctx context.Context, input store.Sa
 	}
 	defer unlock()
 	m := w.runtimes
+	if err := m.store.CheckSandboxDeploymentSetup(ctx, m.setupInstallationID, input); err != nil {
+		return store.RuntimeDeploymentView{}, err
+	}
 	candidate, err := m.prepareCandidate(ctx, input)
 	if err != nil {
 		return store.RuntimeDeploymentView{}, err
@@ -166,7 +169,7 @@ func (m *runtimeManager) publishDeployment(candidate PreparedRuntimeDeployment, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	config := *candidate.Config
-	config.Generation, config.Maintenance = committed.Generation, committed.Maintenance
+	config.Generation, config.AdmissionPaused = committed.Generation, committed.Reset != nil
 	if m.switching {
 		m.nodes = make(map[string]*runtimeNode)
 	}

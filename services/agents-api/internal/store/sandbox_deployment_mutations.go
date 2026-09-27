@@ -38,10 +38,6 @@ type SandboxDeploymentUpdateRequest struct {
 	SandboxDeploymentSetupRequest
 	ExpectedGeneration uint64 `json:"expected_generation"`
 }
-type SandboxMaintenanceRequest struct {
-	Maintenance        bool   `json:"maintenance"`
-	ExpectedGeneration uint64 `json:"expected_generation"`
-}
 
 // E2BResourcesPending reports an E2B selection that omitted resources. Core
 // fills them from the validated template build before any write.
@@ -183,7 +179,13 @@ func (s *Store) InitializeSandboxDeployment(ctx context.Context, installationID 
 		if err != nil {
 			return err
 		}
-		if !d.WebManaged || d.InstallationID != id {
+		if err := checkSandboxGeneration(d, installationID, input.ExpectedGeneration); err != nil {
+			return err
+		}
+		if d.ResetClear.Valid {
+			return ErrSandboxResetInProgress
+		}
+		if d.InstallationID != id {
 			return ErrSandboxDeploymentConflict
 		}
 		if d.ProviderKind != "" {
@@ -227,15 +229,24 @@ func (s *Store) CheckSandboxDeploymentSwitch(ctx context.Context, installation s
 	})
 }
 func checkSandboxSwitch(ctx context.Context, q *sqlc.Queries, d sqlc.RuntimeDeployment, installation string, input SandboxDeploymentUpdateRequest) error {
-	if !d.WebManaged || runtimeUUID(d.InstallationID) != installation || d.ProviderKind == "" || !d.Maintenance || uint64(d.Generation) != input.ExpectedGeneration {
-		return ErrSandboxDeploymentConflict
+	if err := checkSandboxGeneration(d, installation, input.ExpectedGeneration); err != nil {
+		return err
+	}
+	if d.ResetClear.Valid {
+		return ErrSandboxResetInProgress
+	}
+	if d.ProviderKind == "" {
+		return ErrSandboxNotConfigured
+	}
+	if d.ProviderKind != input.Provider || unspecifiedNodeDeployment(d) {
+		return &SandboxResetRequiredError{CurrentProvider: d.ProviderKind, RequestedProvider: input.Provider}
 	}
 	resources, err := q.CountRuntimeDeploymentResources(ctx)
 	if err != nil {
 		return err
 	}
 	if resources.Allocations != 0 || resources.Pending != 0 {
-		return ErrSandboxDeploymentConflict
+		return &SandboxInUseError{SandboxDeploymentResources{Allocations: resources.Allocations, Pending: resources.Pending}}
 	}
 	return nil
 }
@@ -285,28 +296,22 @@ func (s *Store) UpdateSandboxDeployment(ctx context.Context, installation string
 	return result, err
 }
 
-// The Worker verifies activation before calling this with maintenance=false.
-func (s *Store) SetSandboxMaintenance(ctx context.Context, installation string, input SandboxMaintenanceRequest) (RuntimeDeploymentView, error) {
-	if s.executionLease == nil {
-		return RuntimeDeploymentView{}, ErrInvalidInput
-	}
-	ctx, cancel := context.WithTimeout(ctx, executionTransactionTimeout)
-	defer cancel()
-	var result RuntimeDeploymentView
-	err := s.executionLease.transaction(ctx, func(tx pgx.Tx) error {
-		q := s.queries.WithTx(tx)
-		d, err := q.LockRuntimeDeployment(ctx)
-		if err != nil {
+// CheckSandboxDeploymentSetup rejects stale/reset state before provider preparation;
+// InitializeSandboxDeployment repeats the check in its committing transaction.
+func (s *Store) CheckSandboxDeploymentSetup(ctx context.Context, installation string, input SandboxDeploymentSetupRequest) error {
+	return s.resetTransaction(ctx, func(ctx context.Context, q *sqlc.Queries, d sqlc.RuntimeDeployment) error {
+		if err := checkSandboxGeneration(d, installation, input.ExpectedGeneration); err != nil {
 			return err
 		}
-		if !d.WebManaged || runtimeUUID(d.InstallationID) != installation || d.ProviderKind == "" || uint64(d.Generation) != input.ExpectedGeneration {
-			return ErrSandboxDeploymentConflict
+		if d.ResetClear.Valid {
+			return ErrSandboxResetInProgress
 		}
-		if err := q.SetSandboxMaintenance(ctx, input.Maintenance); err != nil {
+		if err := validateSandboxSelection(input); err != nil {
 			return err
 		}
-		result, err = s.deploymentView(ctx, q)
-		return err
+		if d.ProviderKind != "" && (d.ProviderKind != input.Provider || unspecifiedNodeDeployment(d)) {
+			return &SandboxResetRequiredError{CurrentProvider: d.ProviderKind, RequestedProvider: input.Provider}
+		}
+		return nil
 	})
-	return result, err
 }

@@ -18,7 +18,7 @@ compute cleanup remains Core's responsibility.
 
 Select E2B in Core's hosted deployment setup and supply the account key and an
 immutable `templateID:build_UUID`. One deployment uses one managed Provider;
-E2B needs no physical node enrollment. Switching Providers requires maintenance
+E2B needs no physical node enrollment. Changing backend requires explicit reset
 and confirmed cleanup of every owned allocation, pending creation and snapshot.
 Do not infer execution readiness from saved configuration or running compute.
 

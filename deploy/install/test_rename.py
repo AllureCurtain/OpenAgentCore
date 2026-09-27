@@ -88,7 +88,7 @@ class RenameTests(unittest.TestCase):
         self.host.deployment = {"provider": provider, "generation": 4, "maintenance": True,
             "resources": {"allocations": 0, "pending": 0}, "specification": {
                 "resources": {"cpus": 2, "memory_mib": 2048},
-                "runtime": {"image": "sha256:" + "9" * 64}}}
+                "runtime": {"image_id": "sha256:" + "9" * 64, "microsandbox_ref": "parsar-core-runtime@sha256:" + "7" * 64}}}
         self.before = self.snapshot()
         self.before_volumes = copy.deepcopy(self.host.volumes)
         self.identity = state["installation_id"]
@@ -134,7 +134,7 @@ class RenameTests(unittest.TestCase):
                 self.assertIn("parsar was renamed to oac", (old / "parsar").read_text())
                 self.assertEqual(len(self.host.deployment_posts), 1 + int(default))
                 self.assertEqual(self.host.deployment["generation"], 5)
-                self.assertFalse(self.host.deployment["maintenance"])
+                self.assertIsNone(self.host.deployment["reset"])
                 self.assertEqual(self.host.deployment_posts[-1]["resources"], {"cpus": 2, "memory_mib": 2048})
                 self.assertEqual(self.host.deployment_posts[-1]["runtime"]["microsandbox_ref"], MANIFEST["runtime_ref"])
 
@@ -161,34 +161,25 @@ class RenameTests(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
         self.assertFalse(any("up" in command for command in self.host.commands))
 
-    def test_stopped_core_probe_restores_only_new_starts_on_refusal(self):
-        self.fixture()
-        self.host.containers["core"]["running"] = False
-        self.host.deployment["maintenance"] = False
-        before = self.host.running()
-        with self.assertRaisesRegex(rename.RenameError, "maintenance"):
-            self.convert()
-        self.assertEqual(self.host.running(), before)
-        self.assertEqual(self.snapshot(), self.before)
-        stops = [command[4:] for command in self.host.commands if command[:2] == ["docker", "compose"] and "stop" in command]
-        self.assertEqual(stops, [["stop", "core"]])
-        self.host.deployment["maintenance"] = True
-        self.convert()
-        self.assert_preserved()
-
-    def test_restore_failure_is_reported_without_false_no_change_claim(self):
-        self.fixture()
-        self.host.containers["core"]["running"] = False
-        self.host.deployment["maintenance"] = False
-        original = install.run
-        def fail_stop(command, **kwargs):
-            if "stop" in command:
-                raise subprocess.CalledProcessError(1, command)
-            return original(command, **kwargs)
-        with mock.patch.object(install, "run", side_effect=fail_stop), self.assertRaisesRegex(rename.RenameError, "could not restore") as error:
-            self.convert()
-        self.assertNotIn("Nothing was changed", str(error.exception))
-        self.assertEqual(self.snapshot(), self.before)
+    def test_stopped_or_unreadable_core_refuses_before_mutations(self):
+        for unreadable in (False, True):
+            with self.subTest(unreadable=unreadable):
+                self.root = self.work / ("unreadable" if unreadable else "stopped")
+                self.host.containers.clear()
+                self.host.volumes.clear()
+                self.fixture()
+                if unreadable:
+                    (self.root / "secrets/core.key").write_text("wrong-key" * 8)
+                else:
+                    self.host.containers["core"]["running"] = False
+                before, running = self.snapshot(), self.host.running()
+                self.host.commands.clear()
+                with self.assertRaisesRegex(rename.RenameError, "previous Core must already be running and readable"):
+                    self.convert()
+                self.assertEqual(self.snapshot(), before)
+                self.assertEqual(self.host.running(), running)
+                self.assertEqual(self.host.volumes, self.before_volumes)
+                self.assertFalse(any(any(action in command for action in ("up", "stop", "down", "start", "cp -a /from/. /to/ && sync")) for command in self.host.commands))
 
     def test_foreign_target_volume_and_container_refuse_without_removal(self):
         for container in (False, True):
@@ -279,15 +270,32 @@ class RenameTests(unittest.TestCase):
         self.assertTrue(self.host.native["active"])
         self.assert_preserved()
 
-    def test_e2b_stays_in_maintenance_and_web_only_never_copies_a_database(self):
+    def test_e2b_refuses_before_conversion_mutations(self):
         self.fixture(provider="e2b")
-        self.convert()
-        self.assertTrue(self.host.deployment["maintenance"])
+        self.host.commands.clear()
+        with self.assertRaisesRegex(rename.RenameError, "E2B rename conversion is not supported"):
+            self.convert()
+        self.assertEqual(self.snapshot(), self.before)
+        self.assertEqual(self.host.volumes, self.before_volumes)
         self.assertFalse(self.host.deployment_posts)
-        self.assertIn("E2B remains in maintenance", self.output.getvalue())
-        self.root = self.work / "web-only"
-        self.host.containers.clear()
-        self.host.volumes.clear()
+        self.assertFalse(any(any(action in command for action in ("up", "stop", "down", "start", "cp -a /from/. /to/ && sync")) for command in self.host.commands))
+
+    def test_e2b_resume_refuses_before_services_or_journal_changes(self):
+        self.fixture()
+        with mock.patch.object(rename, "execute", side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+            self.convert()
+        state = self.state()
+        state["renamed_from"]["deployment"]["provider"] = "e2b"
+        oac_cli.save_state(self.root, state)
+        before, volumes = self.snapshot(), copy.deepcopy(self.host.volumes)
+        self.host.commands.clear()
+        with self.assertRaisesRegex(rename.RenameError, "E2B rename conversion is not supported"):
+            self.convert()
+        self.assertEqual(self.snapshot(), before)
+        self.assertEqual(self.host.volumes, volumes)
+        self.assertTrue(all(command[:3] in (["docker", "compose", "version"], ["docker", "info", "--format"]) for command in self.host.commands))
+
+    def test_web_only_never_copies_a_database(self):
         self.fixture(mode="web-only")
         self.convert()
         self.assert_preserved()
@@ -310,18 +318,18 @@ class RenameTests(unittest.TestCase):
         self.assertFalse(self.new_default.exists())
 
 
-    def test_stopped_native_probe_restores_unit_and_database(self):
+    def test_stopped_native_core_refuses_without_start(self):
         self.fixture(native=True)
         self.host.native["active"] = False
         self.host.containers["database"]["running"] = False
-        self.host.deployment["maintenance"] = False
-        with self.assertRaisesRegex(rename.RenameError, "maintenance"):
+        running = self.host.running()
+        self.host.commands.clear()
+        with self.assertRaisesRegex(rename.RenameError, "previous Core must already be running and readable"):
             self.convert()
         self.assertFalse(self.host.native["active"])
-        self.assertFalse(self.host.containers["database"]["running"])
-        self.assertTrue(self.host.containers["web"]["running"])
-        self.assertNotIn(["systemctl", "--user", "disable", "--now", "parsar-0123456789-core.service"], self.host.commands)
+        self.assertEqual(self.host.running(), running)
         self.assertEqual(self.snapshot(), self.before)
+        self.assertFalse(any("start" in command or "up" in command or "stop" in command for command in self.host.commands))
 
     def test_exact_runtime_retry_after_lost_put_response_keeps_one_generation(self):
         self.fixture(provider="microsandbox")
@@ -337,12 +345,29 @@ class RenameTests(unittest.TestCase):
         with mock.patch.object(rename.sandbox_setup, "request", side_effect=uncertain), self.assertRaisesRegex(rename.sandbox_setup.SandboxSetupError, "lost response"):
             self.convert()
         self.assertEqual(self.host.deployment["generation"], 5)
-        self.assertTrue(self.host.deployment["maintenance"])
+        self.assertIsNone(self.host.deployment["reset"])
         self.convert()
         self.assertEqual(len(self.host.deployment_posts), 1)
         self.assertEqual(self.host.deployment["generation"], 5)
         self.assertEqual(self.host.deployment["specification"]["resources"]["root_disk_mib"], 8192)
         self.assert_preserved()
+
+    def test_new_core_drift_refuses_without_replaying_put(self):
+        self.fixture()
+        with mock.patch.object(rename, "execute", side_effect=KeyboardInterrupt), self.assertRaises(KeyboardInterrupt):
+            self.convert()
+        state = self.state()
+        before = state["renamed_from"]["deployment"]
+        current = dict(copy.deepcopy(before), installation_id=self.identity, reset=None)
+        current.pop("maintenance")
+        current["specification"]["runtime"]["microsandbox_ref"] = "oac-runtime@sha256:" + "7" * 64
+        for drift in ({"generation": 8}, {"reset": {"clear": "force"}},
+                      {"resources": {"allocations": 1, "pending": 0}},
+                      {"specification": {"resources": {"cpus": 99}, "runtime": {}}}):
+            with self.subTest(drift=drift), mock.patch.object(rename.sandbox_setup, "request", return_value=dict(current, **drift)) as request:
+                with self.assertRaises(rename.RenameError):
+                    rename.replace_runtime(self.root, oac_cli.load_config(self.root), state, self.manifest)
+                self.assertEqual([call.args[2] for call in request.call_args_list], ["GET"])
 
     def test_retry_refuses_foreign_copy_container_even_when_volume_is_owned(self):
         self.fixture()

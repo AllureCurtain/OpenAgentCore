@@ -62,7 +62,7 @@ class SpecificationTests(unittest.TestCase):
 
     def test_failures_name_their_cause(self):
         for failure, message in ((urllib.error.HTTPError("https://core.example", 404, "", {}, None), "route /api/v1"),
-                                 (urllib.error.HTTPError("https://core.example", 409, "", {}, None), "maintenance"),
+                                 (urllib.error.HTTPError("https://core.example", 409, "", {}, None), "resetting"),
                                  (urllib.error.HTTPError("https://core.example", 401, "", {}, None), "credential"),
                                  (urllib.error.URLError("refused"), "reverse proxy routes /api/v1")):
             with self.assertRaisesRegex(node_spec.SpecificationError, message):

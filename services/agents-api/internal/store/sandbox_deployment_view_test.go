@@ -61,13 +61,11 @@ func TestSandboxDeploymentViewRecordsTemplateBuildAndSuspension(t *testing.T) {
 	if err != nil || !bytes.Contains(raw, []byte(`"template_build":{"status":null,"resources":{"cpus":null,"memory_mib":null,"root_disk_mib":null}}`)) {
 		t.Fatalf("unknown build was not null: %s %v", raw, err)
 	}
+	input.ExpectedGeneration = 1
 	view, err = w.InitializeSandboxDeployment(t.Context(), id, input)
 	raw, _ = json.Marshal(view)
 	if err != nil || view.Generation != 1 || !bytes.Contains(raw, recorded) {
 		t.Fatalf("identical POST did not record the build: %s %v", raw, err)
-	}
-	if _, err := w.SetSandboxMaintenance(t.Context(), id, SandboxMaintenanceRequest{Maintenance: true, ExpectedGeneration: 1}); err != nil {
-		t.Fatal(err)
 	}
 	forget()
 	view, err = w.UpdateSandboxDeployment(t.Context(), id, SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: input, ExpectedGeneration: 1})
@@ -77,7 +75,7 @@ func TestSandboxDeploymentViewRecordsTemplateBuildAndSuspension(t *testing.T) {
 	}
 	update := SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: SandboxDeploymentSetupRequest{
 		DeploymentSpec: SandboxDeploymentTestSpec("microsandbox"), Provider: "microsandbox"}, ExpectedGeneration: 1}
-	view, err = w.UpdateSandboxDeployment(t.Context(), id, update)
+	view, err = resetAndSelect(t, w, id, update.ExpectedGeneration, update.SandboxDeploymentSetupRequest)
 	if err != nil || view.E2B != nil || view.Suspension == nil || view.Suspension.IdleSeconds != 300 || view.Suspension.RetentionSeconds != 86400 {
 		t.Fatalf("microsandbox suspension view = %+v %v", view, err)
 	}

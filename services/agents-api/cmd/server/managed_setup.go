@@ -29,8 +29,32 @@ type managedSetup struct {
 	installationID string
 	// publicURL is OAC_PUBLIC_URL; every sandbox reaches Core through it.
 	publicURL string
-	selected  atomic.Pointer[execution.RuntimeProvider]
+	selected  atomic.Pointer[managedSelection]
 }
+
+// Empty selections retain their generation so a delayed provider load cannot
+// republish a backend retired by reset.
+type managedSelection struct {
+	Generation uint64
+	Config     *execution.RuntimeProvider
+}
+
+func (s *managedSetup) publishSelection(generation uint64, config *execution.RuntimeProvider) *execution.RuntimeProvider {
+	next := &managedSelection{Generation: generation, Config: config}
+	for {
+		current := s.selected.Load()
+		if current != nil && current.Generation >= generation {
+			return current.Config
+		}
+		if s.selected.CompareAndSwap(current, next) {
+			return config
+		}
+	}
+}
+func (s *managedSetup) publish(config *execution.RuntimeProvider) {
+	s.publishSelection(config.Generation, config)
+}
+func (s *managedSetup) publishUnconfigured(generation uint64) { s.publishSelection(generation, nil) }
 
 func (s *managedSetup) load(ctx context.Context) (*execution.RuntimeProvider, error) {
 	setup, err := s.store.GetSandboxSetup(ctx)
@@ -41,27 +65,17 @@ func (s *managedSetup) load(ctx context.Context) (*execution.RuntimeProvider, er
 		return nil, errors.New("sandbox installation does not match setup")
 	}
 	if setup.Provider == "" {
-		return nil, nil
+		return s.publishSelection(setup.Generation, nil), nil
 	}
-	if selected := s.selected.Load(); selected != nil && selected.Generation == setup.Generation {
-		return selected, nil
+	if selected := s.selected.Load(); selected != nil && selected.Generation >= setup.Generation {
+		return selected.Config, nil
 	}
 	candidate, err := s.configuration(setup)
 	if err != nil {
 		log.Warn(ctx, "Hosted provider is unavailable; administrator recovery remains available", "provider", setup.Provider, "error", err)
 		return nil, fmt.Errorf("%w: %v", execution.ErrExecutionUnavailable, err)
 	}
-	// A slower read cannot replace a generation that committed while this
-	// configuration was loading. Publication performs no external work.
-	for {
-		selected := s.selected.Load()
-		if selected != nil && selected.Generation >= setup.Generation {
-			return selected, nil
-		}
-		if s.selected.CompareAndSwap(selected, candidate.Config) {
-			return candidate.Config, nil
-		}
-	}
+	return s.publishSelection(setup.Generation, candidate.Config), nil
 }
 
 func (s *managedSetup) prepare(ctx context.Context, setup store.SandboxSetup) (execution.PreparedRuntimeDeployment, error) {
@@ -110,18 +124,18 @@ func (s *managedSetup) configuration(setup store.SandboxSetup) (execution.Prepar
 	if err != nil {
 		return execution.PreparedRuntimeDeployment{}, fmt.Errorf("%w: %v", execution.ErrExecutionUnavailable, err)
 	}
-	selected := &execution.RuntimeProvider{InstallationID: setup.InstallationID, ProviderKind: setup.Provider, Generation: setup.Generation, Mode: setup.Mode, Maintenance: setup.Maintenance,
+	selected := &execution.RuntimeProvider{InstallationID: setup.InstallationID, ProviderKind: setup.Provider, Generation: setup.Generation, Mode: setup.Mode, AdmissionPaused: setup.AdmissionPaused,
 		CoreURL: s.publicURL + "/api/v1", BackendFingerprint: setup.BackendFingerprint, Provider: provider}
 	if setup.Provider == "microsandbox" {
 		selected.Suspension = &execution.RuntimeSuspensionPolicy{IdleTimeout: time.Duration(setup.IdleSeconds) * time.Second,
 			Retention: time.Duration(setup.RetentionSeconds) * time.Second, MaxActive: 4, MaxRetained: 16}
 	}
-	return execution.PreparedRuntimeDeployment{Config: selected, Publish: s.selected.Store}, nil
+	return execution.PreparedRuntimeDeployment{Config: selected, Publish: s.publish}, nil
 }
 
 func (s *managedSetup) ObservationProviderType() string {
-	if selected := s.selected.Load(); selected != nil {
-		return selected.ProviderKind
+	if selected := s.selected.Load(); selected != nil && selected.Config != nil {
+		return selected.Config.ProviderKind
 	}
 	return ""
 }

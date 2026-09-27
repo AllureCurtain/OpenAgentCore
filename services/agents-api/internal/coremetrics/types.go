@@ -94,7 +94,6 @@ type Sample struct {
 	OldestQueuedSeconds                  *float64
 	PingMS                               *float64
 	PoolInUse, DatabaseSize              *int64
-	Maintenance                          *bool
 	Healthy                              bool
 	Process                              Process
 }

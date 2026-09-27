@@ -426,11 +426,15 @@ definitions:
           them; Core then uses the validated template build's cpus and memory_mib.
       runtime:
         $ref: '#/definitions/sandbox.RuntimeRelease'
+    required:
+      - expected_generation
     type: object
   api.SandboxDeploymentInput:
     properties:
       e2b:
         $ref: '#/definitions/api.SandboxE2BInput'
+      expected_generation:
+        type: integer
       provider:
         type: string
       resources:
@@ -441,6 +445,8 @@ definitions:
           them; Core then uses the validated template build's cpus and memory_mib.
       runtime:
         $ref: '#/definitions/sandbox.RuntimeRelease'
+    required:
+      - expected_generation
     type: object
   api.SandboxE2BInput:
     properties:
@@ -921,14 +927,16 @@ definitions:
         type: integer
       installation_id:
         type: string
-      maintenance:
-        type: boolean
       mode:
         type: string
       owner_epoch:
         type: integer
       provider:
         type: string
+      reset:
+        allOf:
+          - $ref: '#/definitions/store.SandboxResetView'
+        x-nullable: true
       resources:
         $ref: '#/definitions/store.SandboxDeploymentResources'
       specification:
@@ -1148,12 +1156,62 @@ definitions:
           - $ref: '#/definitions/store.SandboxE2BTemplateBuildView'
         description: The fixed template build as Core read it when this selection was saved.
     type: object
-  store.SandboxMaintenanceRequest:
+  store.SandboxResetOfflineNode:
     properties:
-      expected_generation:
+      name:
+        type: string
+      node_id:
+        type: string
+      resources:
         type: integer
-      maintenance:
-        type: boolean
+    type: object
+  store.SandboxResetRemaining:
+    properties:
+      busy:
+        type: integer
+      cleanup:
+        type: integer
+      idle:
+        type: integer
+      offline_nodes:
+        items:
+          $ref: '#/definitions/store.SandboxResetOfflineNode'
+        type: array
+      on_offline_nodes:
+        type: integer
+    type: object
+  store.SandboxResetRequest:
+    properties:
+      clear:
+        enum:
+          - auto
+          - force
+        type: string
+      deadline_seconds:
+        maximum: 86400
+        minimum: 300
+        type: integer
+      expected_generation:
+        minimum: 0
+        type: integer
+    required:
+      - clear
+      - expected_generation
+    type: object
+  store.SandboxResetView:
+    properties:
+      clear:
+        type: string
+      deadline_at:
+        type: string
+        x-nullable: true
+      forced_at:
+        type: string
+        x-nullable: true
+      remaining:
+        $ref: '#/definitions/store.SandboxResetRemaining'
+      requested_at:
+        type: string
     type: object
   store.SandboxSuspensionView:
     properties:
@@ -4403,7 +4461,7 @@ paths:
     post:
       consumes:
         - application/json
-      description: Core key only. Requires maintenance and the current deployment generation. Permanently closes execution, requests cancellation and releases sandbox/snapshots through existing cleanup. Session history and persisted files/artifacts remain; unpersisted workspace contents are lost. A cleanup_pending response is not proof of resource release. Does not affect caller-managed Runtime.
+      description: Core key only. Requires the current deployment generation; no maintenance mode is required. Permanently closes execution, requests cancellation and releases sandbox/snapshots through existing cleanup. Session history and persisted files/artifacts remain; unpersisted workspace contents are lost. A cleanup_pending response is not proof of resource release. Does not affect caller-managed Runtime.
       parameters:
         - description: Project ID
           in: path
@@ -5698,7 +5756,7 @@ paths:
     post:
       consumes:
         - application/json
-      description: Selects a provider, enforced resource limits and pinned Runtime release. Core derives the deployment's core_url from the installation public URL and rejects a core_url member with 400. E2B returns 409 sandbox_configuration_error while the public URL is loopback. E2B credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory, returned in specification.resources. Exact retries return the existing selection; differing selections and file-managed deployments reject. This does not create compute or execute work.
+      description: Selects a provider, enforced resource limits and pinned Runtime release. Core derives the deployment's core_url from the installation public URL and rejects a core_url member with 400. E2B returns 409 sandbox_configuration_error while the public URL is loopback. E2B credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory, returned in specification.resources. Requires explicit expected_generation, including zero at first setup. Stale retries reject before provider validation. An identical selection at the current generation is a no-op; differing selections and file-managed deployments reject. This does not create compute or execute work.
       parameters:
         - description: Deployment selection
           in: body
@@ -5741,7 +5799,7 @@ paths:
     put:
       consumes:
         - application/json
-      description: Requires maintenance, the current generation and verified cleanup of all old resources. Credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory. A core_url member is rejected with 400; the address comes from the installation public URL. Historical records are retained; old node credentials and enrollments are retired. Explicitly resume after success. Never automatically retry an uncertain write.
+      description: Requires the current generation, the same backend type, no active reset and verified cleanup of all old resources. A backend type change requires reset. Credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory. A core_url member is rejected with 400; the address comes from the installation public URL. Historical records are retained; old node credentials and enrollments are retired. Never automatically retry an uncertain write.
       parameters:
         - description: Replacement deployment selection
           in: body
@@ -5781,18 +5839,15 @@ paths:
       summary: Change a fully drained deployment's sandbox configuration
       tags:
         - Sandbox Manager
-  /core/v1/sandbox/deployment/maintenance:
-    patch:
-      consumes:
-        - application/json
-      description: Requires the current generation. Maintenance preserves execution, cleanup and history. Resume requires successfully activated provider configuration.
+  /core/v1/sandbox/deployment/reset:
+    delete:
+      description: Restores admission but never restores Sessions already archived. With no reset running this is an idempotent read, provided the generation still matches.
       parameters:
-        - description: Maintenance state
-          in: body
-          name: body
+        - description: Current deployment generation
+          in: query
+          name: expected_generation
           required: true
-          schema:
-            $ref: '#/definitions/store.SandboxMaintenanceRequest'
+          type: integer
       produces:
         - application/json
       responses:
@@ -5822,7 +5877,50 @@ paths:
             $ref: '#/definitions/api.CoreErrorResponse'
       security:
         - DeploymentAdminAuth: []
-      summary: Pause or resume new hosted allocations
+      summary: Cancel a sandbox deployment reset
+      tags:
+        - Sandbox Manager
+    post:
+      consumes:
+        - application/json
+      description: Archives hosted Sessions and waits for confirmed provider cleanup, preserving history and Files/Artifacts. Auto waits for started or waiting Turns and file writes until the durable deadline; force cancels them. The same clear is idempotent; force escalates auto. Requires the current generation. Self-hosted Sessions are unchanged.
+      parameters:
+        - description: Reset mode and current deployment generation
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/store.SandboxResetRequest'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.RuntimeDeploymentView'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: Start or escalate a durable sandbox deployment reset
       tags:
         - Sandbox Manager
   /core/v1/sandbox/enrollment-tokens:

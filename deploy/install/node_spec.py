@@ -117,7 +117,7 @@ def fetch(args, token, retained, open_request, allow_enrollment=False):
         if error.code == 404:
             raise SpecificationError("Core node configuration was not found (HTTP 404); route /api/v1 on the Core origin directly to Core, not to Web") from None
         if error.code == 409:
-            raise SpecificationError("Core refused node configuration (HTTP 409): the deployment is in maintenance or conflicts with this node's retained specification; inspect the deployment before retrying") from None
+            raise SpecificationError("Core refused node configuration (HTTP 409): the deployment is resetting or conflicts with this node's retained specification; inspect the deployment before retrying") from None
         raise SpecificationError("Core rejected the node configuration read (HTTP " + str(error.code) + "); verify the retained or enrollment credential") from None
     except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead):
         raise SpecificationError("Cannot reach Core node configuration; verify the Core origin and that the reverse proxy routes /api/v1 to Core") from None

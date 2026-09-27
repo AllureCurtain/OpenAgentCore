@@ -162,7 +162,7 @@ func (q *Queries) DisconnectRuntimeNode(ctx context.Context, arg DisconnectRunti
 }
 
 const getRuntimeDeployment = `-- name: GetRuntimeDeployment :one
-SELECT singleton, installation_id, backend_fingerprint, maintenance, updated_at, provider_kind, local_node_id, owner_epoch, web_managed, idle_seconds, retention_seconds, generation, mode, e2b_template, e2b_credential, specification, e2b_template_build_status, e2b_template_cpus, e2b_template_memory_mib, e2b_template_root_disk_mib FROM runtime_deployment WHERE singleton=true
+SELECT singleton, installation_id, backend_fingerprint, admission_paused, updated_at, provider_kind, local_node_id, owner_epoch, web_managed, idle_seconds, retention_seconds, generation, mode, e2b_template, e2b_credential, specification, e2b_template_build_status, e2b_template_cpus, e2b_template_memory_mib, e2b_template_root_disk_mib, reset_clear, reset_requested_at, reset_deadline_at, reset_forced_at, reset_audit FROM runtime_deployment WHERE singleton=true
 `
 
 func (q *Queries) GetRuntimeDeployment(ctx context.Context) (RuntimeDeployment, error) {
@@ -172,7 +172,7 @@ func (q *Queries) GetRuntimeDeployment(ctx context.Context) (RuntimeDeployment, 
 		&i.Singleton,
 		&i.InstallationID,
 		&i.BackendFingerprint,
-		&i.Maintenance,
+		&i.AdmissionPaused,
 		&i.UpdatedAt,
 		&i.ProviderKind,
 		&i.LocalNodeID,
@@ -189,6 +189,11 @@ func (q *Queries) GetRuntimeDeployment(ctx context.Context) (RuntimeDeployment, 
 		&i.E2bTemplateCpus,
 		&i.E2bTemplateMemoryMib,
 		&i.E2bTemplateRootDiskMib,
+		&i.ResetClear,
+		&i.ResetRequestedAt,
+		&i.ResetDeadlineAt,
+		&i.ResetForcedAt,
+		&i.ResetAudit,
 	)
 	return i, err
 }

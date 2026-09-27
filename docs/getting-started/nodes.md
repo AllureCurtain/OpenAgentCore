@@ -184,7 +184,7 @@ The installation ID is in the command (`--installation-id`) and on the **System*
 1. In Web, open **Nodes** and choose **Remove node** on the node's page, or
    **Remove** in its list row, then **Confirm removal**. Core refuses while the node
    still holds sandboxes, snapshots or pending cleanup; let them finish, or
-   [archive their Sessions](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-maintenance)
+   [archive their Sessions](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
    through the Core API. Removal is permanent: the host can come back only as a new
    node.
 2. Web then shows **Clean up the host** with the uninstall command. Run it on the host:
@@ -268,7 +268,7 @@ this flow will change in a coming release. A change applies to the whole deploym
 and retires every node. Retired nodes drop out of the list, so there is nothing to
 remove in Web: on each host, run the [uninstall command](#remove-a-node) (Core no longer
 accepts the node, so it needs no `--force`), then add the host again with a new command.
-The [operator reference](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-maintenance)
+The [operator reference](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
 describes today's procedure and API.
 
 

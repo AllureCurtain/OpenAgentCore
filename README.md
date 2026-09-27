@@ -74,7 +74,7 @@ native differences.
 | [Configuration reference](docs/configuration.md) | Every setting in `config.json` and in Web |
 | [Call the API](docs/getting-started/quickstart.md) | The application developer's quickstart |
 | [API reference](docs/api/README.md) | The `/v1`, `/core/v1` and `/api/v1` namespaces |
-| [Nodes and sandbox backends: operator reference](services/agents-api/HOSTED-SANDBOX-MANAGER.md) | Node protocol, manual registration, placement, maintenance |
+| [Nodes and sandbox backends: operator reference](services/agents-api/HOSTED-SANDBOX-MANAGER.md) | Node protocol, manual registration, placement, reset |
 | [Protocol coverage](contracts/agents-api/README.md) and [harness selection](contracts/agents-api/harness-selection.md) | Supported operations and native differences |
 | [Landing page source](site/index.html) | The public site |
 

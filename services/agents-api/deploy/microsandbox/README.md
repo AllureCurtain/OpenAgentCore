@@ -32,14 +32,16 @@ specification; they cannot select different resources or a different Runtime.
 Harness selection is independent. Snapshot suspension is available only on
 microsandbox; Docker and E2B retain their own supported lifecycle.
 
-Provider, resource and Runtime changes require global maintenance, the current
-generation and verified zero retained allocations or pending hosted Environments.
-Use the [maintenance procedure](../../HOSTED-SANDBOX-MANAGER.md#removal-and-maintenance).
-Stopped compute, snapshots and unknown operations remain blockers. Maintenance
-and configuration changes do not delete resources or migrate Sessions. Keep the
-original node identity, backend paths and credentials until cleanup is confirmed.
-Session deletion removes its saved artifacts and is not a history-preserving
-resource-release operation.
+Same-provider resource and Runtime edits currently require no active reset,
+the current generation and verified zero held allocations or pending Environments.
+A backend change requires explicit reset and confirmed cleanup, then a new setup.
+See the [reset procedure](../../HOSTED-SANDBOX-MANAGER.md#removal-and-reset).
+Stopped compute, snapshots and unknown operations remain blockers. Keep the original
+node identity, paths and credentials until cleanup is confirmed. Explicit archive
+preserves history and persisted Files/Artifacts but discards unpersisted workspace;
+ordinary Session deletion has different retention behavior. Existing Sessions never
+migrate to another backend.
+
 
 Core rejects `AGENTS_API_MANAGED_RUNTIMES_FILE`. It does not automatically adopt an
 older file-managed database, even after its resources are drained. Keep the

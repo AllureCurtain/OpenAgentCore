@@ -15,8 +15,11 @@ func reserveRuntimePlacement(ctx context.Context, q *sqlc.Queries, session pgtyp
 	if err != nil {
 		return err
 	}
+	if d.ResetClear.Valid {
+		return ErrSandboxResetAdmission
+	}
 	if d.Mode == "direct" {
-		if d.Maintenance {
+		if d.AdmissionPaused {
 			return ErrRuntimeNodeUnavailable
 		}
 		// E2B guests reach Core over the internet. A selection saved before the
@@ -33,7 +36,7 @@ func reserveRuntimePlacement(ctx context.Context, q *sqlc.Queries, session pgtyp
 		}
 		return nil
 	}
-	if d.Maintenance {
+	if d.AdmissionPaused {
 		return ErrRuntimeNodeUnavailable
 	}
 	rows, err := q.ListRuntimeNodes(ctx, pgtype.UUID{})

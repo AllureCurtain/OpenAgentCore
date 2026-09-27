@@ -60,6 +60,7 @@ func TestSandboxSpecificationRoundTripAndFileConfigurationCannotOverride(t *test
 			if err != nil || !reflect.DeepEqual(setup.Specification, input.DeploymentSpec) || view.Specification == nil || !reflect.DeepEqual(*view.Specification, input.DeploymentSpec) || view.SpecificationDigest != input.DeploymentSpec.Digest(provider) {
 				t.Fatal("saved deployment lost its resources or Runtime provenance", err)
 			}
+			input.ExpectedGeneration = view.Generation
 			retry, err := w.InitializeSandboxDeployment(t.Context(), view.InstallationID, input)
 			if err != nil || !reflect.DeepEqual(retry, view) {
 				t.Fatal("identical specification changed the generation", err)
@@ -69,7 +70,7 @@ func TestSandboxSpecificationRoundTripAndFileConfigurationCannotOverride(t *test
 			if _, err := w.InitializeSandboxDeployment(t.Context(), view.InstallationID, changed); !errors.Is(err, ErrSandboxDeploymentConflict) {
 				t.Fatal("initial setup silently resized a configured deployment", err)
 			}
-			file := RuntimeDeployment{InstallationID: view.InstallationID, BackendFingerprint: setup.BackendFingerprint, ProviderKind: provider, Maintenance: true}
+			file := RuntimeDeployment{InstallationID: view.InstallationID, BackendFingerprint: setup.BackendFingerprint, ProviderKind: provider, AdmissionPaused: true}
 			for _, candidate := range []*RuntimeDeployment{nil, &file} {
 				if err := w.ConfigureRuntimeDeployment(t.Context(), candidate, nil); !errors.Is(err, ErrSandboxDeploymentConflict) {
 					t.Fatal("file configuration replaced database ownership", err)
@@ -115,7 +116,7 @@ func TestSandboxSpecificationBootstrapReadDoesNotConsumeEnrollment(t *testing.T)
 	if _, err := s.RuntimeNodeConfiguration(t.Context(), "", token); !errors.Is(err, ErrRuntimeNodeCredential) {
 		t.Fatal("consumed enrollment still authorized bootstrap", err)
 	}
-	if _, err := w.SetSandboxMaintenance(t.Context(), view.InstallationID, SandboxMaintenanceRequest{ExpectedGeneration: view.Generation, Maintenance: true}); err != nil {
+	if _, err := w.StartSandboxReset(SandboxResetTestContext(t.Context()), view.InstallationID, SandboxResetRequest{Clear: "auto", ExpectedGeneration: view.Generation}); err != nil {
 		t.Fatal(err)
 	}
 	config, err := s.RuntimeNodeConfiguration(t.Context(), node.NodeID, node.Credential)
@@ -191,7 +192,7 @@ func TestSandboxSpecificationChangesWaitForEveryRetainedResource(t *testing.T) {
 					}
 				}
 			}
-			before, err := w.SetSandboxMaintenance(t.Context(), view.InstallationID, SandboxMaintenanceRequest{ExpectedGeneration: view.Generation, Maintenance: true})
+			before, err := s.GetRuntimeDeployment(t.Context())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -253,7 +254,7 @@ func TestSandboxSpecificationChangesWaitForEveryRetainedResource(t *testing.T) {
 			runtime.SourceCommit = strings.Repeat("2", 40)
 			changed.Runtime = &runtime
 			committed, err := w.UpdateSandboxDeployment(t.Context(), view.InstallationID, SandboxDeploymentUpdateRequest{ExpectedGeneration: view.Generation, SandboxDeploymentSetupRequest: changed})
-			if err != nil || committed.Generation != view.Generation+1 || !committed.Maintenance || committed.Resources != (SandboxDeploymentResources{}) || committed.Specification == nil || !reflect.DeepEqual(*committed.Specification, changed.DeploymentSpec) {
+			if err != nil || committed.Generation != view.Generation+1 || committed.Reset != nil || committed.Resources != (SandboxDeploymentResources{}) || committed.Specification == nil || !reflect.DeepEqual(*committed.Specification, changed.DeploymentSpec) {
 				t.Fatal("completed cleanup did not permit the replacement", err)
 			}
 			if _, err := s.AuthenticateRuntimeNode(t.Context(), node.NodeID, node.Credential); !errors.Is(err, ErrRuntimeNodeCredential) {
@@ -307,7 +308,7 @@ func TestSandboxSpecificationAllocationRaceWithMaintenance(t *testing.T) {
 	}
 	go func() {
 		<-start
-		_, err := w.SetSandboxMaintenance(t.Context(), view.InstallationID, SandboxMaintenanceRequest{ExpectedGeneration: view.Generation, Maintenance: true})
+		_, err := w.StartSandboxReset(SandboxResetTestContext(t.Context()), view.InstallationID, SandboxResetRequest{Clear: "auto", ExpectedGeneration: view.Generation})
 		maintenance <- err
 	}()
 	close(start)
@@ -324,20 +325,20 @@ func TestSandboxSpecificationAllocationRaceWithMaintenance(t *testing.T) {
 				t.Fatal("maintenance changed an admitted allocation retry", err)
 			}
 		} else {
-			if !errors.Is(result.err, ErrEnvironmentUnavailable) {
+			if !errors.Is(result.err, ErrSandboxResetAdmission) {
 				t.Fatal("allocation race failed outside admission", result.err)
 			}
-			if _, err := w.ReserveRuntimeAllocation(t.Context(), tenant, result.session.Environment.ID, view.InstallationID, device.HashCredential(uuid.NewString())); !errors.Is(err, ErrEnvironmentUnavailable) {
+			if _, err := w.ReserveRuntimeAllocation(t.Context(), tenant, result.session.Environment.ID, view.InstallationID, device.HashCredential(uuid.NewString())); !errors.Is(err, ErrSandboxResetAdmission) {
 				t.Fatal("fresh allocation passed committed maintenance", err)
 			}
 		}
 	}
 	after, err := s.GetRuntimeDeployment(t.Context())
-	if err != nil || !after.Maintenance || after.Generation != view.Generation || after.Resources.Allocations != allocated || after.Resources.Pending != int64(len(sessions))-allocated {
+	if err != nil || after.Reset == nil || after.Generation != view.Generation || after.Resources.Allocations != allocated || after.Resources.Pending != int64(len(sessions))-allocated {
 		t.Fatal("concurrent maintenance lost resource accounting", after.Resources, err)
 	}
 	input.Resources.CPUs++
-	if _, err := w.UpdateSandboxDeployment(t.Context(), view.InstallationID, SandboxDeploymentUpdateRequest{ExpectedGeneration: view.Generation, SandboxDeploymentSetupRequest: input}); !errors.Is(err, ErrSandboxDeploymentConflict) {
+	if _, err := w.UpdateSandboxDeployment(t.Context(), view.InstallationID, SandboxDeploymentUpdateRequest{ExpectedGeneration: view.Generation, SandboxDeploymentSetupRequest: input}); !errors.Is(err, ErrSandboxResetInProgress) {
 		t.Fatal("allocation race bypassed replacement guard", err)
 	}
 }

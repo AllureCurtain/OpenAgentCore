@@ -79,15 +79,15 @@ and [generated OpenAPI](../../contracts/agents-api/core.openapi.yaml)
 define deployment and node operations:
 
 - `GET/POST/PUT /core/v1/sandbox/deployment` and
-  `PATCH /core/v1/sandbox/deployment/maintenance`.
+  `POST/DELETE /core/v1/sandbox/deployment/reset`.
 - `GET /core/v1/sandbox/nodes`, `PATCH/DELETE /core/v1/sandbox/nodes/{node_id}`,
   and `GET /core/v1/sandbox/nodes/{node_id}/allocations`.
 - `POST /core/v1/sandbox/enrollment-tokens` for a one-time node installation command.
   Its non-secret `enrollment_id` reappears on the node that command registers.
 
 PostgreSQL owns one provider, per-sandbox resource specification and immutable
-Runtime selection. POST initializes it; PUT replaces the complete selection using
-`expected_generation`. Requests carry `resources` and, for Docker/microsandbox,
+Runtime selection. POST initializes it and PUT updates the same provider; both
+require the observed `expected_generation`, including zero at first setup. Requests carry `resources` and, for Docker/microsandbox,
 `runtime`; safe responses return `specification` and `specification_digest`.
 Response `resources.allocations` and `resources.pending` are cleanup counts, not
 CPU, memory or disk settings. E2B accepts a write-only key and exact template build
@@ -96,23 +96,26 @@ may omit `resources` to adopt the validated build's CPU and memory; responses sh
 the build as read at selection time in `e2b.template_build`. Microsandbox responses
 return its idle `suspension` policy; other providers return null.
 
-Provider, resource and Runtime changes all require global maintenance and verified
-cleanup of retained/pending resources. Core validates the candidate before commit;
-a rejection preserves the previous configuration. A changed commit advances the
-generation and retires old nodes and enrollment tokens atomically. Explicitly resume
-after success. Neither switching nor editing configuration deletes resources or
-migrates existing Sessions. During maintenance, administrators can explicitly
-[archive each retained hosted Session](../../contracts/agents-api/admin-api.md#administrative-session-archive)
-through the Core administrator API at the current generation, then read its
-resource disposition and recheck deployment counts. Archive preserves history
-and persisted Files/Artifacts; unpersisted workspace contents are lost and the
-original Session cannot resume. This API does not add a console archive control.
+Same-provider updates currently require zero retained/pending resources and no
+reset. Changing backend requires explicit durable reset before a new POST.
+Auto archives idle/queued/suspended hosted Sessions, waits for started work and
+file writes, and escalates at its persisted deadline; force requests cancellation
+and verified cleanup. The deployment response supplies the authoritative
+`reset.remaining` partition and offline-node subset; Web must not derive either
+from independently loaded lists. No rollout projection is provided yet.
+
+Administrators may [archive an individual hosted Session](../../contracts/agents-api/admin-api.md#administrative-session-archive)
+at the current generation without reset. History and persisted Files/Artifacts
+survive; unpersisted workspace is lost and the original Session cannot resume.
+Cancel reset stops further archives, not cleanup already requested. After zero
+resources Core clears the selection and advances generation; configure again using
+that new generation. Never automatically replay an uncertain write.
 Public Environment Templates, the `/v1` contract and
 caller-owned `self_hosted` provisioning remain unchanged.
 
 `GET /api/v1/sandbox-node/configuration` uses an enrollment Bearer token, or a
 retained node Bearer credential with `X-OAC-Node-ID`. This read does not consume
-enrollment. Retained matching nodes can read their configuration during maintenance.
+enrollment. Retained matching nodes can read their configuration during reset.
 Installers must verify the returned generation, specification digest and Runtime
 before registration; local files cannot override the saved limits. A mismatch
 returns `sandbox_specification_mismatch` without replacing node state.

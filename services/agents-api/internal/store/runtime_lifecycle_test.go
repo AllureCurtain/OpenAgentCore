@@ -75,7 +75,7 @@ func managedWorker(t *testing.T, s *store.Store, key string, p sandbox.Provider)
 
 func managedWorkerMode(t *testing.T, s *store.Store, key string, p sandbox.Provider, maintenance bool) (*execution.Worker, func()) {
 	t.Helper()
-	w, err := execution.StartWorker(t.Context(), &execution.Dispatcher{Store: s, Registry: gateway.NewRegistry(), ManagedRuntimes: &execution.RuntimeProvider{CoreURL: "http://core.invalid/api/v1", InstallationID: key, BackendFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Provider: p, Maintenance: maintenance}})
+	w, err := execution.StartWorker(t.Context(), &execution.Dispatcher{Store: s, Registry: gateway.NewRegistry(), ManagedRuntimes: &execution.RuntimeProvider{CoreURL: "http://core.invalid/api/v1", InstallationID: key, BackendFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Provider: p, AdmissionPaused: maintenance}})
 	if err != nil {
 		t.Fatal(err)
 	}

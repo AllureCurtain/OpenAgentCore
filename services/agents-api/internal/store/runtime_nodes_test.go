@@ -271,7 +271,7 @@ func TestRuntimeNodesLegacyAdoptionAndRetention(t *testing.T) {
 	if _, err := s.AuthenticateRuntimeNode(t.Context(), next.LocalNodeID, "node"); err != nil {
 		t.Fatal("rejected removal changed local credentials", err)
 	}
-	next.Maintenance = true
+	next.AdmissionPaused = true
 	deploymentConfigure(t, w, &next)
 	detached := next
 	detached.LocalNodeID = ""

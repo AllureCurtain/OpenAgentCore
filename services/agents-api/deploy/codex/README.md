@@ -157,13 +157,16 @@ Docker socket; the node owns its local Docker access. Node files contain the ins
 selection and host-specific paths, never a separate provider or resource choice. The
 Core host joins through the same command as any other host.
 
-Provider, resource and Runtime changes use deployment maintenance, the current
-generation and verified zero retained or pending execution resources. Stopped
-containers, snapshots, unknown operations and pending cleanup block replacement.
-Use the [maintenance procedure](../../HOSTED-SANDBOX-MANAGER.md#removal-and-maintenance).
-Configuration changes do not delete resources or migrate Sessions. Do not delete
-Sessions to preserve history: that operation removes public access and saved
-artifacts. Core rejects `AGENTS_API_MANAGED_RUNTIMES_FILE`; restarting or editing
+Same-provider resource and Runtime edits currently require no active reset,
+the current generation and verified zero held allocations or pending Environments.
+A backend change requires explicit reset and confirmed cleanup, then a new setup.
+See the [reset procedure](../../HOSTED-SANDBOX-MANAGER.md#removal-and-reset).
+Stopped compute, snapshots and unknown operations remain blockers. Keep the original
+node identity, paths and credentials until cleanup is confirmed. Explicit archive
+preserves history and persisted Files/Artifacts but discards unpersisted workspace;
+ordinary Session deletion has different retention behavior. Existing Sessions never
+migrate to another backend.
+Core rejects `AGENTS_API_MANAGED_RUNTIMES_FILE`; restarting or editing
 an old file does not replace database configuration ownership.
 
 Node providers use explicit local Unix Docker sockets, ignoring ambient

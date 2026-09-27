@@ -51,7 +51,7 @@ func TestRuntimeEnrollmentApprovedCapacity(t *testing.T) {
 		t.Fatal("configuration read ignored admin update", config, err)
 	}
 	// Invalid capacity is reported before the deployment's maintenance conflict.
-	if _, err := s.pool.Exec(t.Context(), "UPDATE runtime_deployment SET maintenance=true"); err != nil {
+	if _, err := s.pool.Exec(t.Context(), "UPDATE runtime_deployment SET admission_paused=true"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.CreateRuntimeEnrollment(t.Context(), RuntimeNodeCapacity{3, 2}); !errors.Is(err, ErrInvalidInput) {

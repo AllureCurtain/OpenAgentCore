@@ -49,7 +49,7 @@ func StartWorker(ctx context.Context, dispatcher *Dispatcher) (*Worker, error) {
 	if worker.runtimes != nil && worker.runtimes.loadDeployment == nil {
 		config := worker.runtimes.config
 		verify = config.VerifyLegacyOwnership
-		deployment = &store.RuntimeDeployment{ProviderKind: config.ProviderKind, LocalNodeID: config.LocalNodeID, LocalCredentialSHA256: config.LocalCredentialSHA256, LocalMaxActive: config.LocalMaxActive, LocalMaxRetained: config.LocalMaxRetained, InstallationID: config.InstallationID, BackendFingerprint: config.BackendFingerprint, Maintenance: config.Maintenance}
+		deployment = &store.RuntimeDeployment{ProviderKind: config.ProviderKind, LocalNodeID: config.LocalNodeID, LocalCredentialSHA256: config.LocalCredentialSHA256, LocalMaxActive: config.LocalMaxActive, LocalMaxRetained: config.LocalMaxRetained, InstallationID: config.InstallationID, BackendFingerprint: config.BackendFingerprint, AdmissionPaused: config.AdmissionPaused}
 	}
 	if worker.runtimes != nil && worker.runtimes.loadDeployment != nil {
 		err = owned.Store.ClaimWebSandboxDeployment(ctx, worker.runtimes.setupInstallationID)

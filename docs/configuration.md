@@ -125,7 +125,7 @@ Core API with the Core key.
 
 | Setting | Where in Web | Core API | Notes |
 | --- | --- | --- | --- |
-| Sandbox backend: Docker, microsandbox or E2B | **Nodes** (**Sandbox backend** with E2B): the setup wizard, ending with **Save configuration** | `/core/v1/sandbox/deployment` | One backend per deployment. `install.sh --sandbox` saves the first choice. To change it, see the Nodes page; that flow will change in a coming release |
+| Sandbox backend: Docker, microsandbox or E2B | **Nodes** (**Sandbox backend** with E2B): the setup wizard, ending with **Save configuration** | `/core/v1/sandbox/deployment` | One backend per deployment. `install.sh --sandbox` saves the first choice. Changing backend requires explicit reset and a new setup at the resulting generation |
 | Sandbox size and Runtime release | **Nodes**: the setup wizard | `/core/v1/sandbox/deployment` | Every sandbox gets the same size. See [Sandbox deployment](#sandbox-deployment) |
 | E2B API key and template build | **Nodes**: the setup wizard's **E2B cloud** (the page is then called **Sandbox backend**) | `/core/v1/sandbox/deployment` | The key is write-only and encrypted |
 | Nodes and their capacity | **Nodes**: **Add node**, **Edit node**, **Remove node** on a node's page (**Remove** in its list row) | `/core/v1/sandbox/enrollment-tokens`, `/core/v1/sandbox/nodes` | See [Node capacity](#node-capacity) and the [nodes guide](getting-started/nodes.md) |
@@ -162,7 +162,7 @@ Changing the provider, the size or the Runtime applies to the whole deployment; 
 **Nodes** page, and note that this flow will change in a coming release. A successful
 change retires the old nodes and enrollment commands; history stays, and existing
 Sessions never move between providers. See the
-[operator reference](../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-maintenance)
+[operator reference](../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
 and the [deployment contract](../contracts/agents-api/sandbox-deployment.md).
 
 ### Node capacity

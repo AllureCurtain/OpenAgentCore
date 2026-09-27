@@ -74,7 +74,7 @@ func TestDeploymentAddressIsNotInput(t *testing.T) {
 		return store.RuntimeDeploymentView{}, nil
 	}
 	h, err := NewHandler(&recordingStore{}, project, "codex", WithSandboxManager(&store.Store{}, admin),
-		WithSandboxDeploymentSetup(initialize), WithSandboxDeploymentChanges(update, nil))
+		WithSandboxDeploymentSetup(initialize), WithSandboxDeploymentChanges(update, nil, nil))
 	if err != nil {
 		t.Fatal(err)
 	}

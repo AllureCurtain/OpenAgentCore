@@ -80,7 +80,7 @@ This replaces the Item fan-out.
 The Overview shows Core itself beside its sandbox hosts. Core runs no
 sandboxes, so it has no slots; the operator asked for its CPU and memory
 instead. Nothing reports them, so the console shows the Web API's reachability
-and maintenance state and "Not reported" for CPU and memory.
+and "Not reported" for CPU and memory.
 
 `GET /core/v1/core-status`
 

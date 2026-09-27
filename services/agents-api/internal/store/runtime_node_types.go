@@ -136,7 +136,7 @@ type RuntimeDeploymentView struct {
 	Suspension     *SandboxSuspensionView `json:"suspension" extensions:"x-nullable"`
 	InstallationID string                 `json:"installation_id"`
 	Provider       string                 `json:"provider"`
-	Maintenance    bool                   `json:"maintenance"`
+	Reset          *SandboxResetView      `json:"reset" extensions:"x-nullable"`
 	OwnerEpoch     uint64                 `json:"owner_epoch"`
 	// Read-only: the installation public URL (OAC_PUBLIC_URL), which nodes and sandboxes use to reach Core. The deployment API does not accept it.
 	CoreURL string `json:"core_url"`

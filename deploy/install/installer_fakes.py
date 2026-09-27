@@ -45,7 +45,7 @@ class FakeHost:
         self.nodes = []
         self.remote_core = {}  # web-only: origin -> (status, installation_id)
         self.deployment_core_url = ""  # what an old Core reports for its sandbox deployment
-        self.deployment = {"provider": ""}  # what sandbox_setup reads and posts
+        self.deployment = {"provider": "", "generation": 0, "reset": None, "resources": {"allocations": 0, "pending": 0}}  # what sandbox_setup reads and posts
         self.deployment_posts = []
         self.volumes = {}
         self.project_containers = {}
@@ -313,19 +313,25 @@ class FakeHost:
             raise ConnectionRefusedError()
         if sha256(req.get_header("Authorization", "").removeprefix("Bearer ")) not in digests:
             return 401, b'{"error": {"message": "Invalid Core key"}}'
-        if path == "core/v1/sandbox/deployment/maintenance" and req.get_method() == "PATCH":
-            self.deployment["maintenance"] = json.loads(req.data)["maintenance"]
-            return 200, json.dumps(dict(self.deployment, installation_id=self.core_installation_id)).encode()
         if path != "core/v1/sandbox/deployment":
             return 404, b""
+        # The upgraded Core migration resumes admission without a reset.
+        self.deployment.pop("maintenance", None)
+        self.deployment.setdefault("reset", None)
+        runtime = (self.deployment.get("specification") or {}).get("runtime") or {}
+        reference = runtime.get("microsandbox_ref", "")
+        if reference.startswith("parsar-core-runtime@"):
+            runtime["microsandbox_ref"] = "oac-runtime@" + reference.split("@", 1)[1]
         if req.get_method() in ("POST", "PUT"):
             selection = json.loads(req.data)
             self.deployment_posts.append(selection)
+            if selection.get("expected_generation") != self.deployment.get("generation", 0):
+                return 409, b'{"error":{"code":"generation_stale","message":"Deployment generation changed"}}'
             if self.deployment_refusal:
                 return 409, json.dumps({"error": {"message": self.deployment_refusal}}).encode()
             # E2B adopts the template build's size.
             self.deployment = {"provider": selection["provider"], "generation": self.deployment.get("generation", 0) + 1,
-                "maintenance": self.deployment.get("maintenance", False), "resources": {"allocations": 0, "pending": 0},
+                "reset": None, "resources": {"allocations": 0, "pending": 0},
                 "specification": {"runtime": selection.get("runtime"), "resources": selection.get("resources", {"cpus": 2, "memory_mib": 2048})}}
         native = self.native["active"] and self.native["addr"] == port
         environment = self.native["environment"] if native else self.core.get("environment", "")

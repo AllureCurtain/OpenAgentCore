@@ -201,9 +201,9 @@ func TestCommittedSandboxCandidatePublishesAfterShutdown(t *testing.T) {
 	var published *RuntimeProvider
 	candidate := PreparedRuntimeDeployment{Config: config, Publish: func(value *RuntimeProvider) { published = value }}
 	m.stop()
-	m.publishDeployment(candidate, store.RuntimeDeploymentView{InstallationID: id, Generation: 2, Mode: "direct", Provider: "e2b", Maintenance: true})
+	m.publishDeployment(candidate, store.RuntimeDeploymentView{InstallationID: id, Generation: 2, Mode: "direct", Provider: "e2b", Reset: &store.SandboxResetView{}})
 	m.drain()
-	if m.config.Generation != 2 || !m.config.Maintenance || published == nil || published.Generation != 2 || !published.Maintenance || m.switching {
+	if m.config.Generation != 2 || !m.config.AdmissionPaused || published == nil || published.Generation != 2 || !published.AdmissionPaused || m.switching {
 		t.Fatal("committed candidate was lost during shutdown")
 	}
 	if _, _, err := m.enter(t.Context()); !errors.Is(err, ErrExecutionUnavailable) {

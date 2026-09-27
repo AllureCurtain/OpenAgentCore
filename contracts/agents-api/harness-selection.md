@@ -55,12 +55,10 @@ another harness does not choose another image or backend; the selected Runtime
 image must contain and qualify each enabled harness. Capability checks still
 apply.
 
-Before changing provider, resources or Runtime, enter maintenance at the current
-generation, explicitly archive retained hosted Sessions and confirm cleanup is
-complete. Then submit the replacement and explicitly resume with the returned
-generation. Switching never migrates Sessions or deletes resources automatically.
-See the
-[deployment procedure](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-maintenance).
+Same-provider resource/Runtime edits currently require no reset and verified zero
+held resources. Changing provider requires explicit durable reset, confirmed
+cleanup and a new setup at the resulting generation. Existing Sessions never move
+providers. See the [deployment procedure](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset).
 
 Each engine has at most one deployment default model provider, stored encrypted in
 PostgreSQL and managed with the Core key in Web or through

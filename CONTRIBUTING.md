@@ -788,40 +788,63 @@ addresses from the validated installation public URL, never inbound Host headers
 current selection from the live deployment API; there is no startup configuration
 read.
 
-Provider, resources and Runtime changes require maintenance, the current generation
-and verified zero retained or pending resources. They never change the Core
-address, which comes from the installation public URL. Maintenance prevents fresh hosted Sessions and allocations while
-retaining admitted work, known receipts, queries and explicit cleanup. Unreleased
-allocations include stopped compute, snapshots, uncertain operations and pending
-cleanup. Pending hosted Environments without allocations also block changes.
-Failed checks never authorize resource deletion. Explicitly resume after a successful
-change. Preserve historical allocation ownership and Session placement; never migrate
-an existing Session to another provider or recreate a released allocation.
+All sandbox writes require the observed generation, including initial POST at
+zero; reject stale state before provider preparation, reset or no-op checks, and
+repeat it under the committing row lock. Same-provider PUT currently requires no
+reset and zero held resources. A different backend or unspecified old selection
+requires reset. No online rollout is implemented at this stage; omit that projection.
+Preserve historical allocation ownership and placement, never migrate a Session.
 
-Explicit administrator Session archive requires a Web-managed deployment in
-maintenance and its current generation. Keep Project scope and managed-hosted
-eligibility checks in the existing administrative Store transaction, alongside
-Environment expiry (preserving failure), cancellation requests, Runtime authority
-revocation and audit. The ordinary Worker and provider lifecycle own compute and
-snapshot release; archive must not call a provider in that transaction or delete
-the Session. Retain history and persisted Files/Artifacts. The archive GET reports
-actual resource disposition, not archive provenance or Turn finalization. Keep
-unknown cleanup blocking, never automatically retry the mutation, and never
-resume an archived Session or restore its unpersisted workspace.
+Reset is durable execution state, advanced by the existing manager outside its
+counted work. Serialize start, escalation, cancel, setup, update and finalization
+through the mutation gate. Auto waits only for in-progress/waiting root/subagent
+Turns and pending file writes; queued work, idle and suspended Sessions can archive.
+Recheck idleness with Session then deployment locks; never invert that order during
+finalization. Keyset-page bounded work, bind candidates to the reset request time
+as well as generation, and persist the original absolute deadline and validated
+audit provenance. Cancellation cannot revive archived work. Auto's deadline
+escalates to force durably; self-hosted Sessions are excluded.
+
+Use one snapshot and timestamp for the held-resource partition: unreleased
+allocations plus pending hosted Environments without any allocation row. Cleanup
+has precedence, then busy/idle. Count deleted/expired receipts until release.
+Offline ownership comes from allocation or active placement node identity, with
+the existing 45-second connection/owner-epoch predicate; provider readiness is
+independent. Project every offline node and make its sum equal on_offline_nodes.
+No cleanup failure, offline state or empty read authorizes a synthetic release.
+
+At zero held resources, drain outside database transactions, recheck under the
+deployment lock, and atomically clear all provider policy, E2B credential/build
+metadata and specification, retire nodes/tokens, advance generation/owner epoch
+and audit completion. Publish a generation-bearing nil provider tombstone without
+fallible work after commit, preventing delayed loads from reviving the old provider.
+On a failed final write or interrupted drain, restore the committed provider using
+a bounded owner context before releasing the mutation gate; recovery failure keeps
+admission fenced and stops the owner. Ordinary migration resumes old Web-managed
+maintenance with reset null. Refuse downgrade during reset or for an unconfigured
+completed reset with generation above zero; never discard the generation.
+
+Explicit administrator Session archive requires a Web-managed deployment and its
+current generation, without a reset precondition. Keep Project scope and hosted
+eligibility checks in its Session-first transaction, alongside Environment expiry,
+cancellation, Runtime authority revocation and audit. Background reset reconstructs
+the actual Project scope from trusted records while retaining requester provenance.
+The ordinary provider lifecycle owns compute/snapshot release. Retain history and
+persisted Files/Artifacts; archived Sessions cannot resume unpersisted workspace.
+The archive GET reports resource disposition, not provenance or Turn finalization.
 
 Core rejects `AGENTS_API_MANAGED_RUNTIMES_FILE`; there is no file-managed startup
 path or embedded local node. An older file-managed database is not automatically
 adopted after its environment variable is removed. Settle and drain that deployment
 with its previous release and original backend, preserving business data, private
-receipts, identities and storage. This change provides no old-database conversion,
-force reset or automatic deletion. The supported current path is a database-managed
+receipts, identities and storage. The legacy file-managed path has no automatic adoption or force conversion. The supported current path is a database-managed
 deployment. Harness selection and public/self-hosted contracts remain unchanged.
 
 The paired console serves only matched, non-secret distribution artifacts for node
 installation. Never serve private installation files or arbitrary paths. Installation
 reads `GET /api/v1/sandbox-node/configuration` using an unconsumed enrollment token,
 or a retained node credential with `X-OAC-Node-ID`. Reads never consume enrollment;
-registered nodes can read their matching configuration during maintenance. Validate
+registered nodes can read their matching configuration during reset. Validate
 installation, generation, specification digest and release before writing node files,
 registering or reconnecting. Reject drift rather than overwriting retained identity
 or using local resource defaults. Registration consumes a token only after these
@@ -925,7 +948,7 @@ Do not add a startup adoption path to bypass the database-managed selection.
 Do not add node-level drain controls. Refuse node removal with pending allocations,
 instances, snapshots, unknown results or cleanup resources. Offline ownership is
 retained. Removing a node does not delete compute. Local and remote nodes share
-the same resource guard. Keep the deployment-wide maintenance and configuration
+the same resource guard. Keep the deployment-wide reset and configuration
 change guard. This boundary does not add cross-node Session
 migration, Core multi-active, autoscaling, Kubernetes or harness residency.
 
@@ -1740,18 +1763,22 @@ project; config.json's independent schema format stays 1. The operator command i
 `oac` (`oac_cli.py`, packaged as `oac.pyz`), with default installation directory
 `~/.oac/core`, private `~/.oac`, generated `x-oac` annotations and `.oac.lock`.
 Only `install.sh --convert` reads pre-rename state. Its `rename.py` coordinator first
-validates the source, target, bundle and generated files. A stopped old Core may be
-started from its own files for authenticated drain checks; refusal restores only
-services the probe started and reports any failed restoration. Require maintenance,
-zero unreleased allocations and pending work, and no registered nodes. One explicit
-confirmation covers legacy config-layout conversion and the rename. Never delete a
-target volume or copy container without matching the recorded conversion ownership;
-copy the stopped PostgreSQL volume, retain the old volume, and carry the atomic
-journal across the default-directory move. Preserve ports, secrets, installation
-identity and stored history. Resume only with the recorded bundle. Docker and
-microsandbox replace the Runtime through the existing guarded PUT and resume
-admission; E2B stays in maintenance for its rebuilt template. Node and self-hosted
-installations are outside this converter.
+validates the source, target, bundle and generated files. The previous Core must
+already be running and readable: do not start an unknown provider to inspect it.
+Keep old-release maintenance, zero-resource and no-registered-node preflight.
+Refuse E2B conversion before any conversion mutation, also on journal resume after
+the original source-bundle guard. Its safe Core-owned upgrade preparation remains
+a release blocker; never patch execution tables or change ordinary migration's
+resume decision to work around it. One explicit confirmation covers legacy layout
+and rename. Never delete a target volume/container without recorded ownership;
+copy the stopped database, retain the old volume and journal across the atomic move.
+Preserve ports, secrets, installation identity and history. Resume only with the
+recorded bundle. The new-Core node-provider leg requires matching identity/provider,
+reset null and zero resources; send one expected-generation PUT of exact bundle
+Runtime and prior resources. Read back exact generation/specification. Reconcile an
+uncertain write through reads, never blind replay or the retired maintenance PATCH.
+Keep native stop proof and interrupted-copy recovery. Node/self-hosted installations
+are outside this converter.
  Core process settings use `OAC_*`, Web settings use `OAC_WEB_*`, and shared Go
 logging uses `OAC_LOG_*`. Retired settings fail startup even when empty or when
 the new name is also set; report every matching name without values. Only the

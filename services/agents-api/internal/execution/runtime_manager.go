@@ -22,6 +22,9 @@ type runtimeManager struct {
 	setupInstallationID string
 	loadDeployment      func(context.Context) (*RuntimeProvider, error)
 	prepareDeployment   RuntimeDeploymentPreparer
+	publishUnconfigured func(uint64)
+	resetCursor         string
+	resetRequestedAt    time.Time
 	setupGate           chan struct{}
 	mutationGate        chan struct{}
 	switching           bool
@@ -221,6 +224,9 @@ func (m *runtimeManager) run(ctx context.Context) error {
 	}
 	m.running = true
 	m.mu.Unlock()
+	if err := m.resetStep(ctx); err != nil {
+		return err
+	}
 	if _, err := m.syncNodes(ctx); err != nil && !errors.Is(err, errRuntimeTransition) {
 		return err
 	}
@@ -235,6 +241,9 @@ func (m *runtimeManager) run(ctx context.Context) error {
 		case err := <-m.failed:
 			return err
 		case <-ticker.C:
+			if err := m.resetStep(ctx); err != nil {
+				return err
+			}
 			if _, err := m.syncNodes(ctx); err != nil && !errors.Is(err, errRuntimeTransition) {
 				return err
 			}

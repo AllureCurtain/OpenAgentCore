@@ -42,7 +42,8 @@ type Handler struct {
 	deploymentAuth        *DeploymentAuthenticator
 	sandboxSetup          func(context.Context, store.SandboxDeploymentSetupRequest) (store.RuntimeDeploymentView, error)
 	sandboxUpdate         func(context.Context, store.SandboxDeploymentUpdateRequest) (store.RuntimeDeploymentView, error)
-	sandboxMaintenance    func(context.Context, store.SandboxMaintenanceRequest) (store.RuntimeDeploymentView, error)
+	sandboxReset          func(context.Context, store.SandboxResetRequest) (store.RuntimeDeploymentView, error)
+	sandboxResetCancel    func(context.Context, uint64) (store.RuntimeDeploymentView, error)
 	policy                execution.Policy
 	store                 ResourceStore
 	auth                  *Authenticator
