@@ -292,6 +292,8 @@ export const chinese = {
   "The node can't reach the Docker daemon. Check that Docker is running and the node can use its socket.": "节点连不上 Docker 守护进程。请确认 Docker 正在运行，且节点能访问它的 socket。",
   "Docker limits unsupported": "Docker 无法限制资源",
   "Docker on this host doesn't enforce CPU and memory limits. Enable cgroup limits.": "这台主机上的 Docker 不能限制 CPU 和内存。请启用 cgroup 限制。",
+  "Runtime download failed": "Runtime 下载失败",
+  "Runtime files could not be downloaded or verified. Check the node's network access and the configured Runtime release.": "Runtime 文件下载或验证失败。请检查节点网络连接及配置的 Runtime 发布版本。",
   "Runtime image missing": "缺少 Runtime 镜像",
   "The pinned Runtime image isn't on the host. Run the install command again.": "主机上没有指定版本的 Runtime 镜像。请重新运行安装命令。",
   "KVM unavailable": "KVM 不可用",
