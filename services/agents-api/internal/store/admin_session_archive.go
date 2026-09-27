@@ -116,7 +116,7 @@ func (s *Store) archiveManagedSession(ctx context.Context, tenantID, sessionID s
 			return err
 		}
 		if allocated && allocation.RuntimeAllocation.State != "released" {
-			if _, err := q.RevokeDevice(ctx, sqlc.RevokeDeviceParams{TenantID: tenant, ID: allocation.RuntimeAllocation.DeviceID}); err != nil {
+			if _, err := q.RevokeArchivedRuntimeDevice(ctx, sqlc.RevokeArchivedRuntimeDeviceParams{TenantID: tenant, DeviceID: allocation.RuntimeAllocation.DeviceID, SessionID: session}); err != nil {
 				return err
 			}
 			if _, err := q.RequestRuntimeCleanup(ctx, allocation.RuntimeAllocation.ID); err != nil {

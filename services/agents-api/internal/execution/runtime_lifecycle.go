@@ -327,6 +327,15 @@ func (r *runtimeLifecycle) observe(ctx context.Context, owner store.RuntimeAlloc
 		if err != nil {
 			return err
 		}
+		if peer, err := r.registry.LookupDevice(owner.DeviceID); err == nil {
+			draining, err := peer.DrainArchivedCancellation(ctx)
+			if err != nil {
+				return err
+			}
+			if draining {
+				return nil
+			}
+		}
 		r.clearRuntimeState(owner)
 	} else if owner.ComputePhase == "disabled" || owner.ComputePhase == "running" {
 		if err := r.observeConnection(ctx, owner); err != nil {

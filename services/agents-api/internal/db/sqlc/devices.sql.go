@@ -195,7 +195,7 @@ func (q *Queries) RememberNativeSession(ctx context.Context, arg RememberNativeS
 }
 
 const revokeDevice = `-- name: RevokeDevice :execrows
-UPDATE devices SET revoked_at = COALESCE(revoked_at, clock_timestamp())
+UPDATE devices SET revoked_at = COALESCE(revoked_at, clock_timestamp()), archive_cancel_turn_id = NULL
 WHERE tenant_id = $1 AND id = $2
 `
 

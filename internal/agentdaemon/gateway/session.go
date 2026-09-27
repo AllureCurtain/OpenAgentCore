@@ -57,6 +57,7 @@ var ErrSessionClosed = errors.New("agentdaemon gateway: session closed")
 type WSConn interface {
 	ReadMessage() (int, []byte, error)
 	WriteMessage(messageType int, data []byte) error
+	WriteControl(messageType int, data []byte, deadline time.Time) error
 	SetReadLimit(limit int64)
 	SetReadDeadline(t time.Time) error
 	SetWriteDeadline(t time.Time) error
@@ -125,6 +126,11 @@ type Session struct {
 
 	// closeOnce guards the shutdown path so concurrent Close calls
 	// collapse into one.
+	receiptMu    sync.Mutex
+	deliveries   map[string]struct{}
+	receiptDrain device.ArchivedCancellationReceipt
+	receiptTimer *time.Timer
+
 	closeOnce sync.Once
 	closed    chan struct{}
 }
@@ -249,6 +255,7 @@ func legacyClaudeCodeKind() device.SupportedAgentKind {
 // with a synthetic error+done pair, and deregisters. Idempotent.
 func (s *Session) Close(reason string) {
 	s.closeOnce.Do(func() {
+		s.stopReceiptTimer()
 		close(s.closed)
 		_ = s.conn.Close()
 		// Synthetic error + done so the connector's translation loop
@@ -276,9 +283,8 @@ func (s *Session) Close(reason string) {
 // permanent conditions (e.g. runtime deleted) can be distinguished
 // from transient disconnects.
 func (s *Session) CloseWithCode(code int, reason string) {
-	_ = s.conn.SetWriteDeadline(time.Now().Add(WriteTimeout))
-	_ = s.conn.WriteMessage(websocket.CloseMessage,
-		websocket.FormatCloseMessage(code, reason))
+	// gorilla permits WriteControl concurrently with the sole data writer.
+	_ = s.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason), time.Now().Add(WriteTimeout))
 	s.Close(reason)
 }
 
@@ -308,7 +314,7 @@ func (s *Session) deliverSynthetic(runID string, ch chan proto.Envelope, reason 
 // daemon frame inherits the caller's trace_id. Callers that explicitly
 // set env.Trace win.
 func (s *Session) Send(ctx context.Context, env proto.Envelope) error {
-	if s.IsClosed() {
+	if s.IsClosed() || !s.allowsReceiptFrame(env, true) {
 		return ErrSessionClosed
 	}
 	if env.Trace == "" {
@@ -381,6 +387,9 @@ func (s *Session) writeLoop() {
 			if !ok {
 				return
 			}
+			if !s.allowsReceiptFrame(env, true) {
+				continue
+			}
 			raw, err := json.Marshal(env)
 			if err != nil {
 				s.log("agentdaemon gateway: marshal outbound envelope: %v", err)
@@ -412,9 +421,11 @@ func (s *Session) readLoop() {
 			s.log("agentdaemon gateway: read frame: %v", err)
 			return
 		}
-		s.markSeen()
-		if !s.renewOwnerLease() {
-			return
+		if !s.receiptDraining() {
+			s.markSeen()
+			if !s.renewOwnerLease() {
+				return
+			}
 		}
 
 		var env proto.Envelope
@@ -512,6 +523,10 @@ func (s *Session) handleHeartbeat(env proto.Envelope) {
 		return
 	}
 	if status.Deleted {
+		draining, drainErr := s.DrainArchivedCancellation(ctx)
+		if drainErr == nil && draining {
+			return
+		}
 		s.log("agentdaemon gateway: runtime retired, closing session device=%s", s.DeviceID)
 		// "retired" rather than "deleted by admin": the row may have
 		// been soft-deleted by sandbox stale-row cleanup or by an
@@ -583,6 +598,9 @@ func deviceKindsFromHeartbeat(p proto.HeartbeatPayload) []device.SupportedAgentK
 }
 
 func (s *Session) dispatch(env proto.Envelope) {
+	if !s.allowsReceiptFrame(env, false) {
+		return
+	}
 	switch env.Type {
 	case proto.TypeWorkspaceExportResult:
 		s.dispatchWorkspaceExport(env)

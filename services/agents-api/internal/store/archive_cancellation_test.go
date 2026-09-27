@@ -25,9 +25,10 @@ import (
 // Controlled protocol fixtures, not native/model acceptance. Allocation setup
 // uses the real execution lease; the real dispatcher consumes a function request
 // through the real authenticated WebSocket and persists waiting before archive.
-func TestArchiveWaitingHeartbeatCancellationDiagnosis(t *testing.T) {
-	for _, heartbeat := range []bool{false, true} {
-		t.Run(map[bool]string{false: "receipt_without_heartbeat", true: "heartbeat_before_receipt"}[heartbeat], func(t *testing.T) {
+func TestArchiveWaitingCancellationReceipts(t *testing.T) {
+	for _, scenario := range []string{"receipt_without_heartbeat", "heartbeat_before_receipt", "done_heartbeat_ack", "ack_commit_blocked", "rotated", "expired", "transport_lost", "negative_ack", "missing_outcome", "revoke_before_archive", "cancel_revoke_archive", "revoke_after_archive", "revoke_concurrent_archive"} {
+		t.Run(scenario, func(t *testing.T) {
+			heartbeat := scenario != "receipt_without_heartbeat"
 			s, pool := store.NewManagedTestStore(t)
 			lease, err := s.AcquireExecutionLease(t.Context())
 			if err != nil {
@@ -130,10 +131,46 @@ func TestArchiveWaitingHeartbeatCancellationDiagnosis(t *testing.T) {
 				t.Fatal(state.LastTurn)
 			}
 
+			if scenario == "cancel_revoke_archive" {
+				if _, err := s.RequestCancel(t.Context(), h.tenant, session.ID, "ordinary-cancel"); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "revoke_before_archive" || scenario == "cancel_revoke_archive" {
+				if err := s.RevokeDevice(t.Context(), h.tenant, owner.DeviceID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var revokeDone chan error
+			if scenario == "revoke_concurrent_archive" {
+				revokeDone = make(chan error, 1)
+				go func() { revokeDone <- s.RevokeDevice(t.Context(), h.tenant, owner.DeviceID) }()
+			}
+
 			archived, err := writer.ArchiveManagedSession(auditCtx, h.tenant, session.ID, 1)
 			if err != nil || archived.State != "cleanup_pending" {
 				t.Fatal(archived, err)
 			}
+			if revokeDone != nil {
+				if err := <-revokeDone; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "revoke_after_archive" {
+				if err := s.RevokeDevice(t.Context(), h.tenant, owner.DeviceID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// A repeat archive and cleanup must not recreate an explicitly
+			// cleared marker, nor erase the marker from a fresh archive.
+			repeatAudit := adminaudit.WithSource(t.Context(), adminaudit.Source{CredentialID: "fixture-admin", ProjectID: projectID, RequestID: uuid.NewString(), TraceID: uuid.NewString()})
+			if _, err := writer.ArchiveManagedSession(repeatAudit, h.tenant, session.ID, 1); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := writer.RequestRuntimeCleanup(t.Context(), owner); err != nil {
+				t.Fatal(err)
+			}
+
 			current, err := s.GetTurn(t.Context(), h.tenant, session.ID, input.TurnID)
 			if err != nil || current.Status != store.TurnWaiting || current.CancelRequestedAt.IsZero() {
 				t.Fatal("archive must request rather than invent cancellation", current, err)
@@ -151,6 +188,17 @@ func TestArchiveWaitingHeartbeatCancellationDiagnosis(t *testing.T) {
 			if dialErr == nil || response == nil || response.StatusCode != http.StatusUnauthorized {
 				t.Fatal("revoked Runtime reconnected")
 			}
+			drain, err := s.ArchivedCancellationReceipt(t.Context(), owner.DeviceID, secret, nil)
+			if err != nil || drain.RunID != "" {
+				t.Fatal("unowned delivery got receipt permission", drain, err)
+			}
+			drain, err = s.ArchivedCancellationReceipt(t.Context(), owner.DeviceID, device.HashCredential(secret), []string{input.TurnID})
+			if err != nil || (drain.RunID == input.TurnID) == strings.Contains(scenario, "revoke") {
+				t.Fatal("archive revocation causality lost", drain, err)
+			}
+			if drain.RunID != "" && !drain.Deadline.Equal(current.CancelRequestedAt.Add(device.ArchivedCancellationReceiptLimit)) {
+				t.Fatal("archive renewed cancellation deadline")
+			}
 			// Explicitly observe cancel delivery before inducing transport loss. This
 			// proves even a sent cancellation can lose its receipt; no ticker timing guess.
 			var request proto.PromptCancelPayload
@@ -160,47 +208,103 @@ func TestArchiveWaitingHeartbeatCancellationDiagnosis(t *testing.T) {
 			if request.DeliveryID == "" {
 				t.Fatal("missing cancel delivery identity")
 			}
-			if heartbeat {
-				h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{})
-				select {
-				case <-peer.Closed():
-				case <-time.After(3 * time.Second):
-					t.Fatal("revoked heartbeat did not close peer")
-				}
-				got := awaitPreparedDispatch(t, result)
-				if got.err != nil || got.run.Turn.Status != store.TurnFailed {
-					t.Fatal(got.run.Turn.Status, got.err)
-				}
-				done := got.run.Turn
-				var outcome execution.Result
-				if err := json.Unmarshal(done.Outcome, &outcome); err != nil || outcome.ErrorCode != "event_stream_incomplete" {
-					t.Fatal(string(done.Outcome), err)
-				}
-			} else {
-				h.write(input.TurnID, proto.TypeInteractionDecisionAck, proto.InteractionDecisionAckPayload{DeliveryID: request.DeliveryID, Applied: true, Outcome: &proto.DonePayload{Usage: proto.Usage{InputTokens: 17}, Metadata: map[string]any{proto.DoneMetaAgentSessionID: "cancelled-native"}}})
-				got := awaitPreparedDispatch(t, result)
-				if got.err != nil || got.run.Turn.Status != store.TurnCancelled {
-					t.Fatal(got.run.Turn.Status, got.err)
-				}
-				done := got.run.Turn
-				var outcome execution.Result
-				if err := json.Unmarshal(done.Outcome, &outcome); err != nil || outcome.Done.Usage.InputTokens != 17 {
-					t.Fatal("receipt lost usage", string(done.Outcome), err)
+			if scenario == "rotated" {
+				if _, err := pool.Exec(t.Context(), "UPDATE devices SET credential_hash=$2 WHERE id=$1", owner.DeviceID, device.HashCredential(uuid.NewString())); err != nil {
+					t.Fatal(err)
 				}
 			}
+			if scenario == "expired" {
+				if _, err := pool.Exec(t.Context(), "UPDATE turns SET cancel_requested_at=clock_timestamp()-interval '21 seconds' WHERE id=$1", input.TurnID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var unlockCommit func()
+			if scenario == "ack_commit_blocked" {
+				tx, err := pool.Begin(t.Context())
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := tx.Exec(t.Context(), "SELECT session_id FROM session_devices WHERE session_id=$1 FOR UPDATE", session.ID); err != nil {
+					t.Fatal(err)
+				}
+				unlockCommit = func() {
+					if err := tx.Rollback(context.Background()); err != nil {
+						t.Fatal(err)
+					}
+				}
+				defer func() { _ = tx.Rollback(context.Background()) }()
+			}
+
+			if scenario == "done_heartbeat_ack" {
+				h.write(input.TurnID, proto.TypeDone, proto.DonePayload{})
+			}
+			closedCase := scenario == "rotated" || scenario == "expired" || scenario == "transport_lost" || strings.Contains(scenario, "revoke")
+			if scenario == "transport_lost" {
+				h.conn.Close()
+			} else if heartbeat && scenario != "ack_commit_blocked" {
+				h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{})
+			}
+			if !closedCase {
+				ack := proto.InteractionDecisionAckPayload{DeliveryID: request.DeliveryID, Applied: true, Outcome: &proto.DonePayload{Usage: proto.Usage{InputTokens: 17}, Metadata: map[string]any{proto.DoneMetaAgentSessionID: "cancelled-native"}}}
+				if scenario == "negative_ack" {
+					ack.Applied = false
+					ack.ErrorCode = "cancel_failed"
+					ack.Outcome = nil
+				}
+				if scenario == "missing_outcome" {
+					ack.Outcome = nil
+				}
+				h.write(input.TurnID, proto.TypeInteractionDecisionAck, ack)
+			}
+			if unlockCommit != nil {
+				// Observe actual SQL lock contention, not an assumed timing delay.
+				for deadline := time.Now().Add(3 * time.Second); ; {
+					var blocked bool
+					if err := pool.QueryRow(t.Context(), "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND query ILIKE '%session_devices%')").Scan(&blocked); err != nil {
+						t.Fatal(err)
+					}
+					if blocked {
+						break
+					}
+					if time.Now().After(deadline) {
+						t.Fatal("terminal commit never blocked")
+					}
+					time.Sleep(time.Millisecond)
+				}
+				h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{})
+				draining, err := peer.DrainArchivedCancellation(t.Context())
+				if err != nil || !draining || peer.IsClosed() {
+					t.Fatal("ACK lost drain before terminal commit", draining, err)
+				}
+				unlockCommit()
+			}
+
+			got := awaitPreparedDispatch(t, result)
+			wantStatus := store.TurnCancelled
+			if closedCase || scenario == "negative_ack" || scenario == "missing_outcome" {
+				wantStatus = store.TurnFailed
+			}
+			if got.err != nil || got.run.Turn.Status != wantStatus {
+				t.Fatal(got.run.Turn.Status, got.err, string(got.run.Turn.Outcome))
+			}
+			var outcome execution.Result
+			if err := json.Unmarshal(got.run.Turn.Outcome, &outcome); err != nil || (wantStatus == store.TurnCancelled && outcome.Done.Usage.InputTokens != 17) {
+				t.Fatal("receipt lost usage", string(got.run.Turn.Outcome), err)
+			}
+
 			var receipts int
 			if err := pool.QueryRow(t.Context(), "SELECT count(*) FROM turn_events WHERE turn_id=$1 AND kind='cancel_receipt'", input.TurnID).Scan(&receipts); err != nil {
 				t.Fatal(err)
 			}
 			wantReceipts := 1
-			if heartbeat {
+			if closedCase {
 				wantReceipts = 0
 			}
 			if receipts != wantReceipts {
 				t.Fatal("durable cancellation receipt mismatch", receipts, wantReceipts)
 			}
-			// No provider was invoked in either case; the failure therefore does not
-			// require compute destruction. The original durable cleanup owner survives.
+			// The original cleanup owner survives every delivery outcome; only
+			// provider receipts can release its resources.
 			allocation, err := s.GetRuntimeAllocation(t.Context(), h.tenant, session.Environment.ID)
 			if err != nil || allocation.State != "cleanup_pending" {
 				t.Fatal(allocation, err)

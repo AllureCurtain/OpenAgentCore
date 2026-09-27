@@ -63,7 +63,7 @@ func (s *Store) requestRuntimeCleanup(ctx context.Context, owner RuntimeAllocati
 			return row, nil
 		}
 		tenant, _ := parseID(owner.TenantID)
-		if _, err := q.RevokeDevice(ctx, sqlc.RevokeDeviceParams{TenantID: tenant, ID: row.DeviceID}); err != nil {
+		if _, err := q.RevokeRuntimeCleanupDevice(ctx, sqlc.RevokeRuntimeCleanupDeviceParams{TenantID: tenant, DeviceID: row.DeviceID}); err != nil {
 			return sqlc.RuntimeAllocation{}, err
 		}
 		current, err := q.GetRuntimeAllocation(ctx, sqlc.GetRuntimeAllocationParams{TenantID: tenant, EnvironmentID: row.EnvironmentID})

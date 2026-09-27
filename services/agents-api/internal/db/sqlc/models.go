@@ -64,15 +64,16 @@ type DeploymentModelProvider struct {
 }
 
 type Device struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	Name           string             `json:"name"`
-	CredentialHash pgtype.Text        `json:"credential_hash"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	LastSeenAt     pgtype.Timestamptz `json:"last_seen_at"`
-	RevokedAt      pgtype.Timestamptz `json:"revoked_at"`
-	EnvironmentID  pgtype.UUID        `json:"environment_id"`
-	ExecutorKeyID  pgtype.UUID        `json:"executor_key_id"`
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	Name                string             `json:"name"`
+	CredentialHash      pgtype.Text        `json:"credential_hash"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	LastSeenAt          pgtype.Timestamptz `json:"last_seen_at"`
+	RevokedAt           pgtype.Timestamptz `json:"revoked_at"`
+	EnvironmentID       pgtype.UUID        `json:"environment_id"`
+	ExecutorKeyID       pgtype.UUID        `json:"executor_key_id"`
+	ArchiveCancelTurnID pgtype.UUID        `json:"archive_cancel_turn_id"`
 }
 
 type Environment struct {
