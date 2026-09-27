@@ -3024,8 +3024,12 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   every Session transaction: binding, claim/reconciliation, journal/Items/Usage,
   function callbacks/application receipts and terminal/native continuity. Serialize
   these short transactions and lease pings; execution transactions have a five-second
-  deadline including gate and Session-lock waits. Never hold a transaction across
-  daemon/model work, reconnect the writer or fall back to the pool after lease loss.
+  deadline including gate and Session-lock waits. Sandbox reset snapshots bound the
+  deployment relation explicitly to its legal singleton row before resource joins.
+  Keep this cardinality visible even on fresh databases without statistics: inflated
+  join estimates can trigger expensive JIT compilation inside the lease deadline.
+  Never hold a transaction across daemon/model work, reconnect the writer or fall
+  back to the pool after lease loss.
   The original Store handles public admission and device/auth maintenance on pooled
   connections. Execution reads may also use the pool; a read grants no write authority.
   At startup, reconcile previously claimed work as failed, preserve queued inputs

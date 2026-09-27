@@ -55,7 +55,8 @@ ORDER BY s.id LIMIT 32;
 SELECT id FROM projects WHERE tenant_id = $1;
 
 -- name: GetSandboxDeploymentSnapshot :one
-WITH observed AS MATERIALIZED (SELECT clock_timestamp() AS as_of),
+WITH deployment AS MATERIALIZED (SELECT * FROM runtime_deployment WHERE singleton = true LIMIT 1),
+observed AS MATERIALIZED (SELECT clock_timestamp() AS as_of),
 held AS (
     SELECT a.deployment_generation, a.node_id, s.id AS session_id, e.id AS environment_id, false AS pending,
         (a.state = 'cleanup_pending' OR s.deleted_at IS NOT NULL OR e.status IN ('failed', 'expired')
@@ -63,7 +64,7 @@ held AS (
             THEN a.compute_retained_until IS NOT NULL AND a.compute_retained_until <= observed.as_of
             ELSE a.node_id IS NULL AND d.mode <> 'direct' AND a.kept_at <= observed.as_of - interval '1 hour' END) AS cleanup
     FROM runtime_allocations a JOIN environments e ON e.id = a.environment_id
-    JOIN sessions s ON s.id = e.session_id CROSS JOIN runtime_deployment d CROSS JOIN observed
+    JOIN sessions s ON s.id = e.session_id CROSS JOIN deployment d CROSS JOIN observed
     WHERE a.state <> 'released'
     UNION ALL
     SELECT p.deployment_generation, p.node_id, s.id, e.id, true, false
@@ -80,13 +81,13 @@ held AS (
         THEN 'busy' ELSE 'idle' END AS category,
         n.name, (h.node_id IS NOT NULL AND NOT COALESCE(n.removed_at IS NULL AND n.connection_id IS NOT NULL
             AND n.connected_epoch = d.owner_epoch AND n.last_seen_at > observed.as_of - interval '45 seconds', false)) AS offline
-    FROM held h LEFT JOIN runtime_nodes n ON n.id = h.node_id CROSS JOIN runtime_deployment d CROSS JOIN observed
+    FROM held h LEFT JOIN runtime_nodes n ON n.id = h.node_id CROSS JOIN deployment d CROSS JOIN observed
 ), rollout_nodes AS (
     SELECT CASE
         WHEN n.connection_id IS NULL OR n.connected_epoch <> d.owner_epoch OR n.last_seen_at IS NULL OR n.last_seen_at <= observed.as_of - interval '45 seconds' THEN 'unknown'
         WHEN n.protocol_version=1 AND n.deployment_generation <> d.generation THEN 'update_required'
         ELSE COALESCE(g.state,'unknown') END AS state
-    FROM runtime_nodes n CROSS JOIN runtime_deployment d CROSS JOIN observed
+    FROM runtime_nodes n CROSS JOIN deployment d CROSS JOIN observed
     LEFT JOIN runtime_node_generation_status g ON g.node_id=n.id AND g.generation=d.generation AND g.connection_id=n.connection_id AND g.owner_epoch=d.owner_epoch
     WHERE n.removed_at IS NULL AND n.installation_id=d.installation_id
 ), offline AS (
@@ -111,4 +112,6 @@ SELECT sqlc.embed(d),
             'update_required',(SELECT count(*) FROM rollout_nodes WHERE state='update_required'),
             'unknown',(SELECT count(*) FROM rollout_nodes WHERE state='unknown')) ELSE NULL END
     )::jsonb AS rollout
-FROM runtime_deployment d;
+FROM runtime_deployment d
+WHERE d.singleton = true
+LIMIT 1;
