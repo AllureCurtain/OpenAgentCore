@@ -232,6 +232,57 @@ class NodeInstallTests(unittest.TestCase):
         self.assertFalse((self.root / "installation.json").exists())
         self.assertFalse(any("register" in command or "load" in command or "enable" in command for command, _ in self.calls))
 
+    def recovery_args(self):
+        self.args.generation = 1
+        self.args.specification_digest = json.loads((self.root / "state/node/identity.json").read_text())["identity"]["specification_digest"]
+        return self.args
+
+    def test_restart_repairs_only_missing_micro_bytes_at_original_paths(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        before = (self.root / "provider.json").read_bytes()
+        helper = self.root / installer.MICRO[0]
+        runtime = self.root / installer.MICRO[1]
+        old_inode = runtime.stat().st_ino
+        helper.unlink()
+        installer.node_generations.prepare(self.recovery_args(), installer)
+        self.assertEqual(helper.read_bytes(), self.payloads[installer.MICRO[0]])
+        self.assertEqual(runtime.stat().st_ino, old_inode)
+        self.assertEqual((self.root / "provider.json").read_bytes(), before)
+        self.assertEqual(json.loads((self.root / "state/node/generations/1.json").read_text()), json.loads(before))
+
+    def test_restart_refuses_conflicting_sibling_before_repairing_missing_file(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        helper = self.root / installer.MICRO[0]
+        runtime = self.root / installer.MICRO[1]
+        helper.unlink()
+        runtime.write_bytes(b"conflicting retained runtime")
+        with self.assertRaisesRegex(installer.InstallError, "artifact checksum differs"):
+            installer.node_generations.prepare(self.recovery_args(), installer)
+        self.assertFalse(helper.exists())
+        self.assertEqual(runtime.read_bytes(), b"conflicting retained runtime")
+
+    def test_live_helper_or_collection_excludes_restart_repair(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        helper = self.root / installer.MICRO[0]
+        helper.unlink()
+        directory = self.root / "state/node/generations"
+        directory.mkdir(mode=0o700)
+        descriptor = os.open(directory / "1.lease", os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            for mode in (fcntl.LOCK_SH, fcntl.LOCK_EX):
+                fcntl.flock(descriptor, mode | fcntl.LOCK_NB)
+                with self.assertRaisesRegex(installer.InstallError, "helper is still active"):
+                    installer.node_generations.prepare(self.recovery_args(), installer)
+                self.assertFalse(helper.exists())
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+        installer.node_generations.prepare(self.args, installer)
+        self.assertEqual(helper.read_bytes(), self.payloads[installer.MICRO[0]])
+
     def test_docker_installs_matched_payload_registers_and_starts_persistent_service(self):
         self.install()
         config = json.loads((self.root / "provider.json").read_text())

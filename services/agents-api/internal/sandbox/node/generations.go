@@ -20,32 +20,34 @@ type GenerationProvider struct {
 
 type GenerationManagerOptions struct {
 	Initial []GenerationProvider
+	Recover []sandbox.GenerationReference
 	Prepare func(context.Context, uint64, string) (GenerationProvider, error)
 	Remove  func(context.Context, GenerationProvider) error
 }
 
 type localGeneration struct {
-	value             GenerationProvider
-	state, diagnostic string
-	refs              int
-	retryAt           time.Time
-	failures          int
-	removing          bool
+	value                GenerationProvider
+	state, diagnostic    string
+	refs                 int
+	retryAt              time.Time
+	failures             int
+	removing             bool
+	repairing, preparing bool
 }
 
 // GenerationManager owns local providers, preparation and all queued/in-flight
 // references. Wire metadata is sparse; only correlated Core grants call Drop.
 type GenerationManager struct {
-	mu                        sync.Mutex
-	values                    map[uint64]*localGeneration
-	target                    sandbox.NodeDeployment
-	statusCursor, probeCursor uint64
-	options                   GenerationManagerOptions
-	ctx                       context.Context
-	cancel                    context.CancelFunc
-	preparingCancel           context.CancelFunc
-	wake                      chan struct{}
-	workers                   sync.WaitGroup
+	mu                                        sync.Mutex
+	values                                    map[uint64]*localGeneration
+	target                                    sandbox.NodeDeployment
+	statusCursor, probeCursor, recoveryCursor uint64
+	options                                   GenerationManagerOptions
+	ctx                                       context.Context
+	cancel                                    context.CancelFunc
+	preparingCancel                           context.CancelFunc
+	wake                                      chan struct{}
+	workers                                   sync.WaitGroup
 }
 
 func NewGenerationManager(ctx context.Context, options GenerationManagerOptions) (*GenerationManager, error) {
@@ -60,6 +62,13 @@ func NewGenerationManager(ctx context.Context, options GenerationManagerOptions)
 			return nil, sandbox.ErrInvalid
 		}
 		m.values[v.Generation] = &localGeneration{value: v, state: "preparing"}
+	}
+	for _, ref := range options.Recover {
+		if !validGeneration(ref.Generation) || !validSpecificationDigest(ref.SpecificationDigest) || m.values[ref.Generation] != nil {
+			cancel()
+			return nil, sandbox.ErrInvalid
+		}
+		m.values[ref.Generation] = &localGeneration{value: GenerationProvider{Generation: ref.Generation, SpecificationDigest: ref.SpecificationDigest}, state: "failed", diagnostic: sandbox.NodeRuntimeDownloadFailed, repairing: true}
 	}
 	m.workers.Add(2)
 	go func() { defer m.workers.Done(); m.prepareLoop() }()
@@ -157,7 +166,7 @@ func (m *GenerationManager) Acquire(generation uint64) (sandbox.Provider, bool, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	g := m.values[generation]
-	if g == nil || g.removing || g.value.Provider == nil {
+	if g == nil || g.removing || g.preparing || g.value.Provider == nil {
 		return nil, false, nil, ErrUnavailable
 	}
 	g.refs++
@@ -218,13 +227,33 @@ func (m *GenerationManager) prepareLoop() {
 		case <-ticker.C:
 		}
 		m.mu.Lock()
-		g := m.values[m.target.Generation]
-		if g == nil || g.removing || g.value.Provider != nil || time.Now().Before(g.retryAt) {
+		var g *localGeneration
+		if m.target.Generation != 0 {
+			keys := []uint64{m.target.Generation}
+			if m.target.ServingGeneration != nil {
+				keys = append(keys, *m.target.ServingGeneration)
+			}
+			keys = append(keys, m.orderedLocked(m.recoveryCursor)...)
+			for _, key := range keys {
+				candidate := m.values[key]
+				if candidate == nil || candidate.removing || candidate.preparing || candidate.refs != 0 || candidate.value.Provider != nil && !candidate.repairing || time.Now().Before(candidate.retryAt) {
+					continue
+				}
+				if provider, ok := candidate.value.Provider.(interface{ Quiescent() bool }); ok && !provider.Quiescent() {
+					continue
+				}
+				g = candidate
+				m.recoveryCursor = key
+				break
+			}
+		}
+		if g == nil {
 			m.mu.Unlock()
 			continue
 		}
 		ctx, cancel := context.WithTimeout(m.ctx, 30*time.Minute)
 		m.preparingCancel = cancel
+		g.preparing = true
 		g.refs++
 		g.state = "preparing"
 		g.diagnostic = ""
@@ -234,12 +263,19 @@ func (m *GenerationManager) prepareLoop() {
 		cancel()
 		m.mu.Lock()
 		m.preparingCancel = nil
+		g.preparing = false
 		g.refs--
 		if err == nil && (value.Generation != generation || value.SpecificationDigest != digest || value.Provider == nil || value.Probe == nil) {
 			err = sandbox.ErrOwnership
 		}
 		if err == nil {
+			if g.value.Close != nil {
+				g.value.Close()
+			}
 			g.value = value
+			g.repairing = false
+			g.failures = 0
+			g.retryAt = time.Time{}
 			g.state = "preparing"
 		} else {
 			if value.Close != nil {
@@ -273,7 +309,7 @@ func (m *GenerationManager) probeLoop() {
 		var g *localGeneration
 		for _, key := range keys {
 			value := m.values[key]
-			if value.value.Provider != nil && !value.removing {
+			if value.value.Provider != nil && !value.removing && !value.preparing && !value.repairing {
 				g = value
 				m.probeCursor = key
 				g.refs++
@@ -295,6 +331,9 @@ func (m *GenerationManager) probeLoop() {
 			if err != nil {
 				g.state = "failed"
 				g.diagnostic = sandbox.NodeDiagnostic(err)
+				if errors.Is(err, sandbox.ErrRuntimeImageUnavailable) || errors.Is(err, sandbox.ErrMicrosandboxArtifactsUnavailable) {
+					g.repairing = true
+				}
 			}
 		}
 		m.mu.Unlock()

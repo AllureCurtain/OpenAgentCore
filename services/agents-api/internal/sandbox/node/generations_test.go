@@ -206,3 +206,75 @@ func TestCanceledConnectionCannotBeginGenerationCollection(t *testing.T) {
 		t.Fatal("canceled connection began collection")
 	}
 }
+
+func TestRestartRecoversExactOlderGenerationBeforeAdvertisingReadiness(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	requested := make(chan uint64, 1)
+	download := make(chan struct{})
+	probe := make(chan struct{}, 1)
+	qualify := make(chan struct{})
+	m, err := NewGenerationManager(t.Context(), GenerationManagerOptions{
+		Initial: []GenerationProvider{{Generation: 2, SpecificationDigest: digest, Provider: &fakeProvider{}, Probe: func(context.Context) error { return nil }}},
+		Recover: []sandbox.GenerationReference{{Generation: 1, SpecificationDigest: digest}},
+		Prepare: func(ctx context.Context, generation uint64, got string) (GenerationProvider, error) {
+			if got != digest {
+				return GenerationProvider{}, sandbox.ErrOwnership
+			}
+			requested <- generation
+			select {
+			case <-download:
+			case <-ctx.Done():
+				return GenerationProvider{}, ctx.Err()
+			}
+			return GenerationProvider{Generation: generation, SpecificationDigest: got, Provider: &fakeProvider{}, Probe: func(ctx context.Context) error {
+				select {
+				case probe <- struct{}{}:
+				default:
+				}
+				select {
+				case <-qualify:
+					return nil
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			}}, nil
+		},
+		Remove: func(context.Context, GenerationProvider) error { return nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer m.Close()
+	pin := uint64(2)
+	m.Deployment(sandbox.NodeDeployment{Generation: 2, SpecificationDigest: digest, ServingGeneration: &pin})
+	select {
+	case generation := <-requested:
+		if generation != 1 {
+			t.Fatal("replaced old placement generation", generation)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("old generation was never recovered")
+	}
+	if m.Ready(1) {
+		t.Fatal("missing payload advertised readiness")
+	}
+	if err := m.Drop(t.Context(), sandbox.GenerationRetention{GenerationReference: sandbox.GenerationReference{Generation: 1, SpecificationDigest: digest}}); !errors.Is(err, ErrUnavailable) {
+		t.Fatal("collection entered active repair", err)
+	}
+	close(download)
+	select {
+	case <-probe:
+	case <-time.After(4 * time.Second):
+		t.Fatal("restored provider never qualified")
+	}
+	if m.Ready(1) {
+		t.Fatal("file presence advertised provider readiness")
+	}
+	close(qualify)
+	wait(t, func() bool { return m.Ready(1) })
+	provider, ready, release, err := m.Acquire(1)
+	if err != nil || !ready || provider == nil {
+		t.Fatal("old generation not usable after actual qualification", err)
+	}
+	release()
+}

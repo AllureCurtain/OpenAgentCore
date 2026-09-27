@@ -107,9 +107,18 @@ def generation_home(root, configuration, base, installer):
 def image_available(value, installer):
     try:
         if value["provider"] == "docker":
+            seccomp = Path(value["docker"]["seccomp_file"])
+            installer.existing_file(seccomp)
+            json.loads(seccomp.read_text())
             raw = installer.checked(list(installer.DOCKER) + ["image", "inspect", value["docker"]["image"], "--format", "{{.Id}} {{.Os}}/{{.Architecture}}"], "Cannot inspect pinned image")
             return raw.strip() == value["docker"]["image"] + " linux/amd64"
         micro = value["microsandbox"]
+        for key in ("helper_path", "runtime_path", "firmware_path"):
+            if not installer.existing_file(Path(micro[key])):
+                return False
+        if (installer.file_digest(Path(micro["runtime_path"])) != micro["runtime_sha256"]
+                or installer.file_digest(Path(micro["firmware_path"])) != micro["firmware_sha256"]):
+            return False
         env = dict(os.environ, MSB_BACKEND="local", MSB_HOME=micro["runtime_home"], MSB_PATH=micro["runtime_path"], MSB_LIBKRUNFW_PATH=micro["firmware_path"])
         image = json.loads(installer.checked([micro["runtime_path"], "image", "inspect", micro["image"], "--format", "json"], "Cannot inspect pinned image", env=env))
         return image.get("digest") == micro["image"].split("@", 1)[1] and image.get("architecture") == "amd64" and image.get("os") == "linux"
@@ -117,11 +126,54 @@ def image_available(value, installer):
         return False
 
 
+def runtime_files(root, value, args, manifest, sums, installer):
+    """Restore only absent immutable bytes; existing conflicts are never replaced."""
+    source = args.configuration["specification"]["runtime"]["source_commit"]
+    release = root / "releases" / source
+    if value is not None:
+        if args.provider == "microsandbox":
+            release = Path(value["microsandbox"]["helper_path"]).parents[2]
+            if any(Path(value["microsandbox"][key]) != release / name for key, name in zip(
+                    ("helper_path", "runtime_path", "firmware_path"), installer.MICRO)):
+                raise installer.InstallError("Retained Runtime artifact paths differ")
+        else:
+            release = Path(value["docker"]["seccomp_file"]).parents[1]
+            if Path(value["docker"]["seccomp_file"]) != release / "runtime/seccomp.json":
+                raise installer.InstallError("Retained Runtime seccomp path differs")
+        if release not in (root, root / "releases" / source):
+            raise installer.InstallError("Retained Runtime artifacts are outside this installation")
+    installer.no_links(release)
+    installer.safe_directory(release)
+    names = ("runtime/seccomp.json",) + (installer.MICRO if args.provider == "microsandbox" else ())
+    saved = installer.private_json(release / "manifest.json")
+    if (release / "manifest.json").exists():
+        if saved is None:
+            raise installer.InstallError("Retained Runtime manifest is unreadable")
+        installer.node_spec.verify_release(args.configuration, saved)
+    # Inspect every existing byte before starting any repair, so a missing file
+    # cannot hide a conflicting sibling or redirect a later download.
+    for name in names:
+        path = release / name
+        installer.no_links(path)
+        if installer.existing_file(path):
+            expected = sums[name] if name == "runtime/seccomp.json" else installer.distribution.artifact(manifest, name)["sha256"]
+            if installer.file_digest(path) != expected:
+                raise installer.InstallError("Retained Runtime artifact checksum differs")
+    for name in names:
+        installer.safe_directory((release / name).parent)
+        if name == "runtime/seccomp.json":
+            installer.download(args.source_url, name, release, sums[name], prefix="releases/" + source + "/")
+        else:
+            installer.distribution.obtain_artifact(manifest, name, release / name)
+            os.chmod(release / name, 0o700)
+    atomic_json(release / "manifest.json", manifest)
+    return release
+
+
 def prepare(args, installer):
     root, identity = owned_root(args, installer)
-    with installer.install_lock(root):
+    with installer.install_lock(root), collection_lease(root, args.generation, installer):
         directory = root / "state/node/generations"
-        installer.safe_directory(directory)
         if (directory / (str(args.generation) + ".dropped")).exists():
             raise installer.InstallError("A dropped generation cannot be adopted again")
         args.core_url = identity["core_url"]
@@ -133,64 +185,42 @@ def prepare(args, installer):
         configurations = retained_configs(root, installer)
         base = installer.private_json(root / "provider.json")
         runtime = args.configuration["specification"]["runtime"]
-        value = None
-        for candidate in configurations.values():
-            if candidate["specification"]["runtime"] == runtime and image_available(candidate, installer):
-                value = copy.deepcopy(candidate)
-                value["generation"] = args.generation
-                value["specification"] = args.configuration["specification"]
-                if args.provider == "microsandbox":
-                    value["microsandbox"].update(value["specification"]["resources"])
-                break
-        if value is None:
+        value = configurations.get(args.generation)
+        retained = value is not None
+        if retained:
+            installer.node_spec.verify_provider(value, args.configuration, value.get("docker", {}).get("image"))
+        else:
+            for candidate in configurations.values():
+                if candidate["specification"]["runtime"] == runtime and image_available(candidate, installer):
+                    value = copy.deepcopy(candidate)
+                    value["generation"] = args.generation
+                    value["specification"] = args.configuration["specification"]
+                    if args.provider == "microsandbox":
+                        value["microsandbox"].update(value["specification"]["resources"])
+                    break
+        if value is None or not image_available(value, installer):
             settings = installer.private_json(root / "preparation.json")
             args.source_url = installer.origin(settings["source_url"])
             args.bundle = None
-            prefix = "releases/" + runtime["source_commit"] + "/"
-            manifest, sums = installer.metadata(args.source_url, prefix=prefix)
+            manifest, sums = installer.metadata(args.source_url, prefix="releases/" + runtime["source_commit"] + "/")
             installer.node_spec.verify_release(args.configuration, manifest)
-            release = root / "releases" / runtime["source_commit"]
-            installer.safe_directory(release.parent)
-            names = ("runtime/seccomp.json",) + (installer.MICRO if args.provider == "microsandbox" else ())
-            if not release.exists():
-                with tempfile.TemporaryDirectory(prefix=".release-", dir=release.parent) as temporary:
-                    stage = Path(temporary)
-                    for name in names:
-                        installer.safe_directory((stage / name).parent)
-                        if name == "runtime/seccomp.json":
-                            with installer.fetch(args.source_url, prefix + name) as stream:
-                                raw = stream.read(1024 * 1024 + 1)
-                            if hashlib.sha256(raw).hexdigest() != sums.get(name):
-                                raise installer.InstallError("Runtime seccomp checksum differs")
-                            (stage / name).write_bytes(raw)
-                            os.chmod(stage / name, 0o600)
-                        else:
-                            installer.distribution.obtain_artifact(manifest, name, stage / name)
-                            os.chmod(stage / name, 0o700)
-                    atomic_json(stage / "manifest.json", manifest)
-                    os.rename(stage, release)
-            saved = installer.private_json(release / "manifest.json")
-            # The origin URL is transport metadata, not immutable release identity.
-            installer.node_spec.verify_release(args.configuration, saved)
-            for name in names:
-                installer.existing_file(release / name)
-                expected = sums[name] if name == "runtime/seccomp.json" else installer.distribution.artifact(manifest, name)["sha256"]
-                if installer.file_digest(release / name) != expected:
-                    raise installer.InstallError("Retained Runtime artifact checksum differs")
+            release = runtime_files(root, value if retained else None, args, manifest, sums, installer)
             if args.provider == "microsandbox":
-                args.runtime_home = generation_home(root, args.configuration, base, installer)
+                args.runtime_home = Path(value["microsandbox"]["runtime_home"]) if retained else generation_home(root, args.configuration, base, installer)
                 installer.safe_directory(args.runtime_home)
                 owner = args.runtime_home / "oac-installation.json"
                 if not owner.exists() and any(args.runtime_home.iterdir()):
                     raise installer.InstallError("Versioned microsandbox store contains unowned state")
                 installer.write_once(owner, installer.json_text({"installation_id": args.installation_id}))
             runtime_image = installer.prepare_runtime(release, args, manifest)
-            value = installer.provider_config(release, args, manifest, runtime_image)
+            if retained:
+                installer.node_spec.verify_provider(value, args.configuration, runtime_image)
+            else:
+                value = installer.provider_config(release, args, manifest, runtime_image)
         target = directory / (str(args.generation) + ".json")
         if installer.existing_file(target) and installer.private_json(target) != value:
             raise installer.InstallError("Immutable generation configuration differs")
         atomic_json(target, value)
-        print(json.dumps(value))
 
 
 @contextlib.contextmanager

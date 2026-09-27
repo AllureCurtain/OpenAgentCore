@@ -84,6 +84,30 @@ refuses with guidance to use the console origin retaining the selected release.
 These refusals occur before writing the installation identity, importing the
 Runtime, registering the node or starting its service.
 
+## Restart recovery
+
+Missing retained Runtime bytes do not switch a pinned placement to the current
+Runtime. The node retains the original generation and specification digest as
+unready state, and asks Core's authenticated configuration endpoint for that exact
+kept generation before recovery. Missing seccomp bytes may leave an unready
+provider placeholder; missing image or native artifacts discovered by a provider
+probe queue repair without advertising readiness.
+
+Preparation and repair are serialized. Target and serving generations take
+priority, with bounded progress over other retained generations. Each attempt has
+a 30-minute deadline; failures back off for 1, 2, 5, 10 and then at most 30 minutes.
+No connection-established deployment facts means no preparation starts. Repair
+preserves existing configurations and paths, verifies the selected release and all
+existing sibling checksums, and downloads only absent immutable files. Conflicting
+bytes or a different retained specification refuse repair. A missing complete
+provider configuration remains a refusal rather than a guessed reconstruction.
+
+Repair takes the same exclusive generation lease and installation lock used by
+collection. A live helper or concurrent collector therefore retains ownership;
+repair retries later without replacing in-use files. Once bytes are restored, the
+node still runs the actual provider readiness probe. File presence and executable
+capability alone never establish serving readiness.
+
 ## Identity-preserving program updates
 
 Run the checksum-verified `node-install.pyz --update` as the original installation

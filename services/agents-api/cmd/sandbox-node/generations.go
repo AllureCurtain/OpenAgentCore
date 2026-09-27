@@ -41,6 +41,8 @@ func runGenerations(ctx context.Context, configFile, stateDir string) error {
 	}
 	paths = append([]string{configFile}, paths...)
 	values := map[uint64]node.GenerationProvider{}
+	recovery := []sandbox.GenerationReference{}
+	seen := map[uint64]bool{}
 	closeValues := func() {
 		for _, v := range values {
 			if v.Close != nil {
@@ -68,10 +70,15 @@ func runGenerations(ctx context.Context, configFile, stateDir string) error {
 			closeValues()
 			return err
 		}
-		if _, ok := values[config.Generation]; ok {
+		if seen[config.Generation] {
 			continue
 		}
+		seen[config.Generation] = true
 		value, err := buildGeneration(config, stateDir)
+		if errors.Is(err, os.ErrNotExist) {
+			recovery = append(recovery, sandbox.GenerationReference{Generation: config.Generation, SpecificationDigest: config.Specification.Digest(config.Provider)})
+			continue
+		}
 		if err != nil {
 			closeValues()
 			return err
@@ -96,7 +103,7 @@ func runGenerations(ctx context.Context, configFile, stateDir string) error {
 	for _, v := range values {
 		initial = append(initial, v)
 	}
-	manager, err := node.NewGenerationManager(ctx, node.GenerationManagerOptions{Initial: initial,
+	manager, err := node.NewGenerationManager(ctx, node.GenerationManagerOptions{Initial: initial, Recover: recovery,
 		Prepare: func(ctx context.Context, generation uint64, digest string) (node.GenerationProvider, error) {
 			if err := runHelper(ctx, "prepare", generation, digest); err != nil {
 				return node.GenerationProvider{}, err
