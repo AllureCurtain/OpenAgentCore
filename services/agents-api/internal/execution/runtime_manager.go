@@ -28,7 +28,7 @@ type runtimeManager struct {
 	setupGate           chan struct{}
 	mutationGate        chan struct{}
 	switching           bool
-	switchDrained       chan struct{}
+	switchDrained       *deploymentDrain
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	mu                  sync.Mutex
@@ -179,9 +179,12 @@ func (m *runtimeManager) applyInventory(previous map[string]*runtimeNode, ids []
 	m.mu.Unlock()
 	// Inventory includes offline nodes. Only explicit removal retires a lane;
 	// the Store requires all retained resources to be cleaned before removal.
+	err := m.cancelLifecycles(retired)
 	for _, n := range retired {
-		n.lifecycle.stop()
 		go m.retire(n)
+	}
+	if err != nil {
+		return nil, err
 	}
 	return nodes, nil
 }

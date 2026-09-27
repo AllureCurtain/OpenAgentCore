@@ -969,7 +969,16 @@ existing allocation must agree with the placement. Never choose another node.
 E2B direct allocations use one serial lifecycle without a node identity.
 The coordinator stops accepting work and cancels and drains all node workers and
 direct callers before releasing the sole execution lease. Lease loss is global;
-ordinary provider failures stay within their node. Session locks, deployment
+ordinary provider failures stay within their node. A planned deployment drain or
+inventory retirement cancels lifecycle contexts synchronously between leased
+operations, using the existing lease gate with its five-second bound. Include
+an active manual reconcile's cancel function: an asynchronous `AfterFunc` alone
+can cancel a later leased query after the gate reopens. Never cancel an in-flight
+leased query merely to change deployment configuration. A failed cancellation
+fence stops the owner and leaves the drain barrier closed; it cannot activate a
+replacement. Release the lease gate before waiting for provider settlement or
+lifecycle accounting. Ordinary caller deadlines and owner shutdown retain their
+existing cancellation and fail-closed lease-loss behavior. Session locks, deployment
 capacity transactions and revision/one-shot receipts remain authoritative, with
 no external operation holding a database lock.
 
