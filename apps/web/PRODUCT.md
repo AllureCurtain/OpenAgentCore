@@ -107,6 +107,18 @@ workbench.
 - A node enrolled with an earlier Core address gets no new sandboxes, so on the Nodes
   list and its page its status is Old address, with "Remove and add again", never
   Available.
+- **Sandbox reset** is an explicit administrator operation on Nodes. Auto clear is
+  the default, with a one-hour deadline (5 minutes–24 hours); Force clear requires
+  destructive confirmation. Reset stops new hosted Session admission, clears idle,
+  suspended and pending hosted work, and waits for busy Turns and file writes until
+  Core forces the remaining work. It does not affect self-hosted execution.
+  Histories and persisted Files/Artifacts remain; archived Sessions cannot resume,
+  and unpersisted workspace contents may be lost. Cancel stops further clearing
+  without undoing archives. Core alone reports progress and completion, including
+  resources blocked on named offline nodes; force does not bypass their cleanup.
+  Completion clears the backend configuration and retires old nodes/enrollment
+  credentials. A new configuration is then a separate deliberate save. Same-backend
+  editing currently requires zero held resources; online rollout is not available.
 - **E2B deployments** have no machines: the Nodes entry becomes Sandbox backend,
   and Overview and Sandbox metrics show the sandboxes Core holds in E2B's cloud
   (running, starting, size, template build) instead of node capacity, with no node column

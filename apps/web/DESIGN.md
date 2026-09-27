@@ -736,8 +736,7 @@ while the deployment cannot be read; Show Getting started, a quiet row above the
 sidebar's account controls, opens it again at any time.
 
 ### Sandbox setup
-Setting up hosted sandboxes, and changing the provider or resources in maintenance,
-is a set of pages inside the Nodes page, one decision each: where sandboxes run (own
+Setting up hosted sandboxes is a set of pages inside the Nodes page, one decision each: where sandboxes run (own
 machines or E2B), then the backend or the E2B account, then the size of each sandbox
 (three presets; E2B skips it, since each sandbox takes the template build's size),
 then a review. Choices are large cards that advance on a click; short indigo dashes
@@ -756,8 +755,35 @@ then says to enter it again, with a link to that step.
 Advanced settings, one link away, hold the complete form: resources (not for
 E2B), the Runtime release and the E2B template. A change keeps the saved size
 and Runtime while the backend stays the same (a saved size outside the presets is
-offered as Current); another backend starts from its standard size and this
-console's Runtime, and E2B always needs its key again. Rules sit behind help tips.
+offered as Current). Same-backend editing starts at size or E2B credentials with
+the provider fixed, and is available only with zero held resources;
+changing the backend requires reset and then a new setup. E2B always needs its key
+again. Optional explanations sit behind help tips; errors and safety consequences
+remain visible.
+
+### Sandbox reset
+The deployment section offers explicit reset rather than maintenance/resume. Reuse
+its existing panels and confirmation dialogs. Auto clear is selected first, with a
+one-hour deadline editable from 5 minutes to 24 hours; Force clear and escalation
+require destructive confirmation. State directly that hosted work is archived,
+remaining active work may be cancelled, archived Sessions cannot resume and
+unpersisted workspace contents may be lost. Histories and persisted Files/Artifacts
+remain, and self-hosted execution is unaffected. Cancelling an active reset stops
+further clearing but cannot undo completed archives.
+
+A persistent progress panel uses Core's busy, idle and cleanup counts, deadline and
+named offline-node blockers. Bring blocked nodes online for confirmed cleanup;
+never offer a browser-side force-release shortcut. Poll the deployment every five
+seconds only while its reset is non-null. A passed deadline does not establish force
+or completion; only a Core response does. Completion opens the existing setup flow,
+with a new explicit save using the generation read from Core, including zero on a
+fresh install. No automatic configuration replay or online-rollout progress exists.
+
+Read deployment progress independently of node details. Partial failures retain
+successful facts with a visible stale/unavailable notice. An uncertain write opens
+the existing recovery dialog and requires a new authoritative read before another
+mutation; refresh reads state and never resubmits the write. A read started before
+the write must not replace the confirmed result or establish post-failure freshness.
 
 ### System page
 Four sections, each saying where it changes. Installation: the public address, API

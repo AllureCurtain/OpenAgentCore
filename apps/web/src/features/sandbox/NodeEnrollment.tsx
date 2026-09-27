@@ -97,7 +97,11 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   // Nodes and their sandboxes reach Core at its public URL, so a loopback one serves no other machine;
   // and without the provider's node files the installer would fail on the host. Either way no command
   // is issued, nor before the installation is read: a failed read (an older Core, say) proves nothing.
-  const blocker: { text: string; failed?: boolean } | null = installation.data === undefined
+  const blocker: { text: string; failed?: boolean } | null = deployment.reset
+    ? { text: t("Node enrollment is paused while reset is in progress.") }
+    : !fresh
+      ? { text: t("Sandbox state is unconfirmed. Refresh before issuing a node command.") }
+    : installation.data === undefined
     ? installation.isError ? { text: t("The installation couldn't be read, so no command can be issued."), failed: true } : { text: t("Checking this installation's public URL…") }
     : !publicUrl
       ? { text: t("Nodes need an HTTPS public URL that other machines and their sandboxes can reach: set public_url in config.json and run oac apply") }
@@ -200,7 +204,7 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
     setCopiedMode("sudo"); setNoSudoOpen(false);
   }
   async function generate() {
-    if (request.current || !available || blocker || !limitsReady || activeLimit === null || retainedLimit === null) return;
+    if (request.current || !fresh || !available || blocker || !limitsReady || activeLimit === null || retainedLimit === null) return;
     const capacity = { max_active: activeLimit, max_retained: retainedLimit };
     generation.current++;
     const controller = new AbortController(); request.current = controller;
@@ -315,10 +319,9 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
             {copiedMode === "user" ? <><span>{t("If root ran it, it is a system service:")}</span><CopyCommand value={nodeLogCommand(deployment.installation_id, "sudo")} /></> : null}
           </div>
         </div> : null}
-        {!fresh ? <p>{t("Connection status unavailable. Refresh to check your node.")}</p> : null}
+        {deployment.reset ? <p role="status">{t("Node enrollment is paused while reset is in progress.")}</p> : !fresh ? <p>{t("Connection status unavailable. Refresh to check your node.")}</p> : null}
         {!ready ? requirements : null}
       </>}
     </div>
   </Modal>, document.body);
 }
-

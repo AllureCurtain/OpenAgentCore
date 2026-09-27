@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import type { InitializeSandboxDeployment, SandboxDeployment, SandboxNode } from "@agents-core-web/agents-client";
+import { AgentCoreError, type InitializeSandboxDeployment, type SandboxDeployment, type SandboxNode, type StartSandboxReset } from "@agents-core-web/agents-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Pencil, Plus, Server, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -123,15 +123,20 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
     if (!controller || busy || loading || setupNeedsRefresh || !fresh) return false;
     setBusy(true); setWriteFailure(null);
     try {
+      // Cancel every older deployment read before submitting; its response cannot overwrite the confirmed write.
+      await queryClient.cancelQueries({ queryKey: sandboxScope });
       const deployment = await operation(controller.signal);
+      // An active reset may have started another poll while the write was pending.
+      await queryClient.cancelQueries({ queryKey: sandboxScope });
       if (!controller.signal.aborted) {
         // Core's confirmed response replaces the deployment; nodes of an older generation no longer apply.
         queryClient.setQueryData(sandboxSnapshotQuery.queryKey, (current): SandboxSnapshot => {
           const same = current !== undefined && deployment.generation === current.deployment.generation;
-          return { deployment, nodes: same ? current.nodes : [], allocations: same ? current.allocations : [], readAt: current?.readAt ?? performance.now() };
+          return { deployment, nodes: same ? current.nodes : [], allocations: same ? current.allocations : [], nodesError: same ? current.nodesError : null, readAt: current?.readAt ?? performance.now() };
         });
-        // A later visit reads the whole snapshot again; other pages re-read the deployment now.
-        void queryClient.invalidateQueries({ queryKey: sandboxSnapshotQuery.queryKey, refetchType: "none" });
+        queryClient.setQueryData(sandboxDeploymentQuery.queryKey, deployment);
+        // Re-read node facts after the confirmed write, even when cancellation/completion stops reset polling.
+        void queryClient.invalidateQueries({ queryKey: sandboxSnapshotQuery.queryKey });
         void queryClient.invalidateQueries({ queryKey: sandboxDeploymentQuery.queryKey });
         // Overview and Sandbox metrics read the fleet separately and lay out by provider.
         void queryClient.invalidateQueries({ queryKey: ["sandbox-fleet"] });
@@ -143,9 +148,10 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
         if (fromWizard && sandboxConfigurationRejection(error) !== null) throw error;
         if (sandboxWriteUncertain(error)) {
           setUncertainSince(performance.now()); setWriteFailure({ error, open: true });
-          // Nothing re-reads on its own: the operator refreshes to confirm. A later visit reads again.
+          // A known active reset keeps polling reads. Otherwise the operator refreshes to confirm; no write is replayed.
           void queryClient.invalidateQueries({ queryKey: sandboxScope, refetchType: "none" });
         } else {
+          if (error instanceof AgentCoreError && error.code === "sandbox_generation_stale") setUncertainSince(performance.now());
           // Core refused the change, so nothing changed: its reason, and the page stays usable as it was.
           toast.show(t("Core rejected the sandbox change"), { tone: "error", detail: sandboxRequestError(error, locale), key: "sandbox-write" });
         }
@@ -160,9 +166,8 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   async function update(input: InitializeSandboxDeployment) {
     await changeDeployment((signal) => client.updateDeployment({ ...input, expected_generation: snapshot!.deployment.generation }, { signal }), true);
   }
-  async function maintenance(maintenance: boolean) {
-    await changeDeployment((signal) => client.setMaintenance({ maintenance, expected_generation: snapshot!.deployment.generation }, { signal }));
-  }
+  const startReset = (input: StartSandboxReset) => changeDeployment((signal) => client.startReset(input, { signal }));
+  const cancelReset = (expectedGeneration: number) => changeDeployment((signal) => client.cancelReset(expectedGeneration, { signal }));
   const writeDialog = <ErrorDialog
     open={writeFailure?.open ?? false}
     title={t("Couldn't confirm the sandbox change")}
@@ -200,15 +205,16 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
     } finally { if (!controller.signal.aborted) setRemoving(false); }
   }
 
+  const nodesConfirmed = confirmed && !snapshot?.nodesError;
   const nodes = snapshot?.nodes ?? [];
   const allocations = snapshot?.allocations ?? [];
   const hostedNodes = Boolean(snapshot?.deployment.provider && snapshot.deployment.provider !== "e2b");
   // Getting started asks for Add node on arrival. A request the first settled read cannot
-  // serve (no own-machines deployment, maintenance, a failed read) is dropped, so the
+  // serve (no own-machines deployment, active reset, a failed read) is dropped, so the
   // dialog never opens later on its own.
   const addNodeReadiness = loading || busy || installation.isPending ? "wait"
     : !snapshot ? (query.isError ? "unavailable" : "wait")
-    : hostedNodes && fresh && !snapshot.deployment.maintenance && !localOnly ? "ready" : "unavailable";
+    : hostedNodes && fresh && nodesConfirmed && !snapshot.deployment.reset && !localOnly ? "ready" : "unavailable";
   useConsoleIntent("add-node", addNodeReadiness, () => setAdding(true));
   // A node enrolled with another address than Core's current one (config.json's public_url) gets no new sandboxes until it is added again.
   const staleNodes = hostedNodes && snapshot ? nodes.filter((node) => onOldAddress(node, snapshot.deployment.core_url)).map((node) => node.name || node.id) : [];
@@ -220,6 +226,9 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const status = <>
     <InstallationNotice installation={installation.data} />
     {!snapshot && (loading || query.isPending) ? <p role="status">{t("Loading sandbox state…")}</p> : null}
+    {snapshot?.nodesError ? <ErrorState title={t("Node state could not be read")} detail={sandboxRequestError(snapshot.nodesError, locale)} onRetry={refresh} /> : null}
+    {snapshot && query.isError ? <p role="alert" className="sandbox-error">{t("Refresh failed; showing the last loaded state.")}</p> : null}
+    {setupNeedsRefresh ? <p role="alert" className="sandbox-error">{t("Refresh sandbox state to confirm whether the change was saved before submitting again.")}</p> : null}
     {busy ? <span role="status">{t("Saving sandbox change…")}</span> : null}
     {!snapshot && readFailure ? <ErrorState title={t("Sandbox state couldn't be read")} detail={readFailure} onRetry={refresh} /> : null}
   </>;
@@ -243,7 +252,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
     window.requestAnimationFrame(() => heading.current?.focus());
   }} />;
   // Rendered first in both the list and a node's page, so an open command outlives the navigation.
-  const enrollment = hostedNodes && snapshot ? <NodeEnrollment key={snapshot.deployment.generation} client={client} consoleConfig={consoleConfig} deployment={snapshot.deployment} nodes={snapshot.nodes} open={adding} fresh={confirmed} onClose={() => setAdding(false)} onRefresh={refreshNodes} /> : null;
+  const enrollment = hostedNodes && snapshot ? <NodeEnrollment key={snapshot.deployment.generation} client={client} consoleConfig={consoleConfig} deployment={snapshot.deployment} nodes={snapshot.nodes} open={adding} fresh={nodesConfirmed && !snapshot.deployment.reset} onClose={() => setAdding(false)} onRefresh={refreshNodes} /> : null;
 
   if (params.id && hostedNodes) {
     const back = () => goBack("nodes");
@@ -255,13 +264,13 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
         title={selected ? selected.name || selected.id : params.id}
         actions={<>
           {refreshButton}
-          {selected ? <button type="button" className="button outline" disabled={busy || removing} onClick={() => setEditTarget(selected)}><Pencil size={14} aria-hidden="true" />{t("Edit node")}</button> : null}
-          {selected ? <button type="button" className="button danger" disabled={busy || removing} onClick={() => askRemove(selected)}><Trash2 size={14} aria-hidden="true" />{t("Remove node")}</button> : null}
+          {selected ? <button type="button" className="button outline" disabled={busy || removing || !nodesConfirmed} onClick={() => setEditTarget(selected)}><Pencil size={14} aria-hidden="true" />{t("Edit node")}</button> : null}
+          {selected ? <button type="button" className="button danger" disabled={busy || removing || !nodesConfirmed} onClick={() => askRemove(selected)}><Trash2 size={14} aria-hidden="true" />{t("Remove node")}</button> : null}
         </>}
       />
       <div className="console-page-body sandbox-content">
         {status}
-        {selected ? <NodeDetail node={selected} allocations={allocations} coreUrl={snapshot?.deployment.core_url ?? ""} stale={!confirmed} suspension={snapshot?.deployment.suspension ?? null} /> : snapshot && !loading ? (
+        {selected ? <NodeDetail node={selected} allocations={allocations} coreUrl={snapshot?.deployment.core_url ?? ""} stale={!nodesConfirmed} suspension={snapshot?.deployment.suspension ?? null} /> : snapshot && nodesConfirmed && !loading ? (
           <EmptyState icon={Server} title={t("Node not found")} hint={t("This node is not registered. It may have been removed.")} action={<button type="button" className="button outline" onClick={back}>{t("Back")}</button>} />
         ) : null}
       </div>
@@ -290,24 +299,23 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const actions = <>
     {localOnly && hostedNodes ? <span id="add-node-blocked" className="muted">{tCommon("installationNotice.addBlocked")}</span> : null}
     {refreshButton}
-    {hostedNodes && snapshot ? <button type="button" className="button primary" disabled={busy || loading || !fresh || snapshot.deployment.maintenance || localOnly} aria-describedby={localOnly ? "add-node-blocked" : undefined} onClick={() => setAdding(true)}><Plus size={16} />{t("Add node")}</button> : null}
+    {hostedNodes && snapshot ? <button type="button" className="button primary" disabled={busy || loading || !fresh || !nodesConfirmed || Boolean(snapshot.deployment.reset) || localOnly} aria-describedby={localOnly ? "add-node-blocked" : undefined} onClick={() => setAdding(true)}><Plus size={16} />{t("Add node")}</button> : null}
   </>;
   return <>
     {enrollment}
-    <NodesPageHeader headingRef={heading} count={hostedNodes ? nodes.length : undefined} actions={actions} cloud={snapshot?.deployment.provider === "e2b"} />
+    <NodesPageHeader headingRef={heading} count={hostedNodes && nodesConfirmed ? nodes.length : undefined} actions={actions} cloud={snapshot?.deployment.provider === "e2b"} />
     <div className="console-page-body sandbox-content">
       {status}
-      {snapshot && !snapshot.deployment.provider ? <SandboxSetupWizard key={revision} coreUrl={snapshot.deployment.core_url} disabled={busy || loading || setupNeedsRefresh || error !== null} onSubmit={initialize} /> : null}
+      {snapshot && !snapshot.deployment.provider && !snapshot.deployment.reset ? <SandboxSetupWizard key={`${snapshot.deployment.generation}:${revision}`} coreUrl={snapshot.deployment.core_url} expectedGeneration={snapshot.deployment.generation} disabled={busy || loading || setupNeedsRefresh || error !== null} onSubmit={initialize} /> : null}
       {snapshot?.deployment.provider ? <>
-        {snapshot.deployment.maintenance ? <p className="sandbox-maintenance" role="status">{t("Maintenance is enabled. New sandbox placement is paused.")}</p> : null}
-        {staleNodes.length ? <p className="sandbox-maintenance sandbox-address-warning" role="status">{staleNodes.length === 1
+        {staleNodes.length ? <p className="sandbox-notice sandbox-address-warning" role="status">{staleNodes.length === 1
           ? t("{{name}} is still bound to an old Core address. Remove it and add it again.", { name: staleNodes[0] })
           : t("{{count}} nodes are still bound to an old Core address: {{names}}. Remove them and add them again.", { count: staleNodes.length, names: new Intl.ListFormat(i18n.resolvedLanguage, { type: "conjunction" }).format(staleNodes) })}</p> : null}
-        <SandboxDeploymentSettings key={`${snapshot.deployment.generation}:${snapshot.deployment.maintenance}:${revision}`} deployment={snapshot.deployment} fresh={confirmed} disabled={busy || loading || !fresh || setupNeedsRefresh} onMaintenance={maintenance} onUpdate={update} onRefresh={refresh} />
+        <SandboxDeploymentSettings key={`${snapshot.deployment.generation}:${revision}`} deployment={snapshot.deployment} fresh={confirmed} disabled={busy || loading || !fresh || setupNeedsRefresh} onReset={startReset} onCancelReset={cancelReset} onUpdate={update} />
         {hostedNodes ? <section aria-label={t("Sandbox nodes")}>
           {nodes.length
-            ? <NodeList nodes={nodes} allocations={allocations} coreUrl={snapshot.deployment.core_url} stale={!confirmed} disabled={busy || loading || removing} suspends={snapshot.deployment.provider === "microsandbox"} onOpen={(node) => navigate("nodes", { id: node.id })} onRemove={askRemove} />
-            : <EmptyState icon={Server} title={t("Add your first node")} hint={t("No nodes registered. Add a node to provide hosted capacity.")} />}
+            ? <NodeList nodes={nodes} allocations={allocations} coreUrl={snapshot.deployment.core_url} stale={!nodesConfirmed} disabled={busy || loading || removing || !nodesConfirmed} suspends={snapshot.deployment.provider === "microsandbox"} onOpen={(node) => navigate("nodes", { id: node.id })} onRemove={askRemove} />
+            : nodesConfirmed ? <EmptyState icon={Server} title={t("Add your first node")} hint={t("No nodes registered. Add a node to provide hosted capacity.")} /> : null}
         </section> : null}
       </> : null}
     </div>

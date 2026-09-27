@@ -27,6 +27,11 @@ export function sandboxRequestError(error: unknown, locale: Locale): string {
     else if (error.status === 401) key = "Sign in to the console again to access sandbox management.";
     else if (error.code === "sandbox_configuration_unconfirmed") { if (refused) key = "Core rejected the E2B configuration."; }
     else if (refused) {
+      if (error.code === "sandbox_generation_stale") return translate(locale, "Core has a newer sandbox configuration. Refresh and review it before submitting again.");
+      if (error.code === "sandbox_reset_required") return translate(locale, "Reset the sandbox deployment before changing its backend.");
+      if (error.code === "sandbox_reset_in_progress") return translate(locale, "A sandbox reset is in progress. Refresh to see its current progress.");
+      if (error.code === "sandbox_not_configured") return translate(locale, "The sandbox deployment is not configured. Refresh to start setup.");
+      if (error.code === "sandbox_in_use") return translate(locale, "Hosted resources remain. Wait for confirmed cleanup before changing the configuration.");
       if (error.code === "runtime_node_in_use") return translate(locale, "The node has active allocations or retained resources. Clear allocations, snapshots, reservations and pending cleanup before removal.");
       if (error.code === "runtime_node_unavailable") return translate(locale, "The selected sandbox node is unavailable or has no capacity.");
       if (error.message) return error.message;

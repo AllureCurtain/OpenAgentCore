@@ -26,6 +26,8 @@ export interface GettingStartedSteps {
 
 export function gettingStartedSteps(input: {
   fleet: FleetState;
+  /** A separate deployment read keeps reset truth available when node reads fail. */
+  sandboxReset: boolean | "failed" | undefined;
   /** Undefined while reading; a failed installation read cannot confirm readiness. */
   localOnly?: boolean | "failed";
   /** Undefined until the project list is read. */
@@ -37,7 +39,9 @@ export function gettingStartedSteps(input: {
 }): GettingStartedSteps {
   const { sessions } = input;
   return {
-    sandboxes: input.localOnly === undefined || input.localOnly === "failed"
+    sandboxes: input.sandboxReset !== false
+      ? { state: input.sandboxReset === "failed" ? "unknown" : input.sandboxReset ? "todo" : null, action: "nodes", cloud: input.fleet.status === "ready" && input.fleet.snapshot.deployment.provider === "e2b" }
+      : input.localOnly === undefined || input.localOnly === "failed"
       ? { state: input.localOnly === "failed" ? "unknown" : null, action: "nodes", cloud: false }
       : input.localOnly ? { state: "todo", action: "nodes", cloud: input.fleet.status === "ready" && input.fleet.snapshot.deployment.provider === "e2b" } : sandboxStep(input.fleet),
     model: modelStep(input.harnesses),
@@ -60,6 +64,7 @@ function sandboxStep(fleet: FleetState): GettingStartedSteps["sandboxes"] {
   if (fleet.status !== "ready") {
     return { state: fleet.status === "failed" || fleet.status === "unconfigured" ? "unknown" : null, action: "nodes", cloud: false };
   }
+  if (fleet.error) return { state: "unknown", action: "nodes", cloud: fleet.snapshot.deployment.provider === "e2b" };
   const { deployment, nodes } = fleet.snapshot;
   if (!deployment.provider) return { state: "todo", action: "setup", cloud: false };
   if (deployment.provider === "e2b") {

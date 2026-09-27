@@ -118,8 +118,6 @@ export const system: TranslationShape<typeof english> = {
     suspendAfterHelp: "Session 的最后一个 Turn 结束后，沙箱空闲这么久就会被挂起为节点上的快照；Session 的下一个 Turn 会恢复它。",
     keepSuspended: "挂起后保留",
     keepSuspendedHelp: "挂起的沙箱快照在节点上保留的时长。",
-    maintenance: "维护模式",
-    maintenanceHelp: "开启时不再分配新沙箱。",
   },
   values: {
     on: "开启",

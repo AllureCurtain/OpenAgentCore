@@ -257,71 +257,30 @@ test("saves E2B without opening Add node, as it has no machines", async ({ page,
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("keeps the saved size and Runtime for the same backend, and starts another from its defaults", async ({ page, request }) => {
+test("edits only the saved backend, preserving a custom size and Runtime", async ({ page, request }) => {
   const runtime = { source_commit: "0".repeat(40), image_id: `sha256:${"a".repeat(64)}`, image_manifest_digest: `sha256:${"b".repeat(64)}`,
     microsandbox_ref: `oac-runtime@sha256:${"b".repeat(64)}`, runtime_sha256: "c".repeat(64), firmware_sha256: "d".repeat(64) };
   const current = { resources: { cpus: 7, memory_mib: 8192 }, runtime };
-  const deployment = { installation_id: "94be54a1-138c-4f30-bc87-b13686272dbe", provider: "docker", core_url: "https://core.example", maintenance: true,
+  let deployment = { installation_id: "94be54a1-138c-4f30-bc87-b13686272dbe", provider: "docker", core_url: "https://core.example", reset: null,
     owner_epoch: 1, generation: 1, mode: "nodes", resources: { allocations: 0, pending: 0 }, specification: current, specification_digest: "e".repeat(64),
     suspension: null };
   let submitted: Record<string, unknown> | null = null;
   await page.route("**/core/v1/sandbox/deployment", async (route) => {
-    if (route.request().method() === "PUT") submitted = route.request().postDataJSON() as Record<string, unknown>;
+    if (route.request().method() === "PUT") {
+      submitted = route.request().postDataJSON() as Record<string, unknown>;
+      deployment = { ...deployment, generation: 2 };
+    }
     await route.fulfill({ json: deployment });
   });
   await page.route("**/core/v1/sandbox/nodes", (route) => route.fulfill({ json: { data: [] } }));
   await openConsole(page, request, "nodes");
-  const save = page.getByRole("button", { name: "Save and stay in maintenance" });
-  const back = page.getByRole("button", { name: "Back" });
-
-  // The same backend keeps its saved size and Runtime.
-  await page.getByRole("button", { name: "Change provider or resources" }).click();
-  await page.getByRole("button", { name: "Own machines" }).click();
-  await page.getByRole("button", { name: "Docker" }).click();
+  await page.getByRole("button", { name: "Change resources" }).click();
+  await expect(page.getByRole("button", { name: "Own machines" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "E2B cloud" })).toHaveCount(0);
   await page.getByRole("button", { name: /^Current/ }).click();
-  await save.click();
-  await expect.poll(() => submitted?.resources).toEqual(current.resources);
-  expect(submitted?.runtime).toEqual(runtime);
-  // Core's address is config.json's public_url: a change never sends it.
+  await page.getByRole("button", { name: "Save configuration" }).click();
+  await expect.poll(() => submitted).toMatchObject({ provider: "docker", expected_generation: 1, resources: current.resources, runtime });
   expect(submitted).not.toHaveProperty("core_url");
-
-  // Another backend starts from its own size, with disks, and this console's Runtime.
-  await back.click();
-  await back.click();
-  await page.getByRole("button", { name: "microsandbox" }).click();
-  await page.getByRole("button", { name: /^Standard/ }).click();
-  await save.click();
-  await expect.poll(() => submitted?.provider).toBe("microsandbox");
-  expect(submitted?.resources).toEqual({ cpus: 2, memory_mib: 4096, root_disk_mib: 8192, environment_disk_mib: 8192 });
-  expect(submitted?.runtime).toMatchObject({ source_commit: "c0ffee".padEnd(40, "0") });
-
-  // E2B needs its key again and takes its size from the template build: no size, Runtime or disks.
-  await back.click();
-  await back.click();
-  await back.click();
-  await page.getByRole("button", { name: "E2B cloud" }).click();
-  await page.getByLabel("E2B API key").fill("fixture-private-key");
-  await page.getByLabel("Template build").fill("template:94be54a1-138c-4f30-bc87-b13686272dbe");
-  await page.getByRole("button", { name: "Next" }).click();
-  await save.click();
-  await expect.poll(() => submitted?.provider).toBe("e2b");
-  expect(submitted?.resources).toBeUndefined();
-  expect(submitted?.runtime).toBeUndefined();
-});
-
-test("reports a failed sandbox change in a dialog, then reads the state again", async ({ page, request }) => {
-  await openConsole(page, request, "nodes");
-  // Core's answer is lost, so the change may have been saved.
-  await page.route("**/core/v1/sandbox/deployment/maintenance", (route) => route.fulfill({
-    status: 503,
-    contentType: "application/json",
-    body: JSON.stringify({ error: { message: "Unavailable.", type: "server_error", code: null, param: null } }),
-  }));
-  await page.getByRole("button", { name: "Enter maintenance to change provider" }).click();
-  const failed = page.getByRole("dialog", { name: "Couldn't confirm the sandbox change" });
-  await failed.getByRole("button", { name: "Refresh sandbox state" }).click();
-  await expect(failed).toBeHidden();
-  await expect(page.getByRole("button", { name: "Enter maintenance to change provider" })).toBeEnabled();
 });
 
 test("keeps the page usable when Core refuses a sandbox change, and shows Core's reason", async ({ page, request }) => {

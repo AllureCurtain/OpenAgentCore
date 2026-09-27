@@ -32,6 +32,7 @@ import { RUNTIME_SNAPSHOT_REFRESH_MS } from "../dashboard/runtime-snapshot";
 import { DiagnosticTip } from "../fleet/DiagnosticTip";
 import { capacitySummary, nodeHealth, suspendedSandboxes, type NodeHealth } from "../fleet/fleet-model";
 import { nodeDetailQuery } from "../fleet/fleet-queries";
+import { SandboxResetNotice } from "../fleet/SandboxResetNotice";
 import { fleetSnapshot, useSandboxFleet, type FleetState } from "../fleet/use-sandbox-fleet";
 import { sandboxSize, templateBuildStatus } from "../sandbox/deployment-specification";
 import { formatShare, NodeHostCharts } from "./NodeHostCharts";
@@ -93,7 +94,7 @@ export function SandboxMetricsPage() {
   const { t, i18n } = useTranslation("metrics");
   const locale = i18n.resolvedLanguage;
   const { navigate } = useConsoleNavigation();
-  const { state: fleetState, refresh: refreshFleet } = useSandboxFleet({ allocations: true });
+  const { state: fleetState, refresh: refreshFleet, deployment } = useSandboxFleet({ allocations: true });
   const { state: runtimeState, refresh: refreshRuntime, stale: runtimeStale } = useHostedRuntimes();
   const fleet = fleetSnapshot(fleetState);
   const capacity = fleet ? capacitySummary(fleet.nodes) : null;
@@ -128,6 +129,7 @@ export function SandboxMetricsPage() {
         </>}
       />
       <PageBody>
+        <SandboxResetNotice deployment={deployment.data} failed={deployment.isError} onRetry={() => void deployment.refetch()} />
         {cloud && fleet ? <CloudSection deployment={fleet.deployment} /> : <Section
           headingId="node-capacity-heading"
           title={t("sandbox.node")}

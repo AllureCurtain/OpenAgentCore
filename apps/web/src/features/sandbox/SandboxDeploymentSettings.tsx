@@ -1,23 +1,24 @@
 import { useState } from "react";
-import type { InitializeSandboxDeployment, SandboxDeployment } from "@agents-core-web/agents-client";
+import type { InitializeSandboxDeployment, SandboxDeployment, StartSandboxReset } from "@agents-core-web/agents-client";
 import { useTranslation } from "react-i18next";
 import { HelpTip } from "../../components/console-ui";
 import { formatBytes, formatPeriod, MISSING } from "../../lib/format";
 import type { MessageKey } from "../../lib/locale-strings";
 import { sandboxProviderLabel } from "../../lib/sandbox-labels";
 import { sandboxSize, templateBuildSize, templateBuildStatus } from "./deployment-specification";
+import { SandboxResetControls } from "./SandboxResetControls";
 import { SandboxSetupWizard } from "./SandboxSetupWizard";
 
 const MIB = 2 ** 20;
 const buildStatusLabel: Record<ReturnType<typeof templateBuildStatus>, MessageKey> = { ready: "Ready", notReady: "Not ready", unknown: "Unknown state" };
 
-export function SandboxDeploymentSettings({ deployment, disabled, fresh, onMaintenance, onUpdate, onRefresh }: {
+export function SandboxDeploymentSettings({ deployment, disabled, fresh, onReset, onCancelReset, onUpdate }: {
   deployment: SandboxDeployment;
   disabled: boolean;
   fresh: boolean;
-  onMaintenance: (maintenance: boolean) => Promise<void>;
+  onReset: (input: StartSandboxReset) => Promise<boolean>;
+  onCancelReset: (expectedGeneration: number) => Promise<boolean>;
   onUpdate: (input: InitializeSandboxDeployment) => Promise<void>;
-  onRefresh: () => void;
 }) {
   const { t, i18n } = useTranslation("sandbox");
   const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
@@ -28,12 +29,12 @@ export function SandboxDeploymentSettings({ deployment, disabled, fresh, onMaint
   const build = deployment.e2b?.template_build;
   const buildSize = templateBuildSize(deployment);
   const sizeLabel = (value: { cpus: number; memory_mib: number }) => t("{{cpus}} CPU · {{memory}}", { cpus: value.cpus, memory: formatBytes(value.memory_mib * MIB) });
-  const clean = fresh && deployment.resources?.allocations === 0 && deployment.resources?.pending === 0;
+  const clean = fresh && !deployment.reset && deployment.resources?.allocations === 0 && deployment.resources?.pending === 0;
   return <section className="sandbox-provider-settings form-stack" aria-labelledby="sandbox-provider-heading">
     <div className="sandbox-provider-title">
       <h2 id="sandbox-provider-heading">{t("Deployment provider")}</h2>
       <HelpTip>
-        {t("One provider serves this entire Core deployment. Switching requires maintenance and verified cleanup of all existing execution resources.")}
+        {t("One provider serves this deployment. Reset it before choosing a different backend.")}
         {deployment.provider === "e2b" ? ` ${t("Core creates E2B sandboxes directly. No node enrollment is needed.")} ${t("Saved configuration does not confirm execution readiness. Session and Environment state report actual execution.")}` : ""}
       </HelpTip>
     </div>
@@ -59,29 +60,25 @@ export function SandboxDeploymentSettings({ deployment, disabled, fresh, onMaint
         <div><dt>{t("E2B credential")}</dt><dd>{t(deployment.e2b?.credential_configured ? "Configured" : "Not configured")}</dd></div>
       </dl>
     </div> : null}
-    {!deployment.maintenance ? <button type="button" className="button outline" disabled={disabled} onClick={() => void onMaintenance(true)}>{t("Enter maintenance to change provider")}</button> : <>
-      <div className="sandbox-actions"><a className="button outline" href="#sessions">{t("Open Sessions")}</a><button type="button" className="button outline" disabled={disabled} onClick={onRefresh}>{t("Check cleanup")}</button></div>
-      <p role="status" className="sandbox-provider-status">
-        {t(clean ? "Core reports no remaining execution resources. You can choose the next provider." : "Provider changes are blocked until Core confirms complete cleanup.")}
-        <HelpTip>{t("Maintenance pauses new hosted placement. Clean up existing execution resources before changing provider; historical Sessions and results are preserved by the switch.")} {t("Stopped or offline resources, snapshots, uncertain creates and pending environments still block switching. Deleting a Session alone does not prove cleanup; Core must confirm both counts are zero.")}</HelpTip>
-      </p>
-      {!changing ? <button type="button" className="button outline" disabled={disabled || !clean} onClick={() => setChanging(true)}>{t("Change provider or resources")}</button> : <>
+    {!deployment.reset ? <>
+      <div className="sandbox-actions">
+        <button type="button" className="button outline" disabled={disabled || !clean || changing} onClick={() => setChanging(true)}>{t("Change resources")}</button>
+        <HelpTip>{t("Editing keeps the current provider and requires zero allocated resources and pending environments. It is not an online upgrade.")}</HelpTip>
+      </div>
+      {!clean ? <p>{t("Changes require Core to confirm that no hosted resources remain.")}</p> : null}
+      {changing ? <>
         <SandboxSetupWizard
           coreUrl={deployment.core_url}
+          expectedGeneration={deployment.generation}
           current={deployment.provider ? { provider: deployment.provider, specification: deployment.specification, e2bTemplate: deployment.e2b?.template } : undefined}
           disabled={disabled || !clean}
-          switching
+          editing
           onSubmit={onUpdate}
         />
-        <span className="sandbox-provider-actions">
-          <button type="button" className="button outline" disabled={disabled} onClick={() => setChanging(false)}>{t("Cancel")}</button>
-          <HelpTip>{t(deployment.provider === "e2b" ? "Saving does not migrate Sessions or resume placement automatically." : "Saving retires old node identities and enrollment credentials. It does not migrate Sessions or resume placement automatically.")}</HelpTip>
-        </span>
-      </>}
-      <span className="sandbox-provider-actions">
-        <button type="button" className="button primary" disabled={disabled || changing} onClick={() => void onMaintenance(false)}>{t("Resume hosted placement")}</button>
-        <HelpTip>{t("Resume is explicit and succeeds only when Core activates the saved configuration. A failed activation leaves maintenance enabled.")}</HelpTip>
-      </span>
-    </>}
+        <p>{t(deployment.provider === "e2b" ? "Saving changes only this provider's configuration; it does not confirm execution readiness." : "Saving retires existing node identities and enrollment commands. Add the nodes again after saving.")}</p>
+        <button type="button" className="button outline" disabled={disabled} onClick={() => setChanging(false)}>{t("Cancel")}</button>
+      </> : null}
+    </> : null}
+    <SandboxResetControls deployment={deployment} disabled={disabled || (changing && !deployment.reset)} stale={!fresh} onStart={onReset} onCancel={onCancelReset} />
   </section>;
 }

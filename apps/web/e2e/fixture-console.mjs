@@ -71,8 +71,12 @@ function installation() {
   };
 }
 
+function unconfiguredDeployment(generation = 0, ownerEpoch = 3) {
+  return { installation_id: INSTALLATION_ID, provider: "", core_url: publicUrl(), reset: null, owner_epoch: ownerEpoch, generation, mode: "", resources: { allocations: 0, pending: 0 }, suspension: null };
+}
+
 function configuredDeployment() {
-  return { installation_id: INSTALLATION_ID, provider: "docker", core_url: publicUrl(), maintenance: false, owner_epoch: 3, generation: 1, mode: "nodes", resources: { allocations: 0, pending: 0 }, specification: { resources: { cpus: 2, memory_mib: 4096 }, runtime: release }, specification_digest: "fixture", suspension: null };
+  return { installation_id: INSTALLATION_ID, provider: "docker", core_url: publicUrl(), reset: null, owner_epoch: 3, generation: 1, mode: "nodes", resources: { allocations: 0, pending: 0 }, specification: { resources: { cpus: 2, memory_mib: 4096 }, runtime: release }, specification_digest: "fixture", suspension: null };
 }
 /** The E2B template build as Core read it when the selection was saved. */
 const templateBuild = { status: "ready", resources: { cpus: 2, memory_mib: 2048, root_disk_mib: 10240 } };
@@ -117,7 +121,7 @@ function reset(mode = "login", fresh = false, sandbox = "configured", nodes = "d
     // The providers whose node files the console serves (/console/config node_artifacts).
     nodeArtifacts: artifacts.split(",").filter(Boolean),
   };
-  state.deployment = sandbox === "none" ? null : sandbox === "e2b" ? e2bDeployment() : configuredDeployment();
+  state.deployment = sandbox === "none" ? unconfiguredDeployment() : sandbox === "e2b" ? e2bDeployment() : configuredDeployment();
   // Each node reports the address it enrolled with; in "stale" mode the first one enrolled before public_url changed.
   // The seeded nodes enrolled before Core recorded enrollment IDs.
   state.nodes.forEach((node, index) => { node.core_url = address === "stale" && index === 0 ? OLD_URL : publicUrl(); node.enrollment_id = null; });
@@ -302,7 +306,34 @@ function nodeDetail(node) {
   };
 }
 
-async function sandboxRoute(request, response, path) {
+async function sandboxRoute(request, response, path, url) {
+  // Retired even for authenticated callers; never reinterpret maintenance as reset.
+  if (path === "/deployment/maintenance") return error(response, 404, "Not found.");
+  if (path === "/deployment/reset" && (request.method === "POST" || request.method === "DELETE")) {
+    const input = request.method === "POST" ? await body(request) : { expected_generation: Number(url.searchParams.get("expected_generation")) };
+    if (!Number.isInteger(input.expected_generation) || input.expected_generation < 0 || (request.method === "DELETE" && !url.searchParams.has("expected_generation"))) return error(response, 400, "expected_generation is required.", "invalid_request_error");
+    if (input.expected_generation !== state.deployment.generation) return error(response, 409, "The sandbox configuration changed. Refresh before submitting again.", "sandbox_generation_stale");
+    if (request.method === "DELETE") {
+      state.deployment.reset = null;
+      return send(response, 200, state.deployment);
+    }
+    if (input.clear !== "auto" && input.clear !== "force") return error(response, 400, "clear must be auto or force.", "invalid_request_error");
+    const seconds = input.deadline_seconds ?? 3600;
+    if (!Number.isInteger(seconds) || seconds < 300 || seconds > 86400 || (input.clear === "force" && input.deadline_seconds !== undefined)) return error(response, 400, "Invalid reset deadline.", "invalid_request_error");
+    if (state.deployment.reset?.clear === "force" && input.clear === "auto") return error(response, 409, "A force reset cannot return to auto clear.", "sandbox_reset_in_progress");
+    if (!state.deployment.provider || state.deployment.reset?.clear === input.clear) return send(response, 200, state.deployment);
+    const now = new Date().toISOString();
+    const previous = state.deployment.reset;
+    state.deployment.reset = {
+      clear: input.clear, requested_at: previous?.requested_at ?? now,
+      deadline_at: previous?.deadline_at ?? (input.clear === "auto" ? new Date(Date.now() + seconds * 1000).toISOString() : null),
+      forced_at: input.clear === "force" ? now : null,
+      remaining: previous?.remaining ?? { busy: state.deployment.resources.allocations, idle: state.deployment.resources.pending, cleanup: 0, on_offline_nodes: 0, offline_nodes: [] },
+    };
+    // The fixture has no cleanup worker or deadline timer. Tests explicitly supply
+    // subsequent Core projections; a browser clock never completes a reset.
+    return send(response, 200, state.deployment);
+  }
   if (path === "/runtime-observations" && request.method === "GET") {
     // Only E2B reports a sandbox's disk.
     const e2b = state.deployment?.provider === "e2b";
@@ -314,8 +345,13 @@ async function sandboxRoute(request, response, path) {
     const initialize = request.method === "POST";
     // As Core, before any state check: the address is config.json's public_url and read-only.
     if ("core_url" in input) return error(response, 400, "core_url is derived from the installation public URL (public_url in config.json, OAC_PUBLIC_URL for Core) and cannot be set here. Remove it.", "invalid_request_error", "core_url");
-    if (initialize && state.deployment) return error(response, 409, "The sandbox deployment is already configured.", "sandbox_deployment_conflict");
-    if (!initialize && !state.deployment) return error(response, 409, "The sandbox deployment is not configured.", "sandbox_deployment_conflict");
+    if (!Number.isInteger(input.expected_generation) || input.expected_generation < 0) return error(response, 400, "expected_generation is required.", "invalid_request_error");
+    if (input.expected_generation !== state.deployment.generation) return error(response, 409, "The sandbox configuration changed. Refresh before submitting again.", "sandbox_generation_stale");
+    if (state.deployment.reset) return error(response, 409, "A sandbox reset is in progress.", "sandbox_reset_in_progress");
+    if (!initialize && input.provider !== state.deployment.provider) return error(response, 409, "Reset before changing the sandbox backend.", "sandbox_reset_required");
+    if (!initialize && state.deployment.resources.allocations + state.deployment.resources.pending > 0) return error(response, 409, "Sandbox resources remain.", "sandbox_in_use");
+    if (initialize && state.deployment.provider) return error(response, 409, "The sandbox deployment is already configured.", "sandbox_deployment_conflict");
+    if (!initialize && !state.deployment.provider) return error(response, 409, "The sandbox deployment is not configured.", "sandbox_deployment_conflict");
     const e2b = input.provider === "e2b";
     if (!e2b && (!input.resources || !input.runtime)) return error(response, 400, "resources and runtime are required.", "invalid_sandbox_configuration");
     // As Core (ErrSandboxPublicURLUnreachable): E2B sandboxes reach Core over the internet, which a loopback public_url cannot serve.
@@ -324,7 +360,7 @@ async function sandboxRoute(request, response, path) {
     const resources = input.resources ?? { cpus: templateBuild.resources.cpus, memory_mib: templateBuild.resources.memory_mib };
     state.deployment = {
       ...configuredDeployment(), provider: input.provider, mode: e2b ? "direct" : "nodes",
-      ...(initialize ? {} : { maintenance: true, generation: state.deployment.generation + 1 }),
+      generation: state.deployment.generation + 1, owner_epoch: state.deployment.owner_epoch,
       specification: { resources, ...(input.runtime ? { runtime: input.runtime } : {}) },
       ...(e2b ? { e2b: { template: input.e2b?.template ?? "", credential_configured: true, template_build: templateBuild } } : {}),
       suspension: input.provider === "microsandbox" ? { idle_seconds: 300, retention_seconds: 86400 } : null,
@@ -332,10 +368,11 @@ async function sandboxRoute(request, response, path) {
     return send(response, 200, state.deployment);
   }
   if (path === "/deployment") {
-    return send(response, 200, state.deployment ?? { installation_id: INSTALLATION_ID, provider: "", core_url: publicUrl(), maintenance: false, owner_epoch: 3, generation: 0, mode: "", resources: { allocations: 0, pending: 0 }, suspension: null });
+    return send(response, 200, state.deployment);
   }
   if (path === "/nodes") return send(response, 200, { data: state.nodes });
   if (path === "/enrollment-tokens" && request.method === "POST") {
+    if (state.deployment.reset) return error(response, 409, "A sandbox reset is in progress.", "sandbox_reset_in_progress");
     // As Core: a one-time token valid for ten minutes, whose limits and enrollment ID the node it enrolls takes;
     // only microsandbox keeps a retained limit above the active one.
     const input = await body(request);
@@ -498,6 +535,17 @@ async function fixtureRoute(request, response, url) {
     reset(url.searchParams.get("auth") ?? "login", url.searchParams.get("projects") === "none", url.searchParams.get("sandbox") ?? "configured", url.searchParams.get("nodes") ?? "demo", url.searchParams.get("installation") ?? "public", url.searchParams.get("credentials") ?? "configured", url.searchParams.get("installers") !== "none", url.searchParams.get("artifacts") ?? undefined);
     return send(response, 200, { ok: true });
   }
+  if (url.pathname === "/__fixture/deployment" && request.method === "POST") {
+    // Explicit backend observations, never a simulation driven by browser time.
+    const input = await body(request);
+    if (input.complete_reset) {
+      state.deployment = unconfiguredDeployment(state.deployment.generation + 1, state.deployment.owner_epoch + 1);
+      state.nodes = [];
+      state.allocations = [];
+      state.enrollment = null;
+    } else Object.assign(state.deployment, input);
+    return send(response, 200, state.deployment);
+  }
   if (url.pathname === "/__fixture/fail-next" && request.method === "POST") {
     state.failNext = await body(request); // { method, path, status, code?, message? }
     return send(response, 200, { ok: true });
@@ -537,7 +585,7 @@ http.createServer(async (request, response) => {
       state.failNext = null;
       return error(response, fail.status, fail.message ?? "Injected failure.", fail.code ?? null);
     }
-    if (url.pathname.startsWith("/core/v1/sandbox/")) return await sandboxRoute(request, response, url.pathname.slice("/core/v1/sandbox".length));
+    if (url.pathname.startsWith("/core/v1/sandbox/")) return await sandboxRoute(request, response, url.pathname.slice("/core/v1/sandbox".length), url);
     if (url.pathname.startsWith("/core/v1/")) {
       const path = url.pathname.slice("/core/v1".length);
       if (path === "/harnesses" || path.startsWith("/harnesses/")) return await harnessRoute(request, response, path);

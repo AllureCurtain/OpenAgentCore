@@ -76,17 +76,19 @@ function presetOf(provider: SandboxProvider, resources: SandboxResources): Prese
  * Core's address is config.json's `public_url`: the review only shows it, and
  * a configuration Core rejects for it is explained here, where it was saved.
  */
-export function SandboxSetupWizard({ coreUrl, current, disabled, switching = false, onSubmit }: {
+export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disabled, editing = false, onSubmit }: {
   /** The deployment's read-only Core address. */
   coreUrl: string;
+  expectedGeneration: number;
   current?: { provider: SandboxProvider; specification?: SandboxSpecification; e2bTemplate?: string };
   disabled: boolean;
-  switching?: boolean;
+  /** PR-R edits only the saved provider; changing backend requires reset first. */
+  editing?: boolean;
   onSubmit: (input: InitializeSandboxDeployment) => Promise<void>;
 }) {
   const { t } = useTranslation("sandbox");
   const id = useId();
-  const [step, setStep] = useState<Step>("where");
+  const [step, setStep] = useState<Step>(editing ? current?.provider === "e2b" ? "e2b" : "size" : "where");
   const [where, setWhere] = useState<Where | null>(current ? (current.provider === "e2b" ? "direct" : "nodes") : null);
   const [provider, setProvider] = useState<SandboxProvider | null>(current?.provider ?? null);
   const saved = provider && current ? savedSpecification(provider, current.provider, current.specification) : null;
@@ -119,7 +121,7 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
   const sizeReady = provider !== null && (!sized || validSandboxResources(provider, resources));
   const ready = provider !== null && runtimeReady && e2bReady && sizeReady && !disabled && !busy;
 
-  const order: Step[] = where === "direct" ? ["where", "e2b", "review"] : ["where", "backend", "size", "review"];
+  const order: Step[] = editing ? where === "direct" ? ["e2b", "review"] : ["size", "review"] : where === "direct" ? ["where", "e2b", "review"] : ["where", "backend", "size", "review"];
   const index = Math.max(0, order.indexOf(step === "advanced" ? "review" : step));
   const back = () => setStep(step === "advanced" ? "review" : order[Math.max(0, index - 1)]!);
 
@@ -149,6 +151,7 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
     try {
       await onSubmit({
         provider,
+        expected_generation: expectedGeneration,
         ...(sized ? { resources } : {}),
         ...(needsRuntime ? { runtime: release as SandboxRuntimeRelease } : {}),
         ...(provider === "e2b" ? { e2b: { api_key: apiKey.trim(), template: template.trim() } } : {}),
@@ -273,7 +276,7 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
         <div className="wizard-nav">
           <button className="button ghost" type="button" onClick={back}><ArrowLeft size={14} aria-hidden="true" />{t("Back")}</button>
           <button className="button primary" type="button" disabled={!ready} onClick={() => void save()}>
-            {busy ? t("Saving…") : t(switching ? "Save and stay in maintenance" : "Save configuration")}<ArrowRight size={14} aria-hidden="true" />
+            {busy ? t("Saving…") : t("Save configuration")}<ArrowRight size={14} aria-hidden="true" />
           </button>
         </div>
       </Question>
@@ -321,7 +324,7 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
   }
 
   return (
-    <section className="sandbox-wizard" aria-label={t(switching ? "Change the sandbox configuration" : "Set up hosted sandboxes")}>
+    <section className="sandbox-wizard" aria-label={t(editing ? "Change the sandbox configuration" : "Set up hosted sandboxes")}>
       {step !== "advanced" ? (
         <ol className="wizard-steps" aria-hidden="true">
           {order.map((entry, position) => <li key={entry} className={position === index ? "current" : position < index ? "done" : undefined} />)}

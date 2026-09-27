@@ -1,4 +1,11 @@
 export const overview = {
+  reset: {
+    title: "沙箱重置进行中",
+    auto: "等待 Session 结束和资源清理",
+    force: "强制重置 · 正在清理资源",
+    body: "Core 正在清空托管沙箱后端。重置结束前无法启动新的托管 Session，自托管 Session 不受影响。",
+    view: "查看重置",
+  },
   title: "概览",
   description: "这套 OpenAgentCore 部署在所有项目下的健康、容量、用量与故障。",
   gettingStarted: {
@@ -98,7 +105,6 @@ export const overview = {
   coreStatus: {
     checking: "检查中",
     running: "运行中",
-    maintenance: "维护中",
     unreachable: "无法访问",
   },
   nodeHealth: {

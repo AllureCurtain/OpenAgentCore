@@ -116,7 +116,7 @@ export const metrics = {
     kpiLabel: "Core 概况",
     meta: "{{status}} · {{revision}} · 已运行 {{uptime}}",
     notOwner: "未持有执行归属",
-    status: { running: "运行中", maintenance: "维护中", degraded: "降级", unknown: "状态未知" },
+    status: { running: "运行中", degraded: "降级", unknown: "状态未知" },
     slots: "执行并发",
     slotsHelp: "Core 同时最多执行的 Session 数。Turn、环境输入和文件读写共用这些槽位。",
     queued: "排队 Turn",

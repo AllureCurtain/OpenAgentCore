@@ -19,7 +19,7 @@ const REFRESH_MS = 30_000;
 const GIB = 2 ** 30;
 
 const jobTone: Record<CoreJobStatus, Tone> = { ok: "ok", failing: "danger", stopped: "warning", unknown: "neutral" };
-const statusTone: Record<CoreMetrics["service"]["status"], Tone> = { running: "ok", maintenance: "warning", degraded: "warning", unknown: "neutral" };
+const statusTone: Record<CoreMetrics["service"]["status"], Tone> = { running: "ok", degraded: "warning", unknown: "neutral" };
 
 function seconds(value: string | null): number | null {
   if (!value) return null;

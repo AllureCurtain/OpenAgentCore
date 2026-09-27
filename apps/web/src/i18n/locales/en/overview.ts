@@ -1,4 +1,11 @@
 export const overview = {
+  reset: {
+    title: "Sandbox reset in progress",
+    auto: "Waiting for Sessions and cleanup",
+    force: "Forced reset · cleanup in progress",
+    body: "Core is clearing the hosted sandbox backend. New hosted Sessions cannot start until the reset ends. Self-hosted Sessions are unaffected.",
+    view: "View reset",
+  },
   title: "Overview",
   description: "Health, capacity, usage and failures across every project of this OpenAgentCore deployment.",
   gettingStarted: {
@@ -98,7 +105,6 @@ export const overview = {
   coreStatus: {
     checking: "Checking",
     running: "Running",
-    maintenance: "Maintenance",
     unreachable: "Unreachable",
   },
   nodeHealth: {

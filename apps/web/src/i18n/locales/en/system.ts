@@ -116,8 +116,6 @@ export const system = {
     suspendAfterHelp: "A sandbox idle this long after its Session's last Turn is suspended into a snapshot on its node. The Session's next Turn resumes it.",
     keepSuspended: "Keep suspended for",
     keepSuspendedHelp: "How long a suspended sandbox's snapshot is kept on its node.",
-    maintenance: "Maintenance",
-    maintenanceHelp: "While on, no new sandboxes are placed.",
   },
   values: {
     on: "On",

@@ -19,6 +19,7 @@ test("sets up sandboxes with Core's address read-only, never sending it", async 
   await expect(page.getByRole("dialog", { name: "Add node" })).toBeVisible();
   expect(await writes(request)).toEqual(["POST /core/v1/sandbox/deployment"]);
   expect(bodies.some((entry) => entry.includes("core_url"))).toBe(false);
+  expect(bodies.filter(Boolean).map((entry) => JSON.parse(entry))).toEqual([expect.objectContaining({ expected_generation: 0 })]);
 });
 
 test("explains an E2B rejection in the wizard, with the file to edit and the command to apply it", async ({ page, request }) => {

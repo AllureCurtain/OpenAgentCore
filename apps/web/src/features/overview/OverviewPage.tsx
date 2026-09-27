@@ -26,6 +26,7 @@ import { useConsoleNavigation } from "../../lib/console-navigation";
 import { formatClock, formatCompact, formatInteger, formatPercent, formatRelative, MISSING } from "../../lib/format";
 import { ProjectName, useProjects } from "../../lib/projects";
 import { capacitySummary, coreStatus, type CoreStatus } from "../fleet/fleet-model";
+import { SandboxResetNotice } from "../fleet/SandboxResetNotice";
 import { fleetSnapshot, useSandboxFleet, type FleetSnapshot, type FleetState } from "../fleet/use-sandbox-fleet";
 import { type InProject } from "../metrics/project-sessions";
 import { FleetTopology, TOPOLOGY_LIMIT, type CloudHost } from "./FleetTopology";
@@ -53,7 +54,7 @@ export const OVERVIEW_REFRESH_MS = 30_000;
 const ATTENTION_LIMIT = 8;
 
 const serviceTone: Record<ServiceHealth, Tone> = { healthy: "ok", degraded: "warning", down: "danger", unknown: "pending" };
-const coreTone: Record<CoreStatus, Tone> = { checking: "pending", running: "ok", maintenance: "warning", unreachable: "danger" };
+const coreTone: Record<CoreStatus, Tone> = { checking: "pending", running: "ok", unreachable: "danger" };
 
 type LoadState =
   | { status: "loading"; data: OverviewData | null }
@@ -99,7 +100,7 @@ export function OverviewPage() {
   const projectsFailed = projectsState.state.status === "failed" || projectsState.refreshError !== null;
   const installation = useQuery(installationQuery);
   const { state, refresh, refreshing, failure } = useOverviewData(projects, projectsReady);
-  const { state: fleetState, refresh: refreshFleet } = useSandboxFleet();
+  const { state: fleetState, refresh: refreshFleet, deployment } = useSandboxFleet();
   const fleet = fleetSnapshot(fleetState);
   const data = projectsReady ? state.data : null;
   const refreshAll = () => { projectsState.refresh(); if (projectsReady) refresh(); refreshFleet(); void installation.refetch(); };
@@ -130,7 +131,7 @@ export function OverviewPage() {
     capacity,
     recentFailedSessions: failuresLastHour,
   });
-  const core = coreStatus({ webApiReachable: reachable, maintenance: fleet ? fleet.deployment.maintenance : null });
+  const core = coreStatus({ webApiReachable: reachable });
   const offline = capacity ? capacity.nodes - capacity.online : 0;
   const degraded = capacity ? capacity.online - capacity.available : 0;
   const serviceReason = reachable === false
@@ -171,9 +172,10 @@ export function OverviewPage() {
         actions={<RefreshButton refreshing={loading} updatedAt={updatedAt ? formatClock(updatedAt, locale) : null} onClick={refreshAll} />}
       />
       <PageBody>
+        <SandboxResetNotice deployment={deployment.data} failed={deployment.isError} onRetry={() => void deployment.refetch()} />
         <InstallationNotice installation={installation.data} />
         {installation.isError ? <ReadFailure onRetry={() => void installation.refetch()} partial={installation.data !== undefined} /> : null}
-        <GettingStarted fleet={fleetState} sessions={sessionCount} localOnly={installation.isError ? "failed" : installation.data?.local_only} onRetryInstallation={() => void installation.refetch()} />
+        <GettingStarted sandboxReset={deployment.isError ? "failed" : deployment.data ? deployment.data.reset !== null : undefined} fleet={fleetState} sessions={sessionCount} localOnly={installation.isError ? "failed" : installation.data?.local_only} onRetryInstallation={() => void installation.refetch()} />
         {(readFailed || summaryError !== null) && data !== null ? <ReadFailure onRetry={refreshAll} partial /> : null}
         <div className="overview-tiles" aria-label={t("kpi.label")}>
           <MetricTile

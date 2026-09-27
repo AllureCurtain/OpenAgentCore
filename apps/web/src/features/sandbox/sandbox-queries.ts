@@ -24,10 +24,17 @@ export const sandboxConsoleConfigQuery = queryOptions({
 });
 
 /** The deployment alone, for pages that only describe it. */
-export const sandboxDeploymentQuery = queryOptions({
+export const sandboxDeploymentQuery = queryOptions<SandboxDeployment>({
   queryKey: [...sandboxScope, "deployment"],
   queryFn: ({ signal }) => sandboxAdmin.retrieveDeployment({ signal }),
+  refetchInterval: (query) => sandboxResetPollInterval(query.state.data),
+  refetchIntervalInBackground: false,
 });
+
+/** Reset progress is Core-owned; a completed or absent reset needs no polling. */
+export function sandboxResetPollInterval(deployment: SandboxDeployment | undefined): 5000 | false {
+  return deployment?.reset ? 5000 : false;
+}
 
 /**
  * The deployment's sandbox provider from the cached deployment read: "" before
@@ -44,18 +51,29 @@ export interface SandboxSnapshot {
   deployment: SandboxDeployment;
   nodes: SandboxNode[];
   allocations: SandboxAllocation[];
+  /** A failed node/receipt read never hides a successful deployment/reset read. */
+  nodesError: unknown | null;
   /** `performance.now()` when this read began: only a read begun after an uncertain write confirms it. */
   readAt: number;
 }
 
-/** The Nodes page: deployment, its nodes and their allocations, read together. */
-export const sandboxSnapshotQuery = queryOptions({
+/** The Nodes page keeps authoritative deployment progress even if node reads fail. */
+export const sandboxSnapshotQuery = queryOptions<SandboxSnapshot>({
   queryKey: [...sandboxScope, "snapshot"],
+  refetchInterval: (query) => sandboxResetPollInterval(query.state.data?.deployment),
+  refetchIntervalInBackground: false,
   queryFn: async ({ signal }): Promise<SandboxSnapshot> => {
     const readAt = performance.now();
     const deployment = await sandboxAdmin.retrieveDeployment({ signal });
-    const nodes = deployment.provider === "e2b" ? { data: [] } : await sandboxAdmin.listNodes({ signal });
-    const allocations = await Promise.all(nodes.data.map((node) => sandboxAdmin.listAllocations(node.id, { signal })));
-    return { deployment, nodes: nodes.data, allocations: allocations.flatMap((page) => page.data), readAt };
+    let nodes: SandboxNode[] = [];
+    try {
+      if (deployment.provider && deployment.provider !== "e2b") nodes = (await sandboxAdmin.listNodes({ signal })).data;
+      const allocations = await Promise.all(nodes.map((node) => sandboxAdmin.listAllocations(node.id, { signal })));
+      signal.throwIfAborted();
+      return { deployment, nodes, allocations: allocations.flatMap((page) => page.data), nodesError: null, readAt };
+    } catch (nodesError) {
+      signal.throwIfAborted();
+      return { deployment, nodes, allocations: [], nodesError, readAt };
+    }
   },
 });

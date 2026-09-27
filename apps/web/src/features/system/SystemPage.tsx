@@ -14,6 +14,7 @@ import { InstallationNotice } from "../../components/InstallationNotice";
 import { installationQuery } from "../../lib/installation";
 import { sandboxSize, templateBuildSize, templateBuildStatus } from "../sandbox/deployment-specification";
 import { sandboxDeploymentQuery } from "../sandbox/sandbox-queries";
+import { SandboxResetNotice } from "../fleet/SandboxResetNotice";
 import { DefaultModelsSection } from "./DefaultModelsSection";
 import { Fact } from "./Fact";
 import { harnessesQuery } from "./harness-queries";
@@ -42,7 +43,7 @@ function FactsSkeleton({ facts }: { facts: number }) {
  * model for Core-hosted Sessions and Sessions without an environment, set
  * here; the sandbox configuration every project shares — where sandboxes run,
  * how big each one is, the Runtime or E2B template build they run,
- * microsandbox's idle suspension and maintenance — and Core's startup
+ * microsandbox's idle suspension and sandbox reset progress — and Core's startup
  * settings. Each says where it is changed: sandboxes on the Nodes page,
  * startup settings in config.json.
  */
@@ -105,9 +106,6 @@ export function SystemPage() {
             <Fact label={t("sandbox.suspendAfter")} help={t("sandbox.suspendAfterHelp")}>{formatPeriod(data.suspension.idle_seconds, locale)}</Fact>
             <Fact label={t("sandbox.keepSuspended")} help={t("sandbox.keepSuspendedHelp")}>{formatPeriod(data.suspension.retention_seconds, locale)}</Fact>
           </> : null}
-          <Fact label={t("sandbox.maintenance")} help={t("sandbox.maintenanceHelp")}>
-            {data.maintenance ? <StatusDot tone="warning" label={t("values.on")} /> : t("values.off")}
-          </Fact>
         </dl>
       </Section>
     );
@@ -146,6 +144,7 @@ export function SystemPage() {
         {reading ? <p className="visually-hidden" role="status">{t("loading")}</p> : null}
         {facts}
         <DefaultModelsSection />
+        <SandboxResetNotice deployment={deployment.data} failed={deployment.isError && !!deployment.data} onRetry={() => void deployment.refetch()} />
         {body}
         {about ? <StartupSettings configuration={about.configuration} /> : installation.isError ? null : <TableSkeleton rows={4} columns={3} />}
       </PageBody>

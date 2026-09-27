@@ -116,7 +116,7 @@ export const metrics = {
     kpiLabel: "Core summary",
     meta: "{{status}} · {{revision}} · up {{uptime}}",
     notOwner: "Does not hold the execution lease",
-    status: { running: "Running", maintenance: "Maintenance", degraded: "Degraded", unknown: "Unknown status" },
+    status: { running: "Running", degraded: "Degraded", unknown: "Unknown status" },
     slots: "Execution concurrency",
     slotsHelp: "Sessions Core runs at the same time at most. Turns, environment input and file reads and writes share these slots.",
     queued: "Queued Turns",
