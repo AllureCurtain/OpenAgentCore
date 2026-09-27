@@ -248,7 +248,6 @@ def preflight(root, target, manifest, public_url, run):
             problems.append(str(error))
     if state and state["mode"] != "web-only" and not problems:
         try:
-            room(run, state)
             target_volume = "oac-" + state["project"][7:] + "_database"
             if volume(run, target_volume) is not None:
                 problems.append("The target volume already exists without a conversion journal: " + target_volume)
@@ -514,6 +513,14 @@ def _convert_installation(root, bundle, manifest, load_images, public_url, yes, 
     refuse_e2b(deployment)
     if problems:
         refuse(problems)
+    if state["mode"] != "web-only":
+        # Measuring space creates a temporary container, even with read-only
+        # mounts. Only do it after readable-provider and drain checks permit
+        # conversion; unsupported E2B and unreadable Core must create nothing.
+        try:
+            room(run, state)
+        except RenameError as error:
+            refuse([str(error)])
     confirm(root, target, state, plan, yes, print)
     record = {"install_dir": str(root), "target_dir": str(target), "project": state["project"],
               "installation_id": state["installation_id"], "source_commit": state["source_commit"], "source_bundle": manifest["source_commit"], "at": oac_cli.now(),

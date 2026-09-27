@@ -107,6 +107,27 @@ class RenameTests(unittest.TestCase):
     def state(self):
         return json.loads((self.root / "state.json").read_text())
 
+    @contextlib.contextmanager
+    def no_file_writes(self):
+        with mock.patch.object(oac_cli, "write_private") as write, \
+                mock.patch.object(oac_cli, "create_private") as create, \
+                mock.patch.object(oac_cli, "save_state") as save:
+            yield
+            write.assert_not_called()
+            create.assert_not_called()
+            save.assert_not_called()
+
+    def assert_read_only_commands(self):
+        # An allowlist also rejects transient Docker run/create operations that
+        # leave no container behind and therefore escape state snapshots.
+        prefixes = (("docker", "compose", "version"), ("docker", "info"),
+                    ("docker", "ps"), ("docker", "inspect"),
+                    ("docker", "volume", "inspect"), ("docker", "volume", "ls"),
+                    ("systemctl", "--user", "show", "--property=Version", "--value"),
+                    ("loginctl", "show-user"), ("ldd",))
+        for command in self.host.commands:
+            self.assertTrue(any(tuple(command[:len(prefix)]) == prefix for prefix in prefixes), command)
+
     def assert_preserved(self):
         state = self.state()
         self.assertEqual(state["installation_id"], self.identity)
@@ -174,12 +195,12 @@ class RenameTests(unittest.TestCase):
                     self.host.containers["core"]["running"] = False
                 before, running = self.snapshot(), self.host.running()
                 self.host.commands.clear()
-                with self.assertRaisesRegex(rename.RenameError, "previous Core must already be running and readable"):
+                with self.no_file_writes(), self.assertRaisesRegex(rename.RenameError, "previous Core must already be running and readable"):
                     self.convert()
                 self.assertEqual(self.snapshot(), before)
                 self.assertEqual(self.host.running(), running)
                 self.assertEqual(self.host.volumes, self.before_volumes)
-                self.assertFalse(any(any(action in command for action in ("up", "stop", "down", "start", "cp -a /from/. /to/ && sync")) for command in self.host.commands))
+                self.assert_read_only_commands()
 
     def test_foreign_target_volume_and_container_refuse_without_removal(self):
         for container in (False, True):
@@ -273,12 +294,12 @@ class RenameTests(unittest.TestCase):
     def test_e2b_refuses_before_conversion_mutations(self):
         self.fixture(provider="e2b")
         self.host.commands.clear()
-        with self.assertRaisesRegex(rename.RenameError, "E2B rename conversion is not supported"):
+        with self.no_file_writes(), self.assertRaisesRegex(rename.RenameError, "E2B rename conversion is not supported"):
             self.convert()
         self.assertEqual(self.snapshot(), self.before)
         self.assertEqual(self.host.volumes, self.before_volumes)
         self.assertFalse(self.host.deployment_posts)
-        self.assertFalse(any(any(action in command for action in ("up", "stop", "down", "start", "cp -a /from/. /to/ && sync")) for command in self.host.commands))
+        self.assert_read_only_commands()
 
     def test_e2b_resume_refuses_before_services_or_journal_changes(self):
         self.fixture()
@@ -289,11 +310,11 @@ class RenameTests(unittest.TestCase):
         oac_cli.save_state(self.root, state)
         before, volumes = self.snapshot(), copy.deepcopy(self.host.volumes)
         self.host.commands.clear()
-        with self.assertRaisesRegex(rename.RenameError, "E2B rename conversion is not supported"):
+        with self.no_file_writes(), self.assertRaisesRegex(rename.RenameError, "E2B rename conversion is not supported"):
             self.convert()
         self.assertEqual(self.snapshot(), before)
         self.assertEqual(self.host.volumes, volumes)
-        self.assertTrue(all(command[:3] in (["docker", "compose", "version"], ["docker", "info", "--format"]) for command in self.host.commands))
+        self.assert_read_only_commands()
 
     def test_web_only_never_copies_a_database(self):
         self.fixture(mode="web-only")
@@ -324,12 +345,12 @@ class RenameTests(unittest.TestCase):
         self.host.containers["database"]["running"] = False
         running = self.host.running()
         self.host.commands.clear()
-        with self.assertRaisesRegex(rename.RenameError, "previous Core must already be running and readable"):
+        with self.no_file_writes(), self.assertRaisesRegex(rename.RenameError, "previous Core must already be running and readable"):
             self.convert()
         self.assertFalse(self.host.native["active"])
         self.assertEqual(self.host.running(), running)
         self.assertEqual(self.snapshot(), self.before)
-        self.assertFalse(any("start" in command or "up" in command or "stop" in command for command in self.host.commands))
+        self.assert_read_only_commands()
 
     def test_exact_runtime_retry_after_lost_put_response_keeps_one_generation(self):
         self.fixture(provider="microsandbox")
