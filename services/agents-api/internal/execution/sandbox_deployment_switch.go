@@ -13,8 +13,21 @@ func (m *runtimeManager) lockMutation(ctx context.Context) (func(), error) {
 	if m == nil || m.loadDeployment == nil {
 		return nil, store.ErrSandboxDeploymentConflict
 	}
+	m.mu.Lock()
+	closed := m.closed
+	m.mu.Unlock()
+	if closed {
+		return nil, ErrExecutionUnavailable
+	}
 	select {
 	case m.mutationGate <- struct{}{}:
+		m.mu.Lock()
+		closed := m.closed
+		m.mu.Unlock()
+		if closed {
+			<-m.mutationGate
+			return nil, ErrExecutionUnavailable
+		}
 		return func() { <-m.mutationGate }, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()

@@ -267,8 +267,8 @@ func TestSandboxDeploymentDrainFailureCannotReactivate(t *testing.T) {
 	if n.lifecycle.ctx.Err() != nil {
 		t.Fatal("failed fence canceled outside the lease gate")
 	}
-	if err := m.pauseDeployment(t.Context()); err != first {
-		t.Fatal("repeated drain forgot its failure", err, first)
+	if err := m.pauseDeployment(t.Context()); err == nil {
+		t.Fatal("repeated drain forgot its failure")
 	}
 	if err := m.activateDeployment(t.Context(), store.RuntimeDeploymentView{InstallationID: id, Generation: 1, Mode: "nodes", Provider: "docker"}); err == nil {
 		t.Fatal("failed drain reopened the provider")
