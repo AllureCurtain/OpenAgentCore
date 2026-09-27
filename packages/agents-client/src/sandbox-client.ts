@@ -23,6 +23,8 @@ export interface SandboxSpecification { resources: SandboxResources; runtime?: S
 /** Core derives the deployment's address from the installation public URL; a `core_url` member is rejected. */
 export interface InitializeSandboxDeployment {
   provider: SandboxProvider;
+  /** Required, including zero for first setup; read it from GET before submitting once. */
+  expected_generation: number;
   /** Required for Docker/microsandbox. E2B may omit it to adopt its validated template build's CPU and memory. */
   resources?: SandboxResources;
   /** Required for Docker/microsandbox; E2B uses its fixed template build. */
@@ -30,7 +32,17 @@ export interface InitializeSandboxDeployment {
   e2b?: { api_key: string; template: string };
 }
 export interface UpdateSandboxDeployment extends InitializeSandboxDeployment { expected_generation: number }
-export interface SetSandboxMaintenance { maintenance: boolean; expected_generation: number }
+export interface StartSandboxReset { expected_generation: number; clear: "auto" | "force"; deadline_seconds?: number }
+export interface SandboxReset {
+  clear: "auto" | "force";
+  requested_at: string;
+  deadline_at: string | null;
+  forced_at: string | null;
+  remaining: {
+    busy: number; idle: number; cleanup: number; on_offline_nodes: number;
+    offline_nodes: Array<{ node_id: string; name: string; resources: number }>;
+  };
+}
 
 export interface SandboxDeployment {
   specification?: SandboxSpecification;
@@ -39,7 +51,7 @@ export interface SandboxDeployment {
   provider: SandboxProvider | "";
   /** Read-only: the installation public URL, which nodes and sandboxes use to reach Core. Present before configuration. */
   readonly core_url: string;
-  maintenance: boolean;
+  reset: SandboxReset | null;
   owner_epoch: number;
   generation: number;
   mode: "nodes" | "direct" | "";
@@ -173,20 +185,39 @@ function projectE2B(value: unknown): NonNullable<SandboxDeployment["e2b"]> {
     template_build: { status: build.status as string | null, resources: { ...resources } as SandboxE2BTemplateBuild["resources"] },
   };
 }
+/** Counts and blocker identities are one Core snapshot, never reconstructed from node lists. */
+function projectReset(value: unknown, held: number): SandboxReset | null {
+  if (value === null) return null;
+  const reset = members(value, ["clear", "requested_at", "deadline_at", "forced_at", "remaining"]);
+  const remaining = members(reset.remaining, ["busy", "idle", "cleanup", "on_offline_nodes", "offline_nodes"]);
+  valid((reset.clear === "auto" || reset.clear === "force") && timestamp(reset.requested_at) &&
+    nullable(timestamp)(reset.deadline_at) && nullable(timestamp)(reset.forced_at) &&
+    (reset.clear === "auto" ? reset.deadline_at !== null && reset.forced_at === null : reset.forced_at !== null) &&
+    [remaining.busy, remaining.idle, remaining.cleanup, remaining.on_offline_nodes].every(isNonnegativeInteger) && Array.isArray(remaining.offline_nodes));
+  const nodes = (remaining.offline_nodes as unknown[]).map(value => {
+    const node = members(value, ["node_id", "name", "resources"]);
+    valid(strings(node, ["node_id", "name"]) && node.node_id !== "" && isNonnegativeInteger(node.resources) && Number(node.resources) > 0);
+    return { ...node } as SandboxReset["remaining"]["offline_nodes"][number];
+  });
+  valid(Number(remaining.busy) + Number(remaining.idle) + Number(remaining.cleanup) === held &&
+    Number(remaining.on_offline_nodes) <= held && nodes.reduce((sum, node) => sum + node.resources, 0) === remaining.on_offline_nodes &&
+    new Set(nodes.map(node => node.node_id)).size === nodes.length);
+  return { ...reset, remaining: { ...remaining, offline_nodes: nodes } } as unknown as SandboxReset;
+}
 /** `specification` and `specification_digest` appear together once configured; `e2b` appears exactly for E2B. */
 function projectDeployment(value: unknown): SandboxDeployment {
   const e2b = isRecord(value) && value.provider === "e2b";
-  const fields = ["installation_id", "provider", "core_url", "maintenance", "owner_epoch", "generation", "mode", "resources", "suspension"];
+  const fields = ["installation_id", "provider", "core_url", "reset", "owner_epoch", "generation", "mode", "resources", "suspension"];
   const deployment = members(value, e2b ? [...fields, "e2b"] : fields, ["specification", "specification_digest"]);
   const resources = members(deployment.resources, ["allocations", "pending"]);
   const suspension = deployment.suspension === null ? null : members(deployment.suspension, ["idle_seconds", "retention_seconds"]);
   const configured = hasOwn(deployment, "specification");
   valid(strings(deployment, ["installation_id", "core_url"]) && providers.has(deployment.provider as string) && modes.has(deployment.mode as string) &&
-    typeof deployment.maintenance === "boolean" && [deployment.owner_epoch, deployment.generation, resources.allocations, resources.pending].every(isNonnegativeInteger) &&
+    [deployment.owner_epoch, deployment.generation, resources.allocations, resources.pending].every(isNonnegativeInteger) &&
     (suspension === null || [suspension.idle_seconds, suspension.retention_seconds].every(isNonnegativeInteger)) &&
     configured === hasOwn(deployment, "specification_digest") && (!configured || (typeof deployment.specification_digest === "string" && deployment.specification_digest !== "")));
   return {
-    ...deployment, resources: { ...resources } as SandboxDeployment["resources"], suspension: suspension && { ...suspension } as SandboxDeployment["suspension"],
+    ...deployment, reset: projectReset(deployment.reset, Number(resources.allocations) + Number(resources.pending)), resources: { ...resources } as SandboxDeployment["resources"], suspension: suspension && { ...suspension } as SandboxDeployment["suspension"],
     ...(configured ? { specification: projectSpecification(deployment.specification) } : {}),
     ...(e2b ? { e2b: projectE2B(deployment.e2b) } : {}),
   } as unknown as SandboxDeployment;
@@ -261,8 +292,11 @@ export class SandboxAdminClient {
   updateDeployment(input: UpdateSandboxDeployment, options?: ReadOptions): Promise<SandboxDeployment> {
     return this.#writeDeployment("PUT", input, options);
   }
-  async setMaintenance(input: SetSandboxMaintenance, options?: ReadOptions): Promise<SandboxDeployment> {
-    return projectDeployment(await this.#core.json("/deployment/maintenance", options, "PATCH", input));
+  async startReset(input: StartSandboxReset, options?: ReadOptions): Promise<SandboxDeployment> {
+    return projectDeployment(await this.#core.json("/deployment/reset", options, "POST", input));
+  }
+  async cancelReset(expectedGeneration: number, options?: ReadOptions): Promise<SandboxDeployment> {
+    return projectDeployment(await this.#core.json(`/deployment/reset?expected_generation=${encodeURIComponent(expectedGeneration)}`, options, "DELETE"));
   }
   async #writeDeployment(method: "POST" | "PUT", input: InitializeSandboxDeployment | UpdateSandboxDeployment, options?: ReadOptions): Promise<SandboxDeployment> {
     try {
@@ -270,6 +304,22 @@ export class SandboxAdminClient {
       return projectDeployment(await this.#core.json("/deployment", options, method, input));
     } catch (error) {
       if (!input.e2b) throw error;
+      if (error instanceof AgentCoreError && error.status === 409) {
+        const messages: Record<string, string> = {
+          sandbox_generation_stale: "The sandbox configuration changed. Refresh before submitting again.",
+          sandbox_reset_required: "Reset the sandbox deployment before changing its backend.",
+          sandbox_reset_in_progress: "A sandbox reset is in progress.",
+          sandbox_not_configured: "The sandbox deployment is not configured.",
+          sandbox_in_use: "Hosted sandbox resources still belong to this deployment.",
+        };
+        if (error.code && messages[error.code]) {
+          // Credential-bearing errors expose fixed local copy and allowlisted
+          // numeric facts only; never echo arbitrary message, param or details.
+          const fields = error.code === "sandbox_generation_stale" ? ["current_generation"] : error.code === "sandbox_in_use" ? ["allocations", "pending"] : [];
+          const details = Object.fromEntries(fields.filter(field => isNonnegativeInteger(error.details?.[field])).map(field => [field, Number(error.details![field])]));
+          throw new AgentCoreError(messages[error.code]!, 409, error.code, null, undefined, Object.keys(details).length ? details : undefined);
+        }
+      }
       // The public-URL rejection is safe to show unless it somehow reflects the key.
       const key = input.e2b.api_key;
       if (error instanceof AgentCoreError && error.status === 409 && error.code === "sandbox_configuration_error"

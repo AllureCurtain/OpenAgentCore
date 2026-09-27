@@ -37,7 +37,7 @@ const allocation = {
   state: "running", compute_phase: "running", compute_phase_changed_at: null, diagnostic: "", initialization: "ready", created_at: created,
 };
 const runtime = { source_commit: "a".repeat(40), image_id: "sha256:" + "b".repeat(64), image_manifest_digest: "sha256:" + "c".repeat(64), microsandbox_ref: "oac-runtime@sha256:" + "d".repeat(64), runtime_sha256: "e".repeat(64), firmware_sha256: "f".repeat(64) };
-const unconfigured = { installation_id: "", provider: "", core_url: "https://core.example", maintenance: false, owner_epoch: 0, generation: 0, mode: "", resources: { allocations: 0, pending: 0 }, suspension: null };
+const unconfigured = { installation_id: "", provider: "", core_url: "https://core.example", reset: null, owner_epoch: 0, generation: 0, mode: "", resources: { allocations: 0, pending: 0 }, suspension: null };
 const docker = {
   ...unconfigured, installation_id: "94be54a1-138c-4f30-bc87-b13686272dbe", provider: "docker", owner_epoch: 1, generation: 1, mode: "nodes",
   resources: { allocations: 2, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 }, runtime }, specification_digest: "0".repeat(64),
@@ -154,11 +154,11 @@ describe("Core sandbox credential boundaries", () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(deployment));
     const admin = new SandboxAdminClient({ baseUrl: "/core/v1/sandbox", token: "admin-only", fetch });
     const controller = new AbortController();
-    expect(await admin.initializeDeployment({ provider: "docker" }, { signal: controller.signal })).toEqual(deployment);
+    expect(await admin.initializeDeployment({ expected_generation: 0, provider: "docker" }, { signal: controller.signal })).toEqual(deployment);
     const [url, init] = fetch.mock.calls[0]!;
     expect(url).toBe("/core/v1/sandbox/deployment");
     expect(init?.method).toBe("POST");
-    expect(JSON.parse(String(init?.body))).toEqual({ provider: "docker" });
+    expect(JSON.parse(String(init?.body))).toEqual({ expected_generation: 0, provider: "docker" });
     expect(init?.signal).toBe(controller.signal);
     expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer admin-only");
     expect(new Headers(init?.headers).has("OpenAI-Beta")).toBe(false);
@@ -174,13 +174,13 @@ describe("Core sandbox credential boundaries", () => {
   it.each([409, 503])("does not retry initialization after HTTP %s", async (status) => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ error: { message: "Setup failed", code: "sandbox_deployment_conflict" } }, status));
     const admin = new SandboxAdminClient({ baseUrl: "/core/v1/sandbox", token: "admin", fetch });
-    await expect(admin.initializeDeployment({ provider: "microsandbox" })).rejects.toThrow("Setup failed");
+    await expect(admin.initializeDeployment({ expected_generation: 0, provider: "microsandbox" })).rejects.toThrow("Setup failed");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
   it("does not retry an uncertain initialization transport failure", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new TypeError("Connection lost"));
     const admin = new SandboxAdminClient({ baseUrl: "/core/v1/sandbox", token: "admin", fetch });
-    await expect(admin.initializeDeployment({ provider: "docker" })).rejects.toThrow("Connection lost");
+    await expect(admin.initializeDeployment({ expected_generation: 0, provider: "docker" })).rejects.toThrow("Connection lost");
     expect(fetch).toHaveBeenCalledTimes(1);
   });
   it("uses the explicit admin credential and admin routes without a project beta header", async () => {
@@ -218,15 +218,15 @@ describe("hosted provider configuration", () => {
     const client = new SandboxAdminClient({ baseUrl: "/core/v1/sandbox", fetch });
     const controller = new AbortController();
     // Omitted E2B resources are filled from the validated template build.
-    expect(await client.initializeDeployment({ provider: "e2b", e2b })).toEqual(deployment);
+    expect(await client.initializeDeployment({ expected_generation: 0, provider: "e2b", e2b })).toEqual(deployment);
     await client.updateDeployment({ provider: "e2b", e2b, expected_generation: 1 }, { signal: controller.signal });
-    await client.setMaintenance({ maintenance: false, expected_generation: 2 });
+    await client.cancelReset(2);
     expect(fetch.mock.calls.map(([url, init]) => [url, init?.method])).toEqual([
-      ["/core/v1/sandbox/deployment", "POST"], ["/core/v1/sandbox/deployment", "PUT"], ["/core/v1/sandbox/deployment/maintenance", "PATCH"],
+      ["/core/v1/sandbox/deployment", "POST"], ["/core/v1/sandbox/deployment", "PUT"], ["/core/v1/sandbox/deployment/reset?expected_generation=2", "DELETE"],
     ]);
     expect(JSON.parse(String(fetch.mock.calls[1]?.[1]?.body))).toEqual({ provider: "e2b", e2b, expected_generation: 1 });
     expect(fetch.mock.calls[1]?.[1]?.signal).toBe(controller.signal);
-    expect(JSON.parse(String(fetch.mock.calls[2]?.[1]?.body))).toEqual({ maintenance: false, expected_generation: 2 });
+    expect(fetch.mock.calls[2]?.[1]?.body).toBeUndefined();
     for (const [, init] of fetch.mock.calls) {
       expect(new Headers(init?.headers).has("Authorization")).toBe(false);
       expect(new Headers(init?.headers).has("OpenAI-Beta")).toBe(false);
@@ -236,7 +236,7 @@ describe("hosted provider configuration", () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ error: { message: e2b.api_key, code: e2b.api_key, param: e2b.api_key } }, status));
     const client = new SandboxAdminClient({ fetch });
     await expect(client.updateDeployment({ provider: "e2b", e2b, expected_generation: 1 })).rejects.toMatchObject({ code: "sandbox_configuration_unconfirmed", status });
-    await client.initializeDeployment({ provider: "e2b", e2b }).catch((error) => {
+    await client.initializeDeployment({ expected_generation: 0, provider: "e2b", e2b }).catch((error) => {
       expect(JSON.stringify(error)).not.toContain(e2b.api_key);
       expect(error.message).not.toContain(e2b.api_key);
     });
@@ -248,16 +248,66 @@ describe("hosted provider configuration", () => {
       .mockResolvedValueOnce(response({ error: rejection }, 409))
       .mockResolvedValueOnce(response({ error: { ...rejection, message: rejection.message + e2b.api_key } }, 409));
     const client = new SandboxAdminClient({ fetch });
-    const shown = await client.initializeDeployment({ provider: "e2b", e2b }).catch((error: unknown) => error);
+    const shown = await client.initializeDeployment({ expected_generation: 0, provider: "e2b", e2b }).catch((error: unknown) => error);
     expect(shown).toMatchObject({ status: 409, code: "sandbox_configuration_error", message: rejection.message, param: null });
     expect((shown as AgentCoreError).errorType).toBeUndefined();
-    await expect(client.initializeDeployment({ provider: "e2b", e2b })).rejects.toMatchObject({ status: 409, code: "sandbox_configuration_unconfirmed" });
+    await expect(client.initializeDeployment({ expected_generation: 0, provider: "e2b", e2b })).rejects.toMatchObject({ status: 409, code: "sandbox_configuration_unconfirmed" });
   });
-  it("never retries uncertain switch or maintenance writes", async () => {
+  it("never retries uncertain switch or reset writes", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new TypeError("Connection lost"));
     const client = new SandboxAdminClient({ fetch });
     await expect(client.updateDeployment({ provider: "docker", expected_generation: 1 })).rejects.toThrow();
-    await expect(client.setMaintenance({ maintenance: true, expected_generation: 1 })).rejects.toThrow();
+    await expect(client.startReset({ clear: "auto", expected_generation: 1 })).rejects.toThrow();
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+const resetting = {
+  ...docker,
+  reset: { clear: "auto", requested_at: created, deadline_at: "2026-09-25T09:00:00Z", forced_at: null,
+    remaining: { busy: 1, idle: 1, cleanup: 1, on_offline_nodes: 2,
+      offline_nodes: [{ node_id: node.id, name: node.name, resources: 2 }] } },
+};
+describe("durable reset projection", () => {
+  it("preserves Core's complete remaining snapshot and copies blocker identities", async () => {
+    const result = await read("deployment", resetting) as typeof resetting;
+    expect(result).toEqual(resetting);
+    expect(result.reset.remaining.offline_nodes).not.toBe(resetting.reset.remaining.offline_nodes);
+  });
+  it.each([
+    { ...resetting, maintenance: true },
+    { ...resetting, rollout: { nodes: { ready: 1 } } },
+    { ...resetting, reset: { ...resetting.reset, clear: "unknown" } },
+    { ...resetting, reset: { ...resetting.reset, deadline_at: null } },
+    { ...resetting, reset: { ...resetting.reset, forced_at: created } },
+    { ...resetting, reset: { ...resetting.reset, remaining: { ...resetting.reset.remaining, busy: 2 } } },
+    { ...resetting, reset: { ...resetting.reset, remaining: { ...resetting.reset.remaining, on_offline_nodes: 1 } } },
+    { ...resetting, reset: { ...resetting.reset, remaining: { ...resetting.reset.remaining, offline_nodes: [
+      { node_id: node.id, name: node.name, resources: 1 }, { node_id: node.id, name: node.name, resources: 1 },
+    ] } } },
+  ])("rejects retired/fictional fields or an inconsistent reset snapshot", async value => {
+    await expect(read("deployment", value)).rejects.toMatchObject({ code: "invalid_admin_response" });
+  });
+  it("posts the explicit reset once with the requested deadline", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response(resetting));
+    const client = new SandboxAdminClient({ fetch });
+    await expect(client.startReset({ expected_generation: 1, clear: "auto", deadline_seconds: 300 })).resolves.toEqual(resetting);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(String(fetch.mock.calls[0]?.[0])).toBe("/core/v1/sandbox/deployment/reset");
+    expect(fetch.mock.calls[0]?.[1]?.method).toBe("POST");
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toEqual({ expected_generation: 1, clear: "auto", deadline_seconds: 300 });
+  });
+  it("keeps safe E2B reset errors without reflecting credential-bearing error fields", async () => {
+    const secret = "test-only-key";
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ error: {
+      message: secret, param: secret, type: secret, code: "sandbox_generation_stale",
+      details: { current_generation: 7, arbitrary: secret },
+    } }, 409));
+    const error = await new SandboxAdminClient({ fetch }).updateDeployment({ provider: "e2b", expected_generation: 1,
+      e2b: { api_key: secret, template: "runtime:00000000-0000-0000-0000-000000000001" } }).catch(error => error);
+    expect(error).toMatchObject({ code: "sandbox_generation_stale", status: 409, details: { current_generation: 7 } });
+    expect(JSON.stringify(error)).not.toContain(secret);
+    expect(error.message).not.toContain(secret);
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });
