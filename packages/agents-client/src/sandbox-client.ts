@@ -31,7 +31,22 @@ export interface InitializeSandboxDeployment {
   runtime?: SandboxRuntimeRelease;
   e2b?: { api_key: string; template: string };
 }
-export interface UpdateSandboxDeployment extends InitializeSandboxDeployment { expected_generation: number }
+export interface UpdateSandboxDeployment extends Omit<InitializeSandboxDeployment, "e2b"> {
+  /** Omit api_key to preserve the current key. Supplying it, even unchanged, verifies and replaces it once. */
+  e2b?: { api_key?: string; template: string };
+}
+export interface SandboxRollout {
+  /** Poll at high frequency only while preparing, independently of old Session retention. */
+  state: "settled" | "preparing";
+  previous_generation_sandboxes: number;
+  nodes: { ready: number; preparing: number; failed: number; update_required: number; unknown: number } | null;
+}
+export interface SandboxNodeRollout {
+  state: "ready" | "preparing" | "failed" | "update_required" | "unknown";
+  /** Durable serving pin; this alone does not imply current connection readiness. */
+  ready_generation: number | null;
+  diagnostic?: SandboxNodeDiagnostic;
+}
 export interface StartSandboxReset { expected_generation: number; clear: "auto" | "force"; deadline_seconds?: number }
 export interface SandboxReset {
   clear: "auto" | "force";
@@ -45,6 +60,7 @@ export interface SandboxReset {
 }
 
 export interface SandboxDeployment {
+  rollout: SandboxRollout;
   specification?: SandboxSpecification;
   specification_digest?: string;
   installation_id: string;
@@ -66,6 +82,7 @@ export interface SandboxE2BTemplateBuild {
   resources: { cpus: number | null; memory_mib: number | null; root_disk_mib: number | null };
 }
 export interface SandboxNode {
+  rollout: SandboxNodeRollout;
   id: string;
   name: string;
   provider: string;
@@ -128,6 +145,7 @@ export interface SandboxNodeUpdate {
   max_retained: number;
 }
 export interface SandboxAllocation {
+  deployment_generation: number;
   id: string;
   node_id: string;
   tenant_id: string;
@@ -204,10 +222,24 @@ function projectReset(value: unknown, held: number): SandboxReset | null {
     new Set(nodes.map(node => node.node_id)).size === nodes.length);
   return { ...reset, remaining: { ...remaining, offline_nodes: nodes } } as unknown as SandboxReset;
 }
+function projectRollout(value: unknown, mode: unknown, held: number): SandboxRollout {
+  const rollout = members(value, ["state", "previous_generation_sandboxes", "nodes"]);
+  valid((rollout.state === "settled" || rollout.state === "preparing") && isNonnegativeInteger(rollout.previous_generation_sandboxes) && Number(rollout.previous_generation_sandboxes) <= held);
+  const nodes = rollout.nodes === null ? null : members(rollout.nodes, ["ready", "preparing", "failed", "update_required", "unknown"]);
+  valid((nodes !== null) === (mode === "nodes") && (nodes === null || Object.values(nodes).every(isNonnegativeInteger)) && (rollout.state === "preparing") === (nodes !== null && Number(nodes.preparing) > 0));
+  return { ...rollout, nodes: nodes && { ...nodes } } as unknown as SandboxRollout;
+}
+function projectNodeRollout(value: unknown, online: unknown): SandboxNodeRollout {
+  const rollout = members(value, ["state", "ready_generation"], ["diagnostic"]);
+  valid(["ready", "preparing", "failed", "update_required", "unknown"].includes(rollout.state as string) && nullable(isNonnegativeInteger)(rollout.ready_generation) &&
+    (online !== false || rollout.state === "unknown") && (rollout.state !== "ready" || rollout.ready_generation !== null) &&
+    (rollout.diagnostic === undefined || (typeof rollout.diagnostic === "string" && rollout.diagnostic !== "" && rollout.state === "failed")));
+  return { ...rollout, ...(rollout.diagnostic !== undefined ? { diagnostic: nodeDiagnostics.has(rollout.diagnostic as string) ? rollout.diagnostic : "provider_unavailable" } : {}) } as unknown as SandboxNodeRollout;
+}
 /** `specification` and `specification_digest` appear together once configured; `e2b` appears exactly for E2B. */
 function projectDeployment(value: unknown): SandboxDeployment {
   const e2b = isRecord(value) && value.provider === "e2b";
-  const fields = ["installation_id", "provider", "core_url", "reset", "owner_epoch", "generation", "mode", "resources", "suspension"];
+  const fields = ["installation_id", "provider", "core_url", "reset", "rollout", "owner_epoch", "generation", "mode", "resources", "suspension"];
   const deployment = members(value, e2b ? [...fields, "e2b"] : fields, ["specification", "specification_digest"]);
   const resources = members(deployment.resources, ["allocations", "pending"]);
   const suspension = deployment.suspension === null ? null : members(deployment.suspension, ["idle_seconds", "retention_seconds"]);
@@ -217,18 +249,19 @@ function projectDeployment(value: unknown): SandboxDeployment {
     (suspension === null || [suspension.idle_seconds, suspension.retention_seconds].every(isNonnegativeInteger)) &&
     configured === hasOwn(deployment, "specification_digest") && (!configured || (typeof deployment.specification_digest === "string" && deployment.specification_digest !== "")));
   return {
-    ...deployment, reset: projectReset(deployment.reset, Number(resources.allocations) + Number(resources.pending)), resources: { ...resources } as SandboxDeployment["resources"], suspension: suspension && { ...suspension } as SandboxDeployment["suspension"],
+    ...deployment, rollout: projectRollout(deployment.rollout, deployment.mode, Number(resources.allocations) + Number(resources.pending)), reset: projectReset(deployment.reset, Number(resources.allocations) + Number(resources.pending)), resources: { ...resources } as SandboxDeployment["resources"], suspension: suspension && { ...suspension } as SandboxDeployment["suspension"],
     ...(configured ? { specification: projectSpecification(deployment.specification) } : {}),
     ...(e2b ? { e2b: projectE2B(deployment.e2b) } : {}),
   } as unknown as SandboxDeployment;
 }
 
-const nodeFields = ["id", "name", "provider", "online", "provider_ready", "cpu_count", "available_memory_bytes", "available_disk_bytes", "running", "snapshots",
+const nodeFields = ["rollout", "id", "name", "provider", "online", "provider_ready", "cpu_count", "available_memory_bytes", "available_disk_bytes", "running", "snapshots",
   "last_seen_at", "max_active", "max_retained", "active", "reserved", "retained", "cleanup_pending", "created_at", "core_url", "enrollment_id"];
 const nodeDiagnostics = new Set(["provider_unavailable", "docker_unavailable", "docker_limits_unsupported", "runtime_image_unavailable", "kvm_unavailable", "microsandbox_artifacts_unavailable", "capacity_insufficient"]);
 /** Core omits an empty `diagnostic`, so a present one is a code; an unknown code reads as provider_unavailable. */
 function projectNode(node: Record<string, unknown>): SandboxNode {
-  const { diagnostic, ...fields } = node;
+  const { diagnostic, rollout, ...rest } = node;
+  const fields = { ...rest, rollout: projectNodeRollout(rollout, node.online) };
   valid(strings(node, ["id", "name", "provider", "core_url"]) && typeof node.online === "boolean" && typeof node.provider_ready === "boolean" &&
     [node.cpu_count, node.available_memory_bytes, node.available_disk_bytes].every(nullable(isNonnegativeInteger)) &&
     [node.running, node.snapshots, node.max_active, node.max_retained, node.active, node.reserved, node.retained, node.cleanup_pending].every(isNonnegativeInteger) &&
@@ -265,8 +298,8 @@ function projectAllocations(value: unknown, nodeId: string): { data: SandboxAllo
   const list = members(value, ["data"]);
   valid(Array.isArray(list.data));
   return { data: (list.data as unknown[]).map((entry) => {
-    const allocation = members(entry, [...allocationFields, "compute_phase_changed_at", "created_at"]);
-    valid(strings(allocation, allocationFields) && sameResourceId(allocation.node_id as string, nodeId) && allocationDiagnostics.has(allocation.diagnostic as string) &&
+    const allocation = members(entry, [...allocationFields, "deployment_generation", "compute_phase_changed_at", "created_at"]);
+    valid(isNonnegativeInteger(allocation.deployment_generation) && strings(allocation, allocationFields) && sameResourceId(allocation.node_id as string, nodeId) && allocationDiagnostics.has(allocation.diagnostic as string) &&
       nullable(timestamp)(allocation.compute_phase_changed_at) && timestamp(allocation.created_at));
     return { ...allocation } as unknown as SandboxAllocation;
   }) };
@@ -304,24 +337,28 @@ export class SandboxAdminClient {
       return projectDeployment(await this.#core.json("/deployment", options, method, input));
     } catch (error) {
       if (!input.e2b) throw error;
-      if (error instanceof AgentCoreError && error.status === 409) {
+      if (error instanceof AgentCoreError && [400, 409, 503].includes(error.status)) {
         const messages: Record<string, string> = {
           sandbox_generation_stale: "The sandbox configuration changed. Refresh before submitting again.",
           sandbox_reset_required: "Reset the sandbox deployment before changing its backend.",
           sandbox_reset_in_progress: "A sandbox reset is in progress.",
           sandbox_not_configured: "The sandbox deployment is not configured.",
           sandbox_in_use: "Hosted sandbox resources still belong to this deployment.",
+          e2b_team_mismatch: "This E2B key cannot manage the retained deployment. Reset before changing teams.",
+          e2b_api_key_invalid: "The E2B API key was rejected.",
+          e2b_template_build_invalid: "Select a ready immutable E2B template build with matching resources.",
+          e2b_request_unconfirmed: "E2B verification could not be confirmed. Refresh before submitting again.",
         };
         if (error.code && messages[error.code]) {
           // Credential-bearing errors expose fixed local copy and allowlisted
           // numeric facts only; never echo arbitrary message, param or details.
           const fields = error.code === "sandbox_generation_stale" ? ["current_generation"] : error.code === "sandbox_in_use" ? ["allocations", "pending"] : [];
           const details = Object.fromEntries(fields.filter(field => isNonnegativeInteger(error.details?.[field])).map(field => [field, Number(error.details![field])]));
-          throw new AgentCoreError(messages[error.code]!, 409, error.code, null, undefined, Object.keys(details).length ? details : undefined);
+          throw new AgentCoreError(messages[error.code]!, error.status, error.code, null, undefined, Object.keys(details).length ? details : undefined);
         }
       }
       // The public-URL rejection is safe to show unless it somehow reflects the key.
-      const key = input.e2b.api_key;
+      const key = input.e2b.api_key ?? "";
       if (error instanceof AgentCoreError && error.status === 409 && error.code === "sandbox_configuration_error"
         && !error.message.includes(key) && !(error.param ?? "").includes(key)) {
         // Only Core's message and param pass through; nothing else from the response does.

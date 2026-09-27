@@ -8,6 +8,7 @@ function response(value: unknown, status = 200) { return new Response(JSON.strin
 const created = "2026-09-25T08:00:00.123456789Z";
 /** A ready node: Core omits `diagnostic`. */
 const node = {
+  rollout: { state: "ready", ready_generation: 1 },
   id: "3b0c1f4e-8a2d-4c6b-9e7f-1a2b3c4d5e6f", name: "core-01", provider: "docker", online: true, provider_ready: true,
   cpu_count: 16, available_memory_bytes: 8589934592, available_disk_bytes: 107374182400, running: 1, snapshots: 0,
   last_seen_at: "2026-09-25T09:00:00Z", max_active: 2, max_retained: 2, active: 1, reserved: 0, retained: 1, cleanup_pending: 0,
@@ -15,7 +16,7 @@ const node = {
 };
 /** Never heard from, enrolled before Core recorded enrollment IDs, with a fixed readiness code. */
 const unready = {
-  ...node, id: "7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2918", online: false, provider_ready: false, diagnostic: "kvm_unavailable",
+  ...node, rollout: { state: "unknown", ready_generation: 1 }, id: "7f6e5d4c-3b2a-4190-8f7e-6d5c4b3a2918", online: false, provider_ready: false, diagnostic: "kvm_unavailable",
   cpu_count: null, available_memory_bytes: null, available_disk_bytes: null, running: 0, last_seen_at: null, active: 0, retained: 0, enrollment_id: null,
 };
 const detail = {
@@ -32,14 +33,15 @@ const unobserved = {
   history: { resolution_seconds: 900, points: [] },
 };
 const allocation = {
+  deployment_generation: 1,
   id: "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d", node_id: node.id, tenant_id: "1b2c3d4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
   session_id: "2c3d4e5f-6a7b-4c8d-9e0f-1a2b3c4d5e6f", environment_id: "3d4e5f6a-7b8c-4d9e-8f1a-2b3c4d5e6f7a",
   state: "running", compute_phase: "running", compute_phase_changed_at: null, diagnostic: "", initialization: "ready", created_at: created,
 };
 const runtime = { source_commit: "a".repeat(40), image_id: "sha256:" + "b".repeat(64), image_manifest_digest: "sha256:" + "c".repeat(64), microsandbox_ref: "oac-runtime@sha256:" + "d".repeat(64), runtime_sha256: "e".repeat(64), firmware_sha256: "f".repeat(64) };
-const unconfigured = { installation_id: "", provider: "", core_url: "https://core.example", reset: null, owner_epoch: 0, generation: 0, mode: "", resources: { allocations: 0, pending: 0 }, suspension: null };
+const unconfigured = { rollout: { state: "settled", previous_generation_sandboxes: 0, nodes: null }, installation_id: "", provider: "", core_url: "https://core.example", reset: null, owner_epoch: 0, generation: 0, mode: "", resources: { allocations: 0, pending: 0 }, suspension: null };
 const docker = {
-  ...unconfigured, installation_id: "94be54a1-138c-4f30-bc87-b13686272dbe", provider: "docker", owner_epoch: 1, generation: 1, mode: "nodes",
+  ...unconfigured, installation_id: "94be54a1-138c-4f30-bc87-b13686272dbe", provider: "docker", rollout: { state: "settled", previous_generation_sandboxes: 0, nodes: { ready: 1, preparing: 0, failed: 0, update_required: 0, unknown: 0 } }, owner_epoch: 1, generation: 1, mode: "nodes",
   resources: { allocations: 2, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 }, runtime }, specification_digest: "0".repeat(64),
 };
 const microsandbox = {
@@ -48,7 +50,7 @@ const microsandbox = {
 };
 /** An E2B selection saved before Core recorded its template build. */
 const e2bDeployment = {
-  ...docker, provider: "e2b", mode: "direct", specification: { resources: { cpus: 2, memory_mib: 2048 } },
+  ...docker, provider: "e2b", rollout: unconfigured.rollout, mode: "direct", specification: { resources: { cpus: 2, memory_mib: 2048 } },
   e2b: { template: "runtime:00000000-0000-0000-0000-000000000001", credential_configured: true, template_build: { status: null, resources: { cpus: null, memory_mib: null, root_disk_mib: null } } },
 };
 const reads: Record<string, (client: SandboxAdminClient) => Promise<unknown>> = {
@@ -310,4 +312,29 @@ describe("durable reset projection", () => {
     expect(error.message).not.toContain(secret);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
+});
+
+it("uses the authoritative rollout signal instead of retained old Sessions for polling", async () => {
+  const settled = { ...e2bDeployment, rollout: { state: "settled", previous_generation_sandboxes: 2, nodes: null } };
+  const client = new SandboxAdminClient({ fetch: async () => response(settled) });
+  expect((await client.retrieveDeployment()).rollout).toEqual(settled.rollout);
+  for (const rollout of [
+    { ...settled.rollout, state: "preparing" },
+    { ...settled.rollout, previous_generation_sandboxes: 4 },
+    { ...docker.rollout, state: "preparing" },
+    { ...docker.rollout, nodes: { ...docker.rollout.nodes, unknown: -1 } },
+  ]) {
+    const invalid = new SandboxAdminClient({ fetch: async () => response({ ...docker, rollout }) });
+    await expect(invalid.retrieveDeployment()).rejects.toMatchObject({ code: "invalid_admin_response" });
+  }
+});
+
+it("omits a preserved key and submits an explicit same key once without retry", async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => response(e2bDeployment));
+  const client = new SandboxAdminClient({ fetch });
+  await client.updateDeployment({ provider: "e2b", expected_generation: 1, e2b: { template: e2bDeployment.e2b.template } });
+  await client.updateDeployment({ provider: "e2b", expected_generation: 1, e2b: { template: e2bDeployment.e2b.template, api_key: "same-key" } });
+  expect(fetch).toHaveBeenCalledTimes(2);
+  expect(JSON.parse(String(fetch.mock.calls[0]![1]!.body)).e2b).not.toHaveProperty("api_key");
+  expect(JSON.parse(String(fetch.mock.calls[1]![1]!.body)).e2b.api_key).toBe("same-key");
 });
