@@ -606,3 +606,14 @@
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
+
+/* The ten-column log fits a 1280px desktop alongside the sidebar. Keep full
+   dates in their tooltips while allowing time and environment labels to wrap. */
+@media (max-width: 1360px) {
+  .session-log-page .session-log-table thead th,
+  .session-log-page .session-log-table tbody th,
+  .session-log-page .session-log-table tbody td { padding-left: 8px; padding-right: 8px; }
+  .session-log-page .session-log-table th[scope="row"] { min-width: 132px; }
+  .session-log-page .session-log-table .session-log-time,
+  .session-log-page .session-log-table .session-nowrap { white-space: normal; }
+}
