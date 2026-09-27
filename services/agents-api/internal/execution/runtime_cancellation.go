@@ -21,6 +21,11 @@ func (m *runtimeManager) cancelLifecycles(nodes []*runtimeNode) error {
 	}
 	err := m.store.CancelExecutionOperations(m.ctx, cancel)
 	if err != nil {
+		// A manual reconcile may have no running coordinator to consume failed.
+		// Close admission synchronously; Worker shutdown still owns cancellation.
+		m.mu.Lock()
+		m.closed = true
+		m.mu.Unlock()
 		select {
 		case m.failed <- err:
 		default:

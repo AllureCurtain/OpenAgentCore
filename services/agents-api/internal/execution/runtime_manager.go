@@ -179,12 +179,18 @@ func (m *runtimeManager) applyInventory(previous map[string]*runtimeNode, ids []
 	m.mu.Unlock()
 	// Inventory includes offline nodes. Only explicit removal retires a lane;
 	// the Store requires all retained resources to be cleaned before removal.
-	err := m.cancelLifecycles(retired)
+	if err := m.cancelLifecycles(retired); err != nil {
+		// No cancellation was authorized. Keep each retiring identity and gate;
+		// acquiring its gate later cannot substitute for successful cancellation.
+		// Undo only the retirement tasks that will not be started. Existing callers
+		// and workers retain their accounting until ordinary owner shutdown settles.
+		for range retired {
+			m.active.Done()
+		}
+		return nil, err
+	}
 	for _, n := range retired {
 		go m.retire(n)
-	}
-	if err != nil {
-		return nil, err
 	}
 	return nodes, nil
 }

@@ -937,9 +937,12 @@ operations, using the existing lease gate with its five-second bound. Include
 an active manual reconcile's cancel function: an asynchronous `AfterFunc` alone
 can cancel a later leased query after the gate reopens. Never cancel an in-flight
 leased query merely to change deployment configuration. A failed cancellation
-fence stops the owner and leaves the drain barrier closed; it cannot activate a
-replacement. Release the lease gate before waiting for provider settlement or
-lifecycle accounting. Ordinary caller deadlines and owner shutdown retain their
+fence synchronously closes manager admission and reports owner failure, even
+before its coordinator starts. Failed inventory retirement retains the original
+lifecycle identity and gate through owner shutdown; gate availability is not
+proof that cancellation succeeded. The drain barrier stays closed and cannot
+activate a replacement. Release the lease gate before waiting for provider
+settlement or lifecycle accounting. Ordinary caller deadlines and owner shutdown retain their
 existing cancellation and fail-closed lease-loss behavior. Session locks, deployment
 capacity transactions and revision/one-shot receipts remain authoritative, with
 no external operation holding a database lock.
