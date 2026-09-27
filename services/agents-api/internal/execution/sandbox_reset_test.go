@@ -23,6 +23,11 @@ import (
 // The execution lease is database-scoped, so this manager test owns a database.
 func resetManagerStore(t *testing.T) (*store.Store, *store.ExecutionLease) {
 	t.Helper()
+	return resetManagerStoreConfig(t, nil)
+}
+
+func resetManagerStoreConfig(t *testing.T, configure func(*pgxpool.Config)) (*store.Store, *store.ExecutionLease) {
+	t.Helper()
 	url := os.Getenv("OAC_TEST_DATABASE_URL")
 	if url == "" {
 		t.Skip("OAC_TEST_DATABASE_URL is required")
@@ -55,6 +60,9 @@ func resetManagerStore(t *testing.T) (*store.Store, *store.ExecutionLease) {
 	_ = db.Close()
 	if err != nil {
 		t.Fatal(err)
+	}
+	if configure != nil {
+		configure(cfg)
 	}
 	pool, err := pgxpool.NewWithConfig(t.Context(), cfg)
 	if err != nil {

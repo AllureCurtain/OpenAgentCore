@@ -55,7 +55,8 @@ ORDER BY s.id LIMIT 32;
 SELECT id FROM projects WHERE tenant_id = $1;
 
 -- name: GetSandboxDeploymentSnapshot :one
-WITH observed AS MATERIALIZED (SELECT clock_timestamp() AS as_of),
+WITH deployment AS MATERIALIZED (SELECT * FROM runtime_deployment WHERE singleton = true LIMIT 1),
+observed AS MATERIALIZED (SELECT clock_timestamp() AS as_of),
 held AS (
     SELECT a.node_id, s.id AS session_id, e.id AS environment_id, false AS pending,
         (a.state = 'cleanup_pending' OR s.deleted_at IS NOT NULL OR e.status IN ('failed', 'expired')
@@ -63,7 +64,7 @@ held AS (
             THEN a.compute_retained_until IS NOT NULL AND a.compute_retained_until <= observed.as_of
             ELSE a.node_id IS NULL AND d.mode <> 'direct' AND a.kept_at <= observed.as_of - interval '1 hour' END) AS cleanup
     FROM runtime_allocations a JOIN environments e ON e.id = a.environment_id
-    JOIN sessions s ON s.id = e.session_id CROSS JOIN runtime_deployment d CROSS JOIN observed
+    JOIN sessions s ON s.id = e.session_id CROSS JOIN deployment d CROSS JOIN observed
     WHERE a.state <> 'released'
     UNION ALL
     SELECT p.node_id, s.id, e.id, true, false
@@ -80,7 +81,7 @@ held AS (
         THEN 'busy' ELSE 'idle' END AS category,
         n.name, (h.node_id IS NOT NULL AND NOT COALESCE(n.removed_at IS NULL AND n.connection_id IS NOT NULL
             AND n.connected_epoch = d.owner_epoch AND n.last_seen_at > observed.as_of - interval '45 seconds', false)) AS offline
-    FROM held h LEFT JOIN runtime_nodes n ON n.id = h.node_id CROSS JOIN runtime_deployment d CROSS JOIN observed
+    FROM held h LEFT JOIN runtime_nodes n ON n.id = h.node_id CROSS JOIN deployment d CROSS JOIN observed
 ), offline AS (
     SELECT node_id, name, count(*)::bigint AS resources FROM classified WHERE offline GROUP BY node_id, name
 )
@@ -94,4 +95,6 @@ SELECT sqlc.embed(d),
         'on_offline_nodes', (SELECT count(*) FROM classified WHERE offline),
         'offline_nodes', COALESCE((SELECT jsonb_agg(jsonb_build_object('node_id', node_id, 'name', name, 'resources', resources) ORDER BY node_id) FROM offline), '[]'::jsonb)
     )::jsonb AS remaining
-FROM runtime_deployment d;
+FROM runtime_deployment d
+WHERE d.singleton = true
+LIMIT 1;
