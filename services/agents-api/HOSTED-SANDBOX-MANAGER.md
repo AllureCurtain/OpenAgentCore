@@ -276,7 +276,15 @@ an unreachable Core or a 403 from a proxy in front of it, restart the service ev
 original identity.
 
 E2B same-team key/build/resource edits apply online; existing sandboxes retain their
-original generation and new allocations use the new selection. Docker/microsandbox
+original generation and new allocations use the new selection. Initial setup requires
+the selected template to belong to the submitted key's team, even if another team's
+public template is readable. Online replacement verifies the current exact template
+in both the committed and candidate keys' team-owned listings. This is a shared
+ownership anchor; Core does not invent a team ID from public readability. Legacy
+selections without this anchor and revoked committed keys require reset
+(`sandbox_reset_required`); transport or unsettled ownership remains unconfirmed (503).
+Keep the old key valid until PUT returns 200, then revoke it. A rejected change keeps
+the current key, generation and resource owners. Docker/microsandbox
 resource/Runtime edits still require zero unreleased allocations and pending hosted
 Environments, no reset and the observed generation. Their multi-generation preparation
 protocol remains future work. Submit once and read back after uncertain responses.

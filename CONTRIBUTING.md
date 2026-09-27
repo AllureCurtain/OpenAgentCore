@@ -809,7 +809,15 @@ Use one E2B classifier. Omitted key preserves the current key; identical selecti
 with omitted key is a no-op. Explicit key submission, including identical bytes,
 verifies and increments generation. Check the candidate and retained builds, paginated
 team-owned template membership and every settled live receipt under the candidate key.
-Public template readability is not team ownership. Missing/unsettled receipts and
+Initial E2B selection must also belong to the submitted key's team. Before online
+replacement, verify the current exact template under the committed key, then under
+the candidate key: shared membership is the ownership anchor, including for legacy
+installations with no retained resources. The pinned SDK exposes team-owned template
+listing, not an authenticated team ID; never invent or persist an inferred team ID.
+Public readability cannot anchor ownership. A legacy selection outside the committed
+key's team, or a revoked committed key, requires reset without blaming the candidate
+key. Transport uncertainty remains unconfirmed. Keep the old key valid until the PUT
+returns 200; revoke it only afterward. Missing/unsettled receipts and
 unconfirmed reads reject. Fence credential commits against all provider calls and
 actual helper subprocess completion after cancellation, then reverify. Helper exit
 never settles unknown remote Create. Bounded failure keeps the original key and

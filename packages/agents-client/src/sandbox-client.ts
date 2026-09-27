@@ -342,7 +342,7 @@ export class SandboxAdminClient {
       if (error instanceof AgentCoreError && [400, 409, 503].includes(error.status)) {
         const messages: Record<string, string> = {
           sandbox_generation_stale: "The sandbox configuration changed. Refresh before submitting again.",
-          sandbox_reset_required: "Reset the sandbox deployment before changing its backend.",
+          sandbox_reset_required: "Reset the sandbox deployment before changing this configuration.",
           sandbox_reset_in_progress: "A sandbox reset is in progress.",
           sandbox_not_configured: "The sandbox deployment is not configured.",
           sandbox_in_use: "Hosted sandbox resources still belong to this deployment.",

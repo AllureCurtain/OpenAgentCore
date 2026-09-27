@@ -129,3 +129,22 @@ func TestE2BCandidateAdoptsTemplateBuildForOmittedResources(t *testing.T) {
 		t.Fatalf("omitted resources were not adopted from the build: %s %v", logged, err)
 	}
 }
+
+func TestInitialE2BPublicTemplateOutsideTeamIsRejected(t *testing.T) {
+	helper := filepath.Join(t.TempDir(), "provider")
+	if err := os.WriteFile(helper, []byte("#!/bin/sh\ncat >/dev/null\nprintf '%s' '{\"Version\":1,\"ErrorCode\":\"team_mismatch\"}'\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	state := t.TempDir()
+	if err := os.Chmod(state, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OAC_E2B_PROVIDER_BIN", helper)
+	t.Setenv("OAC_E2B_STATE_DIR", state)
+	id := uuid.NewString()
+	s := &managedSetup{installationID: id, store: &setupStore{}}
+	selection := store.SandboxSetup{InstallationID: id, Provider: "e2b", E2B: &store.SandboxE2BConfiguration{APIKey: "synthetic-team-a", Template: "public-team-b:" + uuid.NewString()}}
+	if _, err := s.prepare(t.Context(), selection); !errors.Is(err, e2b.ErrTeamMismatch) || s.selected.Load() != nil {
+		t.Fatal("public readability accepted as team ownership", err)
+	}
+}

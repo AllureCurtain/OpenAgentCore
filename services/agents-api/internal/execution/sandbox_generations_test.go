@@ -31,6 +31,7 @@ func TestE2BReplacementVerifiesTwiceAndNeverPublishesFailedCommit(t *testing.T) 
 	provider := hub.Proxy(uuid.NewString(), "docker")
 	verifyCalls, published, fenced, released := 0, 0, 0, 0
 	var rejectAt int
+	var rejection error = e2b.ErrTeamMismatch
 	config := NewDeferredRuntimeProvider(id, func(ctx context.Context) (*RuntimeProvider, error) {
 		setup, err := s.GetSandboxSetup(ctx)
 		if err != nil {
@@ -42,7 +43,7 @@ func TestE2BReplacementVerifiesTwiceAndNeverPublishesFailedCommit(t *testing.T) 
 			VerifyCredential: func(context.Context) error {
 				verifyCalls++
 				if verifyCalls == rejectAt {
-					return e2b.ErrTeamMismatch
+					return rejection
 				}
 				return nil
 			},
@@ -64,7 +65,7 @@ func TestE2BReplacementVerifiesTwiceAndNeverPublishesFailedCommit(t *testing.T) 
 	input.E2B.APIKey = "candidate-key"
 	request := store.SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: input, ExpectedGeneration: 1}
 	audit := adminaudit.WithSource(t.Context(), adminaudit.Source{CredentialID: "test", RequestID: "test", TraceID: "test"})
-	for _, failure := range []string{"preliminary", "final", "commit"} {
+	for _, failure := range []string{"preliminary", "final", "unanchored legacy or revoked committed key", "unknown ownership", "commit"} {
 		verifyCalls = 0
 		rejectAt = 0
 		ctx := audit
@@ -73,6 +74,12 @@ func TestE2BReplacementVerifiesTwiceAndNeverPublishesFailedCommit(t *testing.T) 
 			rejectAt = 1
 		case "final":
 			rejectAt = 2
+		case "unanchored legacy or revoked committed key":
+			rejectAt = 1
+			rejection = &store.SandboxResetRequiredError{CurrentProvider: "e2b", RequestedProvider: "e2b"}
+		case "unknown ownership":
+			rejectAt = 1
+			rejection = e2b.ErrRequestUnconfirmed
 		case "commit":
 			ctx = t.Context()
 		}

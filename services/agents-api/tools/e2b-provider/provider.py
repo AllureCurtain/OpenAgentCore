@@ -365,6 +365,7 @@ class Provider:
                     return {'Version': 1, 'DeploymentValid': True, 'ErrorCode': ''}
                 if self.q['Operation'] == 'observe':
                     return {'Version': 1, 'Observations': self.observe(), 'ErrorCode': ''}
+                verify_team_template(self.config, self.remaining)
                 build = validate_deployment(self.config, self.remaining)
                 return {'Version': 1, 'DeploymentValid': True, 'TemplateBuild': build, 'ErrorCode': ''}
             except AuthenticationException:

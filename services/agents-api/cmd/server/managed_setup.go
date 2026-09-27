@@ -94,7 +94,7 @@ func (s *managedSetup) prepare(ctx context.Context, setup store.SandboxSetup) (e
 	if provider, ok := candidate.Config.Provider.(*e2b.Provider); ok {
 		build, err := provider.ValidateDeployment(ctx)
 		if err != nil {
-			if errors.Is(err, e2b.ErrCredentialInvalid) {
+			if errors.Is(err, e2b.ErrCredentialInvalid) || errors.Is(err, e2b.ErrTeamMismatch) {
 				return execution.PreparedRuntimeDeployment{}, err
 			}
 			if errors.Is(err, sandbox.ErrInvalid) {

@@ -111,7 +111,7 @@ func writeStoreError(w http.ResponseWriter, r *http.Request, err error, notFound
 	case errors.As(err, &stale):
 		writeCoreError(w, http.StatusConflict, "sandbox_generation_stale", "The sandbox deployment generation changed. Refresh before submitting again.", CoreErrorDetails{"current_generation": CoreErrorNumber(float64(stale.CurrentGeneration))})
 	case errors.As(err, &resetRequired):
-		writeCoreError(w, http.StatusConflict, "sandbox_reset_required", "Reset the sandbox deployment before changing its backend.", CoreErrorDetails{"current_provider": CoreErrorString(resetRequired.CurrentProvider), "requested_provider": CoreErrorString(resetRequired.RequestedProvider)})
+		writeCoreError(w, http.StatusConflict, "sandbox_reset_required", "Reset the sandbox deployment before changing this configuration.", CoreErrorDetails{"current_provider": CoreErrorString(resetRequired.CurrentProvider), "requested_provider": CoreErrorString(resetRequired.RequestedProvider)})
 	case errors.As(err, &inUse):
 		writeCoreError(w, http.StatusConflict, "sandbox_in_use", "Hosted sandbox resources still belong to this deployment.", CoreErrorDetails{"allocations": CoreErrorNumber(float64(inUse.Resources.Allocations)), "pending": CoreErrorNumber(float64(inUse.Resources.Pending))})
 	case errors.Is(err, store.ErrSandboxResetAdmission):

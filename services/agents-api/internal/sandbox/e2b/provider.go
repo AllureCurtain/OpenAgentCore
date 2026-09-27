@@ -141,6 +141,8 @@ func (p *Provider) call(ctx context.Context, operation string, r sandbox.Referen
 		return out, nil
 	case "legacy_template":
 		return out, fmt.Errorf("%w: This E2B template was built before OpenAgentCore renamed its paths. Build a template with this release's build-template.py and replace it in the sandbox deployment.", sandbox.ErrInvalid)
+	case "team_mismatch":
+		return out, ErrTeamMismatch
 	case "unauthorized":
 		return out, ErrCredentialInvalid
 	case "invalid":
@@ -158,7 +160,7 @@ func (p *Provider) call(ctx context.Context, operation string, r sandbox.Referen
 	}
 }
 
-// ValidateDeployment reads the exact immutable build without creating compute or
+// ValidateDeployment verifies team ownership and reads the exact immutable build without creating compute or
 // allocation receipts. Candidate configuration remains unpublished until it passes.
 // It returns the build as read. Without configured Resources it only requires a
 // ready build, whose CPU and memory the caller then adopts as the selection.

@@ -40,6 +40,16 @@ class TeamTemplateTest(unittest.TestCase):
 
 
 class CredentialReceiptTest(ProviderTest):
+    def test_initial_public_template_readability_does_not_establish_team(self):
+        with patch('provider.validate_deployment') as readable, patch('provider.verify_team_template', side_effect=Failure('team_mismatch')):
+            result = self.call('validate_deployment')
+        self.assertEqual(result['ErrorCode'], 'team_mismatch')
+        readable.assert_not_called()
+        self.api.create.assert_not_called()
+        from pathlib import Path
+        self.assertEqual(list(Path(self.temporary.name).iterdir()), [])
+
+
     def verify(self):
         self.request['References'] = [self.reference]
         with patch('provider.verify_team_template'), patch('provider.validate_deployment'):

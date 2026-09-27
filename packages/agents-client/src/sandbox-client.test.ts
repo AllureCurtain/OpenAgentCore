@@ -255,6 +255,19 @@ describe("hosted provider configuration", () => {
     expect((shown as AgentCoreError).errorType).toBeUndefined();
     await expect(client.initializeDeployment({ expected_generation: 0, provider: "e2b", e2b })).rejects.toMatchObject({ status: 409, code: "sandbox_configuration_error", message: rejection.message, param: null });
   });
+  it("keeps legacy E2B ownership reset actionable without reflecting either key", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ error: {
+      code: "sandbox_reset_required", message: "revoked-old-key " + e2b.api_key,
+      param: "revoked-old-key", details: { current_provider: "e2b", requested_provider: "e2b", secret: e2b.api_key },
+    } }, 409));
+    const client = new SandboxAdminClient({ fetch });
+    const error = await client.updateDeployment({ provider: "e2b", e2b, expected_generation: 1 }).catch((error: unknown) => error);
+    expect(error).toMatchObject({ status: 409, code: "sandbox_reset_required", message: "Reset the sandbox deployment before changing this configuration.", param: null });
+    expect((error as AgentCoreError).details).toBeUndefined();
+    expect(JSON.stringify(error)).not.toContain("revoked-old-key");
+    expect(JSON.stringify(error)).not.toContain(e2b.api_key);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
   it("never retries uncertain switch or reset writes", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new TypeError("Connection lost"));
     const client = new SandboxAdminClient({ fetch });

@@ -112,24 +112,39 @@ func (s *managedSetup) routeGenerations(candidate execution.PreparedRuntimeDeplo
 	candidate.VerifyCredential = func(ctx context.Context) error {
 		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
-		// The candidate's template must itself belong to the same accessible team.
+		// Preserve the committed credential until its ownership anchor is verified.
+		// Public template readability cannot establish which team owns a deployment.
 		verify := func(value store.SandboxSetup, refs []sandbox.Reference) error {
 			value.InstallationID = setup.InstallationID
-			value.E2B = &store.SandboxE2BConfiguration{APIKey: setup.E2B.APIKey, Template: value.E2B.Template}
 			provider, err := s.provider(value)
 			if err != nil {
 				return err
 			}
 			return provider.(*e2b.Provider).VerifyCredential(ctx, refs)
 		}
-		if err := verify(setup, nil); err != nil {
-			return err
-		}
 		current, err := db.GetSandboxSetup(ctx)
 		if err != nil {
 			return err
 		}
+		if current.Provider != "e2b" || current.E2B == nil {
+			return &store.SandboxResetRequiredError{CurrentProvider: current.Provider, RequestedProvider: "e2b"}
+		}
 		if err := verify(current, nil); err != nil {
+			if errors.Is(err, e2b.ErrCredentialInvalid) || errors.Is(err, e2b.ErrTeamMismatch) {
+				// A revoked legacy key or a public template outside its team cannot
+				// anchor ownership. This says nothing about the candidate key's validity.
+				return &store.SandboxResetRequiredError{CurrentProvider: "e2b", RequestedProvider: "e2b"}
+			}
+			return err
+		}
+		withCandidateKey := func(value store.SandboxSetup, refs []sandbox.Reference) error {
+			value.E2B = &store.SandboxE2BConfiguration{APIKey: setup.E2B.APIKey, Template: value.E2B.Template}
+			return verify(value, refs)
+		}
+		if err := withCandidateKey(current, nil); err != nil {
+			return err
+		}
+		if err := verify(setup, nil); err != nil {
 			return err
 		}
 		for after := int64(-1); ; {
@@ -138,7 +153,7 @@ func (s *managedSetup) routeGenerations(candidate execution.PreparedRuntimeDeplo
 				return err
 			}
 			for _, g := range page {
-				if err := verify(g, nil); err != nil {
+				if err := withCandidateKey(g, nil); err != nil {
 					return err
 				}
 				after = int64(g.Generation)
