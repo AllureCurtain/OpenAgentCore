@@ -833,6 +833,19 @@ The ordinary provider lifecycle owns compute/snapshot release. Retain history an
 persisted Files/Artifacts; archived Sessions cannot resume unpersisted workspace.
 The archive GET reports resource disposition, not provenance or Turn finalization.
 
+Archive cancellation must not destroy a healthy receipt path before its terminal
+commit. Only the archive that first revokes a device may persist its exact
+`archive_cancel_turn_id`; ordinary revocation clears it, and repeated cleanup
+preserves rather than recreates it. The existing authenticated delivery can drain
+its cancellation for at most 20 seconds from the Turn's original
+`cancel_requested_at`. Track that delivery through Done, cancellation ACK and
+terminal commit, independently of subscription removal. Heartbeats and both normal
+and checkpoint cleanup use the same identity/deadline check; no new connection,
+input, file/MCP authority or lease renewal is granted. Do not hold a transaction or
+lifecycle gate waiting for the receipt. Lost peers, expiry and restart retain the
+ordinary failure/cleanup fallback, never a fabricated cancelled outcome. Preserve
+unknown Create ownership and reject schema downgrade with unsettled markers.
+
 Core rejects `AGENTS_API_MANAGED_RUNTIMES_FILE`; there is no file-managed startup
 path or embedded local node. An older file-managed database is not automatically
 adopted after its environment variable is removed. Settle and drain that deployment

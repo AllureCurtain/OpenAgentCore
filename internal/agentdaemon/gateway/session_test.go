@@ -477,3 +477,7 @@ func TestSession_HeartbeatInfersClaudeCodeFromLegacyFlag(t *testing.T) {
 func jsonMarshal(v any) ([]byte, error) {
 	return json.Marshal(v)
 }
+
+func (c *fakeConn) WriteControl(kind int, data []byte, _ time.Time) error {
+	return c.WriteMessage(kind, data)
+}

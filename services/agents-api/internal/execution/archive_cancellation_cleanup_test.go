@@ -3,11 +3,18 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	runtimegateway "github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/runtime"
+	"github.com/gorilla/websocket"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"testing"
+	"time"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/device"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/gateway"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/adminaudit"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/identity"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
@@ -40,9 +47,13 @@ func (p waitingCleanupCheckpoint) KillCompute(context.Context, sandbox.Reference
 	return nil
 }
 
-func TestArchiveWaitingDestructiveCleanupPrecedesReceiptDiagnosis(t *testing.T) {
-	for _, checkpoint := range []bool{false, true} {
-		t.Run(map[bool]string{false: "Kill", true: "KillCompute"}[checkpoint], func(t *testing.T) {
+func TestArchiveWaitingCleanupReceiptBarrier(t *testing.T) {
+	for _, scenario := range []struct {
+		name                 string
+		checkpoint, delivery bool
+	}{{"Kill_no_delivery", false, false}, {"KillCompute_no_delivery", true, false}, {"Kill_live_delivery", false, true}, {"KillCompute_live_delivery", true, true}} {
+		t.Run(scenario.name, func(t *testing.T) {
+			checkpoint := scenario.checkpoint
 			s, lease := resetManagerStore(t)
 			writer := lease.Store()
 			installation := uuid.NewString()
@@ -65,7 +76,8 @@ func TestArchiveWaitingDestructiveCleanupPrecedesReceiptDiagnosis(t *testing.T) 
 			if err != nil {
 				t.Fatal(err)
 			}
-			owner, err := writer.ReserveRuntimeAllocation(t.Context(), project.TenantID, session.Environment.ID, installation, device.HashCredential(uuid.NewString()))
+			secret := uuid.NewString()
+			owner, err := writer.ReserveRuntimeAllocation(t.Context(), project.TenantID, session.Environment.ID, installation, device.HashCredential(secret))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -78,7 +90,7 @@ func TestArchiveWaitingDestructiveCleanupPrecedesReceiptDiagnosis(t *testing.T) 
 				t.Fatal(err)
 			}
 			// This fixture isolates lifecycle ordering. Protocol-driven waiting is
-			// independently exercised in TestArchiveWaitingHeartbeatCancellationDiagnosis.
+			// independently exercised in TestArchiveWaitingCancellationReceipts.
 			for _, transition := range []store.TurnTransition{{ExpectedStatus: store.TurnQueued, Status: store.TurnInProgress}, {ExpectedStatus: store.TurnInProgress, Status: store.TurnWaiting}} {
 				if _, err := writer.TransitionTurn(t.Context(), project.TenantID, session.ID, input.TurnID, transition); err != nil {
 					t.Fatal(err)
@@ -92,6 +104,42 @@ func TestArchiveWaitingDestructiveCleanupPrecedesReceiptDiagnosis(t *testing.T) 
 					t.Fatal(err)
 				}
 			}
+			registry := gateway.NewRegistry()
+			if scenario.delivery {
+				server := httptest.NewUnstartedServer(nil)
+				wsURL := "ws://" + server.Listener.Addr().String() + "/api/v1/agent-daemon/ws"
+				handler, liveRegistry, err := runtimegateway.NewGateway(s, wsURL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				registry = liveRegistry
+				server.Config.Handler = handler
+				server.Start()
+				t.Cleanup(func() { runtimegateway.CloseConnections(registry); server.Close() })
+				u, _ := url.Parse(wsURL)
+				u.RawQuery = url.Values{"device_id": {owner.DeviceID}, "version": {proto.Version}}.Encode()
+				conn, _, err := websocket.DefaultDialer.Dial(u.String(), http.Header{"Authorization": {"Bearer " + secret}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { conn.Close() })
+				var peer *gateway.Session
+				for end := time.Now().Add(3 * time.Second); ; {
+					peer, err = registry.LookupDevice(owner.DeviceID)
+					if err == nil {
+						break
+					}
+					if time.Now().After(end) {
+						t.Fatal(err)
+					}
+					time.Sleep(time.Millisecond)
+				}
+				release, err := peer.TrackExecutionDelivery(input.TurnID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer release()
+			}
 			if _, err := writer.ArchiveManagedSession(audit, project.TenantID, session.ID, 1); err != nil {
 				t.Fatal(err)
 			}
@@ -100,30 +148,48 @@ func TestArchiveWaitingDestructiveCleanupPrecedesReceiptDiagnosis(t *testing.T) 
 				t.Fatal(err)
 			}
 			kills := 0
+			expectedStatus := store.TurnWaiting
 			provider := waitingCleanupProvider{beforeKill: func() {
 				kills++
 				turn, err := s.GetTurn(t.Context(), project.TenantID, session.ID, input.TurnID)
-				if err != nil || turn.Status != store.TurnWaiting || turn.CancelRequestedAt.IsZero() || !turn.CompletedAt.IsZero() {
-					t.Fatal("Kill did not precede terminal receipt", turn, err)
+				if err != nil || turn.Status != expectedStatus || turn.CancelRequestedAt.IsZero() || (turn.CompletedAt.IsZero() != (expectedStatus == store.TurnWaiting)) {
+					t.Fatal("cleanup observed unexpected terminal state", turn, err)
 				}
 				allocation, err := s.GetRuntimeAllocation(t.Context(), project.TenantID, session.Environment.ID)
 				if err != nil || allocation.State != "cleanup_pending" {
 					t.Fatal("Kill bypassed durable cleanup ownership", allocation, err)
 				}
 			}}
-			lifecycle := &runtimeLifecycle{store: writer, registry: gateway.NewRegistry(), config: RuntimeProvider{InstallationID: installation, Provider: provider}, connections: map[string]*runtimeConnection{}}
+			lifecycle := &runtimeLifecycle{store: writer, registry: registry, config: RuntimeProvider{InstallationID: installation, Provider: provider}, connections: map[string]*runtimeConnection{}}
 			if checkpoint {
 				lifecycle.config.Provider = waitingCleanupCheckpoint{beforeKill: provider.beforeKill}
 			}
 			if err := lifecycle.observe(t.Context(), owner); err != nil {
 				t.Fatal(err)
 			}
+			if scenario.delivery {
+				if kills != 0 {
+					t.Fatal("destroyed compute before cancellation committed")
+				}
+				pending, err := s.GetRuntimeAllocation(t.Context(), project.TenantID, session.Environment.ID)
+				if err != nil || pending.State != "cleanup_pending" {
+					t.Fatal(pending, err)
+				}
+				// Controlled terminal receipt fixture; no native cancellation claim.
+				if _, err := writer.TransitionTurn(t.Context(), project.TenantID, session.ID, input.TurnID, store.TurnTransition{ExpectedStatus: store.TurnWaiting, Status: store.TurnCancelled}); err != nil {
+					t.Fatal(err)
+				}
+				expectedStatus = store.TurnCancelled
+				if err := lifecycle.observe(t.Context(), owner); err != nil {
+					t.Fatal(err)
+				}
+			}
 			after, err := s.GetRuntimeAllocation(t.Context(), project.TenantID, session.Environment.ID)
 			if err != nil || after.State != "released" || kills != 1 {
 				t.Fatal("cleanup did not release", after, kills, err)
 			}
 			turn, err := s.GetTurn(t.Context(), project.TenantID, session.ID, input.TurnID)
-			if err != nil || turn.Status != store.TurnWaiting || !turn.CompletedAt.IsZero() {
+			if err != nil || turn.Status != expectedStatus || (turn.CompletedAt.IsZero() != (expectedStatus == store.TurnWaiting)) {
 				t.Fatal("cleanup should not fabricate cancellation", turn, err)
 			}
 		})

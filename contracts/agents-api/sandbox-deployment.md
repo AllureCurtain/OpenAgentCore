@@ -272,6 +272,17 @@ without reset. It preserves history and persisted Files/Artifacts but discards
 unpersisted workspace and prevents that Session from resuming. Poll its archive
 GET for actual release. Reset never manufactures a release receipt.
 
+A force archive fences credentials and new work immediately. If its original
+hosted delivery is still connected, Core preserves only that delivery's native
+cancellation/terminal receipt path until terminal commit or a fixed 20-second
+bound from the original cancellation request. Done does not end this bound while
+a cancellation acknowledgment or terminal commit is pending. This internal drain
+never authorizes reconnect, workspace/MCP access or renewed execution. Explicit
+credential revocation ends the exception; repeats do not extend it. Missing or
+failed receipts retain honest failure outcomes, and disconnected, expired or
+restarted owners fall back to ordinary provider cleanup. There is no new public
+state, request field or model/tool timeout.
+
 One mutation gate serializes setup, PUT, reset, cancel and finalization. Archive
 locks Session before deployment; finalization never reverses that order or waits
 for itself inside counted manager work. Candidates bind to the reset request time,
