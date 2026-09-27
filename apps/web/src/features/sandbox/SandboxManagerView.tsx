@@ -111,7 +111,8 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   // A refresh the administrator asks for reports its failure even while an earlier one is still unconfirmed;
   // the enrollment dialog's own repeated refreshes do not.
   const refreshByUser = () => {
-    setRevision((value) => value + 1);
+    // Reconciliation keeps an applicable draft. The authoritative lifecycle key
+    // below discards it only when Core confirms a different configuration.
     void queryClient.invalidateQueries({ queryKey: installationQuery.queryKey });
     void refetch().then((result) => {
       if (result.isError && result.data) toast.show(t("Refresh failed; showing the last loaded state."), { tone: "error", detail: sandboxRequestError(result.error, locale), key: "sandbox-read" });
@@ -189,6 +190,9 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const nodes = snapshot?.nodes ?? [];
   const allocations = snapshot?.allocations ?? [];
   const hostedNodes = Boolean(snapshot?.deployment.provider && snapshot.deployment.provider !== "e2b");
+  const configurationKey = deployment
+    ? `${deployment.installation_id}:${deployment.owner_epoch}:${deployment.provider}:${deployment.mode}:${deployment.generation}:${revision}`
+    : undefined;
   // Getting started asks for Add node on arrival. A request the first settled read cannot
   // serve (no own-machines deployment, active reset, a failed read) is dropped, so the
   // dialog never opens later on its own.
@@ -287,12 +291,12 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
     <NodesPageHeader headingRef={heading} count={hostedNodes && nodesConfirmed ? nodes.length : undefined} actions={actions} cloud={snapshot?.deployment.provider === "e2b"} />
     <div className="console-page-body sandbox-content">
       {status}
-      {snapshot && !snapshot.deployment.provider && !snapshot.deployment.reset ? <SandboxSetupWizard key={`${snapshot.deployment.generation}:${revision}`} coreUrl={snapshot.deployment.core_url} expectedGeneration={snapshot.deployment.generation} disabled={busy || loading || setupNeedsRefresh || error !== null} onSubmit={initialize} /> : null}
+      {snapshot && !snapshot.deployment.provider && !snapshot.deployment.reset ? <SandboxSetupWizard key={configurationKey} coreUrl={snapshot.deployment.core_url} expectedGeneration={snapshot.deployment.generation} disabled={busy || loading || setupNeedsRefresh || error !== null} onSubmit={initialize} /> : null}
       {snapshot?.deployment.provider ? <>
         {staleNodes.length ? <p className="sandbox-notice sandbox-address-warning" role="status">{staleNodes.length === 1
           ? t("{{name}} is still bound to an old Core address. Remove it and add it again.", { name: staleNodes[0] })
           : t("{{count}} nodes are still bound to an old Core address: {{names}}. Remove them and add them again.", { count: staleNodes.length, names: new Intl.ListFormat(i18n.resolvedLanguage, { type: "conjunction" }).format(staleNodes) })}</p> : null}
-        <SandboxDeploymentSettings key={`${snapshot.deployment.generation}:${revision}`} deployment={snapshot.deployment} fresh={confirmed} disabled={busy || loading || !fresh || setupNeedsRefresh} onReset={startReset} onCancelReset={cancelReset} onUpdate={update} />
+        <SandboxDeploymentSettings key={configurationKey} deployment={snapshot.deployment} fresh={confirmed} disabled={busy || loading || !fresh || setupNeedsRefresh} onReset={startReset} onCancelReset={cancelReset} onUpdate={update} />
         {hostedNodes ? <section aria-label={t("Sandbox nodes")}>
           {nodes.length
             ? <NodeList nodes={nodes} allocations={allocations} coreUrl={snapshot.deployment.core_url} stale={!nodesConfirmed} disabled={busy || loading || removing || !nodesConfirmed} suspends={snapshot.deployment.provider === "microsandbox"} onOpen={(node) => navigate("nodes", { id: node.id })} onRemove={askRemove} />
