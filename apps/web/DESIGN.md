@@ -782,8 +782,14 @@ fresh install. No automatic configuration replay or online-rollout progress exis
 Read deployment progress independently of node details. Partial failures retain
 successful facts with a visible stale/unavailable notice. An uncertain write opens
 the existing recovery dialog and requires a new authoritative read before another
-mutation; refresh reads state and never resubmits the write. A read started before
-the write must not replace the confirmed result or establish post-failure freshness.
+mutation; refresh reads state and never resubmits the write. The connection's
+QueryClient owns both the authoritative deployment and pending or uncertain writes
+across route transitions. Leaving Nodes cannot cancel or forget a submitted reset,
+and a cached node snapshot cannot replace a newer reset or completion learned on
+Overview or System. Returning to Nodes reads the shared deployment immediately and
+refreshes node evidence separately. Only a successful authoritative read begun after
+the write settles can release the mutation block; an earlier or still-pending read
+cannot. Logout clears this connection-scoped state.
 
 ### System page
 Four sections, each saying where it changes. Installation: the public address, API

@@ -1,6 +1,7 @@
 import { SandboxAdminClient, type SandboxAllocation, type SandboxDeployment, type SandboxNode, type SandboxProvider } from "@agents-core-web/agents-client";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 
+import { confirmSandboxRead } from "./sandbox-write-ownership";
 import { sandboxConsoleConfig } from "./console-config";
 
 /**
@@ -26,7 +27,13 @@ export const sandboxConsoleConfigQuery = queryOptions({
 /** The deployment alone, for pages that only describe it. */
 export const sandboxDeploymentQuery = queryOptions<SandboxDeployment>({
   queryKey: [...sandboxScope, "deployment"],
-  queryFn: ({ signal }) => sandboxAdmin.retrieveDeployment({ signal }),
+  queryFn: async ({ signal, client }) => {
+    const readStartedAt = performance.now();
+    const deployment = await sandboxAdmin.retrieveDeployment({ signal });
+    signal.throwIfAborted();
+    confirmSandboxRead(client, readStartedAt);
+    return deployment;
+  },
   refetchInterval: (query) => sandboxResetPollInterval(query.state.data),
   refetchIntervalInBackground: false,
 });
@@ -53,7 +60,7 @@ export interface SandboxSnapshot {
   allocations: SandboxAllocation[];
   /** A failed node/receipt read never hides a successful deployment/reset read. */
   nodesError: unknown | null;
-  /** `performance.now()` when this read began: only a read begun after an uncertain write confirms it. */
+  /** `performance.now()` when this supplemental inventory read began. */
   readAt: number;
 }
 
@@ -62,9 +69,10 @@ export const sandboxSnapshotQuery = queryOptions<SandboxSnapshot>({
   queryKey: [...sandboxScope, "snapshot"],
   refetchInterval: (query) => sandboxResetPollInterval(query.state.data?.deployment),
   refetchIntervalInBackground: false,
-  queryFn: async ({ signal }): Promise<SandboxSnapshot> => {
+  queryFn: async ({ signal, client }): Promise<SandboxSnapshot> => {
     const readAt = performance.now();
-    const deployment = await sandboxAdmin.retrieveDeployment({ signal });
+    const deployment = await client.fetchQuery({ ...sandboxDeploymentQuery, staleTime: 0 });
+    signal.throwIfAborted();
     let nodes: SandboxNode[] = [];
     try {
       if (deployment.provider && deployment.provider !== "e2b") nodes = (await sandboxAdmin.listNodes({ signal })).data;
@@ -77,3 +85,12 @@ export const sandboxSnapshotQuery = queryOptions<SandboxSnapshot>({
     }
   },
 });
+
+/** Node facts belong to this lifecycle, never a previous reset or installation. */
+export function sandboxSnapshotMatchesDeployment(snapshot: SandboxSnapshot, deployment: SandboxDeployment): boolean {
+  const previous = snapshot.deployment;
+  return previous.installation_id === deployment.installation_id && previous.owner_epoch === deployment.owner_epoch &&
+    previous.generation === deployment.generation && previous.provider === deployment.provider &&
+    previous.reset?.requested_at === deployment.reset?.requested_at && previous.reset?.clear === deployment.reset?.clear &&
+    previous.reset?.forced_at === deployment.reset?.forced_at;
+}

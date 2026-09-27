@@ -78,9 +78,9 @@ export function SandboxResetControls({ deployment, disabled, stale, onStart, onC
             <legend>{t("Clear hosted work")}</legend>
             <label><input type="radio" name={`${id}-clear`} value="auto" checked={clear === "auto"} onChange={() => setClear("auto")} />{t("Auto — let busy work finish")}</label>
             <p>{t("Idle, suspended and queued Sessions are archived immediately. Running or waiting Turns and file writes may finish until the deadline; then Core forces the rest.")}</p>
-            {clear === "auto" ? <label className="field">
+            {clear === "auto" ? <label className="field" htmlFor={`${id}-deadline`}>
               <span>{t("Force remaining work after (seconds)")}<HelpTip>{t("Default: 1 hour. Choose a whole number from 300 to 86400 seconds (5 minutes to 24 hours).")}</HelpTip></span>
-              <input type="number" min={300} max={86400} step={1} value={deadline} onChange={(event) => setDeadline(event.target.value)} aria-invalid={!validResetDeadline(deadline)} />
+              <input id={`${id}-deadline`} type="number" min={300} max={86400} step={1} value={deadline} onChange={(event) => setDeadline(event.target.value)} aria-invalid={!validResetDeadline(deadline)} />
               {!validResetDeadline(deadline) ? <span role="alert" className="field-error">{t("Enter a whole number from 300 to 86400 seconds.")}</span> : null}
             </label> : null}
             <label><input type="radio" name={`${id}-clear`} value="force" checked={clear === "force"} onChange={() => setClear("force")} />{t("Force — cancel remaining work now")}</label>

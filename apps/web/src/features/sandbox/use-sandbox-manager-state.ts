@@ -1,0 +1,26 @@
+import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { sandboxDeploymentQuery, sandboxSnapshotMatchesDeployment, sandboxSnapshotQuery, type SandboxSnapshot } from "./sandbox-queries";
+import { sandboxWriteOwnershipQuery } from "./sandbox-write-ownership";
+
+/** All pages share deployment truth. Nodes are supplemental evidence from the same lifecycle. */
+export function useSandboxManagerState() {
+  const ownership = useQuery(sandboxWriteOwnershipQuery);
+  const deploymentQuery = useQuery({ ...sandboxDeploymentQuery, refetchOnMount: "always" });
+  const query = useQuery(sandboxSnapshotQuery);
+  const inventory = query.data;
+  const deployment = deploymentQuery.data;
+  const compatible = Boolean(inventory && deployment && sandboxSnapshotMatchesDeployment(inventory, deployment));
+  const { refetch } = query;
+  useEffect(() => {
+    if (inventory && deployment && !compatible) void refetch();
+  }, [compatible, deployment?.installation_id, deployment?.owner_epoch, deployment?.generation, deployment?.provider, deployment?.reset?.requested_at, deployment?.reset?.clear, deployment?.reset?.forced_at, refetch]);
+  const snapshot: SandboxSnapshot | null = deployment ? {
+    deployment,
+    nodes: compatible ? inventory!.nodes : [],
+    allocations: compatible ? inventory!.allocations : [],
+    nodesError: query.isError ? query.error : compatible ? inventory!.nodesError : null,
+    readAt: compatible ? inventory!.readAt : 0,
+  } : null;
+  return { ownership, deploymentQuery, query, deployment, compatible, snapshot };
+}

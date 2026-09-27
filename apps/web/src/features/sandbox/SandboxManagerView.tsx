@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { AgentCoreError, type InitializeSandboxDeployment, type SandboxDeployment, type SandboxNode, type StartSandboxReset } from "@agents-core-web/agents-client";
+import { type InitializeSandboxDeployment, type SandboxDeployment, type SandboxNode, type StartSandboxReset } from "@agents-core-web/agents-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Pencil, Plus, Server, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -13,7 +13,9 @@ import { InstallationNotice } from "../../components/InstallationNotice";
 import { installationQuery } from "../../lib/installation";
 import { sandboxConfigurationRejection, sandboxRequestError, sandboxWriteUncertain } from "../../lib/sandbox-labels";
 import type { SandboxConsoleConfig } from "./console-config";
-import { sandboxAdmin, sandboxConsoleConfigQuery, sandboxDeploymentQuery, sandboxScope, sandboxSnapshotQuery, type SandboxSnapshot } from "./sandbox-queries";
+import { sandboxAdmin, sandboxConsoleConfigQuery } from "./sandbox-queries";
+import { useSandboxManagerState } from "./use-sandbox-manager-state";
+import { writeSandboxDeployment } from "./sandbox-deployment-write";
 import { SandboxSetupWizard } from "./SandboxSetupWizard";
 import { SandboxDeploymentSettings } from "./SandboxDeploymentSettings";
 import { NodeEnrollment } from "./NodeEnrollment";
@@ -62,15 +64,14 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const { params, navigate, back: goBack } = useConsoleNavigation();
   const client = sandboxAdmin;
   const queryClient = useQueryClient();
-  const query = useQuery(sandboxSnapshotQuery);
+  const { ownership, deploymentQuery, query, deployment, compatible, snapshot } = useSandboxManagerState();
+  const { refetch: refetchSnapshot } = query;
   const installation = useQuery(installationQuery);
   const localOnly = installation.data?.local_only === true;
   const { t: tCommon } = useTranslation("common");
-  const snapshot: SandboxSnapshot | null = query.data ?? null;
-  const loading = query.isFetching;
-  // As before a reload clears the last error, a running read hides it.
-  const error: unknown = query.isFetching ? null : query.error;
-  const [busy, setBusy] = useState(false);
+  const loading = deploymentQuery.isFetching;
+  const error: unknown = deploymentQuery.error;
+  const busy = ownership.data.phase === "pending";
   const [revision, setRevision] = useState(0);
   const [removeTarget, setRemoveTarget] = useState<SandboxNode | null>(null);
   const [editTarget, setEditTarget] = useState<SandboxNode | null>(null);
@@ -80,16 +81,20 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const [removeError, setRemoveError] = useState<string | null>(null);
   // After a removal, the host's uninstall command; it stays for the closing animation.
   const [cleanup, setCleanup] = useState<{ node: NodeCleanup; open: boolean } | null>(null);
-  // When a deployment write last had an uncertain outcome (no response, a timeout or a 5xx); only a read begun after it confirms the state again.
-  const [uncertainSince, setUncertainSince] = useState<number | null>(null);
-  const setupNeedsRefresh = uncertainSince !== null && !(snapshot && snapshot.readAt > uncertainSince);
-  // The state on screen is Core's last successful read, with no uncertain write since.
-  const confirmed = snapshot !== null && !query.isError && !setupNeedsRefresh;
+  // QueryClient owns this across route lifetimes. Only a successful authoritative
+  // read begun after settlement releases uncertain/pending mutation ownership.
+  const setupNeedsRefresh = ownership.data.phase === "reconcile";
+  const confirmed = deployment !== undefined && !deploymentQuery.isError && ownership.data.phase === "idle";
   // Writes additionally wait for any read in flight.
   const fresh = confirmed && !loading;
   // A write with an uncertain outcome opens a dialog with the reason; the error stays for the closing animation.
   const [writeFailure, setWriteFailure] = useState<{ error: unknown; open: boolean } | null>(null);
-  const { refetch } = query;
+  const { refetch: refetchDeployment } = deploymentQuery;
+  const refetch = useCallback(async () => {
+    const result = await refetchDeployment();
+    if (!result.isError) await refetchSnapshot();
+    return result;
+  }, [refetchDeployment, refetchSnapshot]);
   const refresh = useCallback(() => {
     // Each refresh starts a new read (cancelling one in flight) and resets the forms, as a reload did.
     setRevision((value) => value + 1);
@@ -121,42 +126,17 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   async function changeDeployment(operation: (signal: AbortSignal) => Promise<SandboxDeployment>, fromWizard = false): Promise<boolean> {
     const controller = lifetime.current;
     if (!controller || busy || loading || setupNeedsRefresh || !fresh) return false;
-    setBusy(true); setWriteFailure(null);
+    setWriteFailure(null);
     try {
-      // Cancel every older deployment read before submitting; its response cannot overwrite the confirmed write.
-      await queryClient.cancelQueries({ queryKey: sandboxScope });
-      const deployment = await operation(controller.signal);
-      // An active reset may have started another poll while the write was pending.
-      await queryClient.cancelQueries({ queryKey: sandboxScope });
-      if (!controller.signal.aborted) {
-        // Core's confirmed response replaces the deployment; nodes of an older generation no longer apply.
-        queryClient.setQueryData(sandboxSnapshotQuery.queryKey, (current): SandboxSnapshot => {
-          const same = current !== undefined && deployment.generation === current.deployment.generation;
-          return { deployment, nodes: same ? current.nodes : [], allocations: same ? current.allocations : [], nodesError: same ? current.nodesError : null, readAt: current?.readAt ?? performance.now() };
-        });
-        queryClient.setQueryData(sandboxDeploymentQuery.queryKey, deployment);
-        // Re-read node facts after the confirmed write, even when cancellation/completion stops reset polling.
-        void queryClient.invalidateQueries({ queryKey: sandboxSnapshotQuery.queryKey });
-        void queryClient.invalidateQueries({ queryKey: sandboxDeploymentQuery.queryKey });
-        // Overview and Sandbox metrics read the fleet separately and lay out by provider.
-        void queryClient.invalidateQueries({ queryKey: ["sandbox-fleet"] });
-        return true;
-      }
+      const deployment = await writeSandboxDeployment(queryClient, operation);
+      return deployment !== null && !controller.signal.aborted;
     } catch (error) {
       if (!controller.signal.aborted) {
-        // Core rejected the configuration and saved nothing: the wizard explains why.
         if (fromWizard && sandboxConfigurationRejection(error) !== null) throw error;
-        if (sandboxWriteUncertain(error)) {
-          setUncertainSince(performance.now()); setWriteFailure({ error, open: true });
-          // A known active reset keeps polling reads. Otherwise the operator refreshes to confirm; no write is replayed.
-          void queryClient.invalidateQueries({ queryKey: sandboxScope, refetchType: "none" });
-        } else {
-          if (error instanceof AgentCoreError && error.code === "sandbox_generation_stale") setUncertainSince(performance.now());
-          // Core refused the change, so nothing changed: its reason, and the page stays usable as it was.
-          toast.show(t("Core rejected the sandbox change"), { tone: "error", detail: sandboxRequestError(error, locale), key: "sandbox-write" });
-        }
+        if (sandboxWriteUncertain(error)) setWriteFailure({ error, open: true });
+        else toast.show(t("Core rejected the sandbox change"), { tone: "error", detail: sandboxRequestError(error, locale), key: "sandbox-write" });
       }
-    } finally { if (!controller.signal.aborted) setBusy(false); }
+    }
     return false;
   }
   /** First setup; own machines continue straight to adding the first node. */
@@ -205,7 +185,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
     } finally { if (!controller.signal.aborted) setRemoving(false); }
   }
 
-  const nodesConfirmed = confirmed && !snapshot?.nodesError;
+  const nodesConfirmed = confirmed && compatible && !query.isError && !snapshot?.nodesError;
   const nodes = snapshot?.nodes ?? [];
   const allocations = snapshot?.allocations ?? [];
   const hostedNodes = Boolean(snapshot?.deployment.provider && snapshot.deployment.provider !== "e2b");
@@ -213,7 +193,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   // serve (no own-machines deployment, active reset, a failed read) is dropped, so the
   // dialog never opens later on its own.
   const addNodeReadiness = loading || busy || installation.isPending ? "wait"
-    : !snapshot ? (query.isError ? "unavailable" : "wait")
+    : !snapshot ? (deploymentQuery.isError ? "unavailable" : "wait")
     : hostedNodes && fresh && nodesConfirmed && !snapshot.deployment.reset && !localOnly ? "ready" : "unavailable";
   useConsoleIntent("add-node", addNodeReadiness, () => setAdding(true));
   // A node enrolled with another address than Core's current one (config.json's public_url) gets no new sandboxes until it is added again.
@@ -222,12 +202,12 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const refreshButton = <RefreshButton onClick={refreshByUser} refreshing={loading} disabled={busy || removing} label={t("Refresh sandbox state")} />;
   const readFailure = error !== null ? sandboxRequestError(error, locale) : null;
   // A failed refresh keeps the last state on screen and says so in a toast, once while the failure lasts.
-  useFailureToast(snapshot && query.isError ? sandboxRequestError(query.error, locale) : null, t("Refresh failed; showing the last loaded state."), "sandbox-read");
+  useFailureToast(snapshot && deploymentQuery.isError ? sandboxRequestError(deploymentQuery.error, locale) : null, t("Refresh failed; showing the last loaded state."), "sandbox-read");
   const status = <>
     <InstallationNotice installation={installation.data} />
-    {!snapshot && (loading || query.isPending) ? <p role="status">{t("Loading sandbox state…")}</p> : null}
+    {!snapshot && (loading || deploymentQuery.isPending) ? <p role="status">{t("Loading sandbox state…")}</p> : null}
     {snapshot?.nodesError ? <ErrorState title={t("Node state could not be read")} detail={sandboxRequestError(snapshot.nodesError, locale)} onRetry={refresh} /> : null}
-    {snapshot && query.isError ? <p role="alert" className="sandbox-error">{t("Refresh failed; showing the last loaded state.")}</p> : null}
+    {snapshot && deploymentQuery.isError ? <p role="alert" className="sandbox-error">{t("Refresh failed; showing the last loaded state.")}</p> : null}
     {setupNeedsRefresh ? <p role="alert" className="sandbox-error">{t("Refresh sandbox state to confirm whether the change was saved before submitting again.")}</p> : null}
     {busy ? <span role="status">{t("Saving sandbox change…")}</span> : null}
     {!snapshot && readFailure ? <ErrorState title={t("Sandbox state couldn't be read")} detail={readFailure} onRetry={refresh} /> : null}
