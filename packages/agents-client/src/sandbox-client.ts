@@ -357,12 +357,10 @@ export class SandboxAdminClient {
           throw new AgentCoreError(messages[error.code]!, error.status, error.code, null, undefined, Object.keys(details).length ? details : undefined);
         }
       }
-      // The public-URL rejection is safe to show unless it somehow reflects the key.
-      const key = input.e2b.api_key ?? "";
-      if (error instanceof AgentCoreError && error.status === 409 && error.code === "sandbox_configuration_error"
-        && !error.message.includes(key) && !(error.param ?? "").includes(key)) {
-        // Only Core's message and param pass through; nothing else from the response does.
-        throw new AgentCoreError(error.message, 409, "sandbox_configuration_error", error.param ?? null);
+      // This code has one fixed Core meaning. Never forward its raw message or
+      // param: an omitted key cannot be used to detect a reflected stored key.
+      if (error instanceof AgentCoreError && error.status === 409 && error.code === "sandbox_configuration_error") {
+        throw new AgentCoreError("E2B sandboxes reach Core over the internet. Set an HTTPS public URL that is not loopback.", 409, "sandbox_configuration_error", null);
       }
       // Any other credential-bearing rejection may reflect the key in any error field.
       throw new AgentCoreError("Sandbox configuration could not be confirmed. Refresh before submitting again.", error instanceof AgentCoreError ? error.status : 0, "sandbox_configuration_unconfirmed");

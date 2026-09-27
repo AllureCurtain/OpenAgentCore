@@ -244,7 +244,7 @@ describe("hosted provider configuration", () => {
     });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
-  it("shows Core's public-URL rejection unless it reflects the E2B key", async () => {
+  it("projects public-URL rejection to fixed copy even when the upstream message reflects a key", async () => {
     const rejection = { message: "E2B sandboxes reach Core over the internet. Set an HTTPS public URL that is not loopback.", code: "sandbox_configuration_error", param: null, type: "reflected" };
     const fetch = vi.fn<typeof globalThis.fetch>()
       .mockResolvedValueOnce(response({ error: rejection }, 409))
@@ -253,7 +253,7 @@ describe("hosted provider configuration", () => {
     const shown = await client.initializeDeployment({ expected_generation: 0, provider: "e2b", e2b }).catch((error: unknown) => error);
     expect(shown).toMatchObject({ status: 409, code: "sandbox_configuration_error", message: rejection.message, param: null });
     expect((shown as AgentCoreError).errorType).toBeUndefined();
-    await expect(client.initializeDeployment({ expected_generation: 0, provider: "e2b", e2b })).rejects.toMatchObject({ status: 409, code: "sandbox_configuration_unconfirmed" });
+    await expect(client.initializeDeployment({ expected_generation: 0, provider: "e2b", e2b })).rejects.toMatchObject({ status: 409, code: "sandbox_configuration_error", message: rejection.message, param: null });
   });
   it("never retries uncertain switch or reset writes", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(new TypeError("Connection lost"));
@@ -337,4 +337,16 @@ it("omits a preserved key and submits an explicit same key once without retry", 
   expect(fetch).toHaveBeenCalledTimes(2);
   expect(JSON.parse(String(fetch.mock.calls[0]![1]!.body)).e2b).not.toHaveProperty("api_key");
   expect(JSON.parse(String(fetch.mock.calls[1]![1]!.body)).e2b.api_key).toBe("same-key");
+});
+
+it("keeps omitted-key public-URL errors actionable without reflecting a stored key", async () => {
+  const secret = "previously-stored-secret";
+  const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ error: { code: "sandbox_configuration_error", message: `arbitrary upstream ${secret}`, param: secret, details: { credential: secret } } }, 409));
+  const client = new SandboxAdminClient({ fetch });
+  const error = await client.updateDeployment({ provider: "e2b", expected_generation: 1, e2b: { template: e2bDeployment.e2b.template } }).catch(error => error);
+  expect(error).toMatchObject({ status: 409, code: "sandbox_configuration_error", param: null, message: "E2B sandboxes reach Core over the internet. Set an HTTPS public URL that is not loopback." });
+  expect(JSON.stringify(error)).not.toContain(secret);
+  expect(error.message).not.toContain(secret);
+  expect(error.details).toBeUndefined();
+  expect(fetch).toHaveBeenCalledTimes(1);
 });
