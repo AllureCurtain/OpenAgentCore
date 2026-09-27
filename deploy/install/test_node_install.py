@@ -237,6 +237,38 @@ class NodeInstallTests(unittest.TestCase):
         self.args.specification_digest = json.loads((self.root / "state/node/identity.json").read_text())["identity"]["specification_digest"]
         return self.args
 
+    def test_interrupted_new_generation_recovers_partial_download_at_same_identity(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        original = (self.root / "provider.json").read_bytes()
+        self.manifest["source_commit"] = "f" * 40
+        self.refresh_manifest()
+        config = json.loads(self.configuration_response(None).read())
+        config["generation"] = 2
+        self.args.generation = 2
+        self.args.specification_digest = config["specification_digest"]
+        real_obtain = installer.distribution.obtain_artifact
+        def interrupted(manifest, name, path):
+            if name == installer.MICRO[1]:
+                raise OSError("interrupted partial download")
+            return real_obtain(manifest, name, path)
+        with mock.patch.object(installer.node_spec, "fetch", return_value=config):
+            with mock.patch.object(installer.distribution, "obtain_artifact", side_effect=interrupted):
+                with self.assertRaises(OSError):
+                    installer.node_generations.prepare(self.args, installer)
+            directory = self.root / "state/node/generations"
+            saved = json.loads((directory / "2.json").read_text())
+            self.assertEqual(saved["specification"], config["specification"])
+            self.assertFalse(json.loads((directory / "2.preparing").read_text())["import_started"])
+            helper = Path(saved["microsandbox"]["helper_path"])
+            inode = helper.stat().st_ino
+            self.assertFalse(Path(saved["microsandbox"]["runtime_path"]).exists())
+            installer.node_generations.prepare(self.args, installer)
+            self.assertEqual(helper.stat().st_ino, inode)
+            self.assertEqual(json.loads((directory / "2.json").read_text()), saved)
+            self.assertTrue(json.loads((directory / "2.preparing").read_text())["import_started"])
+        self.assertEqual((self.root / "provider.json").read_bytes(), original)
+
     def test_restart_repairs_only_missing_micro_bytes_at_original_paths(self):
         self.args.provider = "microsandbox"
         self.install()

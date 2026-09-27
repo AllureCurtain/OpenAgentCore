@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"syscall"
@@ -42,7 +43,8 @@ func runGenerations(ctx context.Context, configFile, stateDir string) error {
 	paths = append([]string{configFile}, paths...)
 	values := map[uint64]node.GenerationProvider{}
 	recovery := []sandbox.GenerationReference{}
-	seen := map[uint64]bool{}
+	collection := []sandbox.GenerationReference{}
+	seen := map[uint64]providerconfig.Config{}
 	closeValues := func() {
 		for _, v := range values {
 			if v.Close != nil {
@@ -64,16 +66,26 @@ func runGenerations(ctx context.Context, configFile, stateDir string) error {
 			closeValues()
 			return sandbox.ErrOwnership
 		}
-		if _, err := os.Lstat(filepath.Join(stateDir, "generations", strconv.FormatUint(config.Generation, 10)+".dropped")); err == nil {
-			continue
-		} else if !os.IsNotExist(err) {
+		state, err := generationLocalState(config, stateDir)
+		if err != nil {
 			closeValues()
 			return err
 		}
-		if seen[config.Generation] {
+		if state == "dropped" {
 			continue
 		}
-		seen[config.Generation] = true
+		if previous, ok := seen[config.Generation]; ok {
+			if !reflect.DeepEqual(previous, config) {
+				closeValues()
+				return sandbox.ErrOwnership
+			}
+			continue
+		}
+		seen[config.Generation] = config
+		if state == "collecting" {
+			collection = append(collection, sandbox.GenerationReference{Generation: config.Generation, SpecificationDigest: config.Specification.Digest(config.Provider)})
+			continue
+		}
 		value, err := buildGeneration(config, stateDir)
 		if errors.Is(err, os.ErrNotExist) {
 			recovery = append(recovery, sandbox.GenerationReference{Generation: config.Generation, SpecificationDigest: config.Specification.Digest(config.Provider)})
@@ -103,7 +115,7 @@ func runGenerations(ctx context.Context, configFile, stateDir string) error {
 	for _, v := range values {
 		initial = append(initial, v)
 	}
-	manager, err := node.NewGenerationManager(ctx, node.GenerationManagerOptions{Initial: initial, Recover: recovery,
+	manager, err := node.NewGenerationManager(ctx, node.GenerationManagerOptions{Initial: initial, Recover: recovery, Collect: collection,
 		Prepare: func(ctx context.Context, generation uint64, digest string) (node.GenerationProvider, error) {
 			if err := runHelper(ctx, "prepare", generation, digest); err != nil {
 				return node.GenerationProvider{}, err
@@ -179,4 +191,63 @@ func buildGeneration(config providerconfig.Config, stateDir string) (node.Genera
 		}
 	}
 	return node.GenerationProvider{Generation: config.Generation, SpecificationDigest: built.SpecificationDigest, Provider: built.Provider, Probe: probe, Close: closeProvider}, nil
+}
+
+// A persisted local journal never substitutes for a fresh Core drop grant. It
+// only prevents restart from preparing or serving a partly collected generation.
+func generationLocalState(config providerconfig.Config, stateDir string) (string, error) {
+	directory := filepath.Join(stateDir, "generations")
+	info, err := os.Lstat(directory)
+	if os.IsNotExist(err) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	owner, ok := info.Sys().(*syscall.Stat_t)
+	resolved, err := filepath.EvalSymlinks(directory)
+	if err != nil || resolved != directory || !info.IsDir() || info.Mode().Perm() != 0700 || !ok || owner.Uid != uint32(os.Getuid()) {
+		return "", sandbox.ErrOwnership
+	}
+	state := ""
+	for _, suffix := range []string{".collecting", ".dropped"} {
+		path := filepath.Join(stateDir, "generations", strconv.FormatUint(config.Generation, 10)+suffix)
+		fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)
+		if errors.Is(err, syscall.ENOENT) {
+			continue
+		}
+		if err != nil {
+			return "", err
+		}
+		file := os.NewFile(uintptr(fd), path)
+		var st syscall.Stat_t
+		err = syscall.Fstat(fd, &st)
+		resolved, pathErr := filepath.EvalSymlinks(path)
+		if err != nil || pathErr != nil || resolved != path || st.Mode&syscall.S_IFMT != syscall.S_IFREG || st.Mode&0777 != 0600 || st.Uid != uint32(os.Getuid()) || st.Nlink != 1 || st.Size > 4096 {
+			file.Close()
+			return "", sandbox.ErrOwnership
+		}
+		var journal struct {
+			InstallationID      string `json:"installation_id"`
+			Generation          uint64 `json:"generation"`
+			SpecificationDigest string `json:"specification_digest"`
+			ImageRemoved        *bool  `json:"image_removed,omitempty"`
+		}
+		decoder := json.NewDecoder(io.LimitReader(file, 4097))
+		decoder.DisallowUnknownFields()
+		err = decoder.Decode(&journal)
+		var trailing any
+		end := decoder.Decode(&trailing)
+		opened, statErr := file.Stat()
+		named, namedErr := os.Lstat(path)
+		file.Close()
+		if statErr != nil || namedErr != nil || !os.SameFile(opened, named) {
+			return "", sandbox.ErrOwnership
+		}
+		if err != nil || end != io.EOF || journal.InstallationID != config.InstallationID || journal.Generation != config.Generation || journal.SpecificationDigest != config.Specification.Digest(config.Provider) || (suffix == ".collecting") != (journal.ImageRemoved != nil) {
+			return "", sandbox.ErrOwnership
+		}
+		state = strings.TrimPrefix(suffix, ".")
+	}
+	return state, nil
 }

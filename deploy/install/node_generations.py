@@ -61,11 +61,52 @@ def install_helper(root, args, installer):
     atomic_json(settings, value)
 
 
+def generation_marker(root, generation, suffix, digest, installation, installer):
+    path = root / "state/node/generations" / (str(generation) + suffix)
+    if not path.exists() and not path.is_symlink():
+        return None
+    installer.no_links(path)
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+    with os.fdopen(descriptor) as stream:
+        info = os.fstat(stream.fileno())
+        if (not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600
+                or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_size > 4096):
+            raise installer.InstallError("Invalid generation ownership journal")
+        try:
+            value = json.load(stream)
+        except ValueError as error:
+            raise installer.InstallError("Invalid generation ownership journal") from error
+        named = path.lstat()
+        if (named.st_dev, named.st_ino) != (info.st_dev, info.st_ino):
+            raise installer.InstallError("Generation ownership journal was replaced")
+    expected = {"installation_id": installation, "generation": generation, "specification_digest": digest}
+    if (not isinstance(value, dict) or type(value.get("generation")) is not int
+            or any(value.get(key) != item for key, item in expected.items())):
+        raise installer.InstallError("Invalid generation ownership journal")
+    keys = set(expected)
+    if suffix == ".collecting":
+        keys.add("image_removed")
+        if type(value.get("image_removed")) is not bool:
+            raise installer.InstallError("Invalid generation collection journal")
+    if suffix == ".preparing":
+        keys.add("import_started")
+        if type(value.get("import_started")) is not bool:
+            raise installer.InstallError("Invalid generation preparation journal")
+    if set(value) != keys:
+        raise installer.InstallError("Invalid generation journal fields")
+    return value
+
+
+def marker_identity(args):
+    return {"installation_id": args.installation_id, "generation": args.generation,
+            "specification_digest": args.specification_digest}
+
+
 def retained_configs(root, installer):
     directory = root / "state/node/generations"
     result = {}
     base = installer.private_json(root / "provider.json")
-    if base and not (directory / (str(base["generation"]) + ".dropped")).exists():
+    if base and not generation_marker(root, base["generation"], ".dropped", installer.node_spec.digest(base["provider"], base["specification"]), base["installation_id"], installer):
         result[base["generation"]] = base
     if directory.exists():
         for path in sorted(directory.glob("*.json")):
@@ -74,7 +115,9 @@ def retained_configs(root, installer):
             value = installer.private_json(path)
             if value is None or value.get("generation") != int(path.stem):
                 raise installer.InstallError("Invalid retained generation configuration")
-            if not (directory / (path.stem + ".dropped")).exists():
+            if not generation_marker(root, value["generation"], ".dropped", installer.node_spec.digest(value["provider"], value["specification"]), value["installation_id"], installer):
+                if value["generation"] in result and result[value["generation"]] != value:
+                    raise installer.InstallError("Conflicting retained generation configuration")
                 result[value["generation"]] = value
     return result
 
@@ -174,8 +217,10 @@ def prepare(args, installer):
     root, identity = owned_root(args, installer)
     with installer.install_lock(root), collection_lease(root, args.generation, installer):
         directory = root / "state/node/generations"
-        if (directory / (str(args.generation) + ".dropped")).exists():
+        if (generation_marker(root, args.generation, ".dropped", args.specification_digest, args.installation_id, installer)
+                or generation_marker(root, args.generation, ".collecting", args.specification_digest, args.installation_id, installer)):
             raise installer.InstallError("A dropped generation cannot be adopted again")
+        generation_marker(root, args.generation, ".preparing", args.specification_digest, args.installation_id, installer)
         args.core_url = identity["core_url"]
         args.configuration = installer.node_spec.fetch(args, "", identity, installer.open_request,
                                                        generation=args.generation, allow_selection_change=True)
@@ -214,6 +259,7 @@ def prepare(args, installer):
                 target = directory / (str(args.generation) + ".json")
                 if installer.existing_file(target) and installer.private_json(target) != value:
                     raise installer.InstallError("Immutable generation configuration differs")
+                atomic_json(directory / (str(args.generation) + ".preparing"), dict(marker_identity(args), import_started=False))
                 atomic_json(target, value)
                 retained = True
             release = runtime_files(root, value, args, manifest, sums, installer)
@@ -223,6 +269,7 @@ def prepare(args, installer):
                 if not owner.exists() and any(args.runtime_home.iterdir()):
                     raise installer.InstallError("Versioned microsandbox store contains unowned state")
                 installer.write_once(owner, installer.json_text({"installation_id": args.installation_id}))
+            atomic_json(directory / (str(args.generation) + ".preparing"), dict(marker_identity(args), import_started=True))
             runtime_image = installer.prepare_runtime(release, args, manifest)
             if retained:
                 installer.node_spec.verify_provider(value, args.configuration, runtime_image)
@@ -265,39 +312,87 @@ def collect(args, installer):
         value = configurations.get(args.generation)
         if value is None:
             return
-        if installer.node_spec.digest(value["provider"], value["specification"]) != args.specification_digest:
+        if (value["installation_id"] != args.installation_id
+                or installer.node_spec.digest(value["provider"], value["specification"]) != args.specification_digest):
             raise installer.InstallError("Collection grant does not match the local generation")
         marker = root / "state/node/generations" / (str(args.generation) + ".legacy-unfenced")
         if marker.exists() or marker.is_symlink():
             raise installer.InstallError("The original v1 generation retains unfenced legacy helpers; its local payload is kept")
+        source = value["specification"]["runtime"]["source_commit"]
+        if not re.fullmatch(r"[a-f0-9]{40}", source):
+            raise installer.InstallError("Invalid retained release identity")
+        release = root / "releases" / source
+        installer.no_links(release)
+        directory = root / "state/node/generations"
+        journal = generation_marker(root, args.generation, ".collecting", args.specification_digest, args.installation_id, installer)
+        if journal is None:
+            journal = dict(marker_identity(args), image_removed=False)
+            atomic_json(directory / (str(args.generation) + ".collecting"), journal)
         others = [item for generation, item in configurations.items() if generation != args.generation]
-        if value["provider"] == "microsandbox":
-            micro = value["microsandbox"]
-            shared = [item for item in others if item["microsandbox"]["runtime_home"] == micro["runtime_home"]]
-            env = dict(os.environ, MSB_BACKEND="local", MSB_HOME=micro["runtime_home"], MSB_PATH=micro["runtime_path"], MSB_LIBKRUNFW_PATH=micro["firmware_path"])
-            if not any(item["microsandbox"]["image"] == micro["image"] for item in shared):
-                # No force: native ownership can still refuse removal after Core's grant.
-                installer.checked([micro["runtime_path"], "image", "remove", micro["image"], "--quiet"], "Runtime image is still in use", env=env)
-            if not shared:
-                raw = installer.checked([micro["runtime_path"], "sandbox", "list", "--format", "json"], "Cannot verify empty microsandbox store", env=env)
-                if json.loads(raw) != []:
-                    raise installer.InstallError("Microsandbox store still contains native sandboxes")
-                home = Path(micro["runtime_home"])
-                installer.safe_directory(home)
-                if installer.private_json(home / "oac-installation.json") != {"installation_id": args.installation_id}:
-                    raise installer.InstallError("Microsandbox store ownership differs")
-                # Keep receipt/lock history conservatively; an empty VM list is not
-                # authority to discard unknown provider receipts or shared host state.
-        else:
-            image = value["docker"]["image"]
-            if not any(item["docker"]["image"] == image for item in others):
-                installer.checked(list(installer.DOCKER) + ["image", "rm", image], "Docker image is still in use")
+        if not journal["image_removed"]:
+            preparation = generation_marker(root, args.generation, ".preparing", args.specification_digest, args.installation_id, installer)
+            if preparation is None or preparation["import_started"]:
+                collect_image(args, value, others, installer)
+            # Persist native completion before deleting its executable. A fresh
+            # Core grant is still required after restart to finish file cleanup.
+            journal["image_removed"] = True
+            atomic_json(directory / (str(args.generation) + ".collecting"), journal)
         directory = root / "state/node/generations"
         installer.safe_directory(directory)
-        atomic_json(directory / (str(args.generation) + ".dropped"), {"specification_digest": args.specification_digest})
-        (directory / (str(args.generation) + ".json")).unlink(missing_ok=True)
-        source = value["specification"]["runtime"]["source_commit"]
         if not any(item["specification"]["runtime"]["source_commit"] == source for item in others):
             release = root / "releases" / source
-            if release.exists() and not release.is_symlink() and release.resolve().parent == (root / "releases").resolve():
+            installer.no_links(release)
+            if release.exists():
                 shutil.rmtree(release)
+            if release.parent.exists():
+                descriptor = os.open(release.parent, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+
+        atomic_json(directory / (str(args.generation) + ".dropped"), marker_identity(args))
+        # Keep the immutable configuration and permanent journal as restart
+        # identity. They contain no provider credentials and are not readiness.
+
+
+def collect_image(args, value, others, installer):
+    if value["provider"] == "microsandbox":
+        micro = value["microsandbox"]
+        shared = [item for item in others if item["microsandbox"]["runtime_home"] == micro["runtime_home"]]
+        home = Path(micro["runtime_home"])
+        installer.no_links(home)
+        if not home.is_dir() or installer.private_json(home / "oac-installation.json") != {"installation_id": args.installation_id}:
+            raise installer.InstallError("Microsandbox store ownership differs")
+        runtime_path = Path(micro["runtime_path"])
+        installer.no_links(runtime_path)
+        if not installer.existing_file(runtime_path) or installer.file_digest(runtime_path) != micro["runtime_sha256"]:
+            raise installer.InstallError("Cannot verify retained microsandbox executable")
+        env = dict(os.environ, MSB_BACKEND="local", MSB_HOME=micro["runtime_home"], MSB_PATH=micro["runtime_path"], MSB_LIBKRUNFW_PATH=micro["firmware_path"])
+        if not any(item["microsandbox"]["image"] == micro["image"] for item in shared):
+            # A failed inspect/remove is not proof of absence. A successful full
+            # inventory must contain only understood immutable references.
+            raw = installer.checked([micro["runtime_path"], "image", "list", "--quiet"], "Cannot verify microsandbox image inventory", env=env)
+            references = raw.splitlines()
+            if any(not re.fullmatch(r"[^\s@]+@sha256:[a-f0-9]{64}", item) for item in references):
+                raise installer.InstallError("Cannot verify microsandbox image inventory")
+            if any(item.split("@", 1)[1] == micro["image"].split("@", 1)[1] for item in references):
+                installer.checked([micro["runtime_path"], "image", "remove", micro["image"], "--quiet"], "Runtime image is still in use", env=env)
+        if not shared:
+            raw = installer.checked([micro["runtime_path"], "sandbox", "list", "--format", "json"], "Cannot verify empty microsandbox store", env=env)
+            if json.loads(raw) != []:
+                raise installer.InstallError("Microsandbox store still contains native sandboxes")
+            home = Path(micro["runtime_home"])
+            installer.safe_directory(home)
+            if installer.private_json(home / "oac-installation.json") != {"installation_id": args.installation_id}:
+                raise installer.InstallError("Microsandbox store ownership differs")
+            # Native emptiness never authorizes discarding receipt/lock history.
+    else:
+        image = value["docker"]["image"]
+        if not any(item["docker"]["image"] == image for item in others):
+            raw = installer.checked(list(installer.DOCKER) + ["image", "ls", "--quiet", "--no-trunc"], "Cannot verify Docker image inventory")
+            images = raw.splitlines()
+            if any(not re.fullmatch(r"sha256:[a-f0-9]{64}", item) for item in images):
+                raise installer.InstallError("Cannot verify Docker image inventory")
+            if image in images:
+                installer.checked(list(installer.DOCKER) + ["image", "rm", image], "Docker image is still in use")

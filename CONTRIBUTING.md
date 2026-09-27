@@ -815,6 +815,11 @@ Permanent generation flock files survive updates and GC. Retained Runtime bytes 
 the console's exact-release HTTP allowlist must agree. See
 `contracts/agents-api/node-generation-protocol.md` for recovery, immutable artifacts
 and the conservative v1 legacy-helper retention boundary.
+Interrupted node collection keeps an exact private generation journal and immutable
+configuration. Restart treats it only as a candidate for a fresh correlated Core
+drop grant, never as preparation or serving readiness. Persist native cleanup
+before removing its executable and durable file cleanup before the dropped marker;
+CLI errors and unknown native ownership cannot establish absence.
 
 Use one E2B classifier. Omitted key preserves the current key; identical selection
 with omitted key is a no-op. Explicit key submission, including identical bytes,

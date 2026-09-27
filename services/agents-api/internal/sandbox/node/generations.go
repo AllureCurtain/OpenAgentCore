@@ -21,6 +21,7 @@ type GenerationProvider struct {
 type GenerationManagerOptions struct {
 	Initial []GenerationProvider
 	Recover []sandbox.GenerationReference
+	Collect []sandbox.GenerationReference
 	Prepare func(context.Context, uint64, string) (GenerationProvider, error)
 	Remove  func(context.Context, GenerationProvider) error
 }
@@ -33,6 +34,7 @@ type localGeneration struct {
 	failures             int
 	removing             bool
 	repairing, preparing bool
+	collecting           bool
 }
 
 // GenerationManager owns local providers, preparation and all queued/in-flight
@@ -71,6 +73,13 @@ func NewGenerationManager(ctx context.Context, options GenerationManagerOptions)
 		}
 		m.values[ref.Generation] = &localGeneration{value: GenerationProvider{Generation: ref.Generation, SpecificationDigest: ref.SpecificationDigest}, state: "failed", diagnostic: sandbox.NodeRuntimeDownloadFailed, repairing: true}
 	}
+	for _, ref := range options.Collect {
+		if !validGeneration(ref.Generation) || !validSpecificationDigest(ref.SpecificationDigest) || m.values[ref.Generation] != nil {
+			cancel()
+			return nil, sandbox.ErrInvalid
+		}
+		m.values[ref.Generation] = &localGeneration{value: GenerationProvider{Generation: ref.Generation, SpecificationDigest: ref.SpecificationDigest}, collecting: true}
+	}
 	m.workers.Add(2)
 	go func() { defer m.workers.Done(); m.prepareLoop() }()
 	go func() { defer m.workers.Done(); m.probeLoop() }()
@@ -98,8 +107,13 @@ func (m *GenerationManager) Deployment(value sandbox.NodeDeployment) error {
 	if value.Generation < m.target.Generation {
 		return nil
 	}
-	if g := m.values[value.Generation]; g != nil && g.value.SpecificationDigest != value.SpecificationDigest {
+	if g := m.values[value.Generation]; g != nil && (g.value.SpecificationDigest != value.SpecificationDigest || g.collecting) {
 		return sandbox.ErrOwnership
+	}
+	if value.ServingGeneration != nil {
+		if g := m.values[*value.ServingGeneration]; g != nil && g.collecting {
+			return sandbox.ErrOwnership
+		}
 	}
 	if value.Generation == m.target.Generation && value.SpecificationDigest != m.target.SpecificationDigest {
 		return sandbox.ErrOwnership
@@ -142,7 +156,7 @@ func (m *GenerationManager) Statuses() []sandbox.GenerationStatus {
 	seen := map[uint64]bool{}
 	for _, key := range keys {
 		g := m.values[key]
-		if g == nil || g.removing || seen[key] {
+		if g == nil || g.removing || g.collecting || seen[key] {
 			continue
 		}
 		seen[key] = true
@@ -177,7 +191,7 @@ func (m *GenerationManager) Acquire(generation uint64) (sandbox.Provider, bool, 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	g := m.values[generation]
-	if g == nil || g.removing || g.preparing || g.value.Provider == nil {
+	if g == nil || g.removing || g.collecting || g.preparing || g.value.Provider == nil {
 		return nil, false, nil, ErrUnavailable
 	}
 	g.refs++
@@ -211,6 +225,7 @@ func (m *GenerationManager) Drop(ctx context.Context, grant sandbox.GenerationRe
 		m.mu.Unlock()
 		return ErrUnavailable
 	}
+	g.collecting = true
 	g.removing = true
 	m.mu.Unlock()
 	err := m.options.Remove(ctx, g.value)
@@ -247,7 +262,7 @@ func (m *GenerationManager) prepareLoop() {
 			keys = append(keys, m.orderedLocked(m.recoveryCursor)...)
 			for _, key := range keys {
 				candidate := m.values[key]
-				if candidate == nil || candidate.removing || candidate.preparing || candidate.refs != 0 || candidate.value.Provider != nil && !candidate.repairing || time.Now().Before(candidate.retryAt) {
+				if candidate == nil || candidate.removing || candidate.collecting || candidate.preparing || candidate.refs != 0 || candidate.value.Provider != nil && !candidate.repairing || time.Now().Before(candidate.retryAt) {
 					continue
 				}
 				if provider, ok := candidate.value.Provider.(interface{ Quiescent() bool }); ok && !provider.Quiescent() {
@@ -331,7 +346,7 @@ func (m *GenerationManager) probeLoop() {
 		var g *localGeneration
 		for _, key := range keys {
 			value := m.values[key]
-			if value != nil && value.value.Provider != nil && !value.removing && !value.preparing && !value.repairing {
+			if value != nil && value.value.Provider != nil && !value.removing && !value.collecting && !value.preparing && !value.repairing {
 				g = value
 				if key != priority {
 					m.probeCursor = key

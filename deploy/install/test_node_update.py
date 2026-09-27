@@ -78,7 +78,7 @@ class UpdateTests(unittest.TestCase):
         installer.node_spec.fetch.assert_called_with(self.args, "", self.identity, installer.open_request, allow_selection_change=True)
         with mock.patch.object(node_generations, "owned_root", return_value=(self.root, self.identity)):
             installer.checked.reset_mock()
-            grant = SimpleNamespace(generation=1, specification_digest=self.identity["identity"]["specification_digest"])
+            grant = SimpleNamespace(installation_id=self.args.installation_id, generation=1, specification_digest=self.identity["identity"]["specification_digest"])
             with self.assertRaisesRegex(installer.InstallError, "unfenced legacy helpers"):
                 node_generations.collect(grant, installer)
             installer.checked.assert_not_called()

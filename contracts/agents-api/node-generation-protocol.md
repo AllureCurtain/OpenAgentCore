@@ -108,6 +108,32 @@ repair retries later without replacing in-use files. Once bytes are restored, th
 node still runs the actual provider readiness probe. File presence and executable
 capability alone never establish serving readiness.
 
+## Interrupted local collection
+
+Before native or release deletion, the node persists a private collection journal
+bound to its installation, generation and specification digest. Restart loads an
+unfinished journal only as a retention-exchange candidate: it cannot prepare,
+probe, acquire or advertise that generation. A fresh correlated Core drop grant
+is required to resume; the journal itself never authorizes deletion.
+
+A successful complete native image inventory distinguishes absence from a CLI or
+daemon failure. Failed queries, malformed inventories, native in-use refusals and
+unknown ownership retain the local bytes. Native completion is persisted before
+release-file cleanup, so a retry can finish a partly removed release without
+executing an already removed helper. Shared images/releases remain until their
+last local reference. The final digest-bound dropped marker follows durable file
+cleanup and permanently prevents re-adoption. The small immutable configuration
+and ownership journals remain as local identity records.
+
+New preparation records its exact identity before downloads and records import
+start before invoking the native importer. An interrupted download can repair only
+missing bytes at the original paths. If collection precedes any import attempt,
+the preparation journal proves that this generation has no imported native image.
+An older or interrupted generation whose native executable is missing and whose
+import may have started remains conservatively retained; missing files do not
+prove native absence. Receipt/store history and a legacy-unfenced generation are
+never erased using an empty native inventory.
+
 ## Identity-preserving program updates
 
 Run the checksum-verified `node-install.pyz --update` as the original installation
