@@ -20,7 +20,7 @@ from unittest import mock
 import configuration
 import convert
 import install
-import parsar_cli
+import oac_cli
 from installer_fakes import MANIFEST, FakeHost, make_bundle, run_installer
 
 OLD_IMAGES = {name: "sha256:" + digit * 64 for name, digit in (("core", "7"), ("database", "8"), ("web", "9"))}
@@ -58,6 +58,7 @@ class ConvertTests(unittest.TestCase):
     def legacy(self, version="5c3dcc16", mode="all", native=False, public_url=None, environment=None, core_url=None,
                drop=()):
         """An installation as that release's installer wrote it, with its services running."""
+        self.host.volumes = {}
         old_generator = generator(version)
         old = {"version": 1, "source_commit": "b" * 40, "mode": mode, "native_core": native,
                "installation_id": "94be54a1-138c-4f30-bc87-b13686272dbe", "project": "parsar-0123456789",
@@ -98,6 +99,9 @@ class ConvertTests(unittest.TestCase):
             for name in ("bin/agents-api", "bin/agents-api-migrate", "e2b/agents-api-e2b-provider"):
                 self.private("native/" + name, "old native binary")
         self.host.remote_core[core_url or "https://unused.example"] = (200, self.host.core_installation_id)
+        self.host.core_installation_id = old["installation_id"]
+        if mode != "web-only":
+            self.host.add_database(old["project"])
         return old
 
     def convert(self, *flags):
@@ -113,9 +117,9 @@ class ConvertTests(unittest.TestCase):
 
     def assertConverted(self):
         state = self.document("state.json")
-        config = parsar_cli.load_config(self.root)
-        rendered, _, _ = parsar_cli.render_now(self.root, config, state)
-        actual = parsar_cli.observe(state)
+        config = oac_cli.load_config(self.root)
+        rendered, _, _ = oac_cli.render_now(self.root, config, state)
+        actual = oac_cli.observe(state)
         for name, digest in rendered.services.items():
             if name != "migrate":
                 self.assertEqual((actual[name]["running"], actual[name]["inputs"]), (True, digest), name)
@@ -176,7 +180,7 @@ class ConvertTests(unittest.TestCase):
                 services = self.document("generated/compose.json")["services"]
                 if mode == "all":
                     self.assertEqual(services["web"]["environment"]["OAC_WEB_ORIGIN"], "http://127.0.0.1:8080")
-                self.assertFalse([url for url in self.host.requests if url.endswith("/core/v1/sandbox/deployment")])
+                self.assertTrue([url for url in self.host.requests if url.endswith("/core/v1/sandbox/deployment")])
                 self.assertConverted()
 
     def test_native_conversion_checks_the_host_first(self):
@@ -189,7 +193,7 @@ class ConvertTests(unittest.TestCase):
         self.assertEqual(self.snapshot(), before)
         # Finishing a conversion whose first start failed checks the host again.
         self.host.core["fails"] = True
-        with self.assertRaises(parsar_cli.ParsarError):
+        with self.assertRaises(oac_cli.OacError):
             self.convert()
         self.host.core["fails"] = False
         before = self.snapshot()
@@ -260,7 +264,7 @@ class ConvertTests(unittest.TestCase):
         self.assertIsNone(self.document("state.json")["core_installation_id"])
         self.assertIn("the paired Core runs an earlier release", self.output.getvalue())
         self.host.remote_core["https://core.example"] = (200, self.host.core_installation_id)
-        parsar_cli.apply(self.root, interactive=False, out=lambda line: None)
+        oac_cli.apply(self.root, interactive=False, out=lambda line: None)
         self.assertEqual(self.document("state.json")["core_installation_id"], self.host.core_installation_id)
 
     def test_unconvertible_installations_are_refused_without_changes(self):
@@ -293,7 +297,7 @@ class ConvertTests(unittest.TestCase):
                             if unsafe else ["compose.json: services.web.environment.EXTRA", "config/core.env: AGENTS_API_UNKNOWN",
                                             "config/core.env: AGENTS_API_ADDR", "AGENTS_API_DAEMON_WS_URL: is retired and was "
                                             "edited; remove the line"])
-                for part in expected + ["Nothing was changed."]:
+                for part in expected + ["No installation conversion was performed."]:
                     self.assertIn(part, message)
                 self.assertNotIn("restore", message)
                 self.assertEqual(self.snapshot(), before)
@@ -328,21 +332,105 @@ class ConvertTests(unittest.TestCase):
         # The old native unit is already disabled when the layout moves, so it starts by path.
         with mock.patch.object(convert.os, "rename", side_effect=interrupted), self.assertRaises(OSError):
             self.convert()
-        with self.assertRaisesRegex(install.InstallError, "interrupted"):
+        with self.assertRaisesRegex(install.InstallError, "--convert"):
             run_installer(install, self.bundle, ["--install-dir", self.root])
         other, _ = make_bundle(self.work / "other", MANIFEST, commit="b" * 40)
-        with self.assertRaisesRegex(convert.ConvertError, "bundle it started with"):
+        with self.assertRaisesRegex(convert.ConvertError, "Finish the conversion with bundle"):
             run_installer(install, other, ["--install-dir", self.root, "--convert", "--yes"])
         with self.assertRaisesRegex(convert.ConvertError, "already set public_url"):
             self.convert("--public-url", "https://else.example")
         self.host.core["fails"] = True
-        with self.assertRaisesRegex(parsar_cli.ParsarError, "rerun ./install.sh --convert --install-dir"):
+        with self.assertRaisesRegex(oac_cli.OacError, "rerun ./install.sh --convert --install-dir"):
             self.convert("--public-url", "https://core.example")
         self.host.core["fails"] = False
         self.convert()
         self.assertConverted()
-        with self.assertRaisesRegex(install.InstallError, "already uses config.json"):
+        with self.assertRaisesRegex(convert.ConvertError, "already finished"):
             self.convert()
+
+
+    def test_legacy_public_url_retry_before_config_exists_uses_the_journal(self):
+        self.legacy(public_url="https://web.example")
+        self.host.deployment_core_url = "https://runtime.example"
+        original = install.run
+        def interrupt_copy(command, **kwargs):
+            if command[-1].startswith("cp -a"):
+                raise KeyboardInterrupt()
+            return original(command, **kwargs)
+        with mock.patch.object(install, "run", side_effect=interrupt_copy), self.assertRaises(KeyboardInterrupt):
+            self.convert("--public-url", "https://runtime.example")
+        self.assertFalse((self.root / "config.json").exists())
+        state = self.document("state.json")
+        self.assertEqual(state["renamed_from"]["public_url"], "https://runtime.example")
+        before = self.snapshot()
+        with self.assertRaisesRegex(convert.ConvertError, "already set public_url"):
+            self.convert("--public-url", "https://web.example")
+        self.assertEqual(self.snapshot(), before)
+        self.convert("--public-url", "https://runtime.example")
+        self.assertEqual(self.document("config.json")["public_url"], "https://runtime.example")
+        self.assertTrue(self.document("state.json")["renamed_from"]["finished"])
+        self.assertConverted()
+
+
+class LegacyDisableTests(unittest.TestCase):
+    unit = "parsar-0123456789-core.service"
+    old = {"project": "parsar-0123456789"}
+    show = ["systemctl", "--user", "show", unit, "--property=LoadState,ActiveState,SubState,MainPID"]
+    disable = ["systemctl", "--user", "disable", "--now", unit]
+
+    def status(self, load="loaded", active="inactive", sub="dead", pid="0"):
+        return subprocess.CompletedProcess(self.show, 0,
+            f"MainPID={pid}\nLoadState={load}\nActiveState={active}\nSubState={sub}\n", "")
+
+    def test_linked_unit_is_disabled_and_confirmed_stopped(self):
+        for active, sub, pid in (("active", "running", "1234"), ("inactive", "dead", "0")):
+            with self.subTest(active=active):
+                run = mock.Mock(side_effect=[self.status(active=active, sub=sub, pid=pid),
+                    subprocess.CompletedProcess(self.disable, 0), self.status(load="not-found")])
+                convert.legacy_disable(self.old, run)
+                self.assertEqual(run.call_args_list, [mock.call(self.show, capture_output=True, text=True),
+                    mock.call(self.disable), mock.call(self.show, capture_output=True, text=True)])
+
+    def test_unlinked_inactive_unit_is_already_stopped(self):
+        # Actual systemctl output after disable --now unlinks a user unit.
+        run = mock.Mock(return_value=self.status(load="not-found"))
+        convert.legacy_disable(self.old, run)
+        run.assert_called_once_with(self.show, capture_output=True, text=True)
+
+    def test_unlinked_orphan_and_uncertain_states_refuse(self):
+        for active, sub, pid in (("active", "running", "1234"), ("activating", "start", "0"),
+                                 ("deactivating", "stop", "0"), ("failed", "failed", "0"),
+                                 ("inactive", "dead", "1234"), ("inactive", "running", "0")):
+            with self.subTest(active=active, sub=sub, pid=pid):
+                run = mock.Mock(return_value=self.status(load="not-found", active=active, sub=sub, pid=pid))
+                with self.assertRaisesRegex(convert.ConvertError, "not confirmed inactive"):
+                    convert.legacy_disable(self.old, run)
+                self.assertEqual(run.call_count, 1)
+        for stdout in ("", "LoadState=not-found\n", "LoadState=not-found\nActiveState=inactive\nSubState=dead\n"):
+            run = mock.Mock(return_value=subprocess.CompletedProcess(self.show, 0, stdout, ""))
+            with self.assertRaisesRegex(convert.ConvertError, "not confirmed inactive"):
+                convert.legacy_disable(self.old, run)
+
+    def test_command_failures_are_never_treated_as_missing_inactive_units(self):
+        for command, message in ((self.show, "Failed to connect to bus: No medium found"),
+                                 (self.disable, f"Failed to disable unit: Unit file {self.unit} does not exist."),
+                                 (self.disable, "Failed to disable unit: Access denied")):
+            with self.subTest(command=command, message=message):
+                error = subprocess.CalledProcessError(1, command, stderr=message)
+                run = mock.Mock(side_effect=[error] if command == self.show else [self.status(), error])
+                with self.assertRaises(subprocess.CalledProcessError) as raised:
+                    convert.legacy_disable(self.old, run)
+                self.assertIs(raised.exception, error)
+        error = subprocess.CalledProcessError(1, self.show, stderr="Failed to connect to bus: Connection reset by peer")
+        run = mock.Mock(side_effect=[self.status(), subprocess.CompletedProcess(self.disable, 0), error])
+        with self.assertRaises(subprocess.CalledProcessError):
+            convert.legacy_disable(self.old, run)
+
+    def test_successful_disable_must_still_confirm_no_writer(self):
+        run = mock.Mock(side_effect=[self.status(active="active", sub="running", pid="1234"),
+            subprocess.CompletedProcess(self.disable, 0), self.status(active="active", sub="running", pid="1234")])
+        with self.assertRaisesRegex(convert.ConvertError, "not confirmed inactive"):
+            convert.legacy_disable(self.old, run)
 
 
 if __name__ == "__main__":
