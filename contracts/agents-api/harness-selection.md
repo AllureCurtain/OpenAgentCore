@@ -55,8 +55,8 @@ another harness does not choose another image or backend; the selected Runtime
 image must contain and qualify each enabled harness. Capability checks still
 apply.
 
-Same-provider resource/Runtime edits currently require no reset and verified zero
-held resources. Changing provider requires explicit durable reset, confirmed
+Node resource/Runtime edits still require no reset and verified zero held resources.
+E2B same-team changes apply online with immutable per-allocation generations. Changing provider requires explicit durable reset, confirmed
 cleanup and a new setup at the resulting generation. Existing Sessions never move
 providers. See the [deployment procedure](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset).
 

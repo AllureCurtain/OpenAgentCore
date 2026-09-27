@@ -43,6 +43,10 @@ func (s *Store) GetSandboxSetup(ctx context.Context) (SandboxSetup, error) {
 	if err != nil {
 		return SandboxSetup{}, err
 	}
+	return s.sandboxSetup(d)
+}
+
+func (s *Store) sandboxSetup(d sqlc.RuntimeDeployment) (SandboxSetup, error) {
 	if !d.WebManaged {
 		return SandboxSetup{}, ErrSandboxDeploymentConflict
 	}

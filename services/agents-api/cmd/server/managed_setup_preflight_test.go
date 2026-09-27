@@ -30,8 +30,7 @@ func TestE2BRejectedSpecificationHasSafeActionableDiagnostic(t *testing.T) {
 	s := &managedSetup{installationID: id}
 	selection := store.SandboxSetup{InstallationID: id, Provider: "e2b", Specification: sandbox.DeploymentSpec{Resources: sandbox.Resources{CPUs: 3, MemoryMiB: 3072}}, E2B: &store.SandboxE2BConfiguration{APIKey: "synthetic-private-key", Template: "runtime:" + uuid.NewString()}}
 	_, err := s.prepare(t.Context(), selection)
-	var invalid *store.SandboxConfigurationError
-	if !errors.As(err, &invalid) || !strings.Contains(invalid.Message, "CPU and memory") || strings.Contains(invalid.Message, "synthetic-private-key") || s.selected.Load() != nil {
+	if !errors.Is(err, e2b.ErrTemplateInvalid) || strings.Contains(err.Error(), "synthetic-private-key") || s.selected.Load() != nil {
 		t.Fatal("rejected candidate lost its safe diagnostic or was published", err)
 	}
 	s.store = &setupStore{value: selection}
@@ -107,7 +106,7 @@ func TestE2BCandidateAdoptsTemplateBuildForOmittedResources(t *testing.T) {
 	t.Setenv("OAC_E2B_PROVIDER_BIN", helper)
 	t.Setenv("OAC_E2B_STATE_DIR", state)
 	id := uuid.NewString()
-	s := &managedSetup{installationID: id}
+	s := &managedSetup{installationID: id, store: &setupStore{}}
 	selection := store.SandboxSetup{InstallationID: id, Provider: "e2b", E2B: &store.SandboxE2BConfiguration{APIKey: "synthetic-private-key", Template: "runtime:" + uuid.NewString()}}
 	candidate, err := s.prepare(t.Context(), selection)
 	disk := int32(24063)
@@ -116,7 +115,12 @@ func TestE2BCandidateAdoptsTemplateBuildForOmittedResources(t *testing.T) {
 		t.Fatalf("validated build was not recorded: %+v %v", candidate.E2BTemplateBuild, err)
 	}
 	// The published candidate enforces the adopted resources.
-	if _, err := candidate.Config.Provider.(*e2b.Provider).ValidateDeployment(t.Context()); err != nil {
+	selection.Specification.Resources = sandbox.Resources{CPUs: 4, MemoryMiB: 4096}
+	provider, err := s.provider(selection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := provider.(*e2b.Provider).ValidateDeployment(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	logged, err := os.ReadFile(requests)

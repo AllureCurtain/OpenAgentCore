@@ -15,6 +15,8 @@ type PreparedRuntimeDeployment struct {
 	Config           *RuntimeProvider
 	Publish          func(*RuntimeProvider)
 	E2BTemplateBuild *store.SandboxE2BTemplateBuild
+	VerifyCredential func(context.Context) error
+	FenceCredential  func(context.Context) (func(), error)
 }
 
 // withTemplateBuild saves the validated build with the selection and fills

@@ -240,6 +240,7 @@ type RuntimeAllocation struct {
 	NodeID                pgtype.UUID        `json:"node_id"`
 	ObservationError      string             `json:"observation_error"`
 	ComputePhaseChangedAt pgtype.Timestamptz `json:"compute_phase_changed_at"`
+	DeploymentGeneration  pgtype.Int8        `json:"deployment_generation"`
 }
 
 type RuntimeDeployment struct {
@@ -268,6 +269,18 @@ type RuntimeDeployment struct {
 	ResetDeadlineAt        pgtype.Timestamptz `json:"reset_deadline_at"`
 	ResetForcedAt          pgtype.Timestamptz `json:"reset_forced_at"`
 	ResetAudit             []byte             `json:"reset_audit"`
+}
+
+type RuntimeDeploymentGeneration struct {
+	Generation             int64              `json:"generation"`
+	ProviderKind           string             `json:"provider_kind"`
+	Specification          []byte             `json:"specification"`
+	E2bTemplate            string             `json:"e2b_template"`
+	E2bTemplateBuildStatus pgtype.Text        `json:"e2b_template_build_status"`
+	E2bTemplateCpus        pgtype.Int4        `json:"e2b_template_cpus"`
+	E2bTemplateMemoryMib   pgtype.Int4        `json:"e2b_template_memory_mib"`
+	E2bTemplateRootDiskMib pgtype.Int4        `json:"e2b_template_root_disk_mib"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 }
 
 type RuntimeDeviceAuthority struct {
@@ -316,6 +329,7 @@ type RuntimeNode struct {
 	DeploymentGeneration int64              `json:"deployment_generation"`
 	CoreUrl              string             `json:"core_url"`
 	EnrollmentID         pgtype.UUID        `json:"enrollment_id"`
+	ReadyGeneration      pgtype.Int8        `json:"ready_generation"`
 }
 
 type RuntimeNodeEnrollment struct {
@@ -330,10 +344,11 @@ type RuntimeNodeEnrollment struct {
 }
 
 type RuntimePlacement struct {
-	EnvironmentID pgtype.UUID        `json:"environment_id"`
-	NodeID        pgtype.UUID        `json:"node_id"`
-	ReservedAt    pgtype.Timestamptz `json:"reserved_at"`
-	ReleasedAt    pgtype.Timestamptz `json:"released_at"`
+	EnvironmentID        pgtype.UUID        `json:"environment_id"`
+	NodeID               pgtype.UUID        `json:"node_id"`
+	ReservedAt           pgtype.Timestamptz `json:"reserved_at"`
+	ReleasedAt           pgtype.Timestamptz `json:"released_at"`
+	DeploymentGeneration pgtype.Int8        `json:"deployment_generation"`
 }
 
 type Session struct {

@@ -22,9 +22,10 @@ var ErrSandboxCredentialUnavailable = errors.New("sandbox credential encryption 
 // APIKey is internal configuration. HTTP requests use a write-only DTO.
 // TemplateBuild is set only by Core after it validates the candidate.
 type SandboxE2BConfiguration struct {
-	APIKey        string                   `json:"-"`
-	Template      string                   `json:"template"`
-	TemplateBuild *SandboxE2BTemplateBuild `json:"-"`
+	ReplaceCredential bool                     `json:"-"`
+	APIKey            string                   `json:"-"`
+	Template          string                   `json:"template"`
+	TemplateBuild     *SandboxE2BTemplateBuild `json:"-"`
 }
 
 // SandboxE2BTemplateBuild is the fixed build as read by the validation that
@@ -209,7 +210,7 @@ func (s *Store) InitializeSandboxDeployment(ctx context.Context, installationID 
 }
 
 // CheckSandboxDeploymentSwitch is a preliminary check only. The mutation repeats
-// it after execution has drained; no database lock spans provider work.
+// it in the committing transaction; no database lock spans provider work.
 func (s *Store) CheckSandboxDeploymentSwitch(ctx context.Context, installation string, input SandboxDeploymentUpdateRequest) error {
 	if s.executionLease == nil {
 		return ErrInvalidInput
@@ -240,6 +241,9 @@ func checkSandboxSwitch(ctx context.Context, q *sqlc.Queries, d sqlc.RuntimeDepl
 	}
 	if d.ProviderKind != input.Provider || unspecifiedNodeDeployment(d) {
 		return &SandboxResetRequiredError{CurrentProvider: d.ProviderKind, RequestedProvider: input.Provider}
+	}
+	if d.ProviderKind == "e2b" {
+		return nil
 	}
 	resources, err := q.CountRuntimeDeploymentResources(ctx)
 	if err != nil {
@@ -274,18 +278,35 @@ func (s *Store) UpdateSandboxDeployment(ctx context.Context, installation string
 		if err != nil {
 			return err
 		}
-		if !equal {
+		if !equal || input.E2B != nil && input.E2B.ReplaceCredential {
+			if err := q.RetainSandboxGeneration(ctx); err != nil {
+				return err
+			}
 			if err := s.saveSandboxSelection(ctx, q, d, input.SandboxDeploymentSetupRequest); err != nil {
 				return err
 			}
-			if err := q.RetireSandboxNodes(ctx); err != nil {
+			if input.Provider != "e2b" {
+				if err := q.RetireSandboxNodes(ctx); err != nil {
+					return err
+				}
+				if err := q.RetireSandboxEnrollments(ctx); err != nil {
+					return err
+				}
+				if err := q.AdvanceSandboxOwnerEpoch(ctx); err != nil {
+					return err
+				}
+			}
+			if err := q.CollectSandboxGenerations(ctx); err != nil {
 				return err
 			}
-			if err := q.RetireSandboxEnrollments(ctx); err != nil {
-				return err
-			}
-			if err := q.AdvanceSandboxOwnerEpoch(ctx); err != nil {
-				return err
+			if input.Provider == "e2b" {
+				action := "change"
+				if input.E2B.ReplaceCredential {
+					action = "replace_credential"
+				}
+				if err := recordDeploymentMutation(ctx, q, action, "sandbox_deployment", installation); err != nil {
+					return err
+				}
 			}
 		} else if err := recordTemplateBuild(ctx, q, input.SandboxDeploymentSetupRequest); err != nil {
 			return err

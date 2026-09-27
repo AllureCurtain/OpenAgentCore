@@ -44,6 +44,7 @@ func TestSandboxDeploymentChangesAuthenticateAndDecode(t *testing.T) {
 		{"PATCH", "/deployment/maintenance", "caller", `{"maintenance":true,"expected_generation":2}`, 401},
 		{"PUT", "/deployment", "administrator", strings.Replace(selection, `"api_key"`, `"API_KEY"`, 1), 400},
 		{"PUT", "/deployment", "administrator", strings.Replace(selection, `"expected_generation":2,`, "", 1), 400},
+		{"PUT", "/deployment", "administrator", strings.Replace(selection, `"synthetic-private-key"`, `null`, 1), 400},
 		{"PUT", "/deployment", "administrator", selection, 200},
 		{"POST", "/deployment/reset", "administrator", `{"expected_generation":2}`, 400},
 		{"POST", "/deployment/reset", "caller", `{"clear":"force","expected_generation":2}`, 401},

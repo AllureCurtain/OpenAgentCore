@@ -58,3 +58,20 @@ Existing operation-specific codes remain documented in the [administrator
 contract](admin-api.md), [sandbox deployment contract](sandbox-deployment.md),
 [executor credential contract](environment-executor-credentials.md) and related
 resource contracts. This change does not reclassify their validation failures.
+
+## E2B online changes
+
+The same-provider deployment PUT uses fixed safe errors. No provider response
+message, template name, key or unlisted-resource count is returned in details.
+
+| HTTP | Code | Meaning | Param |
+| --- | --- | --- | --- |
+| 400 | `e2b_api_key_invalid` | Provider explicitly rejected authentication | `e2b.api_key` |
+| 400 | `e2b_template_build_invalid` | Candidate immutable build is invalid or does not match resources | `e2b.template` |
+| 409 | `e2b_team_mismatch` | Candidate key does not prove ownership/manageability of the retained deployment | `e2b.api_key` |
+| 503 | `e2b_request_unconfirmed` | Verification, receipt settlement or bounded credential fencing could not be confirmed | null |
+
+Missing or unsettled Create receipts are uncertainty, never evidence of a different
+team or released compute. The typed client projects these codes to fixed local
+messages. It also projects `409 sandbox_configuration_error` to fixed public-URL
+guidance, even when a PUT omitted its key; arbitrary upstream text is never echoed.

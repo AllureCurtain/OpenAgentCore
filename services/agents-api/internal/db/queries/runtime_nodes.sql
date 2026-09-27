@@ -5,15 +5,15 @@ UPDATE runtime_deployment SET provider_kind=$1, local_node_id=$2, mode='nodes', 
 SELECT * FROM runtime_deployment WHERE singleton=true;
 
 -- name: InsertRuntimeNode :one
-INSERT INTO runtime_nodes(id,installation_id,name,backend_fingerprint,credential_sha256,max_active,max_retained,specification_digest,deployment_generation,core_url,enrollment_id)
-VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *;
+INSERT INTO runtime_nodes(id,installation_id,name,backend_fingerprint,credential_sha256,max_active,max_retained,specification_digest,deployment_generation,core_url,enrollment_id,ready_generation)
+VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$9) RETURNING *;
 
 -- name: GetRuntimeNode :one
 SELECT * FROM runtime_nodes WHERE id=$1 AND removed_at IS NULL;
 
 -- name: ListRuntimeNodes :many
 SELECT n.*, (n.connection_id IS NOT NULL AND n.connected_epoch=d.owner_epoch AND n.last_seen_at > clock_timestamp()-interval '45 seconds')::boolean AS online,
- d.provider_kind,
+ d.provider_kind, d.generation AS target_generation,
  (SELECT count(*) FROM runtime_placements p LEFT JOIN runtime_allocations a ON a.environment_id=p.environment_id WHERE p.node_id=n.id AND p.released_at IS NULL AND (a.id IS NULL OR a.compute_phase <> 'suspended'))::bigint AS active,
  (SELECT count(*) FROM runtime_placements p WHERE p.node_id=n.id AND p.released_at IS NULL)::bigint AS retained,
  (SELECT count(*) FROM runtime_placements p WHERE p.node_id=n.id AND p.released_at IS NULL AND NOT EXISTS(SELECT 1 FROM runtime_allocations a WHERE a.environment_id=p.environment_id))::bigint AS reserved,
@@ -28,7 +28,7 @@ AND (sqlc.narg(node_id)::uuid IS NULL OR n.id=sqlc.narg(node_id)::uuid) ORDER BY
 UPDATE runtime_nodes SET name=$2,max_active=$3,max_retained=$4 WHERE id=$1 AND removed_at IS NULL RETURNING *;
 
 -- name: RemoveRuntimeNode :exec
-UPDATE runtime_nodes SET removed_at=clock_timestamp(),connection_id=NULL WHERE id=$1 AND removed_at IS NULL;
+UPDATE runtime_nodes SET removed_at=clock_timestamp(),connection_id=NULL,ready_generation=NULL WHERE id=$1 AND removed_at IS NULL;
 
 -- name: ConnectRuntimeNode :execrows
 UPDATE runtime_nodes SET connection_id=$2,provider_ready=false,connected_epoch=d.owner_epoch,last_seen_at=clock_timestamp()
@@ -57,7 +57,7 @@ AND installation_id=(SELECT installation_id FROM runtime_deployment WHERE single
 SELECT * FROM runtime_node_enrollments WHERE token_sha256=$1;
 
 -- name: CreateRuntimePlacement :exec
-INSERT INTO runtime_placements(environment_id,node_id) VALUES($1,$2);
+INSERT INTO runtime_placements(environment_id,node_id,deployment_generation) VALUES($1,$2,(SELECT generation FROM runtime_deployment));
 
 -- name: GetRuntimePlacement :one
 SELECT p.*, n.name, (n.provider_ready AND n.connection_id IS NOT NULL AND n.connected_epoch=d.owner_epoch AND n.last_seen_at>clock_timestamp()-interval '45 seconds' AND n.removed_at IS NULL)::boolean AS available,
@@ -74,13 +74,13 @@ WHERE environment_id IN(SELECT id FROM environments WHERE session_id=$1)
 AND NOT EXISTS(SELECT 1 FROM runtime_allocations a WHERE a.environment_id=runtime_placements.environment_id);
 
 -- name: AdoptRuntimePlacements :exec
-INSERT INTO runtime_placements(environment_id,node_id,released_at)
-SELECT a.environment_id,$1,a.released_at FROM runtime_allocations a WHERE a.provider_key=$2 AND a.state<>'released' AND a.node_id IS NULL
+INSERT INTO runtime_placements(environment_id,node_id,released_at,deployment_generation)
+SELECT a.environment_id,$1,a.released_at,a.deployment_generation FROM runtime_allocations a WHERE a.provider_key=$2 AND a.state<>'released' AND a.node_id IS NULL
 ON CONFLICT(environment_id) DO NOTHING;
 
 -- name: AdoptPendingRuntimePlacements :exec
-INSERT INTO runtime_placements(environment_id,node_id)
-SELECT e.id,$1 FROM environments e JOIN sessions s ON s.id=e.session_id
+INSERT INTO runtime_placements(environment_id,node_id,deployment_generation)
+SELECT e.id,$1,(SELECT generation FROM runtime_deployment) FROM environments e JOIN sessions s ON s.id=e.session_id
 WHERE s.deleted_at IS NULL AND e.status='pending' AND s.configuration->'environment'->>'type'='openai_hosted'
 AND NOT EXISTS(SELECT 1 FROM runtime_allocations a WHERE a.environment_id=e.id)
 ON CONFLICT(environment_id) DO NOTHING;
@@ -90,13 +90,13 @@ UPDATE runtime_allocations SET node_id=$1,compute_activity_at=clock_timestamp()
 WHERE provider_key=$2 AND node_id IS NULL AND state<>'released';
 
 -- name: ListNodeRuntimeAllocations :many
-SELECT a.id,a.node_id,a.observation_error,a.state,a.compute_phase,a.compute_phase_changed_at,a.initialization,a.created_at,a.environment_id,e.session_id,s.tenant_id
+SELECT a.id,a.node_id,a.deployment_generation,a.observation_error,a.state,a.compute_phase,a.compute_phase_changed_at,a.initialization,a.created_at,a.environment_id,e.session_id,s.tenant_id
 FROM runtime_allocations a JOIN environments e ON e.id=a.environment_id JOIN sessions s ON s.id=e.session_id
 WHERE a.node_id=$1 AND a.state<>'released' ORDER BY a.created_at,a.id LIMIT 1000;
 
 -- name: CreateSessionRuntimePlacement :exec
-INSERT INTO runtime_placements(environment_id,node_id)
-SELECT id,$2 FROM environments WHERE session_id=$1;
+INSERT INTO runtime_placements(environment_id,node_id,deployment_generation)
+SELECT id,$2,(SELECT generation FROM runtime_deployment) FROM environments WHERE session_id=$1;
 
 -- name: SetRuntimeObservation :exec
 UPDATE runtime_allocations SET observation_error=$4 WHERE id=$1 AND compute_revision=$2 AND state=$3 AND state<>'released';

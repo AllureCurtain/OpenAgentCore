@@ -198,3 +198,9 @@ Sandbox deployment reset records `reset_start`, explicit `reset_force`, automati
 Background archives retain the reset requester's credential/actor/request/trace
 provenance and recover each Session's real Project scope. Audit failure rolls back
 the corresponding state transition. Cancel does not undo an archive already committed.
+
+Online E2B deployment updates audit `change`, or `replace_credential` when an API
+key is explicitly supplied (including the existing key), under resource type
+`sandbox_deployment` and the installation ID. The audit and generation/credential
+write commit together; verification failures and omitted-key no-ops produce no
+mutation audit. No credential, request body or provider response text is recorded.

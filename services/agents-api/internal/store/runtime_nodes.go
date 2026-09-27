@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"strings"
 	"time"
 
@@ -77,6 +78,9 @@ func (s *Store) deploymentView(ctx context.Context, q *sqlc.Queries) (RuntimeDep
 	}
 	d := row.RuntimeDeployment
 	result := runtimeDeploymentView(d, s.publicURL)
+	if err := json.Unmarshal(row.Rollout, &result.Rollout); err != nil {
+		return RuntimeDeploymentView{}, err
+	}
 	result.Resources = SandboxDeploymentResources{Allocations: row.Allocations, Pending: row.Pending}
 	if d.ResetClear.Valid {
 		remaining := SandboxResetRemaining{}
@@ -128,7 +132,7 @@ func runtimeNodeViews(rows []sqlc.ListRuntimeNodesRow) ([]RuntimeNode, error) {
 			return nil, err
 		}
 		health.ProviderReady = n.ProviderReady
-		out = append(out, RuntimeNode{RuntimeNodeHealth: health, Running: n.Running, Snapshots: n.Snapshots, ID: runtimeUUID(n.ID), Name: n.Name, CoreURL: n.CoreUrl, EnrollmentID: optionalUUID(n.EnrollmentID), Provider: n.ProviderKind, Online: n.Online, LastSeenAt: seen, MaxActive: int(n.MaxActive), MaxRetained: retainedLimit(n.ProviderKind, int(n.MaxActive), int(n.MaxRetained)), Active: n.Active, Reserved: n.Reserved, Retained: n.Retained, CleanupPending: n.CleanupPending, CreatedAt: n.CreatedAt.Time})
+		out = append(out, RuntimeNode{Rollout: nodeRollout(n), RuntimeNodeHealth: health, Running: n.Running, Snapshots: n.Snapshots, ID: runtimeUUID(n.ID), Name: n.Name, CoreURL: n.CoreUrl, EnrollmentID: optionalUUID(n.EnrollmentID), Provider: n.ProviderKind, Online: n.Online, LastSeenAt: seen, MaxActive: int(n.MaxActive), MaxRetained: retainedLimit(n.ProviderKind, int(n.MaxActive), int(n.MaxRetained)), Active: n.Active, Reserved: n.Reserved, Retained: n.Retained, CleanupPending: n.CleanupPending, CreatedAt: n.CreatedAt.Time})
 	}
 	return out, nil
 }
@@ -340,7 +344,32 @@ func (s *Store) ListNodeRuntimeAllocations(ctx context.Context, nodeID string) (
 			value := a.ComputePhaseChangedAt.Time
 			phaseChanged = &value
 		}
-		out = append(out, RuntimeNodeAllocation{Diagnostic: a.ObservationError, ID: runtimeUUID(a.ID), NodeID: runtimeUUID(a.NodeID), TenantID: runtimeUUID(a.TenantID), SessionID: runtimeUUID(a.SessionID), EnvironmentID: runtimeUUID(a.EnvironmentID), State: a.State, ComputePhase: a.ComputePhase, ComputePhaseChangedAt: phaseChanged, Initialization: a.Initialization, CreatedAt: a.CreatedAt.Time})
+		out = append(out, RuntimeNodeAllocation{DeploymentGeneration: uint64(a.DeploymentGeneration.Int64), Diagnostic: a.ObservationError, ID: runtimeUUID(a.ID), NodeID: runtimeUUID(a.NodeID), TenantID: runtimeUUID(a.TenantID), SessionID: runtimeUUID(a.SessionID), EnvironmentID: runtimeUUID(a.EnvironmentID), State: a.State, ComputePhase: a.ComputePhase, ComputePhaseChangedAt: phaseChanged, Initialization: a.Initialization, CreatedAt: a.CreatedAt.Time})
 	}
 	return out, nil
+}
+
+func nodeRollout(n sqlc.ListRuntimeNodesRow) SandboxNodeRollout {
+	out := SandboxNodeRollout{State: "unknown"}
+	if n.ReadyGeneration.Valid {
+		generation := uint64(n.ReadyGeneration.Int64)
+		out.ReadyGeneration = &generation
+	}
+	if !n.Online {
+		return out
+	}
+	if n.DeploymentGeneration != n.TargetGeneration {
+		out.State = "update_required"
+		return out
+	}
+	if n.ProviderReady && n.ReadyGeneration.Valid && n.ReadyGeneration.Int64 == n.TargetGeneration {
+		out.State = "ready"
+		return out
+	}
+	var health RuntimeNodeHealth
+	if json.Unmarshal(n.Health, &health) == nil && health.Diagnostic != "" {
+		out.State = "failed"
+		out.Diagnostic = sandbox.NormalizeNodeDiagnostic(health.Diagnostic)
+	}
+	return out
 }

@@ -61,6 +61,7 @@ type RuntimeNodeHealth struct {
 	AvailableDiskBytes   *int64 `json:"available_disk_bytes"`
 }
 type RuntimeNode struct {
+	Rollout SandboxNodeRollout `json:"rollout"`
 	RuntimeNodeHealth
 	Running        int64      `json:"running"`
 	Snapshots      int64      `json:"snapshots"`
@@ -125,7 +126,27 @@ type SandboxSuspensionView struct {
 	IdleSeconds      int64 `json:"idle_seconds"`
 	RetentionSeconds int64 `json:"retention_seconds"`
 }
+type SandboxNodeRollout struct {
+	// Target preparation, independent of an old pin's serving readiness.
+	State string `json:"state" enums:"ready,preparing,failed,update_required,unknown"`
+	// Durable serving-generation pin; online and provider_ready still gate placement.
+	ReadyGeneration *uint64 `json:"ready_generation" extensions:"x-nullable"`
+	Diagnostic      string  `json:"diagnostic,omitempty"`
+}
+type SandboxRolloutNodes struct {
+	Ready          int64 `json:"ready"`
+	Preparing      int64 `json:"preparing"`
+	Failed         int64 `json:"failed"`
+	UpdateRequired int64 `json:"update_required"`
+	Unknown        int64 `json:"unknown"`
+}
+type SandboxRollout struct {
+	State                       string               `json:"state" enums:"settled,preparing"`
+	PreviousGenerationSandboxes int64                `json:"previous_generation_sandboxes"`
+	Nodes                       *SandboxRolloutNodes `json:"nodes" extensions:"x-nullable"`
+}
 type RuntimeDeploymentView struct {
+	Rollout             SandboxRollout             `json:"rollout"`
 	Specification       *sandbox.DeploymentSpec    `json:"specification,omitempty"`
 	SpecificationDigest string                     `json:"specification_digest,omitempty"`
 	Generation          uint64                     `json:"generation"`
@@ -142,14 +163,15 @@ type RuntimeDeploymentView struct {
 	CoreURL string `json:"core_url"`
 }
 type RuntimeNodeAllocation struct {
-	Diagnostic    string `json:"diagnostic"`
-	ID            string `json:"id"`
-	NodeID        string `json:"node_id"`
-	TenantID      string `json:"tenant_id"`
-	SessionID     string `json:"session_id"`
-	EnvironmentID string `json:"environment_id"`
-	State         string `json:"state"`
-	ComputePhase  string `json:"compute_phase"`
+	DeploymentGeneration uint64 `json:"deployment_generation"`
+	Diagnostic           string `json:"diagnostic"`
+	ID                   string `json:"id"`
+	NodeID               string `json:"node_id"`
+	TenantID             string `json:"tenant_id"`
+	SessionID            string `json:"session_id"`
+	EnvironmentID        string `json:"environment_id"`
+	State                string `json:"state"`
+	ComputePhase         string `json:"compute_phase"`
 	// The time the allocation entered its current compute_phase, or null when unknown; an allocation that existed before Core recorded it reports null until its next phase change. For a suspended microsandbox allocation, this time plus the deployment's snapshot retention tells roughly when Core reclaims it.
 	ComputePhaseChangedAt *time.Time `json:"compute_phase_changed_at" extensions:"x-nullable"`
 	Initialization        string     `json:"initialization"`

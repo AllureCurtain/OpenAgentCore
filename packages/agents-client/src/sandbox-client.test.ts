@@ -350,3 +350,9 @@ it("keeps omitted-key public-URL errors actionable without reflecting a stored k
   expect(error.details).toBeUndefined();
   expect(fetch).toHaveBeenCalledTimes(1);
 });
+
+it.each(["unknown", "preparing", "failed", "update_required"])("does not erase old serving readiness for target %s", async (state) => {
+  const value = { ...node, rollout: { state, ready_generation: 1, ...(state === "failed" ? { diagnostic: "runtime_image_unavailable" } : {}) } };
+  const client = new SandboxAdminClient({ fetch: async () => response({ data: [value] }) });
+  expect((await client.listNodes()).data[0]).toEqual(value);
+});

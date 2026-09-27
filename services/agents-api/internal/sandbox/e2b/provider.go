@@ -141,6 +141,8 @@ func (p *Provider) call(ctx context.Context, operation string, r sandbox.Referen
 		return out, nil
 	case "legacy_template":
 		return out, fmt.Errorf("%w: This E2B template was built before OpenAgentCore renamed its paths. Build a template with this release's build-template.py and replace it in the sandbox deployment.", sandbox.ErrInvalid)
+	case "unauthorized":
+		return out, ErrCredentialInvalid
 	case "invalid":
 		return out, sandbox.ErrInvalid
 	case "ownership":

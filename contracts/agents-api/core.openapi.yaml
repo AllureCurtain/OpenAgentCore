@@ -939,6 +939,8 @@ definitions:
         x-nullable: true
       resources:
         $ref: '#/definitions/store.SandboxDeploymentResources'
+      rollout:
+        $ref: '#/definitions/store.SandboxRollout'
       specification:
         $ref: '#/definitions/sandbox.DeploymentSpec'
       specification_digest:
@@ -1003,6 +1005,8 @@ definitions:
         type: integer
       retained:
         type: integer
+      rollout:
+        $ref: '#/definitions/store.SandboxNodeRollout'
       running:
         type: integer
       snapshots:
@@ -1018,6 +1022,8 @@ definitions:
         x-nullable: true
       created_at:
         type: string
+      deployment_generation:
+        type: integer
       diagnostic:
         type: string
       environment_id:
@@ -1093,6 +1099,8 @@ definitions:
         type: integer
       retained:
         type: integer
+      rollout:
+        $ref: '#/definitions/store.SandboxNodeRollout'
       running:
         type: integer
       snapshots:
@@ -1156,6 +1164,24 @@ definitions:
           - $ref: '#/definitions/store.SandboxE2BTemplateBuildView'
         description: The fixed template build as Core read it when this selection was saved.
     type: object
+  store.SandboxNodeRollout:
+    properties:
+      diagnostic:
+        type: string
+      ready_generation:
+        description: Durable serving-generation pin; online and provider_ready still gate placement.
+        type: integer
+        x-nullable: true
+      state:
+        description: Target preparation, independent of an old pin's serving readiness.
+        enum:
+          - ready
+          - preparing
+          - failed
+          - update_required
+          - unknown
+        type: string
+    type: object
   store.SandboxResetOfflineNode:
     properties:
       name:
@@ -1212,6 +1238,33 @@ definitions:
         $ref: '#/definitions/store.SandboxResetRemaining'
       requested_at:
         type: string
+    type: object
+  store.SandboxRollout:
+    properties:
+      nodes:
+        allOf:
+          - $ref: '#/definitions/store.SandboxRolloutNodes'
+        x-nullable: true
+      previous_generation_sandboxes:
+        type: integer
+      state:
+        enum:
+          - settled
+          - preparing
+        type: string
+    type: object
+  store.SandboxRolloutNodes:
+    properties:
+      failed:
+        type: integer
+      preparing:
+        type: integer
+      ready:
+        type: integer
+      unknown:
+        type: integer
+      update_required:
+        type: integer
     type: object
   store.SandboxSuspensionView:
     properties:
@@ -5799,7 +5852,7 @@ paths:
     put:
       consumes:
         - application/json
-      description: Requires the current generation, the same backend type, no active reset and verified cleanup of all old resources. A backend type change requires reset. Credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory. A core_url member is rejected with 400; the address comes from the installation public URL. Historical records are retained; old node credentials and enrollments are retired. Never automatically retry an uncertain write.
+      description: 'Requires the observed generation, the same backend type and no active reset. E2B same-team changes apply online: allocations retain immutable generation and current credentials; omitted api_key preserves it, explicit submission including the same key verifies and advances generation. Other teams require explicit reset. Node providers retain the zero-resource guard and retire old nodes/tokens on change. Core rejects core_url input. Never automatically replay an uncertain write; rollout.state is the authoritative preparation polling signal.'
       parameters:
         - description: Replacement deployment selection
           in: body
@@ -5836,7 +5889,7 @@ paths:
             $ref: '#/definitions/api.CoreErrorResponse'
       security:
         - DeploymentAdminAuth: []
-      summary: Change a fully drained deployment's sandbox configuration
+      summary: Change the sandbox deployment configuration
       tags:
         - Sandbox Manager
   /core/v1/sandbox/deployment/reset:

@@ -207,6 +207,9 @@ func (s *Store) CompleteSandboxReset(ctx context.Context, installation string, g
 		if err := q.RetireSandboxEnrollments(ctx); err != nil {
 			return err
 		}
+		if err := q.ClearSandboxGenerations(ctx); err != nil {
+			return err
+		}
 		if err := recordDeploymentMutation(adminaudit.WithSource(ctx, source), q, "reset_complete", "sandbox_deployment", installation); err != nil {
 			return err
 		}

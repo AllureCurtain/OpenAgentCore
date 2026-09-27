@@ -758,7 +758,7 @@ inspection enforce the declared CPU/memory and exact image. E2B setup verifies t
 exact ready template build and matching CPU/memory through the pinned SDK before
 saving its encrypted account key, and records the build as read for the safe view;
 an omitted E2B `resources` adopts that build's CPU and memory. Loading a committed selection reconstructs its
-provider from the original credentials and receipts without repeating candidate
+provider from its owned generation, current committed credential and receipts without repeating candidate
 template validation; a template endpoint outage must not block cleanup of existing
 sandboxes. Creation and instance inspection still enforce the saved resources.
 E2B uses direct placement without a node. Node
@@ -767,9 +767,9 @@ OCI manifest digest, microsandbox image reference, Runtime and firmware hashes.
 These identities are distinct and cannot substitute for each other.
 
 Startup claims the stable installation identity and a new owner epoch before
-provider selection. The existing runtime manager loads one immutable generation.
+provider selection. The runtime manager retains generation-aware provider facades.
 Initial setup and replacement prepare and validate candidates before database
-writes. Rejected candidates preserve the active configuration and workers. A clean
+writes. Rejected candidates preserve the active configuration and workers. A node
 replacement uses the existing mutation gate, pauses manager admission, drains old
 calls and loops, then repeats the resource/generation guards in the commit
 transaction. A changed selection, its generation and retirement of old nodes and
@@ -791,9 +791,39 @@ read.
 All sandbox writes require the observed generation, including initial POST at
 zero; reject stale state before provider preparation, reset or no-op checks, and
 repeat it under the committing row lock. Same-provider PUT currently requires no
-reset and zero held resources. A different backend or unspecified old selection
-requires reset. No online rollout is implemented at this stage; omit that projection.
+reset. Node PUT keeps the zero-held-resource guard until the complete multi-generation
+node protocol ships. E2B changes apply online without retiring nodes, tokens or the
+owner epoch. A different backend, E2B team or unspecified old selection requires reset.
 Preserve historical allocation ownership and placement, never migrate a Session.
+
+Persist immutable allocation and placement deployment generations, distinct from
+compute generations. Node allocations copy their placement; E2B binds at reservation.
+Keep superseded specification/build rows without credentials while current, owned by
+an unreleased allocation/placement, or pinned by any nonremoved node. A durable node
+serving pin survives offline state and zero resources. GC uses the deployment lock
+and bounded pages; reset clears pins only after release. Never downgrade facts needed
+for generation routing. Node readiness and no-gap placement remain PR-N work; do not
+relax the node PUT guard or introduce half a protocol.
+
+Use one E2B classifier. Omitted key preserves the current key; identical selection
+with omitted key is a no-op. Explicit key submission, including identical bytes,
+verifies and increments generation. Check the candidate and retained builds, paginated
+team-owned template membership and every settled live receipt under the candidate key.
+Public template readability is not team ownership. Missing/unsettled receipts and
+unconfirmed reads reject. Fence credential commits against all provider calls and
+actual helper subprocess completion after cancellation, then reverify. Helper exit
+never settles unknown remote Create. Bounded failure keeps the original key and
+lifecycles. Resolve each allocation's immutable specification and current key in one
+snapshot; no stale-key cache, fallback to current spec, or provider-map unloading.
+Audit the committed change without secret fields.
+
+Project rollout and reset from the same database snapshot. Old retained resources
+alone never imply preparation or high-frequency polling. Rollout state is settled
+unless actual target preparation is active. Offline/unconfirmed nodes are unknown;
+only exact current connection/epoch/generation readiness is ready. A durable pin is
+not connectivity. Fixed diagnostics alone may explain failed preparation. PR-G reports
+no synthetic preparing state; old online v1 nodes can be update_required while their
+valid pin remains available to the eventual PR-N placement contract.
 
 Reset is durable execution state, advanced by the existing manager outside its
 counted work. Serialize start, escalation, cancel, setup, update and finalization

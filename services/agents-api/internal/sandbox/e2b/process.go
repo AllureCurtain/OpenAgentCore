@@ -15,9 +15,9 @@ import (
 // The helper keeps its allocation lock until its bounded SDK operation settles.
 var errHelperNotStarted = errors.New("helper did not start")
 
-type ProcessCaller struct{}
+type ProcessCaller struct{ Fence *CallFence }
 
-func (*ProcessCaller) Call(ctx context.Context, q Request) (Response, error) {
+func (p *ProcessCaller) Call(ctx context.Context, q Request) (Response, error) {
 	data, err := json.Marshal(q)
 	if err != nil || len(data) > MaxRequestBytes {
 		return Response{}, errHelperNotStarted
@@ -39,8 +39,12 @@ func (*ProcessCaller) Call(ctx context.Context, q Request) (Response, error) {
 	if cmd.Start() != nil {
 		return Response{}, errHelperNotStarted
 	}
+	finished := func() {}
+	if p.Fence != nil {
+		finished = p.Fence.childStarted()
+	}
 	done := make(chan error, 1)
-	go func() { done <- cmd.Wait() }()
+	go func() { err := cmd.Wait(); finished(); done <- err }()
 	select {
 	case <-ctx.Done():
 		return Response{}, ctx.Err()

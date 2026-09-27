@@ -64,14 +64,13 @@ mode `0700`. The standard distribution prepares both. Back up this private state
 with the database and credential-encryption key; losing it can leave an uncertain
 allocation that cannot safely be reclaimed. Do not mount it into Web or Runtime.
 
-Drain and confirm cleanup before revoking the configured E2B account key. Replacing
-that key currently uses the same zero-resource configuration guard; in-place key
-rotation with retained resources is not supported. If the key is revoked early,
-Core keeps unverifiable allocations and blocks switching, even if compute was
-removed through the provider console. Do not clear database allocations or private
-receipts to bypass this check. A future credential-repair operation must verify
-account/resource ownership before accepting a replacement key; an inaccessible
-sandbox or empty listing from another account is not proof of cleanup.
+Replace an E2B key through the full deployment PUT, using the current template and
+observed generation. Core verifies team ownership and all retained resources before
+committing it. Omit api_key to preserve it; explicitly supplying the same key still
+verifies and advances generation. Revoke the old key only after a successful response.
+Missing or unsettled receipts, another team, or unconfirmed provider reads reject
+without changing the active key. Do not clear allocations or receipts to bypass this.
+See [generation and credential guarantees](../../contracts/agents-api/sandbox-deployment.md#generation-ownership-and-rollout).
 
 For own machines, **Add node** generates a one-time command that uses the
 installation public URL. Before installing, the node installer reads the active
@@ -276,11 +275,17 @@ an unreachable Core or a 403 from a proxy in front of it, restart the service ev
 5 seconds without a start limit. Ordinary disconnects and host restarts reuse the
 original identity.
 
-Same-provider resource/Runtime or E2B key/build edits currently require zero
-unreleased allocations and pending hosted Environments, no reset and the current
-generation. PUT the complete selection once. Core validates before draining, then
-rechecks and commits the generation and node/token retirement together. A failed
-commit recovers the previous provider. There is no online rollout in this release.
+E2B same-team key/build/resource edits apply online; existing sandboxes retain their
+original generation and new allocations use the new selection. Docker/microsandbox
+resource/Runtime edits still require zero unreleased allocations and pending hosted
+Environments, no reset and the observed generation. Their multi-generation preparation
+protocol remains future work. Submit once and read back after uncertain responses.
+
+Deployment rollout reports old-generation resource counts separately from preparation.
+Poll frequently only while reset is active or rollout.state is preparing. E2B updates
+settle immediately; old Sessions can remain indefinitely without implying preparation.
+Offline node rollout is unknown, and ready_generation is a durable pin rather than
+proof that the node is online. Node update_required and failed states are settled.
 
 Changing backend requires an explicit reset. POST
 `/core/v1/sandbox/deployment/reset` with `expected_generation` and `clear: auto`

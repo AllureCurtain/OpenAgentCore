@@ -123,20 +123,47 @@ func (w *Worker) UpdateSandboxDeployment(ctx context.Context, input store.Sandbo
 	}
 	defer unlock()
 	m := w.runtimes
-	if err := m.store.CheckSandboxDeploymentSwitch(ctx, m.setupInstallationID, input); err != nil {
+	input, unchanged, err := m.store.ClassifySandboxDeploymentChange(ctx, m.setupInstallationID, input)
+	if err != nil {
 		return store.RuntimeDeploymentView{}, err
+	}
+	if unchanged {
+		return m.store.GetRuntimeDeployment(ctx)
 	}
 	candidate, err := m.prepareCandidate(ctx, input.SandboxDeploymentSetupRequest)
 	if err != nil {
 		return store.RuntimeDeploymentView{}, err
 	}
-	if err := m.pauseDeployment(ctx); err != nil {
+	if input.Provider == "e2b" {
+		if candidate.VerifyCredential == nil || candidate.FenceCredential == nil {
+			return store.RuntimeDeploymentView{}, ErrExecutionUnavailable
+		}
+		if err := candidate.VerifyCredential(ctx); err != nil {
+			return store.RuntimeDeploymentView{}, err
+		}
+		if input.E2B.ReplaceCredential {
+			fenceCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+			release, err := candidate.FenceCredential(fenceCtx)
+			if err != nil {
+				return store.RuntimeDeploymentView{}, err
+			}
+			defer release()
+			// The final scan includes allocations admitted during preliminary verification.
+			if err := candidate.VerifyCredential(fenceCtx); err != nil {
+				return store.RuntimeDeploymentView{}, err
+			}
+		}
+	} else if err := m.pauseDeployment(ctx); err != nil {
 		return store.RuntimeDeploymentView{}, errors.Join(err, m.restoreCommittedDeployment())
 	}
 	input.SandboxDeploymentSetupRequest = withTemplateBuild(input.SandboxDeploymentSetupRequest, candidate)
 	result, err := m.store.UpdateSandboxDeployment(ctx, m.setupInstallationID, input)
 	if err != nil {
-		return store.RuntimeDeploymentView{}, errors.Join(err, m.restoreCommittedDeployment())
+		if input.Provider != "e2b" {
+			err = errors.Join(err, m.restoreCommittedDeployment())
+		}
+		return store.RuntimeDeploymentView{}, err
 	}
 	m.publishDeployment(candidate, result)
 	return result, nil

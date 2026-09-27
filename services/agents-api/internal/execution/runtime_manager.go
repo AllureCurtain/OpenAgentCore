@@ -224,6 +224,11 @@ func (m *runtimeManager) run(ctx context.Context) error {
 	}
 	m.running = true
 	m.mu.Unlock()
+	if m.loadDeployment != nil {
+		if err := m.store.CollectSandboxGenerations(ctx); err != nil {
+			return err
+		}
+	}
 	if err := m.resetStep(ctx); err != nil {
 		return err
 	}
@@ -241,6 +246,11 @@ func (m *runtimeManager) run(ctx context.Context) error {
 		case err := <-m.failed:
 			return err
 		case <-ticker.C:
+			if m.loadDeployment != nil {
+				if err := m.store.CollectSandboxGenerations(ctx); err != nil {
+					return err
+				}
+			}
 			if err := m.resetStep(ctx); err != nil {
 				return err
 			}

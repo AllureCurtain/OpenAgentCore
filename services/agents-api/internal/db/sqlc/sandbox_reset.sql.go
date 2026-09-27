@@ -53,7 +53,7 @@ func (q *Queries) ForceSandboxReset(ctx context.Context) error {
 const getSandboxDeploymentSnapshot = `-- name: GetSandboxDeploymentSnapshot :one
 WITH observed AS MATERIALIZED (SELECT clock_timestamp() AS as_of),
 held AS (
-    SELECT a.node_id, s.id AS session_id, e.id AS environment_id, false AS pending,
+    SELECT a.deployment_generation, a.node_id, s.id AS session_id, e.id AS environment_id, false AS pending,
         (a.state = 'cleanup_pending' OR s.deleted_at IS NOT NULL OR e.status IN ('failed', 'expired')
          OR CASE WHEN a.compute_phase NOT IN ('disabled', 'running')
             THEN a.compute_retained_until IS NOT NULL AND a.compute_retained_until <= observed.as_of
@@ -62,14 +62,14 @@ held AS (
     JOIN sessions s ON s.id = e.session_id CROSS JOIN runtime_deployment d CROSS JOIN observed
     WHERE a.state <> 'released'
     UNION ALL
-    SELECT p.node_id, s.id, e.id, true, false
+    SELECT p.deployment_generation, p.node_id, s.id, e.id, true, false
     FROM environments e JOIN sessions s ON s.id = e.session_id
     LEFT JOIN runtime_placements p ON p.environment_id = e.id AND p.released_at IS NULL
     WHERE s.deleted_at IS NULL AND e.status = 'pending'
         AND s.configuration->'environment'->>'type' = 'openai_hosted'
         AND NOT EXISTS (SELECT 1 FROM runtime_allocations a WHERE a.environment_id = e.id)
 ), classified AS (
-    SELECT h.node_id, h.session_id, h.environment_id, h.pending, h.cleanup, CASE WHEN h.cleanup THEN 'cleanup'
+    SELECT h.deployment_generation, h.node_id, h.session_id, h.environment_id, h.pending, h.cleanup, CASE WHEN h.cleanup THEN 'cleanup'
         WHEN EXISTS (SELECT 1 FROM turns t WHERE t.session_id = h.session_id AND t.status IN ('in_progress', 'waiting'))
           OR EXISTS (SELECT 1 FROM subagent_turns t WHERE t.session_id = h.session_id AND t.status IN ('in_progress', 'waiting'))
           OR EXISTS (SELECT 1 FROM environment_file_writes f WHERE f.environment_id = h.environment_id AND f.state = 'pending')
@@ -77,6 +77,15 @@ held AS (
         n.name, (h.node_id IS NOT NULL AND NOT COALESCE(n.removed_at IS NULL AND n.connection_id IS NOT NULL
             AND n.connected_epoch = d.owner_epoch AND n.last_seen_at > observed.as_of - interval '45 seconds', false)) AS offline
     FROM held h LEFT JOIN runtime_nodes n ON n.id = h.node_id CROSS JOIN runtime_deployment d CROSS JOIN observed
+), rollout_nodes AS (
+    SELECT CASE
+        WHEN n.connection_id IS NULL OR n.connected_epoch <> d.owner_epoch OR n.last_seen_at IS NULL OR n.last_seen_at <= observed.as_of - interval '45 seconds' THEN 'unknown'
+        WHEN n.deployment_generation <> d.generation THEN 'update_required'
+        WHEN n.provider_ready AND n.ready_generation = d.generation THEN 'ready'
+        WHEN COALESCE(n.health->>'diagnostic','') <> '' THEN 'failed'
+        ELSE 'unknown' END AS state
+    FROM runtime_nodes n CROSS JOIN runtime_deployment d CROSS JOIN observed
+    WHERE n.removed_at IS NULL AND n.installation_id=d.installation_id
 ), offline AS (
     SELECT node_id, name, count(*)::bigint AS resources FROM classified WHERE offline GROUP BY node_id, name
 )
@@ -89,7 +98,16 @@ SELECT d.singleton, d.installation_id, d.backend_fingerprint, d.admission_paused
         'cleanup', (SELECT count(*) FROM classified WHERE category = 'cleanup'),
         'on_offline_nodes', (SELECT count(*) FROM classified WHERE offline),
         'offline_nodes', COALESCE((SELECT jsonb_agg(jsonb_build_object('node_id', node_id, 'name', name, 'resources', resources) ORDER BY node_id) FROM offline), '[]'::jsonb)
-    )::jsonb AS remaining
+    )::jsonb AS remaining,
+    jsonb_build_object('state','settled',
+        'previous_generation_sandboxes',(SELECT count(*) FROM held h WHERE h.deployment_generation <> d.generation),
+        'nodes',CASE WHEN d.mode='nodes' THEN jsonb_build_object(
+            'ready',(SELECT count(*) FROM rollout_nodes WHERE state='ready'),
+            'preparing',0,
+            'failed',(SELECT count(*) FROM rollout_nodes WHERE state='failed'),
+            'update_required',(SELECT count(*) FROM rollout_nodes WHERE state='update_required'),
+            'unknown',(SELECT count(*) FROM rollout_nodes WHERE state='unknown')) ELSE NULL END
+    )::jsonb AS rollout
 FROM runtime_deployment d
 `
 
@@ -98,6 +116,7 @@ type GetSandboxDeploymentSnapshotRow struct {
 	Allocations       int64             `json:"allocations"`
 	Pending           int64             `json:"pending"`
 	Remaining         []byte            `json:"remaining"`
+	Rollout           []byte            `json:"rollout"`
 }
 
 func (q *Queries) GetSandboxDeploymentSnapshot(ctx context.Context) (GetSandboxDeploymentSnapshotRow, error) {
@@ -132,6 +151,7 @@ func (q *Queries) GetSandboxDeploymentSnapshot(ctx context.Context) (GetSandboxD
 		&i.Allocations,
 		&i.Pending,
 		&i.Remaining,
+		&i.Rollout,
 	)
 	return i, err
 }

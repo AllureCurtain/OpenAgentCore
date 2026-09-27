@@ -30,6 +30,7 @@ type managedSetup struct {
 	// publicURL is OAC_PUBLIC_URL; every sandbox reaches Core through it.
 	publicURL string
 	selected  atomic.Pointer[managedSelection]
+	e2bCalls  e2b.CallFence
 }
 
 // Empty selections retain their generation so a delayed provider load cannot
@@ -71,6 +72,9 @@ func (s *managedSetup) load(ctx context.Context) (*execution.RuntimeProvider, er
 		return selected.Config, nil
 	}
 	candidate, err := s.configuration(setup)
+	if err == nil {
+		candidate, err = s.routeGenerations(candidate, setup)
+	}
 	if err != nil {
 		log.Warn(ctx, "Hosted provider is unavailable; administrator recovery remains available", "provider", setup.Provider, "error", err)
 		return nil, fmt.Errorf("%w: %v", execution.ErrExecutionUnavailable, err)
@@ -90,10 +94,13 @@ func (s *managedSetup) prepare(ctx context.Context, setup store.SandboxSetup) (e
 	if provider, ok := candidate.Config.Provider.(*e2b.Provider); ok {
 		build, err := provider.ValidateDeployment(ctx)
 		if err != nil {
-			if errors.Is(err, sandbox.ErrInvalid) {
-				return execution.PreparedRuntimeDeployment{}, &store.SandboxConfigurationError{Message: "E2B configuration was rejected; select a ready fixed template build whose CPU and memory match the deployment specification"}
+			if errors.Is(err, e2b.ErrCredentialInvalid) {
+				return execution.PreparedRuntimeDeployment{}, err
 			}
-			return execution.PreparedRuntimeDeployment{}, fmt.Errorf("%w: E2B validation could not be confirmed; verify the helper, credential, network and fixed template build before retrying", execution.ErrExecutionUnavailable)
+			if errors.Is(err, sandbox.ErrInvalid) {
+				return execution.PreparedRuntimeDeployment{}, e2b.ErrTemplateInvalid
+			}
+			return execution.PreparedRuntimeDeployment{}, e2b.ErrRequestUnconfirmed
 		}
 		if setup.Specification.Resources == (sandbox.Resources{}) {
 			// Omitted E2B resources take the validated build's CPU and memory.
@@ -111,7 +118,7 @@ func (s *managedSetup) prepare(ctx context.Context, setup store.SandboxSetup) (e
 			candidate.E2BTemplateBuild.RootDiskMiB = &disk
 		}
 	}
-	return candidate, nil
+	return s.routeGenerations(candidate, setup)
 }
 
 // Loading an already committed selection must retain provider access to its
@@ -192,8 +199,8 @@ func (s *managedSetup) provider(setup store.SandboxSetup) (sandbox.Provider, err
 		if setup.Specification.Resources != (sandbox.Resources{}) {
 			resources = &setup.Specification.Resources
 		}
-		provider, err := e2b.New(e2b.Config{Binary: binary, StateDir: os.Getenv("OAC_E2B_STATE_DIR"),
-			Resources: resources, InstallationID: setup.InstallationID, APIKey: setup.E2B.APIKey, Template: setup.E2B.Template, TimeoutSeconds: 3600})
+		provider, err := e2b.NewWithCaller(e2b.Config{Binary: binary, StateDir: os.Getenv("OAC_E2B_STATE_DIR"),
+			Resources: resources, InstallationID: setup.InstallationID, APIKey: setup.E2B.APIKey, Template: setup.E2B.Template, TimeoutSeconds: 3600}, &e2b.ProcessCaller{Fence: &s.e2bCalls})
 		if err != nil {
 			return nil, errors.New("E2B provider cannot load; check the installed helper and private state directory")
 		}

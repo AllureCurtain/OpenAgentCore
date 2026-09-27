@@ -59,3 +59,68 @@ func TestEnvironmentDropsProviderSelectorsAndCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCredentialFenceWaitsForActualHelperExitAfterCancellation(t *testing.T) {
+	root := t.TempDir()
+	binary := filepath.Join(root, "helper")
+	marker := filepath.Join(root, "started")
+	finish := filepath.Join(root, "finish")
+	script := "#!/bin/sh\ntouch '" + marker + "'\nwhile ! test -f '" + finish + "'; do sleep 0.01; done\nprintf '%s' '{\"Version\":1}'\n"
+	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	fence := &CallFence{}
+	ctx, cancel := context.WithCancel(t.Context())
+	entered, err := fence.Enter(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := (&ProcessCaller{Fence: fence}).Call(ctx, Request{Config: Config{Binary: binary}})
+		entered()
+		done <- err
+	}()
+	t.Cleanup(func() { os.WriteFile(finish, nil, 0600); cancel() })
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, err := os.Stat(marker); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("helper did not start")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	if err := <-done; err == nil {
+		t.Fatal("caller cancellation hidden")
+	}
+	blocked, stop := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	defer stop()
+	if unlock, err := fence.Fence(blocked); err == nil {
+		unlock()
+		t.Fatal("credential fence forgot a live helper")
+	}
+	// A failed exclusive waiter must return its permits immediately.
+	if release, err := fence.Enter(t.Context()); err != nil {
+		t.Fatal(err)
+	} else {
+		release()
+	}
+	if err := os.WriteFile(finish, nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	final, end := context.WithTimeout(t.Context(), 3*time.Second)
+	defer end()
+	release, err := fence.Fence(final)
+	if err != nil {
+		t.Fatal("late helper exit did not release fence", err)
+	}
+	release()
+	if release, err := fence.Enter(final); err != nil {
+		t.Fatal(err)
+	} else {
+		release()
+	}
+}

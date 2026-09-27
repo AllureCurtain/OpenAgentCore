@@ -15,7 +15,7 @@ e2b_template_memory_mib=sqlc.narg(e2b_template_memory_mib), e2b_template_root_di
 updated_at=clock_timestamp() WHERE singleton=true AND provider_kind='e2b';
 
 -- name: RetireSandboxNodes :exec
-UPDATE runtime_nodes SET removed_at=clock_timestamp(),connection_id=NULL,provider_ready=false WHERE removed_at IS NULL;
+UPDATE runtime_nodes SET removed_at=clock_timestamp(),connection_id=NULL,provider_ready=false,ready_generation=NULL WHERE removed_at IS NULL;
 
 -- name: RetireSandboxEnrollments :exec
 UPDATE runtime_node_enrollments SET expires_at=clock_timestamp() WHERE consumed_at IS NULL;

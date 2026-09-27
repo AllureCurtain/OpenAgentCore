@@ -21,7 +21,7 @@ for the operator workflow. Generated schemas cover the
 | --- | --- | --- |
 | `GET /core/v1/sandbox/deployment` | Core key | Read the safe active configuration and retained-resource counts |
 | `POST /core/v1/sandbox/deployment` | Core key | Select the initial provider, resources and Runtime |
-| `PUT /core/v1/sandbox/deployment` | Core key | Update the same provider at zero retained and pending resources |
+| `PUT /core/v1/sandbox/deployment` | Core key | Update E2B online; node providers still require zero retained and pending resources |
 | `POST /core/v1/sandbox/deployment/reset` | Core key | Start or escalate a durable hosted clear |
 | `DELETE /core/v1/sandbox/deployment/reset?expected_generation=N` | Core key | Cancel the remaining clear without restoring archived work |
 | `GET /api/v1/sandbox-node/configuration` | Enrollment token or retained node credential | Read the active node installation configuration without consuming enrollment |
@@ -74,7 +74,7 @@ resource and same-selection conditions, including an identical old request body.
 | `provider` | Exactly one of `docker`, `microsandbox`, `e2b` |
 | `resources` | Per-sandbox resource limits described below; required for Docker/microsandbox, optional for E2B |
 | `runtime` | Required immutable distribution identity for Docker/microsandbox; absent for E2B |
-| `e2b` | Required only for E2B: write-only `api_key` and immutable `template` build selector |
+| `e2b` | Required only for E2B: immutable `template` build selector; write-only `api_key` required on POST, optional on same-provider PUT |
 
 The request has no Core address. Core derives the deployment's `core_url` from the
 installation public URL (`public_url` in `config.json`, `OAC_PUBLIC_URL` for
@@ -148,14 +148,14 @@ before registration and retains the exact local image identity it imports.
 E2B instead uses `e2b.template` in `template-id:build-uuid` form. The build UUID must
 be canonical and nonzero; a mutable template alias alone is insufficient. Omit
 `runtime`. The API key is encrypted in PostgreSQL and never returned in a safe
-view, bootstrap configuration, command argument or log. Replacing the key or
-build uses the same zero-resource update as changing resources.
+view, bootstrap configuration, command argument or log. Same-team key or build
+changes apply online while old sandboxes retain their original specification.
 
 ## Safe response
 
 GET and successful mutations return `installation_id`, `provider`, `core_url`
 (read-only: the installation public URL, present before configuration), `mode`,
-`generation`, `owner_epoch`, `reset`, `suspension` and resource
+`generation`, `owner_epoch`, `reset`, `rollout`, `suspension` and resource
 accounting. A configured deployment also returns `specification` and
 `specification_digest`. E2B returns only `e2b.template`,
 `e2b.credential_configured` and `e2b.template_build`; the `e2b` object is absent
@@ -168,7 +168,8 @@ the values describe the immutable build at selection time. Validation admits onl
 a `ready` build whose CPU count and memory equal the selected `cpus` and
 `memory_mib`. `root_disk_mib` is the build's native disk size, which Core does not
 enforce separately. Unknown values are null, including every value of a selection
-saved before Core recorded them; re-saving the selection records them.
+saved before Core recorded them; a verified write records them. An omitted-key
+identical PUT is a no-op and does not refresh provider metadata.
 
 `suspension` is `{idle_seconds, retention_seconds}` for microsandbox, the only
 provider Core suspends (currently 300 and 86400). Docker, E2B and unconfigured
@@ -203,15 +204,86 @@ Missing prerequisites or failed preparation leave the committed provider intact.
 A different backend, or an old node selection without a specification, requires
 reset first. POST also initializes after a completed reset, using its new generation.
 
-PUT currently accepts only the same provider, no active reset and zero unreleased
-allocations plus pending hosted Environments. Send the complete selection and the
-observed generation once. Core prepares the candidate, drains manager calls outside
-any database transaction, repeats guards under the deployment lock, and commits a
-changed selection, generation and node/token retirement together. A no-op keeps its
-generation. Failed final writes restore the committed provider using the owner's
-bounded recovery context before releasing mutation ownership. If recovery fails,
-the owner stops with admission fenced. There is no online rollout in this contract;
-responses omit `rollout` until that feature exists.
+PUT accepts the same provider and no active reset. Send the observed generation
+once; never replay an uncertain mutation automatically. E2B changes apply online:
+new allocations use the newly committed specification and existing allocations
+retain their immutable deployment generation. No node, token or owner epoch is
+retired by an E2B update. Docker/microsandbox still require zero held resources,
+prepare and drain before commit, and retire old nodes/tokens. Their online update
+protocol is not implemented yet.
+
+For E2B PUT, omit `e2b.api_key` to preserve the current key. Omitted-key identical
+selection is a no-op. Explicit nonempty key submission, including the same key,
+always verifies and advances generation. Null or empty keys are invalid. A key-only
+change uses the same full DTO: provider, existing template, optional resources and
+expected_generation, plus the new api_key. It has no separate route or implicit reset.
+
+Verification reads the candidate and every retained build with the candidate key,
+proves ownership using the SDK's paginated team-template listing, and confirms each
+settled live receipt in the installation-labelled sandbox listing. Public template
+readability alone is insufficient. Missing or unsettled receipts and unconfirmed
+reads fail closed. Different-team ownership gives `409 e2b_team_mismatch`; explicitly
+reset before initializing another team. Provider 401/403 gives `400 e2b_api_key_invalid`;
+an invalid candidate build gives `400 e2b_template_build_invalid`; an unconfirmed
+verification gives `503 e2b_request_unconfirmed`. No provider text or credential is
+returned. The write and `change` or `replace_credential` audit share one transaction.
+
+A credential replacement briefly fences provider calls, waits for actual helper
+process completion even after caller cancellation, and repeats verification before
+commit. Helper exit is not evidence that remote Create settled. The fence and reads
+are bounded; failure preserves the old key and lifecycles. After the successful
+response, all retained-generation management uses the committed key. Only then
+revoke the previous key in E2B. Template/resource changes do not drain lifecycles.
+
+### Generation ownership and rollout
+
+`runtime_deployment` owns the current specification. Superseded rows contain only
+immutable specification/build metadata, never another E2B credential. An E2B
+allocation binds its generation at reservation. Node placements bind at Session
+admission and allocations copy that generation, even after repeated updates.
+Inspection, renewal, command execution and cleanup route the allocation's original
+specification with the current credential; a missing generation never falls back
+to the current specification. Released historical generation identifiers remain.
+
+Retain a generation while it is current, referenced by an unreleased allocation or
+placement, or pinned by a nonremoved node. The durable node serving pin survives
+offline state and zero resources; it is separate from current connection readiness.
+Collection shares the deployment lock with updates and admission and deletes at
+most 32 eligible generation rows per pass. Reset retires pins and clears superseded
+rows only after confirmed resource release. Downgrade refuses ownership or serving
+pins that still need generation routing.
+
+Every deployment response includes:
+
+```json
+"rollout": {"state":"settled", "previous_generation_sandboxes":3,
+            "nodes":null}
+```
+
+The previous count uses the same snapshot as resource totals: old-generation
+unreleased allocations plus old-generation pending placements without allocations,
+never counting one resource twice. E2B and unconfigured deployments return null
+nodes. A node deployment returns counts `{ready,preparing,failed,update_required,unknown}`.
+Every nonremoved node belongs to exactly one bucket. Offline or unconfirmed current
+connections are `unknown` first; an online v1 node enrolled at an older target is
+`update_required`; online exact-generation provider readiness is `ready`; an online
+reported diagnostic is `failed`; otherwise it is `unknown`. The existing 45-second
+heartbeat and owner-epoch rules define online. Pins alone never imply readiness. Target rollout is distinct from serving readiness:
+unknown/preparing/failed/update_required must not erase independently confirmed old
+serving readiness. provider_ready is the last provider report and requires online;
+current v1 reports its enrolled provider. Future node protocol must bind serving
+readiness to the exact pin and current connection/epoch. Valid PR-G v1 online ready
+nodes at the current target project ready; the client also permits an old qualified
+pin with unknown target preparation for the subsequent protocol.
+
+Each node adds `rollout: {state, ready_generation, diagnostic?}`. ready_generation is
+the nullable durable serving pin. Diagnostic is a fixed node reason; unknown values
+project as `provider_unavailable`. Allocation items add `deployment_generation`.
+`rollout.state` is the authoritative high-frequency polling signal: poll every five
+seconds only while it is `preparing` or reset is nonnull. Old Sessions, failed,
+update-required and offline nodes alone do not keep polling active. PR-G reports
+`settled`: actual node multi-generation preparation and no-gap placement remain
+PR-N work, with the zero-resource node PUT guard intact.
 
 To change backend, explicitly start reset:
 

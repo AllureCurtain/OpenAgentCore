@@ -14,8 +14,8 @@ import (
 // SandboxE2BInput is write-only provider configuration. Safe responses use the
 // store's separate deployment view and never serialize this request.
 type SandboxE2BInput struct {
-	APIKey   string `json:"api_key"`
-	Template string `json:"template"`
+	APIKey   *string `json:"api_key,omitempty"`
+	Template string  `json:"template"`
 }
 
 type SandboxDeploymentInput struct {
@@ -35,7 +35,11 @@ type SandboxDeploymentChangeInput struct {
 func (v SandboxDeploymentInput) request() store.SandboxDeploymentSetupRequest {
 	input := store.SandboxDeploymentSetupRequest{ExpectedGeneration: *v.ExpectedGeneration, Provider: v.Provider, DeploymentSpec: sandbox.DeploymentSpec{Resources: v.Resources, Runtime: v.Runtime}}
 	if v.E2B != nil {
-		input.E2B = &store.SandboxE2BConfiguration{APIKey: v.E2B.APIKey, Template: v.E2B.Template}
+		input.E2B = &store.SandboxE2BConfiguration{Template: v.E2B.Template}
+		if v.E2B.APIKey != nil {
+			input.E2B.APIKey = *v.E2B.APIKey
+			input.E2B.ReplaceCredential = true
+		}
 	}
 	return input
 }
@@ -85,7 +89,7 @@ func (h *Handler) initializeSandboxDeployment(w http.ResponseWriter, r *http.Req
 		return
 	}
 	var input SandboxDeploymentInput
-	if decodeInputObject(raw, &input, "provider", "e2b", "resources", "runtime", "expected_generation") != nil || input.ExpectedGeneration == nil {
+	if decodeInputObject(raw, &input, "provider", "e2b", "resources", "runtime", "expected_generation") != nil || input.ExpectedGeneration == nil || nullSandboxKey(raw) {
 		writeStoreError(w, r, store.ErrInvalidInput)
 		return
 	}
@@ -101,8 +105,8 @@ func (h *Handler) initializeSandboxDeployment(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, result)
 }
 
-// @Summary Change a fully drained deployment's sandbox configuration
-// @Description Requires the current generation, the same backend type, no active reset and verified cleanup of all old resources. A backend type change requires reset. Credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory. A core_url member is rejected with 400; the address comes from the installation public URL. Historical records are retained; old node credentials and enrollments are retired. Never automatically retry an uncertain write.
+// @Summary Change the sandbox deployment configuration
+// @Description Requires the observed generation, the same backend type and no active reset. E2B same-team changes apply online: allocations retain immutable generation and current credentials; omitted api_key preserves it, explicit submission including the same key verifies and advances generation. Other teams require explicit reset. Node providers retain the zero-resource guard and retire old nodes/tokens on change. Core rejects core_url input. Never automatically replay an uncertain write; rollout.state is the authoritative preparation polling signal.
 // @Tags Sandbox Manager
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -120,7 +124,7 @@ func (h *Handler) updateSandboxDeployment(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var input SandboxDeploymentChangeInput
-	if decodeInputObject(raw, &input, "provider", "e2b", "resources", "runtime", "expected_generation") != nil || input.ExpectedGeneration == nil {
+	if decodeInputObject(raw, &input, "provider", "e2b", "resources", "runtime", "expected_generation") != nil || input.ExpectedGeneration == nil || nullSandboxKey(raw) {
 		writeStoreError(w, r, store.ErrInvalidInput)
 		return
 	}
@@ -156,7 +160,7 @@ func (h *Handler) startSandboxReset(w http.ResponseWriter, r *http.Request) {
 		Clear              string  `json:"clear"`
 		DeadlineSeconds    *int32  `json:"deadline_seconds"`
 	}
-	if decodeInputObject(raw, &input, "expected_generation", "clear", "deadline_seconds") != nil || input.ExpectedGeneration == nil {
+	if decodeInputObject(raw, &input, "expected_generation", "clear", "deadline_seconds") != nil || input.ExpectedGeneration == nil || nullSandboxKey(raw) {
 		writeError(w, http.StatusBadRequest, "invalid_request_error", "A current expected_generation is required.", "expected_generation")
 		return
 	}
@@ -220,4 +224,16 @@ func parseResetGeneration(r *http.Request) (uint64, error) {
 		return 0, store.ErrInvalidInput
 	}
 	return strconv.ParseUint(query.Get("expected_generation"), 10, 64)
+}
+
+// Null is an invalid explicit credential, not the omitted-key preservation path.
+func nullSandboxKey(raw json.RawMessage) bool {
+	var body struct {
+		E2B map[string]json.RawMessage `json:"e2b"`
+	}
+	if json.Unmarshal(raw, &body) != nil {
+		return false
+	}
+	key, present := body.E2B["api_key"]
+	return present && string(key) == "null"
 }

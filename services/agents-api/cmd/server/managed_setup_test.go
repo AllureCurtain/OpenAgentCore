@@ -11,6 +11,7 @@ import (
 
 	"errors"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/execution"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox/node"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 	"github.com/google/uuid"
@@ -193,4 +194,14 @@ func TestManagedSetupResetTombstoneRejectsDelayedProviderLoad(t *testing.T) {
 	if s.selected.Load().Config != next || s.ObservationProviderType() != "microsandbox" {
 		t.Fatal("reset blocked subsequent configuration")
 	}
+}
+
+func (s *setupStore) GetSandboxAllocationSetup(_ context.Context, _ sandbox.Reference) (store.SandboxSetup, error) {
+	return s.value, nil
+}
+func (s *setupStore) SandboxGenerationPage(context.Context, int64) ([]store.SandboxSetup, error) {
+	return nil, nil
+}
+func (s *setupStore) SandboxCredentialAllocationPage(context.Context, string) ([]store.RuntimeAllocation, error) {
+	return nil, nil
 }

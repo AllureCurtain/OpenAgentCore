@@ -42,6 +42,7 @@ export interface SandboxRollout {
   nodes: { ready: number; preparing: number; failed: number; update_required: number; unknown: number } | null;
 }
 export interface SandboxNodeRollout {
+  /** Target preparation; unknown/failed/preparing does not invalidate a qualified old serving pin. */
   state: "ready" | "preparing" | "failed" | "update_required" | "unknown";
   /** Durable serving pin; this alone does not imply current connection readiness. */
   ready_generation: number | null;
@@ -87,6 +88,7 @@ export interface SandboxNode {
   name: string;
   provider: string;
   online: boolean;
+  /** Last provider report; combine with online. Target rollout state is independent of serving readiness. */
   provider_ready: boolean;
   /** Absent while the provider is ready. */
   diagnostic?: SandboxNodeDiagnostic;

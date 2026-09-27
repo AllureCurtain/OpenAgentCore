@@ -16,8 +16,8 @@ import (
 
 func insertWorkerRuntimeAllocation(t *testing.T, pool *pgxpool.Pool, h *dispatchHarness, phase string) {
 	t.Helper()
-	_, err := pool.Exec(t.Context(), `INSERT INTO runtime_allocations(id,environment_id,device_id,provider_key,state,create_settled,initialization,compute_phase,compute_retained_until)
-		VALUES($1,$2,$3,$4,'running',true,'complete',$5,clock_timestamp()+interval '1 hour')`, uuid.NewString(), h.device.EnvironmentID, h.device.ID, uuid.NewString(), phase)
+	_, err := pool.Exec(t.Context(), `INSERT INTO runtime_allocations(id,environment_id,device_id,provider_key,state,create_settled,initialization,compute_phase,compute_retained_until,deployment_generation)
+		VALUES($1,$2,$3,$4,'running',true,'complete',$5,clock_timestamp()+interval '1 hour',(SELECT generation FROM runtime_deployment))`, uuid.NewString(), h.device.EnvironmentID, h.device.ID, uuid.NewString(), phase)
 	if err != nil {
 		t.Fatal(err)
 	}
