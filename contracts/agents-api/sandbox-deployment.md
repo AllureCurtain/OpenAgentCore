@@ -218,14 +218,21 @@ always verifies and advances generation. Null or empty keys are invalid. A key-o
 change uses the same full DTO: provider, existing template, optional resources and
 expected_generation, plus the new api_key. It has no separate route or implicit reset.
 
-Verification reads the candidate and every retained build with the candidate key,
-proves ownership using the SDK's paginated team-template listing, and confirms each
-settled live receipt in the installation-labelled sandbox listing. Public template
-readability alone is insufficient. Missing or unsettled receipts and unconfirmed
-reads fail closed. Different-team ownership gives `409 e2b_team_mismatch`; explicitly
-reset before initializing another team. Provider 401/403 gives `400 e2b_api_key_invalid`;
-an invalid candidate build gives `400 e2b_template_build_invalid`; an unconfirmed
-verification gives `503 e2b_request_unconfirmed`. No provider text or credential is
+Initial setup requires the selected template to appear in the credential's team-owned
+template listing; public readability alone is insufficient. Before an online change,
+Core verifies that the committed key owns the current template, then requires the
+candidate key to own that exact template as a shared ownership anchor. It also reads
+the candidate and every retained build with the candidate key and confirms each
+settled live receipt in the installation-labelled sandbox listing.
+
+A legacy public-template selection without this ownership anchor, or a committed key
+that no longer authenticates, requires `409 sandbox_reset_required`; Core cannot
+establish a safe online replacement from that state. Keep the old key valid until the
+successful response. A candidate outside the verified team gives `409 e2b_team_mismatch`;
+explicitly reset before initializing another team. Candidate-key 401/403 gives
+`400 e2b_api_key_invalid`; an invalid candidate build gives
+`400 e2b_template_build_invalid`. Missing or unsettled receipts and unconfirmed reads
+fail closed with `503 e2b_request_unconfirmed`. No provider text or credential is
 returned. The write and `change` or `replace_credential` audit share one transaction.
 
 A credential replacement briefly fences provider calls, waits for actual helper

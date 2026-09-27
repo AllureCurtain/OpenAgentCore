@@ -162,7 +162,10 @@ Changing backend type or E2B team requires an explicit reset and a new setup.
 Same-team E2B template, resource and key changes apply online through the Core API:
 new allocations use the new generation, while existing sandboxes retain their
 original specification. Omit the key to preserve it; explicitly submitting a key,
-even the same value, verifies the replacement and advances the generation.
+even the same value, verifies the replacement and advances the generation. Keep the
+old key valid until the update succeeds. Initial setup requires a team-owned template;
+a legacy public-template configuration or an already revoked old key requires reset
+when Core cannot verify the committed ownership anchor.
 
 Docker and microsandbox size/Runtime edits still require zero held resources and
 retire the old nodes and enrollment commands. Add those hosts again after cleaning
