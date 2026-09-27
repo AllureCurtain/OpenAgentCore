@@ -1,7 +1,7 @@
 import { SandboxAdminClient, type SandboxAllocation, type SandboxDeployment, type SandboxNode, type SandboxProvider } from "@agents-core-web/agents-client";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 
-import { confirmSandboxRead } from "./sandbox-write-ownership";
+import { confirmSandboxRead, startSandboxRead } from "./sandbox-write-ownership";
 import { sandboxConsoleConfig } from "./console-config";
 
 /**
@@ -28,7 +28,7 @@ export const sandboxConsoleConfigQuery = queryOptions({
 export const sandboxDeploymentQuery = queryOptions<SandboxDeployment>({
   queryKey: [...sandboxScope, "deployment"],
   queryFn: async ({ signal, client }) => {
-    const readStartedAt = performance.now();
+    const readStartedAt = startSandboxRead();
     const deployment = await sandboxAdmin.retrieveDeployment({ signal });
     signal.throwIfAborted();
     confirmSandboxRead(client, readStartedAt);

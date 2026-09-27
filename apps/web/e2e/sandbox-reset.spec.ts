@@ -148,15 +148,30 @@ test("an applied reset with a lost response stays blocked through failed reads a
 test("a stale reset is refused until fresh state is reviewed, with no automatic resubmission", async ({ page, request }) => {
   await openConsole(page, request, "nodes");
   await expect(page.getByRole("button", { name: "Reset deployment", exact: true })).toBeEnabled();
-  await setDeployment(request, { generation: 2 });
+  await setDeployment(request, { generation: 2, resources: { allocations: 3, pending: 1 } });
   const dialog = await openReset(page);
+  const staleSubmission = page.waitForRequest((sent) => sent.method() === "POST" && sent.url().endsWith(resetPath));
+  const freshRead = page.waitForResponse(async (received) => received.request().method() === "GET"
+    && received.url().endsWith("/sandbox/deployment") && received.ok() && (await received.json()).generation === 2);
   await dialog.getByRole("button", { name: "Reset deployment", exact: true }).click();
+  expect((await staleSubmission).postDataJSON()).toMatchObject({ expected_generation: 1 });
   await expect(page.getByText("Core has a newer sandbox configuration. Refresh and review it before submitting again.")).toBeVisible();
-  expect(await writes(request)).toEqual([`POST ${resetPath}`]);
-  await dialog.getByRole("button", { name: "Back", exact: true }).click();
-  await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
+  expect(await (await freshRead).json()).toMatchObject({ generation: 2, reset: null });
+  // A new generation discards the old confirmation. The read can reconcile the
+  // page, but submitting its old draft again would be an unauthorized replay.
+  await expect(dialog).toBeHidden();
   await expect(page.getByRole("button", { name: "Reset deployment", exact: true })).toBeEnabled();
   expect(await writes(request)).toEqual([`POST ${resetPath}`]);
+
+  // The administrator reviews a new confirmation before the next explicit POST.
+  const reviewed = await openReset(page);
+  await expect(reviewed).toContainText("Archived Sessions cannot be resumed");
+  expect(await writes(request)).toEqual([`POST ${resetPath}`]);
+  const resubmitted = page.waitForRequest((sent) => sent.method() === "POST" && sent.url().endsWith(resetPath));
+  await reviewed.getByRole("button", { name: "Reset deployment", exact: true }).click();
+  expect((await resubmitted).postDataJSON()).toEqual({ expected_generation: 2, clear: "auto", deadline_seconds: 3600 });
+  await expect(progress(page)).toContainText("Busy work can finish until the deadline.");
+  expect(await writes(request)).toEqual([`POST ${resetPath}`, `POST ${resetPath}`]);
 });
 
 test("reset progress survives failed node and deployment reads with visible qualifications in Chinese dark mode", async ({ page, request }, info) => {

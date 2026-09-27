@@ -16,7 +16,7 @@ function cache() {
 }
 function Probe() {
   const state = useSandboxManagerState();
-  return <div data-read={state.deploymentQuery.isError ? "failed" : "confirmed"} data-compatible={String(state.compatible)} data-owner={state.ownership.data.phase}>
+  return <div data-read={state.deploymentQuery.isError ? "failed" : "confirmed"} data-compatible={String(state.compatible)} data-owner={state.ownership.data.phase} data-inventory-loading={String(state.inventoryLoading)} data-inventory-failed={String(Boolean(state.snapshot?.nodesError))}>
     {state.snapshot?.deployment.provider || "setup"}/{state.snapshot?.deployment.reset?.clear ?? "none"}/{state.snapshot?.nodes.length ?? 0}
   </div>;
 }
@@ -24,11 +24,32 @@ const render = (client: QueryClient) => renderToStaticMarkup(<QueryClientProvide
 afterEach(() => { clients.splice(0).forEach((client) => client.clear()); vi.restoreAllMocks(); });
 
 describe("Nodes shared deployment evidence", () => {
+  it("waits for first-arrival node inventory and distinguishes a settled failure from loading", async () => {
+    const client = cache(); client.removeQueries({ queryKey: sandboxSnapshotQuery.queryKey });
+    client.setQueryData(sandboxDeploymentQuery.queryKey, configured);
+    vi.spyOn(sandboxAdmin, "retrieveDeployment").mockResolvedValue(configured);
+    let finish!: () => void;
+    const held = new Promise<void>((resolve) => { finish = resolve; });
+    const nodes = vi.spyOn(sandboxAdmin, "listNodes").mockImplementation(async () => { await held; return { data: [] }; });
+    const pending = client.fetchQuery(sandboxSnapshotQuery);
+    await vi.waitFor(() => expect(nodes).toHaveBeenCalledOnce());
+    expect(render(client)).toContain('data-inventory-loading="true"');
+    expect(render(client)).toContain('data-inventory-failed="false"');
+    finish(); await pending;
+    expect(render(client)).toContain('data-inventory-loading="false"');
+    expect(render(client)).toContain('data-compatible="true"');
+    nodes.mockRejectedValueOnce(new Error("Nodes unavailable"));
+    await client.fetchQuery({ ...sandboxSnapshotQuery, staleTime: 0 });
+    expect(render(client)).toContain('data-inventory-loading="false"');
+    expect(render(client)).toContain('data-inventory-failed="true"');
+  });
+
   it("uses another page's reset and completion immediately despite a fresh cached idle snapshot", () => {
     const client = cache();
     client.setQueryData(sandboxDeploymentQuery.queryKey, resetting);
     expect(render(client)).toContain("docker/auto/0");
     expect(render(client)).toContain('data-compatible="false"');
+    expect(render(client)).toContain('data-inventory-loading="true"');
     client.setQueryData(sandboxDeploymentQuery.queryKey, { ...resetting, reset: { ...resetting.reset!, clear: "force", forced_at: "2026-09-27T10:01:00Z" } });
     expect(render(client)).toContain("docker/force/0");
     client.setQueryData(sandboxDeploymentQuery.queryKey, { ...configured, provider: "", mode: "", generation: 2 });

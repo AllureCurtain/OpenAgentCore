@@ -62,6 +62,9 @@ describe("deployment write ownership", () => {
   });
 
   it("publishes a confirmed response after route departure without replaying the mutation", async () => {
+    // Browsers coarsen performance.now(); adjacent settlement/GET events can
+    // share a timestamp while still having a definite causal order.
+    vi.spyOn(performance, "now").mockReturnValue(100);
     const client = cache(); const response = deferred<SandboxDeployment>();
     const operation = vi.fn(() => response.promise);
     const pending = writeSandboxDeployment(client, operation);

@@ -64,7 +64,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const { params, navigate, back: goBack } = useConsoleNavigation();
   const client = sandboxAdmin;
   const queryClient = useQueryClient();
-  const { ownership, deploymentQuery, query, deployment, compatible, snapshot } = useSandboxManagerState();
+  const { ownership, deploymentQuery, query, deployment, compatible, inventoryLoading, snapshot } = useSandboxManagerState();
   const { refetch: refetchSnapshot } = query;
   const installation = useQuery(installationQuery);
   const localOnly = installation.data?.local_only === true;
@@ -192,7 +192,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   // Getting started asks for Add node on arrival. A request the first settled read cannot
   // serve (no own-machines deployment, active reset, a failed read) is dropped, so the
   // dialog never opens later on its own.
-  const addNodeReadiness = loading || busy || installation.isPending ? "wait"
+  const addNodeReadiness = loading || busy || installation.isPending || inventoryLoading ? "wait"
     : !snapshot ? (deploymentQuery.isError ? "unavailable" : "wait")
     : hostedNodes && fresh && nodesConfirmed && !snapshot.deployment.reset && !localOnly ? "ready" : "unavailable";
   useConsoleIntent("add-node", addNodeReadiness, () => setAdding(true));

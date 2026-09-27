@@ -11,6 +11,9 @@ export function useSandboxManagerState() {
   const inventory = query.data;
   const deployment = deploymentQuery.data;
   const compatible = Boolean(inventory && deployment && sandboxSnapshotMatchesDeployment(inventory, deployment));
+  // An arrival intent must wait for its supplemental read, rather than treating
+  // absent/previous-lifecycle inventory as a confirmed inability to add a node.
+  const inventoryLoading = query.isPending || query.isFetching || (!compatible && !query.isError);
   const { refetch } = query;
   useEffect(() => {
     if (inventory && deployment && !compatible) void refetch();
@@ -22,5 +25,5 @@ export function useSandboxManagerState() {
     nodesError: query.isError ? query.error : compatible ? inventory!.nodesError : null,
     readAt: compatible ? inventory!.readAt : 0,
   } : null;
-  return { ownership, deploymentQuery, query, deployment, compatible, snapshot };
+  return { ownership, deploymentQuery, query, deployment, compatible, inventoryLoading, snapshot };
 }
