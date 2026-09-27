@@ -66,6 +66,24 @@ A helper's exit is local file-lifetime evidence, not proof that a remote mutatio
 or an uncertain provider receipt has been released. Core's durable allocation and
 placement retention requirements remain independent.
 
+## Matched fresh installation
+
+The host program release and Core's selected Runtime release are independent.
+A fresh node gets its executable and private preparer from the current console
+release. It reads the exact Runtime source, image identities and native runtime /
+firmware digests from the authenticated Core configuration. If that Runtime is
+older, the console must still serve its immutable `releases/<source>/` manifest,
+checksums and allowlisted artifacts. Runtime helper, firmware, seccomp and image
+bytes come from that selected release; the enrolled specification records it.
+Artifact URLs are pinned to their verified manifest source even if the console's
+current release changes during download.
+
+A missing retained release refuses installation rather than substituting the
+current Runtime. A local bundle that contains only a different Runtime also
+refuses with guidance to use the console origin retaining the selected release.
+These refusals occur before writing the installation identity, importing the
+Runtime, registering the node or starting its service.
+
 ## Identity-preserving program updates
 
 Run the checksum-verified `node-install.pyz --update` as the original installation

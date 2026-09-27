@@ -230,7 +230,7 @@ def metadata(source, bundle=None, prefix=""):
     for name in (COMMON[0], "images/runtime.tar.gz") + MICRO:
         distribution.artifact(manifest, name)
     # Nodes download only from their console, never from a release URL the build recorded.
-    manifest["artifact_base_url"] = source + "/node-install/" + prefix + "artifacts" if source else ""
+    manifest["artifact_base_url"] = source + "/node-install/releases/" + manifest["source_commit"] + "/artifacts" if source else ""
     return manifest, sums
 
 
@@ -273,7 +273,7 @@ def file_digest(path):
     return result.hexdigest()
 
 
-def download(source, name, root, expected):
+def download(source, name, root, expected, prefix=""):
     target = root / name
     safe_directory(target.parent)
     if existing_file(target):
@@ -282,7 +282,7 @@ def download(source, name, root, expected):
         return
     descriptor, temporary = tempfile.mkstemp(prefix=".download-", dir=target.parent)
     try:
-        with os.fdopen(descriptor, "wb") as output, fetch(source, name) as response:
+        with os.fdopen(descriptor, "wb") as output, fetch(source, prefix + name) as response:
             for block in iter(lambda: response.read(1024 * 1024), b""):
                 output.write(block)
         if file_digest(Path(temporary)) != expected:
@@ -415,8 +415,15 @@ def install_lock(root):
 def register_node(root, args, token):
     """Download and verify the payload, prepare the Runtime and register; not the service."""
     print("Downloading and verifying node files...", flush=True)
-    manifest, sums = metadata(args.source_url, getattr(args, "bundle", None))
+    program_manifest, program_sums = metadata(args.source_url, getattr(args, "bundle", None))
+    selected = args.configuration["specification"]["runtime"]
+    manifest, sums = program_manifest, program_sums
+    if selected["source_commit"] != program_manifest["source_commit"]:
+        if getattr(args, "bundle", None) is not None:
+            raise InstallError("This bundle does not contain Core's selected Runtime; install through the console --source-url that retains its release")
+        manifest, sums = metadata(args.source_url, prefix="releases/" + selected["source_commit"] + "/")
     node_spec.verify_release(args.configuration, manifest)
+    runtime_prefix = "releases/" + manifest["source_commit"] + "/"
     names = COMMON + (MICRO if args.provider == "microsandbox" else ())
     if "runtime/seccomp.json" not in sums:
         raise InstallError("The distribution is missing required node checksums")
@@ -427,7 +434,7 @@ def register_node(root, args, token):
     for name in names:
         if name == "runtime/seccomp.json":
             if getattr(args, "bundle", None) is None:
-                download(args.source_url, name, root, sums[name])
+                download(args.source_url, name, root, sums[name], prefix=runtime_prefix)
             else:
                 source = args.bundle / name
                 if source.is_symlink() or file_digest(source) != sums[name]:
@@ -438,7 +445,7 @@ def register_node(root, args, token):
             target = root / name
             safe_directory(target.parent)
             existing_file(target)
-            distribution.obtain_artifact(manifest, name, target, getattr(args, "bundle", None))
+            distribution.obtain_artifact(program_manifest if name == COMMON[0] else manifest, name, target, getattr(args, "bundle", None))
             os.chmod(target, 0o700)
     node_generations.install_helper(root, args, sys.modules[__name__])
     safe_directory(root / "state/node")

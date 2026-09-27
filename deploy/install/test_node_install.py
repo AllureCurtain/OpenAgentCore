@@ -1,5 +1,6 @@
 """Exercise node installation without running providers or changing user services."""
 import argparse
+import copy
 import fcntl
 import hashlib
 import gzip
@@ -72,7 +73,7 @@ class NodeInstallTests(unittest.TestCase):
                       mock.patch.object(installer, "open_request", side_effect=self.configuration_response),
                       mock.patch.object(installer.distribution.urllib.request, "build_opener", return_value=mock.Mock(open=self.artifact_response)),
                       mock.patch.object(installer, "micro_home", return_value=self.home / "m"),
-                      mock.patch.object(installer, "fetch", side_effect=lambda source, name: io.BytesIO(self.payloads[name])),
+                      mock.patch.object(installer, "fetch", side_effect=lambda source, name: io.BytesIO(self.payloads[name.split("/", 2)[2] if name.startswith("releases/") else name])),
                       mock.patch.object(installer, "checked", side_effect=self.checked),
                       mock.patch.object(installer.distribution, "docker_command", side_effect=self.docker_command),
                       mock.patch.object(installer.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"statically linked", b""))):
@@ -92,7 +93,7 @@ class NodeInstallTests(unittest.TestCase):
     def artifact_response(self, request, **kwargs):
         url = getattr(request, "full_url", request)
         # The fixture manifest records a release URL; nodes still download from their console.
-        self.assertTrue(url.startswith(self.args.source_url + "/node-install/artifacts/"), url)
+        self.assertTrue(url.startswith(self.args.source_url + "/node-install/releases/" + self.manifest["source_commit"] + "/artifacts/"), url)
         for name, item in self.manifest["artifacts"].items():
             if url.endswith("/" + item["filename"]):
                 return Response(self.payloads[name])
@@ -160,6 +161,76 @@ class NodeInstallTests(unittest.TestCase):
 
     def install(self):
         installer.install(self.args, "synthetic-once-token")
+
+    def install_current_program_with_retained_runtime(self, provider):
+        self.args.provider = provider
+        old_source, new_source = self.manifest["source_commit"], "f" * 40
+        program = copy.deepcopy(self.manifest)
+        program["source_commit"] = new_source
+        payloads = dict(self.payloads)
+        payloads[installer.COMMON[0]] = b"new protocol program from current release"
+        for name, artifact in program["artifacts"].items():
+            artifact["filename"] = artifact["filename"].replace(old_source, new_source)
+            artifact["size"] = len(payloads[name])
+            artifact["sha256"] = hashlib.sha256(payloads[name]).hexdigest()
+        payloads["manifest.json"] = json.dumps(program).encode()
+        payloads["SHA256SUMS"] = "".join(hashlib.sha256(raw).hexdigest() + "  " + name + "\n"
+                                               for name, raw in payloads.items() if name != "SHA256SUMS").encode()
+        fetched = []
+        def fetch(_source, name):
+            fetched.append(name)
+            if name.startswith("releases/" + old_source + "/"):
+                return io.BytesIO(self.payloads[name.split("/", 2)[2]])
+            self.assertIn(name, ("manifest.json", "SHA256SUMS"))
+            return io.BytesIO(payloads[name])
+        def artifact_response(request, **_kwargs):
+            url = getattr(request, "full_url", request)
+            for manifest, files in ((program, payloads), (self.manifest, self.payloads)):
+                prefix = self.args.source_url + "/node-install/releases/" + manifest["source_commit"] + "/artifacts/"
+                for name, item in manifest["artifacts"].items():
+                    if url == prefix + item["filename"]:
+                        # Only the node executable comes from the host release.
+                        self.assertEqual(manifest["source_commit"], new_source if name == installer.COMMON[0] else old_source)
+                        return Response(files[name])
+            raise AssertionError("Unexpected immutable artifact URL " + url)
+        with mock.patch.object(installer, "fetch", side_effect=fetch), mock.patch.object(installer.distribution.urllib.request, "build_opener", return_value=mock.Mock(open=artifact_response)):
+            self.install()
+        self.assertEqual((self.root / installer.COMMON[0]).read_bytes(), payloads[installer.COMMON[0]])
+        config = json.loads((self.root / "provider.json").read_text())
+        self.assertEqual(config["specification"]["runtime"], node_spec.release(self.manifest))
+        self.assertEqual(json.loads((self.root / "registered.json").read_text())["source_commit"], old_source)
+        self.assertIn("releases/" + old_source + "/runtime/seccomp.json", fetched)
+        if provider == "microsandbox":
+            for name in installer.MICRO:
+                self.assertEqual((self.root / name).read_bytes(), self.payloads[name])
+
+    def test_current_program_pairs_with_core_selected_retained_docker_runtime(self):
+        self.install_current_program_with_retained_runtime("docker")
+
+    def test_current_program_pairs_with_core_selected_retained_micro_runtime(self):
+        self.install_current_program_with_retained_runtime("microsandbox")
+
+    def test_bundle_without_selected_runtime_refuses_before_payload_or_registration(self):
+        program = copy.deepcopy(self.manifest)
+        program["source_commit"] = "f" * 40
+        self.args.bundle = self.home / "bundle"
+        self.args.bundle.mkdir()
+        with mock.patch.object(installer, "metadata", return_value=(program, {})):
+            with self.assertRaisesRegex(installer.InstallError, "does not contain Core's selected Runtime"):
+                self.install()
+        self.assertFalse((self.root / "installation.json").exists())
+        self.assertFalse((self.root / installer.COMMON[0]).exists())
+        self.assertFalse(any("register" in command or "load" in command or "enable" in command for command, _ in self.calls))
+
+    def test_missing_retained_runtime_never_falls_back_to_current_runtime(self):
+        program = copy.deepcopy(self.manifest)
+        program["source_commit"] = "f" * 40
+        with mock.patch.object(installer, "metadata", side_effect=[(program, {}), installer.InstallError("Retained release unavailable")]) as metadata:
+            with self.assertRaisesRegex(installer.InstallError, "Retained release unavailable"):
+                self.install()
+        self.assertEqual(metadata.call_args_list[1].kwargs, {"prefix": "releases/" + self.manifest["source_commit"] + "/"})
+        self.assertFalse((self.root / "installation.json").exists())
+        self.assertFalse(any("register" in command or "load" in command or "enable" in command for command, _ in self.calls))
 
     def test_docker_installs_matched_payload_registers_and_starts_persistent_service(self):
         self.install()
