@@ -78,6 +78,7 @@ func TestSandboxResetAutoUsesStartedWorkAndLockedRecheck(t *testing.T) {
 				t.Fatal(err)
 			}
 			assertResetPartition(t, reset)
+			assertSandboxSnapshotEquivalent(t, s.pool)
 			if (reset.Reset.Remaining.Busy == 1) != busy {
 				t.Fatalf("wrong busy classification: %+v", reset.Reset.Remaining)
 			}
@@ -268,6 +269,7 @@ func TestSandboxResetSnapshotCountsOfflineOwnershipOnce(t *testing.T) {
 			t.Fatal(err)
 		}
 		assertResetPartition(t, view)
+		assertSandboxSnapshotEquivalent(t, s.pool)
 		want := int64(3)
 		if state == "preparing" {
 			want = 0

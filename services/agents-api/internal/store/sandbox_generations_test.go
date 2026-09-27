@@ -27,6 +27,7 @@ func TestE2BGenerationsRetainOwnershipAndUseCurrentCredential(t *testing.T) {
 	if err != nil || changed.Generation != 2 || changed.OwnerEpoch != view.OwnerEpoch || changed.Rollout.PreviousGenerationSandboxes != 1 || changed.Rollout.State != "settled" {
 		t.Fatal(changed, err)
 	}
+	assertSandboxSnapshotEquivalent(t, s.pool)
 	ref := sandbox.Reference{TenantID: tenant, EnvironmentID: owner.EnvironmentID, AllocationID: owner.ID}
 	retained, err := s.GetSandboxAllocationSetup(t.Context(), ref)
 	if err != nil || retained.Generation != 1 || retained.E2B.Template != oldTemplate || retained.Specification.Resources.CPUs == input.Resources.CPUs {
@@ -173,6 +174,7 @@ func TestPendingPlacementGenerationSurvivesRepeatedUpdates(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	assertSandboxSnapshotEquivalent(t, s.pool)
 	owner := archiveAllocation(t, w, tenant, session, view.InstallationID)
 	if owner.DeploymentGeneration != 1 || owner.NodeID != node.NodeID {
 		t.Fatal("pending allocation rebound to newest generation", owner)
@@ -328,6 +330,38 @@ func TestNodeRolloutSeparatesOfflinePinAndTargetReadiness(t *testing.T) {
 			got := nodeRollout(sqlc.ListRuntimeNodesRow{Online: tc.online, ProviderReady: tc.ready, DeploymentGeneration: tc.enrolled, ReadyGeneration: pgtype.Int8{Int64: tc.pin, Valid: true}, TargetGeneration: tc.target, Health: raw})
 			if got.State != tc.state || got.ReadyGeneration == nil || *got.ReadyGeneration != uint64(tc.pin) {
 				t.Fatal(got)
+			}
+		})
+	}
+}
+
+func TestSandboxSnapshotRolloutEquivalence(t *testing.T) {
+	s, _, view, _ := webSpecificationFixture(t, "docker")
+	node := specificationNode(t, s, view)
+	for _, state := range []string{"ready", "failed", "unconfirmed", "offline", "update_required"} {
+		t.Run(state, func(t *testing.T) {
+			runtimeSuspensionSQL(t, s.pool, `UPDATE runtime_nodes SET provider_ready=true,ready_generation=1,health='{}',last_seen_at=clock_timestamp(),connected_epoch=(SELECT owner_epoch FROM runtime_deployment) WHERE id=$1`, node.NodeID)
+			want := SandboxRolloutNodes{}
+			switch state {
+			case "ready":
+				want.Ready = 1
+			case "failed":
+				runtimeSuspensionSQL(t, s.pool, `UPDATE runtime_nodes SET provider_ready=false,health='{"diagnostic":"provider_unavailable"}' WHERE id=$1`, node.NodeID)
+				want.Failed = 1
+			case "unconfirmed":
+				runtimeSuspensionSQL(t, s.pool, `UPDATE runtime_nodes SET provider_ready=false WHERE id=$1`, node.NodeID)
+				want.Unknown = 1
+			case "offline":
+				runtimeSuspensionSQL(t, s.pool, `UPDATE runtime_nodes SET last_seen_at=clock_timestamp()-interval '46 seconds',health='{"diagnostic":"provider_unavailable"}' WHERE id=$1`, node.NodeID)
+				want.Unknown = 1
+			case "update_required":
+				runtimeSuspensionSQL(t, s.pool, `UPDATE runtime_deployment SET generation=2`)
+				want.UpdateRequired = 1
+			}
+			assertSandboxSnapshotEquivalent(t, s.pool)
+			got, err := s.GetRuntimeDeployment(t.Context())
+			if err != nil || got.Rollout.Nodes == nil || *got.Rollout.Nodes != want || got.Rollout.State != "settled" {
+				t.Fatal("rollout classification changed", got.Rollout, err)
 			}
 		})
 	}
