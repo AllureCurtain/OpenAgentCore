@@ -45,8 +45,12 @@ func reserveRuntimePlacement(ctx context.Context, q *sqlc.Queries, session pgtyp
 		return err
 	}
 	var chosen *sqlc.ListRuntimeNodesRow
+	preparing := false
 	for i := range rows {
 		n := &rows[i]
+		if n.Online && n.TargetState == "preparing" && n.Active < int64(n.MaxActive) && n.Retained < int64(n.MaxRetained) && (!d.WebManaged || n.CoreUrl == publicURL) {
+			preparing = true
+		}
 		if !n.Online || !n.ServingReady || !n.ReadyGeneration.Valid || n.Active >= int64(n.MaxActive) || n.Retained >= int64(n.MaxRetained) || (d.WebManaged && n.CoreUrl != publicURL) {
 			continue
 		}
@@ -55,6 +59,9 @@ func reserveRuntimePlacement(ctx context.Context, q *sqlc.Queries, session pgtyp
 		}
 	}
 	if chosen == nil {
+		if preparing {
+			return ErrSandboxNodesPreparing
+		}
 		return ErrRuntimeNodeUnavailable
 	}
 	return q.CreateSessionRuntimePlacement(ctx, sqlc.CreateSessionRuntimePlacementParams{SessionID: session, NodeID: chosen.ID, Generation: chosen.ReadyGeneration.Int64})
@@ -103,7 +110,7 @@ func (s *Store) ResolveRuntimeGeneration(ctx context.Context, ref sandbox.Refere
 	if err != nil {
 		return "", 0, err
 	}
-	if a.ID != ref.AllocationID || a.NodeID == "" || a.DeploymentGeneration == 0 {
+	if a.State == "released" || a.ID != ref.AllocationID || a.NodeID == "" || a.DeploymentGeneration == 0 {
 		return "", 0, ErrRuntimeNodeUnavailable
 	}
 	return a.NodeID, a.DeploymentGeneration, nil

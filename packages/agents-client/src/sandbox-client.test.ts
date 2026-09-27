@@ -133,7 +133,7 @@ describe("Core sandbox credential boundaries", () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ data: [unready, { ...unready, diagnostic: "future_code" }, node] }));
     const { data } = await new SandboxAdminClient({ baseUrl: "/core/v1/sandbox", fetch }).listNodes();
     expect(data.map((entry) => entry.diagnostic)).toEqual(["kvm_unavailable", "provider_unavailable", undefined]);
-    expectTypeOf<SandboxNode["diagnostic"]>().toEqualTypeOf<undefined | "" | "provider_unavailable" | "docker_unavailable" | "docker_limits_unsupported" | "runtime_image_unavailable" | "kvm_unavailable" | "microsandbox_artifacts_unavailable" | "capacity_insufficient">();
+    expectTypeOf<SandboxNode["diagnostic"]>().toEqualTypeOf<undefined | "" | "provider_unavailable" | "docker_unavailable" | "docker_limits_unsupported" | "runtime_download_failed" | "runtime_image_unavailable" | "kvm_unavailable" | "microsandbox_artifacts_unavailable" | "capacity_insufficient">();
   });
   it("requires each node's enrollment ID: a string, or null for nodes enrolled before Core recorded it", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ data: [node, unready] }));
@@ -365,7 +365,13 @@ it("keeps omitted-key public-URL errors actionable without reflecting a stored k
 });
 
 it.each(["unknown", "preparing", "failed", "update_required"])("does not erase old serving readiness for target %s", async (state) => {
-  const value = { ...node, rollout: { state, ready_generation: 1, ...(state === "failed" ? { diagnostic: "runtime_image_unavailable" } : {}) } };
+  const value = { ...node, rollout: { state, ready_generation: 1, ...(state === "failed" ? { diagnostic: "runtime_download_failed" } : {}) } };
   const client = new SandboxAdminClient({ fetch: async () => response({ data: [value] }) });
   expect((await client.listNodes()).data[0]).toEqual(value);
 });
+
+ it("preserves artifact transfer diagnostics on node and target without exposing transport details", async () => {
+ const value = { ...unready, online: true, diagnostic: "runtime_download_failed", rollout: { state: "failed", ready_generation: 1, diagnostic: "runtime_download_failed" } };
+ const client = new SandboxAdminClient({ fetch: async () => response({ data: [value] }) });
+ expect((await client.listNodes()).data[0]).toEqual(value);
+ });

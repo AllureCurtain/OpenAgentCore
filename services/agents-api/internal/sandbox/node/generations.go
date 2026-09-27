@@ -42,6 +42,7 @@ type GenerationManager struct {
 	values                                    map[uint64]*localGeneration
 	target                                    sandbox.NodeDeployment
 	statusCursor, probeCursor, recoveryCursor uint64
+	priorityProbe                             uint64
 	options                                   GenerationManagerOptions
 	ctx                                       context.Context
 	cancel                                    context.CancelFunc
@@ -88,11 +89,20 @@ func (m *GenerationManager) Close() {
 	}
 }
 
-func (m *GenerationManager) Deployment(value sandbox.NodeDeployment) {
+func (m *GenerationManager) Deployment(value sandbox.NodeDeployment) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if !validGeneration(value.Generation) || !validSpecificationDigest(value.SpecificationDigest) || value.ServingGeneration != nil && (!validGeneration(*value.ServingGeneration) || *value.ServingGeneration > value.Generation) {
+		return sandbox.ErrOwnership
+	}
 	if value.Generation < m.target.Generation {
-		return
+		return nil
+	}
+	if g := m.values[value.Generation]; g != nil && g.value.SpecificationDigest != value.SpecificationDigest {
+		return sandbox.ErrOwnership
+	}
+	if value.Generation == m.target.Generation && value.SpecificationDigest != m.target.SpecificationDigest {
+		return sandbox.ErrOwnership
 	}
 	if value.Generation != m.target.Generation && m.preparingCancel != nil {
 		m.preparingCancel()
@@ -105,6 +115,7 @@ func (m *GenerationManager) Deployment(value sandbox.NodeDeployment) {
 	case m.wake <- struct{}{}:
 	default:
 	}
+	return nil
 }
 
 func (m *GenerationManager) orderedLocked(after uint64) []uint64 {
@@ -306,12 +317,25 @@ func (m *GenerationManager) probeLoop() {
 		}
 		m.mu.Lock()
 		keys := m.orderedLocked(m.probeCursor)
+		// Alternate priority probes with the fair retained-provider cursor. A large
+		// history cannot postpone serving/target qualification or starve old owners.
+		m.priorityProbe++
+		priority := uint64(0)
+		if m.priorityProbe%2 == 1 {
+			priority = m.target.Generation
+			if m.priorityProbe%4 == 3 && m.target.ServingGeneration != nil {
+				priority = *m.target.ServingGeneration
+			}
+			keys = append([]uint64{priority}, keys...)
+		}
 		var g *localGeneration
 		for _, key := range keys {
 			value := m.values[key]
-			if value.value.Provider != nil && !value.removing && !value.preparing && !value.repairing {
+			if value != nil && value.value.Provider != nil && !value.removing && !value.preparing && !value.repairing {
 				g = value
-				m.probeCursor = key
+				if key != priority {
+					m.probeCursor = key
+				}
 				g.refs++
 				break
 			}

@@ -36,7 +36,9 @@ func (a *agent) acceptRetention(c *agentConnection, f frame, work chan<- []sandb
 			return sandbox.ErrOwnership
 		}
 	}
-	a.config.Generations.Deployment(*f.Deployment)
+	if err := a.config.Generations.Deployment(*f.Deployment); err != nil {
+		return err
+	}
 	select {
 	case work <- reply.Retentions:
 		c.pending = nil

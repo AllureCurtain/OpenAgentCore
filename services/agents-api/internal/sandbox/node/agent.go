@@ -246,7 +246,9 @@ func (a *agent) connect(ctx context.Context) error {
 	var controlDone chan struct{}
 	controlWork := make(chan []sandbox.GenerationRetention, 1)
 	if a.config.Generations != nil {
-		a.config.Generations.Deployment(*welcome.Deployment)
+		if err := a.config.Generations.Deployment(*welcome.Deployment); err != nil {
+			return err
+		}
 		controlDone = make(chan struct{})
 		go func() { defer close(controlDone); a.garbageCollection(connectionCtx, current, controlWork) }()
 		defer func() { cancel(); <-controlDone }()
@@ -266,7 +268,9 @@ func (a *agent) connect(ctx context.Context) error {
 				if f.OwnerEpoch != current.epoch {
 					return sandbox.ErrOwnership
 				}
-				a.config.Generations.Deployment(*f.Deployment)
+				if err := a.config.Generations.Deployment(*f.Deployment); err != nil {
+					return err
+				}
 			}
 			continue
 		}

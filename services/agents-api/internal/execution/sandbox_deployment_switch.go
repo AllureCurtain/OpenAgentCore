@@ -2,7 +2,6 @@ package execution
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
@@ -176,15 +175,10 @@ func (w *Worker) UpdateSandboxDeployment(ctx context.Context, input store.Sandbo
 				return store.RuntimeDeploymentView{}, err
 			}
 		}
-	} else if err := m.pauseDeployment(ctx); err != nil {
-		return store.RuntimeDeploymentView{}, errors.Join(err, m.restoreCommittedDeployment())
 	}
 	input.SandboxDeploymentSetupRequest = withTemplateBuild(input.SandboxDeploymentSetupRequest, candidate)
 	result, err := m.store.UpdateSandboxDeployment(ctx, m.setupInstallationID, input)
 	if err != nil {
-		if input.Provider != "e2b" {
-			err = errors.Join(err, m.restoreCommittedDeployment())
-		}
 		return store.RuntimeDeploymentView{}, err
 	}
 	m.publishDeployment(candidate, result)

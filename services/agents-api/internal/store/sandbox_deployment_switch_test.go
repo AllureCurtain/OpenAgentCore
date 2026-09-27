@@ -77,7 +77,7 @@ func TestSandboxDirectDeploymentOwnershipAndCleanSwitch(t *testing.T) {
 		t.Fatal(err)
 	}
 	update := SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: SandboxDeploymentSetupRequest{DeploymentSpec: SandboxDeploymentTestSpec("docker"), Provider: "docker"}, ExpectedGeneration: 1}
-	if _, err := w.UpdateSandboxDeployment(t.Context(), id, update); !errors.Is(err, ErrSandboxResetInProgress) {
+	if _, err := w.UpdateSandboxDeployment(SandboxResetTestContext(t.Context()), id, update); !errors.Is(err, ErrSandboxResetInProgress) {
 		t.Fatal("reset allowed switch", err)
 	}
 	if _, err := w.RequestRuntimeCleanup(t.Context(), owner); err != nil {
@@ -214,7 +214,7 @@ func TestSandboxResetSerializesFreshDirectSessions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = w.UpdateSandboxDeployment(t.Context(), id, SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: SandboxDeploymentSetupRequest{DeploymentSpec: SandboxDeploymentTestSpec("docker"), Provider: "docker"}, ExpectedGeneration: 1})
+	_, err = w.UpdateSandboxDeployment(SandboxResetTestContext(t.Context()), id, SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: SandboxDeploymentSetupRequest{DeploymentSpec: SandboxDeploymentTestSpec("docker"), Provider: "docker"}, ExpectedGeneration: 1})
 	if view.Resources.Pending > 0 && !errors.Is(err, ErrSandboxResetInProgress) {
 		t.Fatal("committed pending Session bypassed switch guard", err)
 	}

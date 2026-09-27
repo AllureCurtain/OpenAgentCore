@@ -242,16 +242,7 @@ func checkSandboxSwitch(ctx context.Context, q *sqlc.Queries, d sqlc.RuntimeDepl
 	if d.ProviderKind != input.Provider || unspecifiedNodeDeployment(d) {
 		return &SandboxResetRequiredError{CurrentProvider: d.ProviderKind, RequestedProvider: input.Provider}
 	}
-	if d.ProviderKind == "e2b" {
-		return nil
-	}
-	resources, err := q.CountRuntimeDeploymentResources(ctx)
-	if err != nil {
-		return err
-	}
-	if resources.Allocations != 0 || resources.Pending != 0 {
-		return &SandboxInUseError{SandboxDeploymentResources{Allocations: resources.Allocations, Pending: resources.Pending}}
-	}
+
 	return nil
 }
 
@@ -285,23 +276,12 @@ func (s *Store) UpdateSandboxDeployment(ctx context.Context, installation string
 			if err := s.saveSandboxSelection(ctx, q, d, input.SandboxDeploymentSetupRequest); err != nil {
 				return err
 			}
-			if input.Provider != "e2b" {
-				if err := q.RetireSandboxNodes(ctx); err != nil {
-					return err
-				}
-				if err := q.RetireSandboxEnrollments(ctx); err != nil {
-					return err
-				}
-				if err := q.AdvanceSandboxOwnerEpoch(ctx); err != nil {
-					return err
-				}
-			}
 			if err := q.CollectSandboxGenerations(ctx); err != nil {
 				return err
 			}
-			if input.Provider == "e2b" {
+			{
 				action := "change"
-				if input.E2B.ReplaceCredential {
+				if input.E2B != nil && input.E2B.ReplaceCredential {
 					action = "replace_credential"
 				}
 				if err := recordDeploymentMutation(ctx, q, action, "sandbox_deployment", installation); err != nil {

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/db/sqlc"
@@ -31,6 +32,9 @@ func (s *Store) RuntimeNodeConfiguration(ctx context.Context, nodeID, token stri
 // pin and unreleased ownership. It is never a general history read.
 func (s *Store) RuntimeNodeGenerationConfiguration(ctx context.Context, nodeID, token string, generation uint64) (RuntimeNodeConfiguration, error) {
 	var result RuntimeNodeConfiguration
+	if generation > math.MaxInt64 {
+		return result, ErrInvalidInput
+	}
 	err := s.runtimeDeploymentTransaction(ctx, func(q *sqlc.Queries, d sqlc.RuntimeDeployment) error {
 		var node *sqlc.RuntimeNode
 		var installation pgtype.UUID
@@ -65,6 +69,11 @@ func (s *Store) RuntimeNodeGenerationConfiguration(ctx context.Context, nodeID, 
 		}
 		if d.Mode != "nodes" {
 			return ErrSandboxDeploymentConflict
+		}
+		if node != nil {
+			if err := validateNodeEnrollmentIdentity(ctx, q, d, *node); err != nil {
+				return err
+			}
 		}
 		selected := uint64(d.Generation)
 		if generation != 0 {

@@ -409,6 +409,14 @@ func (h *Hub) recordHealth(ctx context.Context, p *peer, health Health) error {
 		if err != nil {
 			return err
 		}
+		if len(grants) != len(refs) {
+			return sandbox.ErrInvalid
+		}
+		for i, grant := range grants {
+			if grant.GenerationReference != refs[i] {
+				return sandbox.ErrInvalid
+			}
+		}
 		p.mu.Lock()
 		for i, g := range health.Generations {
 			if grants[i].Keep {

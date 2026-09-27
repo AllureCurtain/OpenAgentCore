@@ -86,7 +86,7 @@ func TestSandboxWorkerSwitchesAndRecoversFailedActivation(t *testing.T) {
 	changed.Resources.CPUs++
 	input := store.SandboxDeploymentUpdateRequest{ExpectedGeneration: 1, SandboxDeploymentSetupRequest: changed}
 	fail.Store(true)
-	if _, err := w.UpdateSandboxDeployment(t.Context(), input); err == nil {
+	if _, err := w.UpdateSandboxDeployment(store.SandboxResetTestContext(t.Context()), input); err == nil {
 		t.Fatal("failed activation reported success")
 	}
 	view, err := s.GetRuntimeDeployment(t.Context())
@@ -97,12 +97,12 @@ func TestSandboxWorkerSwitchesAndRecoversFailedActivation(t *testing.T) {
 		t.Fatal("rejected candidate retired the previous node", err)
 	}
 	fail.Store(false)
-	// Inject a real final SQL failure after successful provider preparation and
-	// manager drain; the surviving owner must recover before another mutation.
+	// Inject a real final SQL failure after successful
+	// candidate preparation; the surviving owner keeps its active deployment.
 	if _, err := pool.Exec(t.Context(), `CREATE FUNCTION reject_reset_fixture_update() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.generation > OLD.generation THEN RAISE EXCEPTION 'fixture commit rejected'; END IF; RETURN NEW; END $$; CREATE TRIGGER reject_reset_fixture_update BEFORE UPDATE ON runtime_deployment FOR EACH ROW EXECUTE FUNCTION reject_reset_fixture_update()`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.UpdateSandboxDeployment(t.Context(), input); err == nil {
+	if _, err := w.UpdateSandboxDeployment(store.SandboxResetTestContext(t.Context()), input); err == nil {
 		t.Fatal("failed final transaction accepted")
 	}
 	if _, err := pool.Exec(t.Context(), `DROP TRIGGER reject_reset_fixture_update ON runtime_deployment; DROP FUNCTION reject_reset_fixture_update()`); err != nil {
@@ -114,7 +114,7 @@ func TestSandboxWorkerSwitchesAndRecoversFailedActivation(t *testing.T) {
 	if view, err := s.GetRuntimeDeployment(t.Context()); err != nil || view.Generation != 1 || view.Provider != "docker" {
 		t.Fatal("failed commit replaced provider", view, err)
 	}
-	if _, err := w.UpdateSandboxDeployment(t.Context(), input); err != nil {
+	if _, err := w.UpdateSandboxDeployment(store.SandboxResetTestContext(t.Context()), input); err != nil {
 		t.Fatal(err)
 	}
 	reset := func(generation uint64) store.RuntimeDeploymentView {
@@ -151,7 +151,7 @@ func TestSandboxWorkerSwitchesAndRecoversFailedActivation(t *testing.T) {
 		t.Fatal("direct provider not available after resume", allocation, err)
 	}
 	next := store.SandboxDeploymentUpdateRequest{ExpectedGeneration: 4, SandboxDeploymentSetupRequest: store.SandboxDeploymentSetupRequest{DeploymentSpec: store.SandboxDeploymentTestSpec("docker"), Provider: "docker"}}
-	if _, err := w.UpdateSandboxDeployment(t.Context(), next); !errors.Is(err, store.ErrSandboxDeploymentConflict) {
+	if _, err := w.UpdateSandboxDeployment(store.SandboxResetTestContext(t.Context()), next); !errors.Is(err, store.ErrSandboxDeploymentConflict) {
 		t.Fatal("dirty switch accepted", err)
 	}
 	if err := s.DeleteSession(t.Context(), tenant, session.ID); err != nil {

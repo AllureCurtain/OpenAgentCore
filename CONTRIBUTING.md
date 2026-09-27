@@ -790,10 +790,9 @@ read.
 
 All sandbox writes require the observed generation, including initial POST at
 zero; reject stale state before provider preparation, reset or no-op checks, and
-repeat it under the committing row lock. Same-provider PUT currently requires no
-reset. Node PUT keeps the zero-held-resource guard until the complete multi-generation
-node protocol ships. E2B changes apply online without retiring nodes, tokens or the
-owner epoch. A different backend, E2B team or unspecified old selection requires reset.
+repeat it under the committing row lock. Same-provider PUT advances the target
+without draining execution or retiring nodes, tokens or the owner epoch. Node
+providers prepare independently and keep their old qualified serving pin. A different backend, E2B team or unspecified old selection requires reset.
 Preserve historical allocation ownership and placement, never migrate a Session.
 
 Persist immutable allocation and placement deployment generations, distinct from
@@ -802,8 +801,20 @@ Keep superseded specification/build rows without credentials while current, owne
 an unreleased allocation/placement, or pinned by any nonremoved node. A durable node
 serving pin survives offline state and zero resources. GC uses the deployment lock
 and bounded pages; reset clears pins only after release. Never downgrade facts needed
-for generation routing. Node readiness and no-gap placement remain PR-N work; do not
-relax the node PUT guard or introduce half a protocol.
+for generation routing. Bind node readiness to exact generation, current connection
+and owner epoch. Promote a durable pin only for readiness of the then-current target
+under deployment serialization. Late superseded readiness cannot acquire a pin.
+Filter online/readiness/address/capacity before preferring the newest eligible pin;
+newest-full must not mask older-free. Route Create, restore and cleanup through the
+immutable allocation/placement generation. V1 keeps its qualified enrolled fallback.
+
+Use sparse v2 control batches of at most eight entries with no lifetime cap. Omitted
+facts never authorize deletion. Correlate whole retention grants to connection,
+epoch, sequence, generation and digest; recheck queued/inflight/helper references.
+Permanent generation flock files survive updates and GC. Retained Runtime bytes and
+the console's exact-release HTTP allowlist must agree. See
+`contracts/agents-api/node-generation-protocol.md` for recovery, immutable artifacts
+and the conservative v1 legacy-helper retention boundary.
 
 Use one E2B classifier. Omitted key preserves the current key; identical selection
 with omitted key is a no-op. Explicit key submission, including identical bytes,
@@ -829,9 +840,9 @@ Project rollout and reset from the same database snapshot. Old retained resource
 alone never imply preparation or high-frequency polling. Rollout state is settled
 unless actual target preparation is active. Offline/unconfirmed nodes are unknown;
 only exact current connection/epoch/generation readiness is ready. A durable pin is
-not connectivity. Fixed diagnostics alone may explain failed preparation. PR-G reports
-no synthetic preparing state; old online v1 nodes can be update_required while their
-valid pin remains available to the eventual PR-N placement contract.
+not connectivity. Fixed diagnostics alone may explain failed preparation. Report
+preparing only from an actual target observation; an online v1 node can be
+update_required while its valid pin remains available for admission.
 
 Reset is durable execution state, advanced by the existing manager outside its
 counted work. Serialize start, escalation, cancel, setup, update and finalization

@@ -204,9 +204,20 @@ def prepare(args, installer):
             args.bundle = None
             manifest, sums = installer.metadata(args.source_url, prefix="releases/" + runtime["source_commit"] + "/")
             installer.node_spec.verify_release(args.configuration, manifest)
-            release = runtime_files(root, value if retained else None, args, manifest, sums, installer)
             if args.provider == "microsandbox":
                 args.runtime_home = Path(value["microsandbox"]["runtime_home"]) if retained else generation_home(root, args.configuration, base, installer)
+            if not retained:
+                # Persist the exact authorized identity before any artifact/import
+                # mutation. Interrupted preparation must remain discoverable after
+                # node restart; file presence still requires a real provider probe.
+                value = installer.provider_config(root / "releases" / runtime["source_commit"], args, manifest, runtime["image_id"])
+                target = directory / (str(args.generation) + ".json")
+                if installer.existing_file(target) and installer.private_json(target) != value:
+                    raise installer.InstallError("Immutable generation configuration differs")
+                atomic_json(target, value)
+                retained = True
+            release = runtime_files(root, value, args, manifest, sums, installer)
+            if args.provider == "microsandbox":
                 installer.safe_directory(args.runtime_home)
                 owner = args.runtime_home / "oac-installation.json"
                 if not owner.exists() and any(args.runtime_home.iterdir()):

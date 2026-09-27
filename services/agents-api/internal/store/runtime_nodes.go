@@ -264,6 +264,9 @@ func (s *Store) AuthenticateRuntimeNode(ctx context.Context, nodeID, credential 
 		}
 		return nodeIdentity(n, d.ProviderKind), nil
 	}
+	if err := validateNodeEnrollmentIdentity(ctx, s.queries, d, n); err != nil {
+		return RuntimeNodeIdentity{}, err
+	}
 	// Reset retires nodes before another backend lineage can be selected.
 	// Enrollment generation and digest remain immutable identity history; the
 	// current target and per-generation readiness do not replace that history.

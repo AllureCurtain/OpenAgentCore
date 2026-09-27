@@ -3,10 +3,12 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/db/sqlc"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -84,6 +86,11 @@ func (s *Store) RuntimeNodeRetention(ctx context.Context, nodeID, connectionID s
 					return ErrRuntimeSpecificationMismatch
 				}
 			}
+			if !kept {
+				if err := q.DeleteNodeGenerationStatus(ctx, sqlc.DeleteNodeGenerationStatusParams{NodeID: n.ID, Generation: int64(ref.Generation)}); err != nil {
+					return err
+				}
+			}
 			grants = append(grants, sandbox.GenerationRetention{GenerationReference: ref, Keep: kept})
 		}
 		return nil
@@ -135,4 +142,20 @@ func recordNodeGenerations(ctx context.Context, q *sqlc.Queries, d sqlc.RuntimeD
 		}
 	}
 	return q.RefreshNodeServingReadiness(ctx, sqlc.RefreshNodeServingReadinessParams{ID: n.ID, ProtocolVersion: protocol})
+}
+
+// Enrollment identity survives collection of its old specification. Whenever
+// that specification is still authoritative, its exact digest must agree.
+func validateNodeEnrollmentIdentity(ctx context.Context, q *sqlc.Queries, d sqlc.RuntimeDeployment, n sqlc.RuntimeNode) error {
+	if n.DeploymentGeneration <= 0 || n.DeploymentGeneration > d.Generation || !validRuntimeDigest(n.SpecificationDigest) {
+		return ErrRuntimeSpecificationMismatch
+	}
+	spec, err := nodeGenerationSpec(ctx, q, d, uint64(n.DeploymentGeneration))
+	if errors.Is(err, pgx.ErrNoRows) && n.DeploymentGeneration < d.Generation {
+		return nil
+	}
+	if err != nil || spec.Digest(d.ProviderKind) != n.SpecificationDigest {
+		return ErrRuntimeSpecificationMismatch
+	}
+	return nil
 }

@@ -68,7 +68,7 @@ func TestSandboxDeploymentViewRecordsTemplateBuildAndSuspension(t *testing.T) {
 		t.Fatalf("identical POST did not record the build: %s %v", raw, err)
 	}
 	forget()
-	view, err = w.UpdateSandboxDeployment(t.Context(), id, SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: input, ExpectedGeneration: 1})
+	view, err = w.UpdateSandboxDeployment(SandboxResetTestContext(t.Context()), id, SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: input, ExpectedGeneration: 1})
 	raw, _ = json.Marshal(view)
 	if err != nil || view.Generation != 1 || !bytes.Contains(raw, recorded) {
 		t.Fatalf("identical PUT did not record the build: %s %v", raw, err)

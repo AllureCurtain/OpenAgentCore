@@ -10,6 +10,7 @@ export type SandboxNodeDiagnostic =
   | "provider_unavailable"
   | "docker_unavailable"
   | "docker_limits_unsupported"
+  | "runtime_download_failed"
   | "runtime_image_unavailable"
   | "kvm_unavailable"
   | "microsandbox_artifacts_unavailable"
@@ -259,7 +260,7 @@ function projectDeployment(value: unknown): SandboxDeployment {
 
 const nodeFields = ["rollout", "id", "name", "provider", "online", "provider_ready", "cpu_count", "available_memory_bytes", "available_disk_bytes", "running", "snapshots",
   "last_seen_at", "max_active", "max_retained", "active", "reserved", "retained", "cleanup_pending", "created_at", "core_url", "enrollment_id"];
-const nodeDiagnostics = new Set(["provider_unavailable", "docker_unavailable", "docker_limits_unsupported", "runtime_image_unavailable", "kvm_unavailable", "microsandbox_artifacts_unavailable", "capacity_insufficient"]);
+const nodeDiagnostics = new Set(["provider_unavailable", "docker_unavailable", "docker_limits_unsupported", "runtime_download_failed", "runtime_image_unavailable", "kvm_unavailable", "microsandbox_artifacts_unavailable", "capacity_insufficient"]);
 /** Core omits an empty `diagnostic`, so a present one is a code; an unknown code reads as provider_unavailable. */
 function projectNode(node: Record<string, unknown>): SandboxNode {
   const { diagnostic, rollout, ...rest } = node;

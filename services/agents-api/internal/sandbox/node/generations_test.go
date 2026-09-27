@@ -278,3 +278,21 @@ func TestRestartRecoversExactOlderGenerationBeforeAdvertisingReadiness(t *testin
 	}
 	release()
 }
+
+func TestGenerationDeploymentRejectsConflictingImmutableIdentity(t *testing.T) {
+	m := generationFixture(3)
+	bad := m.target
+	bad.SpecificationDigest = strings.Repeat("b", 64)
+	if err := m.Deployment(bad); !errors.Is(err, sandbox.ErrOwnership) {
+		t.Fatal("conflicting target accepted", err)
+	}
+	if m.target.SpecificationDigest != strings.Repeat("a", 64) || m.values[3].value.SpecificationDigest != m.target.SpecificationDigest {
+		t.Fatal("rejected metadata changed provider identity")
+	}
+	bad = m.target
+	future := uint64(4)
+	bad.ServingGeneration = &future
+	if err := m.Deployment(bad); !errors.Is(err, sandbox.ErrOwnership) {
+		t.Fatal("future serving pin accepted", err)
+	}
+}

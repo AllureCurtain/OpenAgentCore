@@ -119,9 +119,7 @@ func runGenerations(ctx context.Context, configFile, stateDir string) error {
 			if err != nil {
 				return value, err
 			}
-			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			defer cancel()
-			return value, value.Probe(probeCtx)
+			return value, nil
 		},
 		Remove: func(ctx context.Context, value node.GenerationProvider) error {
 			ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)

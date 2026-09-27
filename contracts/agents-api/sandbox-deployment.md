@@ -21,7 +21,7 @@ for the operator workflow. Generated schemas cover the
 | --- | --- | --- |
 | `GET /core/v1/sandbox/deployment` | Core key | Read the safe active configuration and retained-resource counts |
 | `POST /core/v1/sandbox/deployment` | Core key | Select the initial provider, resources and Runtime |
-| `PUT /core/v1/sandbox/deployment` | Core key | Update E2B online; node providers still require zero retained and pending resources |
+| `PUT /core/v1/sandbox/deployment` | Core key | Advance the same-provider target online while retaining existing ownership |
 | `POST /core/v1/sandbox/deployment/reset` | Core key | Start or escalate a durable hosted clear |
 | `DELETE /core/v1/sandbox/deployment/reset?expected_generation=N` | Core key | Cancel the remaining clear without restoring archived work |
 | `GET /api/v1/sandbox-node/configuration` | Enrollment token or retained node credential | Read the active node installation configuration without consuming enrollment |
@@ -208,9 +208,9 @@ PUT accepts the same provider and no active reset. Send the observed generation
 once; never replay an uncertain mutation automatically. E2B changes apply online:
 new allocations use the newly committed specification and existing allocations
 retain their immutable deployment generation. No node, token or owner epoch is
-retired by an E2B update. Docker/microsandbox still require zero held resources,
-prepare and drain before commit, and retire old nodes/tokens. Their online update
-protocol is not implemented yet.
+retired by a same-provider update. Docker/microsandbox advance only the target;
+each node prepares it independently while continuing to serve its qualified old
+pin. No execution drain or reenrollment accompanies a target change.
 
 For E2B PUT, omit `e2b.api_key` to preserve the current key. Omitted-key identical
 selection is a no-op. Explicit nonempty key submission, including the same key,
@@ -271,26 +271,28 @@ The previous count uses the same snapshot as resource totals: old-generation
 unreleased allocations plus old-generation pending placements without allocations,
 never counting one resource twice. E2B and unconfigured deployments return null
 nodes. A node deployment returns counts `{ready,preparing,failed,update_required,unknown}`.
-Every nonremoved node belongs to exactly one bucket. Offline or unconfirmed current
-connections are `unknown` first; an online v1 node enrolled at an older target is
-`update_required`; online exact-generation provider readiness is `ready`; an online
-reported diagnostic is `failed`; otherwise it is `unknown`. The existing 45-second
-heartbeat and owner-epoch rules define online. Pins alone never imply readiness. Target rollout is distinct from serving readiness:
-unknown/preparing/failed/update_required must not erase independently confirmed old
-serving readiness. provider_ready is the last provider report and requires online;
-current v1 reports its enrolled provider. Future node protocol must bind serving
-readiness to the exact pin and current connection/epoch. Valid PR-G v1 online ready
-nodes at the current target project ready; the client also permits an old qualified
-pin with unknown target preparation for the subsequent protocol.
+Every nonremoved node belongs to exactly one bucket. Offline current connections
+are `unknown` first; an online v1 node enrolled at an older target is
+`update_required`. Otherwise the exact target observation on the current
+connection and owner epoch supplies `ready`, `preparing` or `failed`; missing
+observations are `unknown`. The existing 45-second heartbeat predicate defines
+online. Pins alone never imply readiness. Target rollout is independent of serving
+readiness: unknown/preparing/failed/update_required does not erase an independently
+confirmed old serving provider. `provider_ready` requires online presence and an
+exact serving-generation observation on that connection and epoch. A v1 heartbeat
+qualifies only its enrolled provider.
 
 Each node adds `rollout: {state, ready_generation, diagnostic?}`. ready_generation is
 the nullable durable serving pin. Diagnostic is a fixed node reason; unknown values
 project as `provider_unavailable`. Allocation items add `deployment_generation`.
 `rollout.state` is the authoritative high-frequency polling signal: poll every five
 seconds only while it is `preparing` or reset is nonnull. Old Sessions, failed,
-update-required and offline nodes alone do not keep polling active. PR-G reports
-`settled`: actual node multi-generation preparation and no-gap placement remain
-PR-N work, with the zero-resource node PUT guard intact.
+update-required and offline nodes alone do not keep polling active. New admission
+filters online, exact serving-generation readiness, address and shared capacity
+before choosing the newest qualifying pin. A full newest node does not hide a free
+older node. No candidate creates no provisional Session or placement. An online
+node actually preparing with available capacity returns 503 `sandbox_nodes_preparing`;
+a full or offline fleet returns `runtime_node_unavailable`.
 
 To change backend, explicitly start reset:
 
@@ -381,9 +383,11 @@ belong to this installation. This read does not consume it. An active reset prev
 new enrollment configuration reads.
 
 An already registered node sends its durable node credential as Bearer and its
-UUID in `X-OAC-Node-ID`. Its installation, saved generation and specification
-digest must match the active deployment. This read remains available in
-reset so the retained node can recover its exact configuration. The old
+UUID in `X-OAC-Node-ID`. Its original enrollment identity and installation remain
+valid across same-provider target changes. Omitted `generation` reads the current
+target; `?generation=N` reads only that node's exact current, serving-pinned or
+unreleased-allocation/placement generation. Unknown or unkept history is refused.
+This read remains available during reset for owned recovery. The old
 enrollment token cannot replace a registered node's credential.
 
 The response contains `installation_id`, `provider`, `core_url` (the installation
@@ -397,9 +401,10 @@ and network policy. Enrollment at `POST /api/v1/sandbox-node/enroll` includes
 node stores. A specification mismatch rejects with 409
 `sandbox_specification_mismatch` and a `core_url` other than the installation public
 URL with 409 `sandbox_node_address_mismatch`, both before token consumption. A
-missing `core_url` gets 400 `invalid_request_error` with `param: "core_url"`. Retained node authentication checks the same generation and
-digest. A changed local resource setting, Runtime or generation must fail rather
-than rewrite the retained identity or silently use a local default.
+missing `core_url` gets 400 `invalid_request_error` with `param: "core_url"`.
+The original enrollment identity remains immutable. New generation preparation
+uses separate exact configurations, never rewrites that identity or silently
+substitutes a local default. See [node generation protocol](node-generation-protocol.md).
 
 ## What each field means per sandbox provider
 
@@ -432,8 +437,7 @@ fields from the administrator node routes; runtime fields from the
 
 Malformed selections return 400; validated configuration diagnostics use
 `invalid_sandbox_configuration`. Stale generation returns 409 `sandbox_generation_stale` with safe `current_generation`;
-zero-resource PUT violations return 409 `sandbox_in_use` with allocation/pending
-counts; a different backend returns 409 `sandbox_reset_required` with provider names.
+A different backend returns 409 `sandbox_reset_required` with provider names.
 Unconfigured mutations return 409 `sandbox_not_configured`. Other incompatible
 deployments return 409 `sandbox_deployment_conflict`. A node
 configuration mismatch returns 409 `sandbox_specification_mismatch`; rejected
@@ -450,7 +454,7 @@ evidence of cleanup.
 
 The administrator node list and node detail report an unready provider with one
 fixed `diagnostic` code: `docker_unavailable`, `docker_limits_unsupported`,
-`runtime_image_unavailable`, `kvm_unavailable`,
+`runtime_download_failed`, `runtime_image_unavailable`, `kvm_unavailable`,
 `microsandbox_artifacts_unavailable`, `capacity_insufficient` or
 `provider_unavailable`. It is absent while the provider is ready. The node
 classifies the first failed readiness check and sends only the code; Core stores
@@ -502,3 +506,7 @@ transition is implemented. Ordinary migration retires maintenance and resumes
 admission; it never interprets old maintenance as authorization to clear. Downgrade
 refuses an active reset or an unconfigured completed reset with generation above
 zero; configure a provider before downgrading, never erase the generation.
+
+`runtime_download_failed` means the exact Runtime artifacts could not be transferred
+or verified. It is distinct from provider probe and image availability failures;
+the diagnostic never contains artifact URLs, credentials or transport output.

@@ -20,8 +20,9 @@ AND deployment_generation>0 AND specification_digest ~ '^[0-9a-f]{64}$';
 -- +goose Down
 -- +goose StatementBegin
 DO $$ BEGIN
- IF EXISTS(SELECT 1 FROM runtime_nodes WHERE removed_at IS NULL AND protocol_version=2) THEN
-  RAISE EXCEPTION 'Cannot downgrade while protocol v2 nodes remain; remove them after releasing their resources first';
+ IF EXISTS(SELECT 1 FROM runtime_nodes n CROSS JOIN runtime_deployment d WHERE n.removed_at IS NULL
+   AND (n.protocol_version=2 OR n.deployment_generation<>d.generation OR n.ready_generation<>d.generation)) THEN
+  RAISE EXCEPTION 'Cannot downgrade while protocol v2 or retained-generation nodes remain; remove them after releasing their resources first';
  END IF;
 END $$;
 -- +goose StatementEnd

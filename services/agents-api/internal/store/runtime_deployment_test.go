@@ -36,7 +36,7 @@ func legacyRuntimeSpecification(t *testing.T, w *Store, provider string) {
 	if _, err := w.pool.Exec(t.Context(), "UPDATE runtime_deployment SET specification=$1", raw); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.pool.Exec(t.Context(), "UPDATE runtime_nodes SET deployment_generation=1,specification_digest=$1", spec.Digest(provider)); err != nil {
+	if _, err := w.pool.Exec(t.Context(), "UPDATE runtime_nodes SET deployment_generation=1,ready_generation=1,specification_digest=$1", spec.Digest(provider)); err != nil {
 		t.Fatal(err)
 	}
 }

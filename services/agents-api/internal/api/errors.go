@@ -146,6 +146,8 @@ func writeStoreError(w http.ResponseWriter, r *http.Request, err error, notFound
 		writeError(w, http.StatusConflict, "runtime_node_in_use", "The sandbox node retains allocations, snapshots, reservations or pending cleanup.")
 	case errors.Is(err, store.ErrRuntimeLocalNodeConfigured):
 		writeError(w, http.StatusConflict, "runtime_local_node_configured", "The local sandbox node is enabled in deployment configuration. Drain it with the previous release and remove its file-managed configuration before replacing it.")
+	case errors.Is(err, store.ErrSandboxNodesPreparing):
+		writeError(w, http.StatusServiceUnavailable, "sandbox_nodes_preparing", "Sandbox nodes are preparing the requested Runtime.")
 	case errors.Is(err, store.ErrRuntimeNodeUnavailable):
 		writeError(w, http.StatusServiceUnavailable, "runtime_node_unavailable", "The selected sandbox node is unavailable or has no capacity.")
 

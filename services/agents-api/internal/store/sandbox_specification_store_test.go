@@ -150,7 +150,7 @@ func TestSandboxSpecificationBootstrapReadDoesNotConsumeEnrollment(t *testing.T)
 	}
 }
 
-func TestSandboxSpecificationChangesWaitForEveryRetainedResource(t *testing.T) {
+func TestSandboxSpecificationChangesPreserveEveryRetainedResource(t *testing.T) {
 	for _, state := range []string{"pending", "creating", "running", "stopped", "snapshot", "cleanup_pending"} {
 		t.Run(state, func(t *testing.T) {
 			s, w, view, input := webSpecificationFixture(t, "microsandbox")
@@ -215,16 +215,18 @@ func TestSandboxSpecificationChangesWaitForEveryRetainedResource(t *testing.T) {
 					changed.Runtime = &runtime
 				}
 				update := SandboxDeploymentUpdateRequest{ExpectedGeneration: view.Generation, SandboxDeploymentSetupRequest: changed}
-				if err := w.CheckSandboxDeploymentSwitch(t.Context(), view.InstallationID, update); !errors.Is(err, ErrSandboxDeploymentConflict) {
-					t.Fatal("precheck ignored retained resource", field, err)
+				if err := w.CheckSandboxDeploymentSwitch(t.Context(), view.InstallationID, update); err != nil {
+					t.Fatal(field, err)
 				}
-				if _, err := w.UpdateSandboxDeployment(t.Context(), view.InstallationID, update); !errors.Is(err, ErrSandboxDeploymentConflict) {
-					t.Fatal("configuration changed with retained resource", field, err)
+				next, err := w.UpdateSandboxDeployment(SandboxResetTestContext(t.Context()), view.InstallationID, update)
+				if err != nil || next.Generation != view.Generation+1 || next.OwnerEpoch != view.OwnerEpoch {
+					t.Fatal(field, next, err)
 				}
+				view = next
 			}
 			after, err := s.GetRuntimeDeployment(t.Context())
-			if err != nil || !reflect.DeepEqual(before, after) {
-				t.Fatal("blocked specification change mutated deployment", err)
+			if err != nil || before.Resources != after.Resources {
+				t.Fatal("online specification change altered ownership", err)
 			}
 			if owner.ID != "" {
 				var allocationAfter []byte
@@ -232,7 +234,7 @@ func TestSandboxSpecificationChangesWaitForEveryRetainedResource(t *testing.T) {
 					t.Fatal(err)
 				}
 				if !bytes.Equal(allocationBefore, allocationAfter) {
-					t.Fatal("blocked change mutated or deleted retained ownership")
+					t.Fatal("online change mutated or deleted retained ownership")
 				}
 				owner, err = w.RequestRuntimeCleanup(t.Context(), owner)
 				if err != nil {
@@ -253,12 +255,12 @@ func TestSandboxSpecificationChangesWaitForEveryRetainedResource(t *testing.T) {
 			runtime := *input.Runtime
 			runtime.SourceCommit = strings.Repeat("2", 40)
 			changed.Runtime = &runtime
-			committed, err := w.UpdateSandboxDeployment(t.Context(), view.InstallationID, SandboxDeploymentUpdateRequest{ExpectedGeneration: view.Generation, SandboxDeploymentSetupRequest: changed})
+			committed, err := w.UpdateSandboxDeployment(SandboxResetTestContext(t.Context()), view.InstallationID, SandboxDeploymentUpdateRequest{ExpectedGeneration: view.Generation, SandboxDeploymentSetupRequest: changed})
 			if err != nil || committed.Generation != view.Generation+1 || committed.Reset != nil || committed.Resources != (SandboxDeploymentResources{}) || committed.Specification == nil || !reflect.DeepEqual(*committed.Specification, changed.DeploymentSpec) {
 				t.Fatal("completed cleanup did not permit the replacement", err)
 			}
-			if _, err := s.AuthenticateRuntimeNode(t.Context(), node.NodeID, node.Credential); !errors.Is(err, ErrRuntimeNodeCredential) {
-				t.Fatal("old node survived specification replacement", err)
+			if _, err := s.AuthenticateRuntimeNode(t.Context(), node.NodeID, node.Credential); err != nil {
+				t.Fatal("online change retired serving identity", err)
 			}
 		})
 	}
@@ -338,7 +340,7 @@ func TestSandboxSpecificationAllocationRaceWithMaintenance(t *testing.T) {
 		t.Fatal("concurrent maintenance lost resource accounting", after.Resources, err)
 	}
 	input.Resources.CPUs++
-	if _, err := w.UpdateSandboxDeployment(t.Context(), view.InstallationID, SandboxDeploymentUpdateRequest{ExpectedGeneration: view.Generation, SandboxDeploymentSetupRequest: input}); !errors.Is(err, ErrSandboxResetInProgress) {
+	if _, err := w.UpdateSandboxDeployment(SandboxResetTestContext(t.Context()), view.InstallationID, SandboxDeploymentUpdateRequest{ExpectedGeneration: view.Generation, SandboxDeploymentSetupRequest: input}); !errors.Is(err, ErrSandboxResetInProgress) {
 		t.Fatal("allocation race bypassed replacement guard", err)
 	}
 }
