@@ -27,13 +27,15 @@ _openapi:
           no-op; differing selections and file-managed deployments reject. This
           does not create compute or execute work.
       - content: >-
-          Requires the current generation, the same backend type, no active
-          reset and verified cleanup of all old resources. A backend type change
-          requires reset. Credentials are write-only. E2B may omit resources to
-          adopt the validated template build's CPU and memory. A core_url member
-          is rejected with 400; the address comes from the installation public
-          URL. Historical records are retained; old node credentials and
-          enrollments are retired. Never automatically retry an uncertain write.
+          Requires the observed generation, the same backend type and no active
+          reset. E2B same-team changes apply online: allocations retain
+          immutable generation and current credentials; omitted api_key
+          preserves it, explicit submission including the same key verifies and
+          advances generation. Other teams require explicit reset. Node
+          providers retain the zero-resource guard and retire old nodes/tokens
+          on change. Core rejects core_url input. Never automatically replay an
+          uncertain write; rollout.state is the authoritative preparation
+          polling signal.
       - content: >-
           Archives hosted Sessions and waits for confirmed provider cleanup,
           preserving history and Files/Artifacts. Auto waits for started or

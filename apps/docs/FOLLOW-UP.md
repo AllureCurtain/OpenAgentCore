@@ -1,14 +1,15 @@
 # Feature integration follow-up
 
-This candidate documents durable reset and the interim zero-resource same-provider
-update rule at source `f36ac3592bfe9f77a2172680aa52b14c6f525062`.
-The Core error-envelope foundation is included; online generations, later configuration
-validators and diagnostic endpoints are not. Do not replace current procedures with
-planned behavior before those features land.
+This candidate documents durable reset, retained Core generations and verified
+same-team E2B online changes at source `b9b13b186089b317db271ab83b10f86b48168f66`.
+Node changes still require zero held resources until the node protocol is complete.
+The Core error-envelope foundation is included; later configuration validators and
+diagnostic endpoints are not. Do not replace current procedures with planned behavior
+before those features land.
 
 | Feature dependency | Site pages to reconcile | Source and verification work |
 | --- | --- | --- |
-| Online generations and E2B changes (design 50 PR-G) | configure, hosted-providers, troubleshooting, execution-model, API reference/core | Document actual generation/rollout states, the supported change matrix and existing-sandbox behavior. Verify PUT examples against the final contract. |
+| Final Web generation controls (design 50 PR-W) | configure, hosted-providers, troubleshooting, execution-model | Reconcile the actual Web workflow after node online changes are qualified; keep target preparation separate from serving readiness. |
 | Node update protocol (design 50 PR-N) | hosted-providers, troubleshooting, API reference/machine | Explain the implemented update command, old-node handling and ownership preservation. Do not claim an update command now. |
 | Later configuration/error changes (design 40 and remaining installer work) | install, configure, troubleshooting, quickstart | Regenerate current configuration fields and revise diagnostics against merged code; keep secrets out of examples. |
 | Final feature assembly | every Chinese reading note, execution-model diagram, all generated references | Review translations against regenerated English, verify source provenance and links, run contract/route/copy/fact checks, typecheck/build, local browser review and the repository gate. |

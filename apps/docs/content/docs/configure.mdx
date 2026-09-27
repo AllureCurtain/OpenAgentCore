@@ -161,10 +161,17 @@ E2B takes no `runtime`, and Web sends no resources for it: Core adopts the CPU a
 memory of the ready template build `template-id:build-uuid`, and supplied values must
 match it. Docker has no separate disk quota.
 
-Changing the provider, the size or the Runtime applies to the whole deployment; see the
-**Nodes** page, and note that this flow will change in a coming release. A successful
-change retires the old nodes and enrollment commands; history stays, and existing
-Sessions never move between providers. See the
+Changing backend type or E2B team requires an explicit reset and a new setup.
+Same-team E2B template, resource and key changes apply online through the Core API:
+new allocations use the new generation, while existing sandboxes retain their
+original specification. Omit the key to preserve it; explicitly submitting a key,
+even the same value, verifies the replacement and advances the generation.
+
+Docker and microsandbox size/Runtime edits still require zero held resources and
+retire the old nodes and enrollment commands. Add those hosts again after cleaning
+up their retired node installations. Node online preparation and the corresponding
+Web controls are separate follow-up work. History stays, and existing Sessions never
+move between providers. See the
 [operator reference](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
 and the [deployment contract](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/contracts/agents-api/sandbox-deployment.md).
 

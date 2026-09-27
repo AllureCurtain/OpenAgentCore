@@ -263,13 +263,14 @@ WebSocket doesn't pass the reverse proxy.
 
 ## Change the sandbox backend or size
 
-To change the sandbox backend, the sandbox size or the Runtime, see the **Nodes** page;
-this flow will change in a coming release. A change applies to the whole deployment
-and retires every node. Retired nodes drop out of the list, so there is nothing to
+Changing backend type requires an explicit reset. Docker and microsandbox size or
+Runtime edits currently require zero held resources; node online updates are not
+available yet. These changes retire every node. Retired nodes drop out of the list, so there is nothing to
 remove in Web: on each host, run the [uninstall command](#remove-a-node) (Core no longer
 accepts the node, so it needs no `--force`), then add the host again with a new command.
 The [operator reference](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
-describes today's procedure and API.
+describes today's procedure and API. Same-team E2B edits have a separate online
+Core API path and do not involve node installation.
 
 
 ## Remove a node added before the rename

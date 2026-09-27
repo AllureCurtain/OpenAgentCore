@@ -3308,7 +3308,7 @@ paths:
         description: Deployment selection
         required: true
     put:
-      description: Requires the current generation, the same backend type, no active reset and verified cleanup of all old resources. A backend type change requires reset. Credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory. A core_url member is rejected with 400; the address comes from the installation public URL. Historical records are retained; old node credentials and enrollments are retired. Never automatically retry an uncertain write.
+      description: 'Requires the observed generation, the same backend type and no active reset. E2B same-team changes apply online: allocations retain immutable generation and current credentials; omitted api_key preserves it, explicit submission including the same key verifies and advances generation. Other teams require explicit reset. Node providers retain the zero-resource guard and retire old nodes/tokens on change. Core rejects core_url input. Never automatically replay an uncertain write; rollout.state is the authoritative preparation polling signal.'
       responses:
         '200':
           description: OK
@@ -3348,7 +3348,7 @@ paths:
                 $ref: '#/components/schemas/api.CoreErrorResponse'
       security:
         - DeploymentAdminAuth: []
-      summary: Change a fully drained deployment's sandbox configuration
+      summary: Change the sandbox deployment configuration
       tags:
         - Sandbox Manager
       requestBody:
@@ -4972,6 +4972,8 @@ components:
             - type: 'null'
         resources:
           $ref: '#/components/schemas/store.SandboxDeploymentResources'
+        rollout:
+          $ref: '#/components/schemas/store.SandboxRollout'
         specification:
           $ref: '#/components/schemas/sandbox.DeploymentSpec'
         specification_digest:
@@ -5038,6 +5040,8 @@ components:
           type: integer
         retained:
           type: integer
+        rollout:
+          $ref: '#/components/schemas/store.SandboxNodeRollout'
         running:
           type: integer
         snapshots:
@@ -5054,6 +5058,8 @@ components:
           description: The time the allocation entered its current compute_phase, or null when unknown; an allocation that existed before Core recorded it reports null until its next phase change. For a suspended microsandbox allocation, this time plus the deployment's snapshot retention tells roughly when Core reclaims it.
         created_at:
           type: string
+        deployment_generation:
+          type: integer
         diagnostic:
           type: string
         environment_id:
@@ -5130,6 +5136,8 @@ components:
           type: integer
         retained:
           type: integer
+        rollout:
+          $ref: '#/components/schemas/store.SandboxNodeRollout'
         running:
           type: integer
         snapshots:
@@ -5200,6 +5208,25 @@ components:
             - $ref: '#/components/schemas/store.SandboxE2BTemplateBuildView'
           description: The fixed template build as Core read it when this selection was saved.
       type: object
+    store.SandboxNodeRollout:
+      properties:
+        diagnostic:
+          type: string
+        ready_generation:
+          anyOf:
+            - type: integer
+            - type: 'null'
+          description: Durable serving-generation pin; online and provider_ready still gate placement.
+        state:
+          description: Target preparation, independent of an old pin's serving readiness.
+          enum:
+            - ready
+            - preparing
+            - failed
+            - update_required
+            - unknown
+          type: string
+      type: object
     store.SandboxResetOfflineNode:
       properties:
         name:
@@ -5258,6 +5285,34 @@ components:
           $ref: '#/components/schemas/store.SandboxResetRemaining'
         requested_at:
           type: string
+      type: object
+    store.SandboxRollout:
+      properties:
+        nodes:
+          anyOf:
+            - allOf:
+                - $ref: '#/components/schemas/store.SandboxRolloutNodes'
+            - type: 'null'
+        previous_generation_sandboxes:
+          type: integer
+        state:
+          enum:
+            - settled
+            - preparing
+          type: string
+      type: object
+    store.SandboxRolloutNodes:
+      properties:
+        failed:
+          type: integer
+        preparing:
+          type: integer
+        ready:
+          type: integer
+        unknown:
+          type: integer
+        update_required:
+          type: integer
       type: object
     store.SandboxSuspensionView:
       properties:

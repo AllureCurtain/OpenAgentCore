@@ -96,13 +96,21 @@ may omit `resources` to adopt the validated build's CPU and memory; responses sh
 the build as read at selection time in `e2b.template_build`. Microsandbox responses
 return its idle `suspension` policy; other providers return null.
 
-Same-provider updates currently require zero retained/pending resources and no
-reset. Changing backend requires explicit durable reset before a new POST.
+Same-team E2B updates apply online after verification. Existing sandboxes retain
+their generation and use the committed credential for management; omitting the key
+preserves it, while explicitly submitting even the same key verifies a replacement.
+Node-provider updates still require zero retained/pending resources and no reset.
+Changing backend or E2B team requires explicit durable reset before a new POST.
 Auto archives idle/queued/suspended hosted Sessions, waits for started work and
 file writes, and escalates at its persisted deadline; force requests cancellation
 and verified cleanup. The deployment response supplies the authoritative
 `reset.remaining` partition and offline-node subset; Web must not derive either
-from independently loaded lists. No rollout projection is provided yet.
+from independently loaded lists. The separate `rollout.state` describes target
+preparation; old-generation resource counts alone do not imply active preparation.
+Poll rapidly while reset is active or rollout is preparing. Node `ready_generation`
+is a durable serving pin, not proof of current connectivity. Target unknown, failed
+or update-required state does not by itself invalidate confirmed old-generation
+service; consume Core's connection/provider facts separately.
 
 Administrators may [archive an individual hosted Session](../../contracts/agents-api/admin-api.md#administrative-session-archive)
 at the current generation without reset. History and persisted Files/Artifacts
