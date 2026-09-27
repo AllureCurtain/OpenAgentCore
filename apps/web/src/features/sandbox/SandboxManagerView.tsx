@@ -72,7 +72,6 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const loading = deploymentQuery.isFetching;
   const error: unknown = deploymentQuery.error;
   const busy = ownership.data.phase === "pending";
-  const [revision, setRevision] = useState(0);
   const [removeTarget, setRemoveTarget] = useState<SandboxNode | null>(null);
   const [editTarget, setEditTarget] = useState<SandboxNode | null>(null);
   // The Add node dialog; it stays mounted with the page so its command survives closing.
@@ -96,8 +95,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
     return result;
   }, [refetchDeployment, refetchSnapshot]);
   const refresh = useCallback(() => {
-    // Each refresh starts a new read (cancelling one in flight) and resets the forms, as a reload did.
-    setRevision((value) => value + 1);
+    // Retry observations without discarding a draft for the same Core lifecycle.
     // The wizard reads the address and config file from the installation.
     void queryClient.invalidateQueries({ queryKey: installationQuery.queryKey });
     return refetch();
@@ -191,7 +189,7 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const allocations = snapshot?.allocations ?? [];
   const hostedNodes = Boolean(snapshot?.deployment.provider && snapshot.deployment.provider !== "e2b");
   const configurationKey = deployment
-    ? `${deployment.installation_id}:${deployment.owner_epoch}:${deployment.provider}:${deployment.mode}:${deployment.generation}:${revision}`
+    ? `${deployment.installation_id}:${deployment.owner_epoch}:${deployment.provider}:${deployment.mode}:${deployment.generation}`
     : undefined;
   // Getting started asks for Add node on arrival. A request the first settled read cannot
   // serve (no own-machines deployment, active reset, a failed read) is dropped, so the
