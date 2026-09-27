@@ -41,7 +41,7 @@ func validateVersionFrame(f frame, size int) error {
 		return sandbox.ErrInvalid
 	}
 	if f.Health != nil {
-		if len(f.Health.Generations) > 8 {
+		if len(f.Health.Generations) > 8 || !validGenerationHealth(*f.Health) {
 			return sandbox.ErrInvalid
 		}
 		seen := map[uint64]bool{}
@@ -52,7 +52,7 @@ func validateVersionFrame(f frame, size int) error {
 			seen[g.Generation] = true
 		}
 	}
-	if f.Request != nil && !validGeneration(f.Request.DeploymentGeneration) {
+	if f.Request != nil && (!validGeneration(f.Request.DeploymentGeneration) || !validGeneration(f.Request.Sequence) || !validGeneration(f.Request.OwnerEpoch) || !validID(f.Request.ConnectionID)) {
 		return sandbox.ErrInvalid
 	}
 	if c := f.Control; c != nil {
@@ -106,4 +106,30 @@ func validateVersionFrame(f frame, size int) error {
 		return sandbox.ErrInvalid
 	}
 	return nil
+}
+
+func validGenerationHealth(h Health) bool {
+	if h.ObservedAt.IsZero() || h.ObservedAt.Year() < 1970 || h.ObservedAt.Year() > 9999 || h.ActiveOperations < 0 || h.ActiveOperations > maxPending {
+		return false
+	}
+	if len(h.Diagnostic) > 64 || sandbox.NormalizeNodeDiagnostic(h.Diagnostic) != h.Diagnostic {
+		return false
+	}
+	for _, value := range []*int64{h.CPUCount, h.TotalMemoryBytes, h.AvailableMemoryBytes, h.AvailableDiskBytes} {
+		if value != nil && (*value < 0 || *value > 1<<53-1) {
+			return false
+		}
+	}
+	for _, value := range []*float64{h.CPUUtilization, h.EffectiveCPUCores} {
+		if value != nil && (math.IsNaN(*value) || math.IsInf(*value, 0) || *value < 0) {
+			return false
+		}
+	}
+	if h.CPUUtilization != nil && *h.CPUUtilization > 1 || h.EffectiveCPUCores != nil && *h.EffectiveCPUCores == 0 {
+		return false
+	}
+	if h.TotalMemoryBytes != nil && (*h.TotalMemoryBytes == 0 || h.AvailableMemoryBytes != nil && *h.AvailableMemoryBytes > *h.TotalMemoryBytes) {
+		return false
+	}
+	return true
 }

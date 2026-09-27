@@ -1,5 +1,8 @@
 """Private node generation preparation and collection; Core owns all authorization."""
 import copy
+import contextlib
+import fcntl
+import stat
 import hashlib
 import json
 import os
@@ -9,7 +12,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from types import SimpleNamespace
 import zipapp
 
 
@@ -51,7 +53,7 @@ def install_helper(root, args, installer):
             package = Path(directory) / "package"
             package.mkdir(mode=0o700)
             source_dir = Path(installer.__file__).parent
-            for name in ("node_install.py", "node_spec.py", "distribution.py", "node_generations.py"):
+            for name in ("node_install.py", "node_spec.py", "distribution.py", "node_generations.py", "node_update.py"):
                 shutil.copyfile(source_dir / name, package / ("__main__.py" if name == "node_install.py" else name))
             zipapp.create_archive(package, staged, compressed=True)
         os.chmod(staged, 0o600)
@@ -191,15 +193,42 @@ def prepare(args, installer):
         print(json.dumps(value))
 
 
+@contextlib.contextmanager
+def collection_lease(root, generation, installer):
+    directory = root / "state/node/generations"
+    installer.safe_directory(directory)
+    path = directory / (str(generation) + ".lease")
+    descriptor = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    try:
+        info = os.fstat(descriptor)
+        if (not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600
+                or info.st_uid != os.geteuid() or info.st_nlink != 1):
+            raise installer.InstallError("Invalid generation helper lease")
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise installer.InstallError("Generation helper is still active") from error
+        named = path.lstat()
+        if (named.st_dev, named.st_ino) != (info.st_dev, info.st_ino):
+            raise installer.InstallError("Generation helper lease was replaced")
+        yield
+    finally:
+        # Never unlink a lease: a replacement inode could bypass an old helper.
+        os.close(descriptor)
+
+
 def collect(args, installer):
     root, _ = owned_root(args, installer)
-    with installer.install_lock(root):
+    with installer.install_lock(root), collection_lease(root, args.generation, installer):
         configurations = retained_configs(root, installer)
         value = configurations.get(args.generation)
         if value is None:
             return
         if installer.node_spec.digest(value["provider"], value["specification"]) != args.specification_digest:
             raise installer.InstallError("Collection grant does not match the local generation")
+        marker = root / "state/node/generations" / (str(args.generation) + ".legacy-unfenced")
+        if marker.exists() or marker.is_symlink():
+            raise installer.InstallError("The original v1 generation retains unfenced legacy helpers; its local payload is kept")
         others = [item for generation, item in configurations.items() if generation != args.generation]
         if value["provider"] == "microsandbox":
             micro = value["microsandbox"]

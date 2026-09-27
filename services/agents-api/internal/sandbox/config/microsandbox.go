@@ -11,6 +11,7 @@ import (
 // Single-host providers pin the helper, runtime, firmware, image and resource
 // limits explicitly. The helper owns local paths; no ambient backend is selected.
 type Microsandbox struct {
+	HelperLeasePath    string  `json:"-"`
 	HelperPath         string  `json:"helper_path"`
 	RuntimeHome        string  `json:"runtime_home"`
 	RuntimePath        string  `json:"runtime_path"`
@@ -47,11 +48,11 @@ func configureMicrosandbox(entry Microsandbox, resources sandbox.Resources, resu
 	for _, rule := range entry.Network.Rules {
 		network.Rules = append(network.Rules, sandboxmicro.NetworkRule{Action: rule.Action, Direction: rule.Direction, Destination: rule.Destination, Protocol: rule.Protocol, Port: rule.Port})
 	}
-	provider, err := sandboxmicro.New(sandboxmicro.Config{
+	provider, err := sandboxmicro.NewWithCaller(sandboxmicro.Config{
 		InstallationID: result.InstallationID, HelperPath: entry.HelperPath, RuntimeHome: entry.RuntimeHome, RuntimePath: entry.RuntimePath, FirmwarePath: entry.FirmwarePath,
 		RuntimeSHA256: entry.RuntimeSHA256, FirmwareSHA256: entry.FirmwareSHA256, Image: entry.Image,
 		MemoryMiB: entry.MemoryMiB, CPUs: entry.CPUs, RootDiskMiB: entry.RootDiskMiB, EnvironmentDiskMiB: entry.EnvironmentDiskMiB, Network: network,
-	})
+	}, &sandboxmicro.ProcessCaller{LeasePath: entry.HelperLeasePath})
 	if err != nil {
 		return errors.New("invalid managed microsandbox provider configuration")
 	}

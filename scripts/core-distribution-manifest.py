@@ -253,7 +253,7 @@ def bootstraps(bundle, epoch):
                 shutil.copyfile(bundle / original, target)
                 os.utime(target, (int(epoch), int(epoch)))
             if source == "node_install.py":
-                for name in ("node_spec.py", "node_generations.py"):
+                for name in ("node_spec.py", "node_generations.py", "node_update.py"):
                     target = pathlib.Path(directory) / name
                     shutil.copyfile(bundle / name, target)
                     os.utime(target, (int(epoch), int(epoch)))

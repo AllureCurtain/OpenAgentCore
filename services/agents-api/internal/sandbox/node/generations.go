@@ -167,6 +167,9 @@ func (m *GenerationManager) Acquire(generation uint64) (sandbox.Provider, bool, 
 }
 
 func (m *GenerationManager) Drop(ctx context.Context, grant sandbox.GenerationRetention) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if grant.Keep {
 		return nil
 	}

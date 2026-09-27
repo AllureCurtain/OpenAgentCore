@@ -136,9 +136,17 @@ func readFrame(conn *websocket.Conn) (frame, error) {
 	if kind != websocket.TextMessage || len(data) > MaxFrameBytes {
 		return f, sandbox.ErrInvalid
 	}
+	return decodeFrame(data)
+}
+
+func decodeFrame(data []byte) (frame, error) {
+	var f frame
 	d := json.NewDecoder(bytes.NewReader(data))
 	d.DisallowUnknownFields()
 	if d.Decode(&f) != nil || d.Decode(new(any)) != io.EOF || (f.Version != ProtocolVersion && f.Version != GenerationProtocolVersion) {
+		return frame{}, sandbox.ErrInvalid
+	}
+	if f.Version == GenerationProtocolVersion && validateGenerationJSON(data, f.Type) != nil {
 		return frame{}, sandbox.ErrInvalid
 	}
 	if err := validateVersionFrame(f, len(data)); err != nil {

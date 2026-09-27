@@ -71,7 +71,7 @@ func runGenerations(ctx context.Context, configFile, stateDir string) error {
 		if _, ok := values[config.Generation]; ok {
 			continue
 		}
-		value, err := buildGeneration(config)
+		value, err := buildGeneration(config, stateDir)
 		if err != nil {
 			closeValues()
 			return err
@@ -108,7 +108,7 @@ func runGenerations(ctx context.Context, configFile, stateDir string) error {
 			if config.InstallationID != base.InstallationID || config.Provider != base.Provider || config.Generation != generation || config.Specification.Digest(config.Provider) != digest {
 				return node.GenerationProvider{}, sandbox.ErrOwnership
 			}
-			value, err := buildGeneration(config)
+			value, err := buildGeneration(config, stateDir)
 			if err != nil {
 				return value, err
 			}
@@ -130,7 +130,18 @@ func runGenerations(ctx context.Context, configFile, stateDir string) error {
 	return node.Run(ctx, node.AgentConfig{CoreURL: stored.CoreURL, StateDirectory: stateDir, Identity: stored.Identity, Credential: stored.Credential, Generations: manager})
 }
 
-func buildGeneration(config providerconfig.Config) (node.GenerationProvider, error) {
+func buildGeneration(config providerconfig.Config, stateDir string) (node.GenerationProvider, error) {
+	if config.Microsandbox != nil {
+		directory := filepath.Join(stateDir, "generations")
+		if err := os.MkdirAll(directory, 0700); err != nil {
+			return node.GenerationProvider{}, err
+		}
+		info, err := os.Lstat(directory)
+		if err != nil || !info.IsDir() || info.Mode().Perm() != 0700 {
+			return node.GenerationProvider{}, sandbox.ErrOwnership
+		}
+		config.Microsandbox.HelperLeasePath = filepath.Join(directory, strconv.FormatUint(config.Generation, 10)+".lease")
+	}
 	built, closeProvider, err := providerconfig.Build(config)
 	if err != nil {
 		return node.GenerationProvider{}, err

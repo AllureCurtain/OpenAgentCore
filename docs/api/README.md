@@ -81,8 +81,8 @@ the Core key or a Project API key.
 - [Core OpenAPI](../../contracts/agents-api/core.openapi.yaml): generated `/core/v1`
   routes, all authenticated by the Core key.
 - [Machine connection OpenAPI](../../contracts/agents-api/runtime.openapi.yaml):
-  generated `/api/v1` sandbox node routes. The node WebSocket and the private
-  daemon transport are described in the node and Runtime credential guides.
+  generated `/api/v1` sandbox node routes. The node WebSocket is described in the [generation protocol](../../contracts/agents-api/node-generation-protocol.md); the private
+  daemon transport is described in the Runtime credential guide.
 - [Administrator contract](../../contracts/agents-api/admin-api.md): Project/key
   lifecycle, resources, explicit hosted Session archive, summary,
   errors/deletion preconditions, audit and historical copy provenance.

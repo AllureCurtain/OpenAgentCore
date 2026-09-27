@@ -190,3 +190,19 @@ func TestGrantedDropWaitsForReferencesAndActualHelperExit(t *testing.T) {
 		t.Fatal("settled unreferenced generation was not collected", err)
 	}
 }
+
+func TestCanceledConnectionCannotBeginGenerationCollection(t *testing.T) {
+	m := generationFixture(3)
+	m.target.ServingGeneration = nil
+	removed := false
+	m.options.Remove = func(context.Context, GenerationProvider) error { removed = true; return nil }
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	grant := sandbox.GenerationRetention{GenerationReference: sandbox.GenerationReference{Generation: 1, SpecificationDigest: strings.Repeat("a", 64)}}
+	if err := m.Drop(ctx, grant); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if removed || m.values[1] == nil {
+		t.Fatal("canceled connection began collection")
+	}
+}

@@ -67,3 +67,13 @@ func TestNodeRejectsRetiredLoggingSettingsBeforeStartup(t *testing.T) {
 		t.Fatalf("retired logging settings were ignored or exposed: %v", err)
 	}
 }
+
+func TestProtocolVersionRequiresNoProviderOrIdentity(t *testing.T) {
+	// This is a binary capability check, not a provider readiness probe.
+	if err := run(t.Context(), []string{"protocol-version"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := run(t.Context(), []string{"protocol-version", "--config", "/missing"}); err == nil {
+		t.Fatal("extra protocol capability arguments accepted")
+	}
+}
