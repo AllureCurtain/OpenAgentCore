@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -28,6 +29,13 @@ func TestArchivedCancellationMigrationDoesNotAdoptOldRevocations(t *testing.T) {
 	}
 	if _, err := provider.DownTo(t.Context(), 79); err == nil {
 		t.Fatal("downgrade discarded unsettled cancellation marker")
+	} else if !strings.Contains(err.Error(), "Cannot remove archived cancellation receipts while cleanup is unsettled") {
+		t.Fatal("downgrade failed before checking the cancellation marker", err)
+	}
+	// Later migrations can already have been reverted before migration 80
+	// refuses. Restore the current schema before using current generated queries.
+	if _, err := provider.Up(t.Context()); err != nil {
+		t.Fatal(err)
 	}
 	if _, err := w.SettleRuntimeCreation(t.Context(), owner); err != nil {
 		t.Fatal(err)
