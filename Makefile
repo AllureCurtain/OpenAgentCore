@@ -58,6 +58,7 @@ build-agents-api-release:
 
 check-agents-api: build-agents-api
 	go test ./services/agents-api/... ./packages/agents-client/... -count=1
+	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s services/agents-api/tests -p 'official_diagnostics_test.py'
 	PYTHONDONTWRITEBYTECODE=1 python3 services/agents-api/deploy/runtime/initialize_receipt_test.py
 	PYTHONDONTWRITEBYTECODE=1 python3 services/agents-api/deploy/e2b/managed_init_test.py
 
