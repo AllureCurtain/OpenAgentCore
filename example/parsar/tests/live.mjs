@@ -29,7 +29,15 @@ const go = async (name) =>
   page.getByRole("link", { name, exact: true }).click();
 try {
   await page.goto(`${base}/#/models`);
-  await page.getByRole("button", { name: "添加模型", exact: true }).click();
+  await page
+    .getByRole("button", { name: "添加 Provider", exact: true })
+    .click();
+  await page.getByLabel("Provider 名称").fill(`Moonshot ${suffix}`);
+  await save();
+  await page
+    .getByRole("region", { name: `Moonshot ${suffix}`, exact: true })
+    .getByRole("button", { name: "添加模型", exact: true })
+    .click();
   await page.getByLabel("显示名称").fill(modelName);
   await page.getByLabel("模型 ID").fill(model);
   await save();
@@ -53,15 +61,20 @@ try {
       "Read changed files. Report actionable correctness issues with file locations and explain the verification performed.",
     );
   await save();
-  await go("模板");
-  await page.getByRole("button", { name: "新建模板" }).click();
-  await page.getByLabel("模板名称").fill(templateName);
+  await go("Agents");
+  await page.getByRole("button", { name: "新建 Agent" }).click();
+  await page.getByLabel("Agent 名称").fill(agentName);
   await page.getByLabel("模型", { exact: true }).click();
-  await page.getByRole("option", { name: modelName, exact: true }).click();
+  await page
+    .getByRole("option", {
+      name: `Moonshot ${suffix} / ${modelName}`,
+      exact: true,
+    })
+    .click();
   await page
     .getByLabel("指令", { exact: true })
     .fill(
-      "先理解目标，再检查代码。复用已绑定的技能；需要公开仓库背景时使用 DeepWiki。给出明确结论和验证依据。",
+      "Follow the user's instructions. Use the workspace and installed capabilities when requested.",
     );
   await page.getByLabel(skillName, { exact: true }).check();
   await page.getByLabel(mcpName, { exact: true }).check();
@@ -69,68 +82,141 @@ try {
   await page
     .getByRole("article")
     .filter({
-      has: page.getByRole("heading", { name: templateName, exact: true }),
+      has: page.getByRole("heading", { name: agentName, exact: true }),
     })
-    .getByRole("button", { name: "创建 Agent", exact: true })
+    .getByRole("link", { name: "打开" })
     .click();
-  await page.getByLabel("Agent 名称").fill(agentName);
-  await page.getByLabel("运行时", { exact: true }).click();
-  await page.getByRole("option", { name: runtimeName, exact: true }).click();
-  await page.getByRole("button", { name: "创建", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: agentName, exact: true }),
-  ).toBeVisible({ timeout: 30000 });
-  await page.reload();
-  await expect(page.getByText(skillName, { exact: true })).toBeVisible();
-  const records = await (
-    await page.request.get(`${base}/app/instances`)
-  ).json();
-  const instance = records.find((row) => row.name === agentName);
-  assert.ok(instance.environment.environment_template_id);
-  assert.equal(instance.model, model);
-  const core = await (
-    await page.request.get(`${base}/v1/agents/${instance.core_agent_id}`)
-  ).json();
-  assert.equal(core.model, model);
-  assert.equal(
-    core.tools.find((tool) => tool.type === "mcp").transport.server_url,
-    "https://mcp.deepwiki.com/mcp",
+  const agentURL = page.url();
+  const start = async (title, input) => {
+    await page.getByRole("button", { name: "开始会话", exact: true }).click();
+    await page.getByLabel("会话名称").fill(title);
+    await page.getByLabel("运行时", { exact: true }).click();
+    await page.getByRole("option", { name: runtimeName, exact: true }).click();
+    await page.getByLabel("第一条消息").fill(input);
+    await page.getByRole("button", { name: "开始", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: title, exact: true }),
+    ).toBeVisible({ timeout: 45000 });
+    const localID = page.url().split("/").at(-1);
+    return (await page.request.get(`${base}/app/sessions/${localID}`)).json();
+  };
+  const waitIdle = async (row) => {
+    let session;
+    await expect
+      .poll(
+        async () => {
+          session = await (
+            await page.request.get(
+              `${base}/v1/agents/sessions/${row.core_session_id}`,
+            )
+          ).json();
+          if (session.status === "failed")
+            throw new Error(JSON.stringify(session.error));
+          const turns = await (
+            await page.request.get(
+              `${base}/v1/agents/sessions/${row.core_session_id}/turns?order=desc&limit=1`,
+            )
+          ).json();
+          if (turns.data[0]?.status === "failed")
+            throw new Error(JSON.stringify(turns.data[0].error));
+          return (
+            session.status === "idle" && turns.data[0]?.status === "completed"
+          );
+        },
+        { timeout: 240000, intervals: [2000] },
+      )
+      .toBe(true);
+    return session;
+  };
+  const marker = `workspace-${suffix}`;
+  const first = await start(
+    `工作区验证 ${suffix}`,
+    `Use a shell tool to write exactly ${marker} into /workspace/session-proof.txt. Also use the bound DeepWiki MCP tool to read the documentation structure of openai/openai-python. Report which operations succeeded.`,
   );
-  await page.screenshot({ path: join(directory, "agent-light.png") });
+  const firstSession = await waitIdle(first);
+  assert.equal(firstSession.environment.skills.length, 1);
+  assert.equal(firstSession.environment.plugins.length, 1);
+  await page.reload();
+  await page
+    .getByRole("textbox")
+    .fill(
+      "Read /workspace/session-proof.txt with a shell tool. Report its exact content and say WORKSPACE_REUSED. Do not recreate it.",
+    );
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect
+    .poll(
+      async () =>
+        (
+          await (
+            await page.request.get(
+              `${base}/v1/agents/sessions/${first.core_session_id}/turns?limit=20`,
+            )
+          ).json()
+        ).data.length,
+      { timeout: 30000 },
+    )
+    .toBe(2);
+  await waitIdle(first);
+  const items = await (
+    await page.request.get(
+      `${base}/v1/agents/sessions/${first.core_session_id}/items?limit=100`,
+    )
+  ).json();
+  assert.ok(
+    items.data.some(
+      (item) =>
+        item.role === "assistant" &&
+        JSON.stringify(item.content).includes("WORKSPACE_REUSED") &&
+        JSON.stringify(item.content).includes(marker),
+    ),
+  );
+  await page.screenshot({ path: join(directory, "session-light.png") });
   await page.getByRole("button", { name: "切换深色" }).click();
-  await page.locator("img").evaluate((image) => image.decode());
-  await page.screenshot({ path: join(directory, "agent-dark.png") });
+  await page.screenshot({ path: join(directory, "session-dark.png") });
+  await page.goto(agentURL);
+  const second = await start(
+    `独立会话 ${suffix}`,
+    "Use a shell tool to check whether /workspace/session-proof.txt exists. Do not create it. Report WORKSPACE_ISOLATED if absent.",
+  );
+  const secondSession = await waitIdle(second);
+  assert.notEqual(firstSession.environment.id, secondSession.environment.id);
+  const secondItems = await (
+    await page.request.get(
+      `${base}/v1/agents/sessions/${second.core_session_id}/items?limit=100`,
+    )
+  ).json();
+  assert.ok(
+    secondItems.data.some(
+      (item) =>
+        item.role === "assistant" &&
+        JSON.stringify(item.content).includes("WORKSPACE_ISOLATED"),
+    ),
+  );
   await writeFile(
-    join(directory, "result.json"),
+    join(directory, "sessions-result.json"),
     JSON.stringify(
       {
-        passed: true,
-        url: page.url(),
-        instance_id: instance.id,
-        core_agent_id: instance.core_agent_id,
-        environment_template_id: instance.environment.environment_template_id,
-        checks: [
-          "model-catalog",
-          "runtime-binding",
-          "mcp-binding",
-          "real-skill-upload",
-          "template-copy",
-          "core-agent-save",
-          "reload",
+        first,
+        second,
+        environments: [
+          firstSession.environment.id,
+          secondSession.environment.id,
         ],
+        items: items.data,
+        secondItems: secondItems.data,
       },
       null,
       2,
     ),
   );
-  console.log("Live Agent workbench flow passed. No Session was started.");
-} catch (error) {
-  await page.screenshot({ path: join(directory, "failure.png") });
-  await writeFile(
-    join(directory, "failure.txt"),
-    await page.locator("body").innerText(),
+  console.log(
+    JSON.stringify({
+      ok: true,
+      first: first.core_session_id,
+      second: second.core_session_id,
+      directory,
+    }),
   );
-  throw error;
 } finally {
   await browser.close();
 }

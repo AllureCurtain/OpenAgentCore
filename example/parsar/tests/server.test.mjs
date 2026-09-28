@@ -129,3 +129,34 @@ test("configuration keeps remote credentials on HTTPS and requires a project key
     "http://127.0.0.1:8091",
   );
 });
+
+test("SSE forwards chunks before completion and aborts upstream when the browser disconnects", async (t) => {
+  let upstreamSignal;
+  const url = await serve(t, async (_target, init) => {
+    assert.equal(init.headers.Accept, "text/event-stream");
+    upstreamSignal = init.signal;
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(
+            new TextEncoder().encode('data: {"delta":"first"}\n\n'),
+          );
+        },
+      }),
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
+  });
+  const abort = new AbortController();
+  const response = await fetch(
+    `${url}/v1/agents/sessions/00000000-0000-4000-8000-000000000001/events`,
+    { signal: abort.signal },
+  );
+  assert.equal(response.headers.get("Content-Type"), "text/event-stream");
+  const read = await response.body.getReader().read();
+  assert.match(new TextDecoder().decode(read.value), /first/);
+  const disconnected = new Promise((resolve) =>
+    upstreamSignal.addEventListener("abort", resolve, { once: true }),
+  );
+  abort.abort();
+  await disconnected;
+});

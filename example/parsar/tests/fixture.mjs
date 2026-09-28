@@ -4,6 +4,27 @@ let agents = [],
   templates = [],
   skills = [],
   versions = new Map();
+let sessions = [],
+  histories = new Map(),
+  turns = new Map(),
+  receipts = new Map(),
+  loseCreation = false;
+const message = (turn, role, text) => ({
+  id: randomUUID(),
+  turn_id: turn.id,
+  type: "message",
+  status: "completed",
+  role,
+  phase: role === "assistant" ? "final_answer" : null,
+  content: [{ type: role === "user" ? "input_text" : "output_text", text }],
+});
+
+const streams = new Map();
+const emit = (session, event) => {
+  const data = { event_id: randomUUID(), session_id: session.id, ...event };
+  for (const stream of streams.get(session.id) || [])
+    stream.write(`data: ${JSON.stringify(data)}\n\n`);
+};
 const now = () => Math.floor(Date.now() / 1000);
 const page = (data) => ({
   object: "list",
@@ -21,16 +42,47 @@ createServer(async (req, res) => {
     res.writeHead(status, { "Content-Type": "application/json" });
     res.end(JSON.stringify(value));
   };
+  if (url.pathname === "/resume-output") {
+    const session = sessions.at(-1),
+      turn = turns.get(session.id).at(-1);
+    const item = message(turn, "assistant", "断线前，断线后仍在生成");
+    item.status = "in_progress";
+    histories.get(session.id).push(item);
+    emit(session, {
+      type: "agent.session.turn.output_text.delta",
+      turn_id: turn.id,
+      item_id: item.id,
+      output_index: 0,
+      content_index: 0,
+      delta: "断线后仍在生成",
+    });
+    return reply({});
+  }
+  if (url.pathname === "/drop-streams") {
+    for (const peers of streams.values()) for (const peer of peers) peer.end();
+    return reply({});
+  }
   if (url.pathname === "/health") return reply({ fixture: true });
   if (url.pathname === "/reset") {
+    for (const peers of streams.values()) for (const peer of peers) peer.end();
+    streams.clear();
     agents = [];
+    sessions = [];
+    histories = new Map();
+    turns = new Map();
+    receipts = new Map();
+    loseCreation = false;
     templates = [];
     skills = [];
     versions = new Map();
     return reply({});
   }
+  if (url.pathname === "/lose-creation") {
+    loseCreation = true;
+    return reply({});
+  }
   if (url.pathname === "/counts")
-    return reply({ agents, templates, skills, sessions: 0 });
+    return reply({ agents, templates, skills, sessions });
   if (req.headers.authorization !== "Bearer fixture-project-key")
     return reply({ error: { message: "Wrong project key" } }, 401);
   let body = {};
@@ -136,5 +188,165 @@ createServer(async (req, res) => {
     }
     return reply(skill);
   }
-  return reply({ error: { message: "Not found" } }, 404);
+  if (url.pathname === "/v1/agents/sessions") {
+    if (req.method === "GET") return reply(page([...sessions].reverse()));
+    if (body.agent && "name" in body.agent)
+      return reply(
+        { error: { message: "Inline Agent cannot contain name" } },
+        400,
+      );
+    const key = req.headers["idempotency-key"];
+    if (receipts.has(key)) return reply(receipts.get(key));
+    const saved = {
+      id: randomUUID(),
+      name: null,
+      reasoning: {},
+      service_tier: "auto",
+      ...body.agent,
+      multi_agent: { enabled: false, max_concurrent_subagents: null },
+      text: { format: { type: "text" }, verbosity: "medium" },
+    };
+    const { object, created_at, updated_at, metadata, ...snapshot } = saved;
+    const session = {
+      id: randomUUID(),
+      object: "agent.session",
+      agent: snapshot,
+      environment:
+        body.environment.type === "none"
+          ? { type: "none" }
+          : {
+              type: "openai_hosted",
+              id: randomUUID(),
+              capability_directories: [],
+              network: { access: "enabled", allowed_domains: [] },
+              packages: { npm: [], python: [], system: [] },
+              files: [],
+              plugins: [],
+              skills: [],
+            },
+      status: "idle",
+      error: null,
+      metadata: body.metadata,
+      required_actions: [],
+      vault_ids: [],
+      usage: null,
+      created_at: now(),
+      last_active_at: now(),
+    };
+    const turn = {
+      id: randomUUID(),
+      object: "agent.session.turn",
+      session_id: session.id,
+      agent_id: saved.id,
+      subagent_id: null,
+      status: "completed",
+      created_at: now(),
+      started_at: now(),
+      completed_at: now(),
+      error: null,
+      usage: null,
+    };
+    histories.set(session.id, [
+      message(turn, "user", body.input),
+      {
+        id: randomUUID(),
+        turn_id: turn.id,
+        type: "command_execution",
+        status: "completed",
+        command: "npm test",
+        cwd: "/workspace",
+        output: "12 tests passed",
+        exit_code: 0,
+        duration_ms: 512,
+      },
+      message(
+        turn,
+        "assistant",
+        "已检查登录流程并补充验证。\n\n## 结果\n\n- 修复了会话过期后的跳转。\n- 12 项测试通过。\n\n```ts\nconst session = await restoreSession();\n```\n\n可以继续检查移动端表现。",
+      ),
+    ]);
+    turns.set(session.id, [turn]);
+    sessions.push(session);
+    receipts.set(key, session);
+    if (loseCreation) {
+      loseCreation = false;
+      return reply(
+        { error: { message: "Fixture: creation response lost" } },
+        502,
+      );
+    }
+    return reply(session, 201);
+  }
+  const match = url.pathname.match(
+    /^\/v1\/agents\/sessions\/([^/]+)(?:\/(items|turns|events))?$/,
+  );
+  const session = sessions.find((entry) => entry.id === match?.[1]);
+  if (!session) return reply({ error: { message: "Not found" } }, 404);
+  if (!match[2]) return reply(session);
+  if (match[2] === "items") return reply(page(histories.get(session.id)));
+  if (match[2] === "turns")
+    return reply(page([...turns.get(session.id)].reverse()));
+  if (match[2] === "events" && req.method === "GET") {
+    res.writeHead(200, { "Content-Type": "text/event-stream" });
+    res.write(": connected\n\n");
+    if (!streams.has(session.id)) streams.set(session.id, new Set());
+    streams.get(session.id).add(res);
+    res.on("close", () => streams.get(session.id)?.delete(res));
+    return;
+  }
+  const event = body.events[0];
+  const key = req.headers["idempotency-key"];
+  if (receipts.has(key)) return reply({}, 202);
+  receipts.set(key, true);
+  if (event.type === "agent.session.input.cancel") {
+    session.status = "idle";
+    const turn = turns.get(session.id).at(-1);
+    turn.status = "cancelled";
+    turn.completed_at = now();
+  } else {
+    session.status = "in_progress";
+    const turn = {
+      ...turns.get(session.id)[0],
+      id: randomUUID(),
+      status: "in_progress",
+      completed_at: null,
+    };
+    turns.get(session.id).push(turn);
+    histories
+      .get(session.id)
+      .push(message(turn, "user", event.input[0].content[0].text));
+    if (event.input[0].content[0].text === "Stream reply") {
+      const item = { ...message(turn, "assistant", ""), status: "in_progress" };
+      const base = { turn_id: turn.id, item_id: item.id, output_index: 0 };
+      setTimeout(() => {
+        emit(session, { ...base, type: "agent.session.turn.item.added", item });
+        emit(session, {
+          ...base,
+          content_index: 0,
+          type: "agent.session.turn.output_text.delta",
+          delta: "流式第一段",
+        });
+      }, 250);
+      setTimeout(() => {
+        emit(session, {
+          ...base,
+          content_index: 0,
+          type: "agent.session.turn.output_text.delta",
+          delta: "，第二段完成。",
+        });
+        item.content[0].text = "流式第一段，第二段完成。";
+        item.status = "completed";
+        histories.get(session.id).push(item);
+        session.status = "idle";
+        turn.status = "completed";
+        turn.completed_at = now();
+        emit(session, { ...base, type: "agent.session.turn.item.done", item });
+        emit(session, { type: "agent.session.idle", session });
+      }, 3500);
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    if (event.input[0].content[0].text === "Delayed response")
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+  }
+  return reply({}, 202);
 }).listen(18181, "127.0.0.1");

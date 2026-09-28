@@ -4,6 +4,12 @@ async function navigate(page: Page, name: string) {
 }
 async function resources(page: Page) {
   await page.goto("/#/models");
+  await page
+    .getByRole("button", { name: "添加 Provider", exact: true })
+    .click();
+  await page.getByLabel("Provider 名称").fill("Moonshot");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "添加模型", exact: true }).click();
   await page.getByLabel("显示名称").fill("Kimi");
   await page.getByLabel("模型 ID").fill("kimi-k2.6");
@@ -31,12 +37,14 @@ async function resources(page: Page) {
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
-async function template(page: Page) {
-  await navigate(page, "模板");
-  await page.getByRole("button", { name: "新建模板" }).click();
-  await page.getByLabel("模板名称").fill("审查助手");
+async function agent(page: Page) {
+  await navigate(page, "Agents");
+  await page.getByRole("button", { name: "新建 Agent" }).click();
+  await page.getByLabel("Agent 名称").fill("审查助手");
   await page.getByLabel("模型", { exact: true }).click();
-  await page.getByRole("option", { name: "Kimi", exact: true }).click();
+  await page
+    .getByRole("option", { name: "Moonshot / Kimi", exact: true })
+    .click();
   await page
     .getByLabel("指令", { exact: true })
     .fill("Read the code and report findings.");
@@ -45,88 +53,113 @@ async function template(page: Page) {
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 }
-async function instance(page: Page) {
-  await page.getByRole("button", { name: "创建 Agent", exact: true }).click();
-  await page.getByLabel("Agent 名称").fill("Ada");
+async function session(page: Page, name = "代码审查") {
+  await page.getByRole("button", { name: "开始会话", exact: true }).click();
+  await page.getByLabel("会话名称").fill(name);
   await page.getByLabel("运行时", { exact: true }).click();
   await page.getByRole("option", { name: "开发沙箱", exact: true }).click();
-  await page.getByRole("button", { name: "创建", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Ada", exact: true }),
-  ).toBeVisible();
+  await page.getByLabel("第一条消息").fill("Review code");
+  await page.getByRole("button", { name: "开始", exact: true }).click();
 }
 test.beforeEach(async ({ request }) => {
-  for (const kind of ["instances", "templates", "models", "mcps", "runtimes"]) {
-    const rows = await (await request.get(`/app/${kind}`)).json();
-    for (const row of rows)
-      await request.delete(`/app/${kind}/${row.id}`, {
-        headers: { origin: "http://127.0.0.1:18180" },
-      });
-  }
+  const { openStore, dataPath } = await import("../server/store.mjs");
+  const { homedir } = await import("node:os");
+  const store = openStore(
+    dataPath(
+      { target: "http://127.0.0.1:18181", key: "fixture-project-key" },
+      {
+        OAC_EXAMPLE_DATA_DIR: `${homedir()}/.oac/tests/parsar-example/fixture-store`,
+      },
+    ),
+  );
+  for (const kind of [
+    "sessions",
+    "agents",
+    "instances",
+    "templates",
+    "models",
+    "providers",
+    "mcps",
+    "runtimes",
+  ])
+    for (const row of store.list(kind)) store.remove(kind, row.id);
+  store.close();
   await request.post("http://127.0.0.1:18181/reset");
 });
-test("resources to template to independent Agent, with real Core-shaped bindings", async ({
+test("Agent to multiple independent Sessions, continuation and cancellation", async ({
   page,
   request,
 }, testInfo) => {
   await resources(page);
-  await template(page);
-  await instance(page);
-  await expect(page.getByText("kimi-k2.6", { exact: true })).toBeVisible();
-  await expect(page.getByText("code-review", { exact: true })).toBeVisible();
+  await agent(page);
+  await page.getByRole("link", { name: "打开", exact: true }).click();
+  await session(page);
   await expect(
-    page.getByText("https://mcp.example/docs", { exact: true }),
+    page.getByRole("heading", { name: "代码审查", exact: true }),
   ).toBeVisible();
+  await expect(page.getByText("已检查登录流程并补充验证。")).toBeVisible();
   await page.reload();
   await expect(
-    page.getByRole("heading", { name: "Ada", exact: true }),
+    page.getByRole("heading", { name: "代码审查", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("textbox").fill("Delayed response");
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await expect(page.getByRole("button", { name: "取消执行" })).toBeVisible();
+  await page.getByRole("button", { name: "取消执行" }).click();
+  await expect(page.getByText("已取消", { exact: true })).toBeVisible();
+  await expect(page.getByRole("textbox")).toBeEnabled({ timeout: 15000 });
+  await expect(page.getByRole("textbox")).toHaveValue("");
+  await page.screenshot({ path: testInfo.outputPath("session-light.png") });
+  await page.getByRole("button", { name: "切换深色" }).click();
+  await page.screenshot({ path: testInfo.outputPath("session-dark.png") });
+  await page.getByRole("link", { name: "返回 Agent", exact: true }).click();
+  await page.getByRole("button", { name: "配置", exact: true }).click();
+  await page.getByLabel("指令", { exact: true }).fill("New instructions");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await session(page, "另一段会话");
+  await expect(
+    page.getByRole("heading", { name: "另一段会话", exact: true }),
   ).toBeVisible();
   const core = await (
     await request.get("http://127.0.0.1:18181/counts")
   ).json();
-  expect(core.sessions).toBe(0);
-  expect(core.agents[0].tools[1].server_label).toBe("docs");
-  expect(core.templates[0].skills[0].skill_id).toBe(core.skills[0].id);
-  await page.screenshot({ path: testInfo.outputPath("agent-light.png") });
-  await page.getByRole("button", { name: "切换深色" }).click();
-  await page
-    .locator("img")
-    .evaluate((image: HTMLImageElement) => image.decode());
-  await page.screenshot({ path: testInfo.outputPath("agent-dark.png") });
-  await navigate(page, "模板");
-  await page.getByRole("button", { name: "编辑 审查助手" }).click();
-  await page
-    .getByLabel("指令", { exact: true })
-    .fill("New template instructions");
-  await page.getByRole("button", { name: "保存", exact: true }).click();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await navigate(page, "Agents");
-  await page.getByRole("link", { name: /Ada/ }).click();
+  expect(core.sessions).toHaveLength(2);
+  expect(core.sessions[0].environment.id).not.toBe(
+    core.sessions[1].environment.id,
+  );
+  expect(core.sessions[0].agent.instructions).toBe(
+    "Read the code and report findings.",
+  );
+  expect(core.sessions[1].agent.instructions).toBe("New instructions");
+});
+test("lost creation response can be recovered from the Agent without a duplicate Session", async ({
+  page,
+  request,
+}) => {
+  await resources(page);
+  await agent(page);
+  await page.getByRole("link", { name: "打开", exact: true }).click();
+  await request.post("http://127.0.0.1:18181/lose-creation");
+  await session(page);
+  await expect(page.getByRole("alert")).toContainText("lost");
+  await page.keyboard.press("Escape");
+  await page.getByRole("link", { name: /代码审查.*待恢复/ }).click();
+  await page.reload();
+  await page.getByRole("button", { name: "恢复创建" }).click();
   await expect(
-    page.getByText("Read the code and report findings.", { exact: true }),
-  ).toBeVisible();
-  await page.getByRole("button", { name: "编辑配置" }).click();
-  await page
-    .getByLabel("指令", { exact: true })
-    .fill("Independent Agent instructions");
-  await page.getByRole("button", { name: "保存", exact: true }).click();
-  await expect(
-    page.getByText("Independent Agent instructions", { exact: true }),
-  ).toBeVisible();
-  page.on("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "删除 Agent", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Agents", exact: true }),
+    page.getByRole("heading", { name: "代码审查", exact: true }),
   ).toBeVisible();
   expect(
-    (await (await request.get("http://127.0.0.1:18181/counts")).json()).agents,
-  ).toHaveLength(0);
+    (await (await request.get("http://127.0.0.1:18181/counts")).json())
+      .sessions,
+  ).toHaveLength(1);
 });
 test("model edits persist and bound resources cannot be removed", async ({
   page,
 }) => {
   await resources(page);
-  await template(page);
+  await agent(page);
   await navigate(page, "模型");
   await page.getByRole("button", { name: "编辑 Kimi" }).click();
   await page.getByLabel("显示名称").fill("常用 Kimi");
@@ -159,9 +192,9 @@ test("mobile navigation, help and single creation action", async ({
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/#/agents");
   await expect(
-    page.getByRole("button", { name: "创建 Agent", exact: true }),
+    page.getByRole("button", { name: "新建 Agent", exact: true }),
   ).toHaveCount(1);
-  await page.getByRole("button", { name: "创建 Agent", exact: true }).focus();
+  await page.getByRole("button", { name: "新建 Agent", exact: true }).focus();
   await page.keyboard.press("Shift+Tab");
   await expect(page.getByRole("tooltip")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -171,4 +204,101 @@ test("mobile navigation, help and single creation action", async ({
     ),
   ).toBe(true);
   await page.screenshot({ path: testInfo.outputPath("mobile.png") });
+});
+
+test("Provider groups contain multiple models and retain manual names", async ({
+  page,
+}) => {
+  await resources(page);
+  await navigate(page, "模型");
+  await page.getByRole("button", { name: "添加模型", exact: true }).click();
+  await page.getByLabel("显示名称").fill("Kimi Lite");
+  await page.getByLabel("模型 ID").fill("kimi-lite");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const group = page.getByRole("region", { name: "Moonshot", exact: true });
+  await expect(
+    group.getByRole("heading", { name: "Kimi", exact: true }),
+  ).toBeVisible();
+  await expect(
+    group.getByRole("heading", { name: "Kimi Lite", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "编辑 Provider Moonshot" }).click();
+  await page.getByLabel("Provider 名称").fill("团队模型");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole("region", { name: "团队模型" })).toBeVisible();
+});
+test("text arrives incrementally before durable completion, then survives reload without duplicates", async ({
+  page,
+  request,
+}) => {
+  await resources(page);
+  await agent(page);
+  await page.getByRole("link", { name: "打开", exact: true }).click();
+  await session(page);
+  await expect(
+    page.getByRole("heading", { name: "代码审查", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("textbox").fill("Stream reply");
+  await page.getByRole("button", { name: "发送", exact: true }).click();
+  const reply = page
+    .getByRole("article", { name: "Agent 回复" })
+    .filter({ hasText: "流式第一段" });
+  await expect(reply).toContainText("流式第一段", { timeout: 5000 });
+  await expect(reply).not.toContainText("，第二段完成。");
+  await expect(page.getByTestId("first-text-time")).not.toHaveText("—");
+  await expect(page.getByTestId("response-time")).toHaveText("—");
+  await expect(page.getByTestId("response-time")).not.toHaveText("—");
+  const responseTime = await page.getByTestId("response-time").innerText();
+  const firstTextTime = await page.getByTestId("first-text-time").innerText();
+  expect(parseFloat(responseTime)).toBeGreaterThan(parseFloat(firstTextTime));
+  await request.post("http://127.0.0.1:18181/drop-streams");
+  await expect(reply).toContainText("流式第一段，第二段完成。", {
+    timeout: 10000,
+  });
+  await expect(reply).toHaveCount(1);
+  await page.reload();
+  await expect(reply).toHaveCount(1);
+  await expect(reply).toContainText("流式第一段，第二段完成。");
+  await expect(page.getByTestId("response-time")).toHaveText(responseTime);
+  await expect(page.getByTestId("first-text-time")).toHaveText(firstTextTime);
+});
+
+test("an active reply without a replayed item baseline refreshes immediately on its next delta", async ({
+  page,
+  request,
+}) => {
+  await resources(page);
+  await agent(page);
+  await page.getByRole("link", { name: "打开", exact: true }).click();
+  await session(page);
+  await expect(
+    page.getByRole("heading", { name: "代码审查", exact: true }),
+  ).toBeVisible();
+  // Hold automatic history polls after the initial read. A new SSE delta must
+  // initiate its own history recovery, independently of the two-second timer.
+  await page.addInitScript(() => {
+    const original = window.setInterval;
+    window.setInterval = ((
+      handler: TimerHandler,
+      delay?: number,
+      ...args: unknown[]
+    ) =>
+      original(
+        handler,
+        delay === 2000 ? 60000 : delay,
+        ...args,
+      )) as typeof setInterval;
+  });
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "代码审查", exact: true }),
+  ).toBeVisible();
+  await request.post("http://127.0.0.1:18181/resume-output");
+  await expect(
+    page
+      .getByRole("article", { name: "Agent 回复" })
+      .filter({ hasText: "断线前，断线后仍在生成" }),
+  ).toBeVisible({ timeout: 1500 });
 });

@@ -67,8 +67,8 @@ function ResourceList({
       <PageHeader title={title}>
         <Help>
           {kind === "mcps"
-            ? "配置 HTTP MCP 服务，Agent 模板可绑定多个服务。当前支持无需认证的 HTTPS MCP；服务由 Core 连接。"
-            : "运行时决定 Agent 工作的环境。托管环境由 Core 分配沙箱；纯文本环境不提供工作目录。这里只保存绑定配置，不代表机器在线状态。"}
+            ? "配置 HTTP MCP 服务，Agent可绑定多个服务。当前支持无需认证的 HTTPS MCP；托管会话由工作区连接，纯文本会话由 Core 连接。"
+            : "开启会话时选择运行时。托管环境由 Core 分配沙箱；纯文本环境不提供工作目录。这里只保存绑定配置，不代表机器在线状态。"}
         </Help>
         <Button
           onClick={() =>

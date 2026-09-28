@@ -12,19 +12,32 @@ their deployment stack.
 
 `example/parsar/` is an optional, independently started Agent workbench,
 authorized to reuse the product UI and maintain a small product-owned SQLite database.
-Models, anonymous HTTP MCP configurations, runtime bindings, Agent templates and
-instance bindings belong to that database; Core owns Skills, saved Agents and
-hosted environment templates. Template configuration excludes the runtime.
-Creating an instance copies its configuration, binds a runtime, and saves the
-corresponding public Core resources without starting execution. Template edits
-do not change existing instances. The example calls only the public `/v1` API,
-using `OpenAIAgentsClient` for browser resource calls and a small server adapter
-for composing Agent/environment-template writes. Its Project key stays server-side.
+Named Provider groups and their models, anonymous HTTP MCP configurations, runtime profiles and reusable Agents
+belong to that database. An Agent contains model, harness, instructions, Skills
+and MCP bindings; it excludes the runtime. Starting a Session selects a runtime
+and passes an inline Agent/configuration snapshot to the public Core API. One
+Agent may have many independent Sessions. Existing Sessions keep their original
+configuration and history; only continuation within the same live hosted Session
+reuses its workspace. There is no shared-workspace mechanism or task layer.
+Providers are catalog groups only: users create them explicitly, without default
+groups or provider credentials. Each model references one Provider.
+Core owns Skills and all execution/history state. SQLite stores Session references
+and freezes pending creation requests with stable idempotency keys for retry;
+confirmed requests are removed from local storage. Earlier example templates and
+instances migrate to Agent configurations, never to fabricated Sessions.
+Hosted HTTP MCP bindings become inline environment Plugins; none uses service-origin
+MCP. Unsupported harness/runtime combinations fail before execution. The example
+calls only public `/v1` APIs, using `OpenAIAgentsClient` for browser resource calls
+and a small server adapter for Session creation. Its Project key stays server-side.
+Session output uses the public SSE event stream through a non-buffering proxy;
+durable history reads reconcile completion and recover missed events. Browser
+disconnection aborts the upstream stream, never the running Session. Send latency
+measurements are browser-local observations (request return and first nonempty
+text delta), not inferred Core execution timings.
 Product resources use `/app/` and never become Core API or database conventions.
-No task product, execution scheduler, machine enrollment or user permissions are
-included. SQLite uses Node's built-in module (Node 22.13+), lives outside the
-checkout, and is isolated by Core origin and Project key fingerprint. Core state
-is not replicated into product history tables. The example is excluded from Core
+No scheduler, machine enrollment or user permissions are included. SQLite uses
+Node's built-in module (Node 22.13+), lives outside the checkout, and is isolated by
+Core origin and Project key fingerprint. The example is excluded from Core
 distributions and cannot become a service dependency.
 
 Preserve copied runtime and protocol behavior. Existing Go import paths remain unchanged and do not require fetching the original

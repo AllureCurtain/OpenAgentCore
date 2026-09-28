@@ -1,3 +1,5 @@
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
@@ -8,6 +10,9 @@ import { productAPI } from "./server/product.mjs";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const routes = [
+  [/^\/v1\/agents\/sessions\/[a-f0-9-]{36}$/, ["GET"]],
+  [/^\/v1\/agents\/sessions\/[a-f0-9-]{36}\/(items|turns)$/, ["GET"]],
+  [/^\/v1\/agents\/sessions\/[a-f0-9-]{36}\/events$/, ["GET", "POST"]],
   [/^\/v1\/agents$/, ["GET", "POST"]],
   [/^\/v1\/agents\/[a-f0-9-]{36}$/, ["GET", "POST"]],
 ];
@@ -71,13 +76,14 @@ export function createHandler(
 ) {
   const product =
     store &&
-    productAPI(store, async (path, method, body) => {
+    productAPI(store, async (path, method, body, key) => {
       const response = await fetchImpl(`${config.target}${path}`, {
         method,
         body: JSON.stringify(body),
         redirect: "manual",
         signal: AbortSignal.timeout(30_000),
         headers: {
+          ...(key ? { "Idempotency-Key": key } : {}),
           Authorization: `Bearer ${config.key}`,
           "OpenAI-Beta": "agents=v1",
           "Content-Type": "application/json",
@@ -175,6 +181,8 @@ export function createHandler(
           "A same-origin Origin header is required for writes.",
         );
       }
+      const streaming =
+        req.method === "GET" && url.pathname.endsWith("/events");
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 30_000);
       res.on("close", () => controller.abort());
@@ -196,6 +204,7 @@ export function createHandler(
           Authorization: `Bearer ${config.key}`,
           "OpenAI-Beta": "agents=v1",
           "Content-Type": req.headers["content-type"] || "application/json",
+          ...(streaming ? { Accept: "text/event-stream" } : {}),
         };
         if (url.pathname.startsWith("/v1/skills"))
           delete headers["OpenAI-Beta"];
@@ -217,6 +226,24 @@ export function createHandler(
             502,
             "Core returned a redirect; check its configured origin.",
           );
+        if (streaming && upstream.ok) {
+          if (
+            !upstream.headers
+              .get("content-type")
+              ?.startsWith("text/event-stream") ||
+            !upstream.body
+          )
+            return fail(res, 502, "Core did not return an event stream.");
+          clearTimeout(timer);
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache, no-store",
+            "X-Accel-Buffering": "no",
+          });
+          res.flushHeaders();
+          await pipeline(Readable.fromWeb(upstream.body), res);
+          return;
+        }
         const body = await upstream.text();
         res.writeHead(upstream.status, {
           "Content-Type": "application/json",
@@ -224,6 +251,10 @@ export function createHandler(
         });
         res.end(body);
       } catch {
+        if (res.headersSent) {
+          res.destroy();
+          return;
+        }
         if (!res.destroyed)
           fail(
             res,

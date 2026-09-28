@@ -66,8 +66,8 @@ native differences.
 ## Documentation
 
 For a complete application example using the Parsar product UI, see
-[`example/parsar`](example/parsar/README.md): model, Skill, MCP and runtime management, reusable Agent templates, and independent
-Agent instances backed by the public API.
+[`example/parsar`](example/parsar/README.md): model, Skill, MCP and runtime management, reusable Agents, and independent
+Sessions backed by the public API.
 
 | Page | Covers |
 | --- | --- |

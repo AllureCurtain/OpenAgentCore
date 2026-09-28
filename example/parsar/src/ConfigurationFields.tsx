@@ -1,10 +1,15 @@
-import { useModels, useMCPs, type AgentTemplate } from "./lib/product";
+import {
+  useModels,
+  useProviders,
+  useMCPs,
+  type AgentProfile,
+} from "./lib/product";
 import { useSkills } from "./Skills";
 import { Select, SelectOption } from "./components/ui/select";
 import { Textarea } from "./components/ui/textarea";
 import { ErrorNotice, Field, Help } from "./components/shared";
 export type Configuration = Pick<
-  AgentTemplate,
+  AgentProfile,
   "model_id" | "harness" | "instructions" | "skill_ids" | "mcp_ids"
 >;
 export const emptyConfiguration: Configuration = {
@@ -22,6 +27,7 @@ export function ConfigurationFields({
   change: (value: Configuration) => void;
 }) {
   const models = useModels();
+  const providers = useProviders();
   const skills = useSkills();
   const mcps = useMCPs();
   const toggle = (key: "skill_ids" | "mcp_ids", id: string, checked: boolean) =>
@@ -38,11 +44,16 @@ export function ConfigurationFields({
           onValueChange={(model_id) => change({ ...value, model_id })}
         >
           <SelectOption value="">选择模型</SelectOption>
-          {models.data?.map((model) => (
-            <SelectOption key={model.id} value={model.id}>
-              {model.name}
-            </SelectOption>
-          ))}
+          {models.data?.map((model) => {
+            const provider = providers.data?.find(
+              (entry) => entry.id === model.provider_id,
+            );
+            return (
+              <SelectOption key={model.id} value={model.id}>
+                {provider ? `${provider.name} / ${model.name}` : model.name}
+              </SelectOption>
+            );
+          })}
         </Select>
         {!models.isPending && !models.data?.length && (
           <a href="#/models" className="inline-block text-base underline">
@@ -124,7 +135,9 @@ export function ConfigurationFields({
           </div>
         </section>
       ))}
-      <ErrorNotice error={models.error || skills.error || mcps.error} />
+      <ErrorNotice
+        error={providers.error || models.error || skills.error || mcps.error}
+      />
     </>
   );
 }

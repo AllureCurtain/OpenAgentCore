@@ -1,20 +1,11 @@
 import { useEffect, useState } from "react";
-import {
-  Bot,
-  Layers,
-  Cpu,
-  BookOpen,
-  Plug,
-  Server,
-  Moon,
-  Sun,
-} from "lucide-react";
+import { Bot, Cpu, BookOpen, Plug, Server, Moon, Sun } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
-import { Templates } from "./Templates";
 import { Models } from "./Models";
 import { Skills } from "./Skills";
 import { MCPs, Runtimes } from "./Resources";
 import { Agents } from "./Agents";
+import { SessionPage } from "./SessionPage";
 import { AgentDetail } from "./AgentDetail";
 import { Button } from "./components/ui/button";
 
@@ -42,9 +33,9 @@ export function App() {
     }
   }, [dark]);
   const agentId = route.match(/^\/agents\/([a-f0-9-]{36})$/)?.[1];
+  const sessionId = route.match(/^\/sessions\/([a-f0-9-]{36})$/)?.[1];
   const navigation = [
     { href: "/agents", label: "Agents", icon: Bot },
-    { href: "/templates", label: "模板", icon: Layers },
     { href: "/models", label: "模型", icon: Cpu },
     { href: "/skills", label: "Skills", icon: BookOpen },
     { href: "/mcps", label: "MCP", icon: Plug },
@@ -68,7 +59,8 @@ export function App() {
         >
           {navigation.map(({ href, label, icon: Icon }) => {
             const selected =
-              route === href || (href === "/agents" && !!agentId);
+              route === href ||
+              (href === "/agents" && (!!agentId || !!sessionId));
             return (
               <a
                 key={href}
@@ -103,10 +95,10 @@ export function App() {
         </div>
       </aside>
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {agentId ? (
+        {sessionId ? (
+          <SessionPage key={sessionId} id={sessionId} />
+        ) : agentId ? (
           <AgentDetail key={agentId} id={agentId} />
-        ) : route === "/templates" ? (
-          <Templates />
         ) : route === "/models" ? (
           <Models />
         ) : route === "/skills" ? (

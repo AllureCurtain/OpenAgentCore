@@ -1,7 +1,44 @@
+import { sessionAPI } from "./sessions.mjs";
 import { AppError, text, uuid } from "./store.mjs";
 
-const kinds = new Set(["models", "mcps", "runtimes", "templates", "instances"]);
+const kinds = new Set([
+  "providers",
+  "models",
+  "mcps",
+  "runtimes",
+  "agents",
+  "sessions",
+]);
 export function productAPI(store, core) {
+  // Preserve earlier example configurations without fabricating execution records.
+  for (const kind of ["templates", "instances"]) {
+    for (const row of store.list(kind)) {
+      if (!store.get("agents", row.id)) {
+        const {
+          id,
+          name,
+          revision,
+          model_id,
+          harness,
+          instructions,
+          skill_ids,
+          mcp_ids,
+        } = row;
+        store.put("agents", {
+          id,
+          name,
+          revision,
+          model_id,
+          harness,
+          instructions,
+          skill_ids,
+          mcp_ids,
+        });
+      }
+      store.remove(kind, row.id);
+    }
+  }
+  const sessions = sessionAPI(store, core);
   const requireReference = (kind, id) => {
     if (typeof id !== "string" || !store.get(kind, id))
       throw new AppError(400, "请选择有效的资源。");
@@ -24,24 +61,21 @@ export function productAPI(store, core) {
       return value;
     }
     if (!id) throw new AppError(405, "Method not allowed.");
+    if (kind === "sessions") {
+      if (method !== "PUT") throw new AppError(405, "Method not allowed.");
+      return sessions(id, body);
+    }
     const previous = store.get(kind, id);
     if (method === "DELETE") {
       const used =
+        store.list("models").some((row) => row.provider_id === id) ||
         store
-          .list("templates")
+          .list("agents")
           .some((row) => row.model_id === id || row.mcp_ids.includes(id)) ||
         store
-          .list("instances")
-          .some(
-            (row) =>
-              row.template_id === id ||
-              row.runtime_id === id ||
-              row.model_id === id ||
-              row.mcp_ids.includes(id),
-          );
+          .list("sessions")
+          .some((row) => row.agent_id === id || row.runtime_id === id);
       if (used) throw new AppError(409, "资源仍被引用，请先调整绑定。");
-      if (kind === "instances" && previous)
-        await core(`/v1/agents/${previous.core_agent_id}`, "DELETE");
       store.remove(kind, id);
       return {};
     }
@@ -53,7 +87,10 @@ export function productAPI(store, core) {
       name: text(body.name, "名称", 80, true),
       revision: (previous?.revision || 0) + 1,
     };
-    if (kind === "models") value.model = text(body.model, "模型 ID", 200, true);
+    if (kind === "models") {
+      value.model = text(body.model, "模型 ID", 200, true);
+      value.provider_id = requireReference("providers", body.provider_id);
+    }
     if (kind === "mcps") {
       let url;
       try {
@@ -79,12 +116,7 @@ export function productAPI(store, core) {
         throw new AppError(400, "运行环境无效。");
       value.environment = body.environment;
     }
-    if (kind === "templates" || kind === "instances") {
-      if (kind === "instances") {
-        value.template_id = requireReference("templates", body.template_id);
-        if (!body.model_id)
-          body = { ...store.get("templates", value.template_id), ...body };
-      }
+    if (kind === "agents") {
       value.model_id = requireReference("models", body.model_id);
       if (!["codex", "claude_sdk", "mcode"].includes(body.harness))
         throw new AppError(400, "请选择执行引擎。");
@@ -102,73 +134,6 @@ export function productAPI(store, core) {
       )
         throw new AppError(400, "技能配置无效。");
       value.skill_ids = [...new Set(body.skill_ids)];
-    }
-    if (kind === "instances") {
-      value.template_id = requireReference("templates", body.template_id);
-      value.runtime_id = requireReference("runtimes", body.runtime_id);
-      const runtime = store.get("runtimes", value.runtime_id);
-      if (runtime.environment === "none" && value.skill_ids.length)
-        throw new AppError(400, "Skills 需要托管运行环境。");
-      const model = store.get("models", value.model_id);
-      const tools = value.mcp_ids.map((id) => {
-        const mcp = store.get("mcps", id);
-        return {
-          type: "mcp",
-          server_label: mcp.label,
-          transport: { type: "http", server_url: mcp.url },
-          connection_origin: "service",
-          required: true,
-        };
-      });
-      if (new Set(tools.map((tool) => tool.server_label)).size !== tools.length)
-        throw new AppError(400, "绑定的 MCP 服务标识不能重复。");
-      const environment = { type: runtime.environment };
-      if (value.skill_ids.length) {
-        const same =
-          previous &&
-          previous.runtime_id === value.runtime_id &&
-          JSON.stringify(previous.skill_ids) ===
-            JSON.stringify(value.skill_ids);
-        if (same && previous.environment.environment_template_id)
-          environment.environment_template_id =
-            previous.environment.environment_template_id;
-        else {
-          const template = await core(
-            "/v1/agents/environments/templates",
-            "POST",
-            {
-              name: value.name,
-              skills: value.skill_ids.map((skill_id) => ({
-                type: "skill_reference",
-                skill_id,
-              })),
-            },
-          );
-          if (!uuid.test(template.id))
-            throw new AppError(502, "Core 返回了无效的技能模板。");
-          environment.environment_template_id = template.id;
-        }
-      }
-      const agent = await core(
-        previous ? `/v1/agents/${previous.core_agent_id}` : "/v1/agents",
-        "POST",
-        {
-          name: value.name,
-          model: model.model,
-          instructions: value.instructions,
-          x_agents_core: { harness: value.harness },
-          metadata: { application: "parsar-example", instance_id: id },
-          multi_agent: { enabled: false },
-          text: { verbosity: "medium" },
-          tools: [{ type: "web_search", mode: "disabled" }, ...tools],
-        },
-      );
-      if (!uuid.test(agent.id))
-        throw new AppError(502, "Core 返回了无效的 Agent。");
-      value.core_agent_id = agent.id;
-      value.environment = environment;
-      value.model = model.model;
-      value.tools = tools;
     }
     store.put(kind, value);
     return value;

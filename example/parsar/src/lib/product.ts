@@ -5,7 +5,9 @@ export interface NamedResource {
   name: string;
   revision: number;
 }
+export type ProviderProfile = NamedResource;
 export interface ModelProfile extends NamedResource {
+  provider_id: string;
   model: string;
 }
 export interface MCPProfile extends NamedResource {
@@ -15,23 +17,28 @@ export interface MCPProfile extends NamedResource {
 export interface RuntimeProfile extends NamedResource {
   environment: "none" | "openai_hosted";
 }
-export interface AgentTemplate extends NamedResource {
+export interface AgentProfile extends NamedResource {
   model_id: string;
   harness: CoreHarnessKind;
   instructions: string;
   skill_ids: string[];
   mcp_ids: string[];
 }
-export interface AgentInstance extends AgentTemplate {
-  template_id: string;
+export interface SessionRecord {
+  id: string;
+  name: string;
+  agent_id: string;
   runtime_id: string;
-  core_agent_id: string;
-  model: string;
-  environment: {
-    type: "none" | "openai_hosted";
-    environment_template_id?: string;
-  };
-  tools: unknown[];
+  created_at: number;
+  core_session_id?: string;
+}
+export class ProductError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message);
+  }
 }
 export async function product<T>(
   path: string,
@@ -44,16 +51,18 @@ export async function product<T>(
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error?.message || "请求失败");
+  if (!response.ok)
+    throw new ProductError(response.status, data.error?.message || "请求失败");
   return data as T;
 }
 export const useResources = <T>(kind: string) =>
   useQuery({ queryKey: [kind], queryFn: () => product<T[]>(kind) });
+export const useProviders = () => useResources<ProviderProfile>("providers");
 export const useModels = () => useResources<ModelProfile>("models");
-export const useTemplates = () => useResources<AgentTemplate>("templates");
+export const useAgents = () => useResources<AgentProfile>("agents");
 export const useRuntimes = () => useResources<RuntimeProfile>("runtimes");
 export const useMCPs = () => useResources<MCPProfile>("mcps");
-export const useInstances = () => useResources<AgentInstance>("instances");
+export const useSessions = () => useResources<SessionRecord>("sessions");
 
 export const harnessNames = {
   claude_sdk: "Claude Code",

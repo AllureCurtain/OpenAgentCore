@@ -2,8 +2,8 @@
 
 A small product application on OpenAgentCore, using Parsar UI. Manage models,
 Skills, HTTP MCP services and runtime configurations; compose reusable Agent
-templates; bind a runtime to create an independent Agent. This iteration has no
-task product or execution dashboard.
+configurations and start independent Sessions. Continue the same Session to keep
+its history and live workspace. There is no task layer or shared workspace.
 
 ## Run
 
@@ -25,28 +25,30 @@ For a built version, run `pnpm --filter @oac/parsar-example build` and then
 
 ## Main flow
 
-1. **Models:** save readable names and deployment model IDs. This catalog does
+1. **Models:** create a named Provider group, then add its models using readable
+   names and deployment model IDs. No default group is created. Providers only
+   organize the catalog; Agent configuration selects one model. This catalog does
    not configure providers or hold model API keys; Core owns provider credentials.
 2. **Skills:** create a SKILL.md resource or upload a ZIP. Inspect versions,
    upload a new version, and choose the default. Core validates and stores bundles.
-3. **MCP:** save anonymous HTTPS HTTP MCP endpoints. Bind them to templates by
-   selection. Authentication, Vault management and OAuth setup are not included.
-4. **Runtimes:** name a Core-managed hosted sandbox configuration or a text-only
-   environment. These are placement configurations, not online machine identities.
-   Machine enrollment, fixed-node routing and self-hosted registration are omitted.
-5. **Templates:** combine a model, harness, instructions, Skills and MCP services.
-   A template has no runtime; the harness remains part of its configuration.
-6. **Agents:** select a template and runtime. The application copies configuration,
-   creates a saved Core Agent and, when needed, a Core environment template with
-   Skill references. Agent edits are independent of the source template.
+3. **MCP:** save anonymous HTTPS endpoints and bind them to Agents. Hosted
+   Sessions install an inline environment Plugin; text-only Sessions use Core's
+   service-origin MCP. Hosted HTTP MCP supports Claude Code and Codex, not MiniMax
+   Code. Authentication, Vault management and OAuth setup are not included.
+4. **Runtimes:** name a Core-managed hosted sandbox or text-only configuration.
+   These are placement configurations, not online machine identities. Machine
+   enrollment, fixed-node routing and self-hosted registration are omitted.
+5. **Agents:** combine a model, harness, instructions, Skills and MCP services.
+   Create, copy and edit configurations without allocating a runtime.
+6. **Sessions:** open an Agent, choose a runtime and send the first message.
+   Read streaming replies and tool activity, continue the conversation, cancel a running turn and reopen
+   history. Each hosted Session gets its own workspace; text-only has no workspace.
 
-Creating or editing an Agent does not start a Session or allocate a sandbox. Each
-instance retains a `core_agent_id` and official `environment` input for future
-execution. New Sessions using that pair resolve the Skill default versions;
-existing Core Sessions retain their original snapshots. Templates and resource
-catalog edits affect future copies or explicit Agent saves, not existing Agents
-in the background. No readiness, tool connectivity or successful execution is
-implied by saving a configuration.
+Agent edits and catalog updates apply to future Sessions. Core freezes existing
+Session configuration, including resolved Skill versions. Continuing a Session
+retains history and its workspace while the sandbox exists; archiving/replacing a
+sandbox is not a persistence guarantee. Saving configuration alone does not verify
+model availability or MCP connectivity. Skills require a hosted runtime.
 
 ## Ownership and storage
 
@@ -63,11 +65,21 @@ use `${OAC_DEV_HOME:-$HOME/.oac}`.
 
 Use one server process and a dedicated Project for this local single-user example.
 The server rejects cross-origin writes and keeps the Project key out of browser
-responses. Core writes and SQLite writes are sequential, not a distributed
-transaction: an interrupted resource save can leave an unused Core Agent or
-environment template. This example has no automatic orphan cleanup or mutation
-retries. Deleting a local resource is blocked while another local record uses it.
-Deleting a Skill is a separate explicit Core operation.
+responses. Session creation freezes a pending request in SQLite before calling Core, and uses
+the local Session ID as its idempotency key. An uncertain response can be recovered
+from the Agent's Session list, including after a server restart. Successful creation
+leaves only the Core Session reference and local title/Agent/runtime relationship;
+Core owns messages, turns and execution status. The browser consumes public SSE
+text deltas through a non-buffering proxy, reconnects after interruption, and
+reconciles with durable history to avoid duplicate final replies. Each send records
+request-return latency and first nonempty text-delta latency from browser request
+start. These independent observations remain in sessionStorage across reloads;
+missing observations are shown as a dash rather than inferred from history. Definite validation rejection
+removes the pending request so it can be corrected. Use one server process.
+Deleting a local resource is blocked while another local record references it;
+Session deletion/archival is outside this example. Skill deletion is a separate
+explicit Core operation. Earlier templates and instances become Agent configs on
+startup; they are never presented as actual Sessions.
 
 ## Validation
 
@@ -80,7 +92,8 @@ The example gate runs TypeScript, proxy and SQLite persistence/binding tests,
 a production build and browser acceptance. Install Chrome with
 `pnpm exec playwright install chrome` if necessary. Browser fixtures use
 ports 18180/18181 and isolated SQLite data under `~/.oac/tests/parsar-example/`.
-They verify resource management, template-to-instance binding, independent edits,
+They verify Provider groups and model selection, live text before durable completion,
+resource management, multiple Sessions, continuation, cancellation, lost-response recovery,
 Skill versions and mobile/help behavior. Synthetic fixtures are not model execution.
 
 The opt-in live browser probe requires an already started example backed by an
@@ -92,15 +105,17 @@ OAC_EXAMPLE_LIVE_MODEL='<configured-model>' \
 pnpm --filter @oac/parsar-example test:live
 ```
 
-It leaves sample resources for inspection and verifies saved Core Agent and Skill
-bindings; it does not claim MCP connectivity or start model execution.
+It leaves sample resources for inspection and executes the configured model. It
+checks Skill/Plugin installation, same-Session file reuse, and workspace isolation
+between two Sessions. It asks the model to call DeepWiki; inspect the recorded
+tool activity to distinguish a successful call from an attempted call.
 
 ## UI provenance
 
-The copied UI primitives, `src/lib/utils.ts`, scroll-anchor helper, `src/style.css`
+The copied UI primitives, `src/lib/utils.ts`, `src/style.css`
 and `public/*` originate in [Parsar](https://github.com/MiniMax-AI-Dev/parsar)
 revision `90fafede`, under [MIT](LICENSE). The responsive body minimum width and
 application pages are local adaptations. Navigation animation adapts
 [Motion Primitives](https://github.com/ibelick/motion-primitives), with reduced-motion
 support and its [MIT notice](MOTION-PRIMITIVES-LICENSE). Multica's resource and
-Agent/template organization informs the product flow; no Multica code is copied.
+Agent organization informs the product flow; no Multica code is copied.

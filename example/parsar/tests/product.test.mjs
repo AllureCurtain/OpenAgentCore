@@ -4,126 +4,159 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { openStore, dataPath } from "../server/store.mjs";
+import { unzipSync, strFromU8 } from "fflate";
+import { openStore, dataPath, AppError } from "../server/store.mjs";
 import { productAPI } from "../server/product.mjs";
 
-test("model, template and independent runtime-bound Agent persist without execution state", async (t) => {
+async function setup(store, core) {
+  const api = productAPI(store, core);
+  const put = (kind, body, id = randomUUID()) =>
+    api("PUT", `/app/${kind}/${id}`, body);
+  const provider = await put("providers", { name: "Moonshot" });
+  const model = await put("models", {
+    name: "Kimi",
+    model: "kimi-k2.6",
+    provider_id: provider.id,
+  });
+  const runtime = await put("runtimes", {
+    name: "Sandbox",
+    environment: "openai_hosted",
+  });
+  const mcp = await put("mcps", {
+    name: "Docs",
+    label: "docs",
+    url: "https://mcp.example/docs",
+  });
+  const agent = await put("agents", {
+    name: "Reviewer",
+    model_id: model.id,
+    harness: "claude_sdk",
+    instructions: "Review carefully",
+    mcp_ids: [mcp.id],
+    skill_ids: ["skill_review"],
+  });
+  return {
+    api,
+    put,
+    model,
+    runtime,
+    agent,
+    input: {
+      name: "Review",
+      agent_id: agent.id,
+      runtime_id: runtime.id,
+      input: "Review this",
+    },
+  };
+}
+test("one Agent creates independent Sessions; edits do not mutate prior execution; retries survive restart", async (t) => {
   const root = join(homedir(), ".oac", "tests");
   await mkdir(root, { recursive: true });
   const dir = await mkdtemp(join(root, "parsar-store-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const path = join(dir, "test.sqlite");
   let store = openStore(path);
-  const calls = [];
-  const core = async (path, method, body) => {
-    calls.push({ path, method, body });
-    return { id: randomUUID() };
+  const calls = [],
+    receipts = new Map();
+  let lose = false;
+  const core = async (path, method, body, key) => {
+    calls.push({ path, body, key });
+    if (!receipts.has(key)) receipts.set(key, { id: randomUUID() });
+    if (lose) {
+      lose = false;
+      throw new AppError(502, "lost response");
+    }
+    return receipts.get(key);
   };
-  const api = productAPI(store, core);
-  const modelId = randomUUID(),
-    runtimeId = randomUUID(),
-    mcpId = randomUUID(),
-    templateId = randomUUID(),
-    instanceId = randomUUID();
-  const put = (kind, id, body) => api("PUT", `/app/${kind}/${id}`, body);
-  await put("models", modelId, { name: "Kimi", model: "kimi-k2.6" });
-  await put("runtimes", runtimeId, {
-    name: "Sandbox",
-    environment: "openai_hosted",
-  });
-  await put("mcps", mcpId, {
-    name: "Docs",
-    label: "docs",
-    url: "https://mcp.example/docs",
-  });
-  const template = await put("templates", templateId, {
-    name: "Reviewer",
-    model_id: modelId,
-    harness: "claude_sdk",
-    instructions: "Review carefully",
-    mcp_ids: [mcpId],
-    skill_ids: ["skill_review"],
-  });
-  const instance = await put("instances", instanceId, {
-    name: "Alice",
-    template_id: templateId,
-    runtime_id: runtimeId,
-  });
-  assert.equal(calls.length, 2);
-  assert.deepEqual(calls[0].body.skills, [
+  const { api, put, agent, model, input } = await setup(store, core);
+  assert.equal(calls.length, 0);
+  const first = await put("sessions", input);
+  assert.deepEqual(calls[0].body.environment.skills, [
     { type: "skill_reference", skill_id: "skill_review" },
   ]);
-  assert.equal(calls[1].body.model, "kimi-k2.6");
+  assert.equal(calls[0].body.agent.tools.length, 1);
+  const zip = unzipSync(
+    Buffer.from(calls[0].body.environment.plugins[0].source.data, "base64"),
+  );
   assert.equal(
-    calls[1].body.tools[1].transport.server_url,
+    JSON.parse(strFromU8(zip["agent/.mcp.json"])).mcpServers.docs.url,
     "https://mcp.example/docs",
   );
-  assert.equal(instance.environment.type, "openai_hosted");
-  assert.ok(instance.environment.environment_template_id);
-  await put("templates", templateId, {
-    ...template,
-    instructions: "Different template",
-  });
-  assert.equal(
-    (await api("GET", `/app/instances/${instanceId}`)).instructions,
-    "Review carefully",
-  );
-  await assert.rejects(api("DELETE", `/app/models/${modelId}`), /仍被引用/);
+  await put("agents", { ...agent, instructions: "Updated" }, agent.id);
+  const second = await put("sessions", input);
+  assert.notEqual(first.core_session_id, second.core_session_id);
+  assert.equal(calls[0].body.agent.instructions, "Review carefully");
+  assert.equal(calls[1].body.agent.instructions, "Updated");
+  await assert.rejects(api("DELETE", `/app/models/${model.id}`), /仍被引用/);
+  await assert.rejects(api("DELETE", `/app/agents/${agent.id}`), /仍被引用/);
+  const pending = randomUUID();
+  lose = true;
+  await assert.rejects(put("sessions", input, pending), /lost response/);
+  const frozen = calls.at(-1).body;
   store.close();
   store = openStore(path);
   t.after(() => store.close());
-  assert.equal(
-    store.get("instances", instanceId).core_agent_id,
-    instance.core_agent_id,
+  const resumed = await productAPI(store, core)(
+    "PUT",
+    `/app/sessions/${pending}`,
+    {},
   );
-  assert.equal(
-    calls.some((call) => call.path.includes("/sessions")),
-    false,
-  );
+  assert.equal(resumed.core_session_id, receipts.get(pending).id);
+  assert.deepEqual(calls.at(-1).body, frozen);
+  assert.equal(store.get("sessions", pending).request, undefined);
+  assert.equal(receipts.size, 3);
 });
-test("runtime compatibility, MCP URLs and store isolation are explicit", async (t) => {
+test("compatibility validation precedes execution, and old configurations migrate without fake Sessions", async (t) => {
   const store = openStore(":memory:");
   t.after(() => store.close());
-  const api = productAPI(store, () => {
-    throw new Error("must not call Core");
+  const { api, put, agent, input } = await setup(store, () => {
+    throw new Error("must not execute");
   });
-  const model_id = randomUUID(),
-    runtime_id = randomUUID(),
-    template_id = randomUUID();
-  await api("PUT", `/app/models/${model_id}`, {
-    name: "Model",
-    model: "model",
-  });
-  await api("PUT", `/app/runtimes/${runtime_id}`, {
-    name: "Text",
-    environment: "none",
-  });
-  await api("PUT", `/app/templates/${template_id}`, {
-    name: "Template",
-    model_id,
-    harness: "claude_sdk",
-    instructions: "",
-    mcp_ids: [],
-    skill_ids: ["skill_review"],
-  });
+  const runtime = await put("runtimes", { name: "Text", environment: "none" });
   await assert.rejects(
-    api("PUT", `/app/instances/${randomUUID()}`, {
-      name: "Agent",
-      template_id,
-      runtime_id,
-    }),
+    put("sessions", { ...input, runtime_id: runtime.id }),
     /Skills 需要/,
   );
   await assert.rejects(
-    api("PUT", `/app/mcps/${randomUUID()}`, {
+    put("mcps", {
       name: "MCP",
       label: "docs",
       url: "https://secret@example.com/mcp",
     }),
     /不含凭据/,
   );
+  const legacy = { ...agent, id: randomUUID(), runtime_id: runtime.id };
+  store.put("instances", legacy);
+  productAPI(store, () => {});
+  assert.equal(store.get("agents", legacy.id).name, agent.name);
+  assert.equal(store.get("agents", legacy.id).runtime_id, undefined);
+  assert.equal(store.list("sessions").length, 0);
+  assert.equal(store.list("instances").length, 0);
   assert.notEqual(
     dataPath({ target: "https://core.example", key: "a" }),
     dataPath({ target: "https://core.example", key: "b" }),
+  );
+});
+
+test("Providers are explicit groups with many models, guarded deletion and no automatic defaults", async (t) => {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  const api = productAPI(store, () => {});
+  assert.deepEqual(await api("GET", "/app/providers"), []);
+  const id = randomUUID();
+  const provider = await api("PUT", `/app/providers/${id}`, { name: "Vendor" });
+  for (const model of ["model-a", "model-b"])
+    await api("PUT", `/app/models/${randomUUID()}`, {
+      name: model,
+      model,
+      provider_id: id,
+    });
+  assert.equal((await api("GET", "/app/models")).length, 2);
+  await assert.rejects(api("DELETE", `/app/providers/${id}`), /仍被引用/);
+  await api("PUT", `/app/providers/${id}`, { ...provider, name: "Renamed" });
+  assert.ok(store.list("models").every((m) => m.provider_id === id));
+  await assert.rejects(
+    api("PUT", `/app/models/${randomUUID()}`, { name: "Missing", model: "x" }),
+    /有效的资源/,
   );
 });
