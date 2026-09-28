@@ -1468,7 +1468,11 @@ def main(argv=None):
     if args.generation_action:
         if args.generation is None or not 1 <= args.generation <= 9223372036854775807 or not re.fullmatch(r"[0-9a-f]{64}", args.specification_digest or ""):
             parser.error("Invalid generation authorization")
-        (node_generations.prepare if args.generation_action == "prepare" else node_generations.collect)(args, sys.modules[__name__])
+        try:
+            (node_generations.prepare if args.generation_action == "prepare" else node_generations.collect)(args, sys.modules[__name__])
+        except (RuntimeDownloadError, distribution.ArtifactError):
+            print("Runtime artifact transfer or verification failed", file=sys.stderr)
+            raise SystemExit(65) from None
         return
     if args.uninstall:
         if args.source_url or args.bundle or args.core_url or args.provider or args.enrollment_token_stdin:
@@ -1496,9 +1500,6 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         main()
-    except (RuntimeDownloadError, distribution.ArtifactError):
-        print("Runtime artifact transfer or verification failed", file=sys.stderr)
-        sys.exit(65)
     except ChildFailed as failure:
         if str(failure):
             print(str(failure), file=sys.stderr)
