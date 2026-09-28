@@ -197,7 +197,7 @@ test("gives the host's uninstall command even when the installation must be read
 });
 
 test("sets up own-machine sandboxes page by page, with the Runtime from the distribution", async ({ page, request }) => {
-  await openConsole(page, request, "nodes", { sandbox: "none" });
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "none" });
   await expect(page.getByRole("heading", { name: "Where should sandboxes run?" })).toBeVisible();
   await page.getByRole("button", { name: "Own machines" }).click();
   await page.getByRole("button", { name: "microsandbox Recommended" }).click();
@@ -205,8 +205,6 @@ test("sets up own-machine sandboxes page by page, with the Runtime from the dist
   await expect(page.getByRole("heading", { name: "Review and save" })).toBeVisible();
   await page.getByRole("button", { name: "Save configuration" }).click();
 
-  // The saved specification carries the Runtime read from the console's manifest.
-  await expect(page.getByText("c0ffee000000")).toBeVisible();
   // Own machines continue straight to adding the first node, at its limits: no command is issued yet.
   await expect(page.getByRole("dialog", { name: "Add node" }).getByLabel("Sandboxes at once")).toBeVisible();
   const add = page.getByRole("dialog", { name: "Add node" });
@@ -216,10 +214,16 @@ test("sets up own-machine sandboxes page by page, with the Runtime from the dist
   const tokenRequested = await page.waitForRequest((sent) => sent.url().endsWith("/core/v1/sandbox/enrollment-tokens"), { timeout: 1000 }).then(() => true, () => false);
   expect(tokenRequested).toBe(false);
   expect(await writes(request)).toEqual(["POST /core/v1/sandbox/deployment"]);
+  await add.getByRole("button", { name: "Close dialog" }).click();
+  await page.getByRole("button", { name: "System", exact: true }).click();
+  await page.getByRole("button", { name: "Manage sandbox configuration", exact: true }).click();
+  // The saved specification carries the Runtime read from the console's manifest.
+  await page.getByRole("button", { name: "Configuration details", exact: true }).click();
+  await expect(page.locator(".help-tip-popover").getByText("c0ffee000000", { exact: true })).toBeVisible();
 });
 
 test("preselects microsandbox and asks once before switching to Docker", async ({ page, request }) => {
-  await openConsole(page, request, "nodes", { sandbox: "none" });
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "none" });
   await page.getByRole("button", { name: "Own machines" }).click();
   const microsandbox = page.getByRole("button", { name: "microsandbox Recommended" });
   const docker = page.getByRole("button", { name: "Docker", exact: true });
@@ -239,7 +243,7 @@ test("preselects microsandbox and asks once before switching to Docker", async (
   await docker.click();
   await confirm.getByRole("button", { name: "Use Docker" }).click();
   await expect(sizeStep).toBeVisible();
-  await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(docker).toHaveAttribute("aria-pressed", "true");
   await docker.click();
   await expect(sizeStep).toBeVisible();
@@ -247,13 +251,13 @@ test("preselects microsandbox and asks once before switching to Docker", async (
 });
 
 test("saves E2B without opening Add node, as it has no machines", async ({ page, request }) => {
-  await openConsole(page, request, "nodes", { sandbox: "none" });
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "none" });
   await page.getByRole("button", { name: "E2B cloud" }).click();
   await page.getByLabel("E2B API key").fill("fixture-private-key");
   await page.getByLabel("Template build").fill("template:94be54a1-138c-4f30-bc87-b13686272dbe");
   await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Save configuration" }).click();
-  await expect(page.getByRole("heading", { name: "Sandbox backend", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sandbox configuration", level: 1 })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
@@ -273,7 +277,7 @@ test("edits only the saved backend, preserving a custom size and Runtime", async
     await route.fulfill({ json: deployment });
   });
   await page.route("**/core/v1/sandbox/nodes", (route) => route.fulfill({ json: { data: [] } }));
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await page.getByRole("button", { name: "Change resources" }).click();
   await expect(page.getByRole("button", { name: "Own machines" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "E2B cloud" })).toHaveCount(0);
@@ -284,7 +288,7 @@ test("edits only the saved backend, preserving a custom size and Runtime", async
 });
 
 test("keeps the page usable when Core refuses a sandbox change, and shows Core's reason", async ({ page, request }) => {
-  await openConsole(page, request, "nodes", { sandbox: "none" });
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "none" });
   await failNext(request, { method: "POST", path: "/sandbox/deployment", status: 403, message: "This console is read-only." });
   await page.getByRole("button", { name: "Own machines" }).click();
   await page.getByRole("button", { name: "microsandbox Recommended" }).click();
@@ -300,7 +304,13 @@ test("keeps the page usable when Core refuses a sandbox change, and shows Core's
   await expect(page.getByText("Another administrator changed the deployment; it is now at generation 2.")).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await save.click();
-  await expect(page.getByText("c0ffee000000")).toBeVisible();
+  const added = page.getByRole("dialog", { name: "Add node" });
+  await expect(added).toBeVisible();
+  await added.getByRole("button", { name: "Close dialog" }).click();
+  await page.getByRole("button", { name: "System", exact: true }).click();
+  await page.getByRole("button", { name: "Manage sandbox configuration", exact: true }).click();
+  await page.getByRole("button", { name: "Configuration details", exact: true }).click();
+  await expect(page.locator(".help-tip-popover").getByText("c0ffee000000", { exact: true })).toBeVisible();
 });
 
 test("renames a node and sets how many sandboxes run on it at once", async ({ page, request }) => {

@@ -13,6 +13,16 @@ const observedReset = (clear: "auto" | "force" = "auto"): SandboxReset => ({
   remaining: { busy: 2, idle: 1, cleanup: 1, on_offline_nodes: 2, offline_nodes: [{ node_id: "offline-owned", name: "offline-build-worker", resources: 2 }] },
 });
 const progress = (page: Page) => page.getByRole("region", { name: "Reset in progress" });
+async function openConfiguration(page: Page) {
+  await page.getByRole("button", { name: "System", exact: true }).click();
+  await page.getByRole("button", { name: "Manage sandbox configuration", exact: true }).click();
+}
+async function expectEnrollmentBlocked(page: Page) {
+  await page.getByRole("button", { name: "Nodes", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Add node", exact: true })).toBeDisabled();
+  await openConfiguration(page);
+}
+
 async function openReset(page: Page) {
   await page.getByRole("button", { name: "Reset deployment", exact: true }).click();
   return page.getByRole("dialog", { name: "Reset sandbox deployment?", exact: true });
@@ -31,7 +41,7 @@ test.afterEach(async ({ request }) => {
 test("auto reset requires a bounded deadline, then preserves Core progress past that deadline", async ({ page, request }, info) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await setDeployment(request, { resources: { allocations: 3, pending: 1 } });
   await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
   const dialog = await openReset(page);
@@ -43,14 +53,17 @@ test("auto reset requires a bounded deadline, then preserves Core progress past 
   expect(await writes(request)).toEqual([]);
   await entry.press("Enter");
   await expect(dialog).toBeVisible();
-  const deadline = dialog.getByLabel(/Force remaining work after \(seconds\)/);
+  const deadline = dialog.getByLabel(/Wait before forcing \(seconds\)/);
   await expect(deadline).toHaveValue("3600");
   await deadline.fill("299");
   await expect(dialog.getByRole("button", { name: "Reset deployment", exact: true })).toBeDisabled();
   await deadline.fill("86401");
   await expect(dialog.getByRole("button", { name: "Reset deployment", exact: true })).toBeDisabled();
   await deadline.fill("300");
-  await expect(dialog).toContainText("Archived Sessions cannot be resumed");
+  await expect(dialog).toContainText("Hosted Sessions will be archived permanently.");
+  await dialog.getByRole("button", { name: "What reset affects", exact: true }).click();
+  await expect(page.locator(".help-tip-popover")).toContainText("Archived Sessions cannot be resumed");
+  await dialog.getByRole("button", { name: "What reset affects", exact: true }).click();
   await expect(dialog).toContainText("self-hosted");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await capture(page, info, "reset-confirm-en-light-1280");
@@ -63,14 +76,14 @@ test("auto reset requires a bounded deadline, then preserves Core progress past 
   await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
   await expect(progress(page)).toContainText("offline-build-worker");
   await expect(progress(page)).toContainText("Busy work can finish until the deadline.");
-  await expect(page.getByRole("button", { name: "Add node", exact: true })).toBeDisabled();
+  await expectEnrollmentBlocked(page);
   await expect(page.getByRole("heading", { name: "Where should sandboxes run?" })).toHaveCount(0);
   await capture(page, info, "reset-progress-en-light-1280");
   expect(await writes(request)).toEqual([`POST ${resetPath}`]);
 });
 
 test("escalation and cancellation require explicit confirmation and never undo previous clearing", async ({ page, request }) => {
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await setDeployment(request, { resources: { allocations: 3, pending: 1 }, reset: observedReset() });
   await page.reload();
   await progress(page).getByRole("button", { name: "Force reset now" }).click();
@@ -97,7 +110,7 @@ test("escalation and cancellation require explicit confirmation and never undo p
 });
 
 test("force reset requires confirmation and reconfiguration uses the completed generation once", async ({ page, request }) => {
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await setDeployment(request, { resources: { allocations: 1, pending: 0 } });
   await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
   const dialog = await openReset(page);
@@ -120,7 +133,7 @@ test("force reset requires confirmation and reconfiguration uses the completed g
 });
 
 test("an applied reset with a lost response stays blocked through failed reads and is never replayed", async ({ page, request }) => {
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await expect(page.getByRole("button", { name: "Reset deployment", exact: true })).toBeEnabled();
   await setDeployment(request, { resources: { allocations: 1, pending: 0 } });
   await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
@@ -147,7 +160,7 @@ test("an applied reset with a lost response stays blocked through failed reads a
 });
 
 test("a stale reset is refused until fresh state is reviewed, with no automatic resubmission", async ({ page, request }) => {
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await expect(page.getByRole("button", { name: "Reset deployment", exact: true })).toBeEnabled();
   await setDeployment(request, { generation: 2, resources: { allocations: 3, pending: 1 } });
   const dialog = await openReset(page);
@@ -166,7 +179,7 @@ test("a stale reset is refused until fresh state is reviewed, with no automatic 
 
   // The administrator reviews a new confirmation before the next explicit POST.
   const reviewed = await openReset(page);
-  await expect(reviewed).toContainText("Archived Sessions cannot be resumed");
+  await expect(reviewed).toContainText("Hosted Sessions will be archived permanently.");
   expect(await writes(request)).toEqual([`POST ${resetPath}`]);
   const resubmitted = page.waitForRequest((sent) => sent.method() === "POST" && sent.url().endsWith(resetPath));
   await reviewed.getByRole("button", { name: "Reset deployment", exact: true }).click();
@@ -178,7 +191,7 @@ test("a stale reset is refused until fresh state is reviewed, with no automatic 
 test("reset progress survives failed node and deployment reads with visible qualifications in Chinese dark mode", async ({ page, request }, info) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await page.emulateMedia({ colorScheme: "dark" });
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await setDeployment(request, { resources: { allocations: 3, pending: 1 }, reset: observedReset() });
   await page.route("**/core/v1/sandbox/nodes", (route) => route.fulfill(unavailable));
   await page.reload();
@@ -201,7 +214,7 @@ test("reset progress survives failed node and deployment reads with visible qual
 });
 
 test("a pending reset survives navigation and a lost response cannot reopen stale write controls", async ({ page, request }) => {
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await expect(page.getByRole("button", { name: "Reset deployment", exact: true })).toBeEnabled();
   await setDeployment(request, { resources: { allocations: 1, pending: 0 } });
   await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
@@ -229,21 +242,21 @@ test("a pending reset survives navigation and a lost response cannot reopen stal
     // A hash navigation keeps the application/query cache alive, unlike a reload.
     await page.evaluate(() => { window.location.hash = "overview"; });
     await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
-    await page.getByRole("button", { name: "Nodes", exact: true }).click();
+    await openConfiguration(page);
     const resetButton = page.getByRole("button", { name: "Reset deployment", exact: true });
     await expect(resetButton).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Add node", exact: true })).toBeDisabled();
+    await expectEnrollmentBlocked(page);
     expect(Date.now() - cachedAt).toBeLessThan(30_000);
     expect(await writes(request)).toEqual([`POST ${resetPath}`]);
 
     release();
     await responseLost;
     // Ownership survives routing, but a departed page's local error dialog must
-    // not be resurrected on the new Nodes instance when that request settles.
+    // not be resurrected on the new configuration page when that request settles.
     await expect(page.getByRole("dialog", { name: "Couldn't confirm the sandbox change" })).toHaveCount(0);
     await page.getByRole("button", { name: "Overview", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
-    await page.getByRole("button", { name: "Nodes", exact: true }).click();
+    await openConfiguration(page);
     await expect(resetButton).toBeDisabled();
     // An explicit refresh also fails; neither navigation nor failure replays POST.
     await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
@@ -258,22 +271,22 @@ test("a pending reset survives navigation and a lost response cannot reopen stal
   } finally { release(); }
 });
 
-test("Nodes adopts the reset and completion learned on Overview before its cached node data expires", async ({ page, request }) => {
+test("Nodes and configuration adopt reset and completion learned on Overview before cached node data expires", async ({ page, request }) => {
   await openConsole(page, request, "nodes");
-  await expect(page.getByRole("button", { name: "Reset deployment", exact: true })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Add node", exact: true })).toBeEnabled();
+  await openConfiguration(page);
+  await expect(page.getByRole("button", { name: "Reset deployment", exact: true })).toBeEnabled();
   const cachedAt = Date.now();
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   await setDeployment(request, { resources: { allocations: 3, pending: 1 }, reset: observedReset() });
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Sandbox reset in progress" })).toBeVisible();
-  await page.getByRole("button", { name: "Nodes", exact: true }).click();
+  await expectEnrollmentBlocked(page);
   await expect(progress(page)).toContainText("offline-build-worker");
-  await expect(page.getByRole("button", { name: "Add node", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Change resources", exact: true })).toHaveCount(0);
   expect(Date.now() - cachedAt).toBeLessThan(30_000);
 
-  // No refresh click: the shared active reset starts bounded read-only polling on Nodes.
+  // No refresh click: shared active reset starts bounded read-only polling on configuration.
   const forced = observedReset("force");
   forced.remaining = { busy: 0, idle: 0, cleanup: 1, on_offline_nodes: 1, offline_nodes: [{ node_id: "offline-owned", name: "offline-build-worker", resources: 1 }] };
   await setDeployment(request, { resources: { allocations: 1, pending: 0 }, reset: forced });
@@ -286,6 +299,9 @@ test("Nodes adopts the reset and completion learned on Overview before its cache
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Sandbox reset in progress" })).toHaveCount(0);
   await page.getByRole("button", { name: "Nodes", exact: true }).click();
+  await expect(page.getByText("Set up sandbox hosting in System before adding nodes.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add node", exact: true })).toHaveCount(0);
+  await openConfiguration(page);
   await expect(page.getByRole("heading", { name: "Where should sandboxes run?" })).toBeVisible();
   await expect(progress(page)).toHaveCount(0);
   expect(Date.now() - completedAt).toBeLessThan(30_000);
@@ -294,7 +310,7 @@ test("Nodes adopts the reset and completion learned on Overview before its cache
 
 
 test("signing out clears pending reset ownership and a late response cannot overwrite the new login", async ({ page, request }) => {
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await setDeployment(request, { resources: { allocations: 1, pending: 0 } });
   await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
   const dialog = await openReset(page);
@@ -320,7 +336,7 @@ test("signing out clears pending reset ownership and a late response cannot over
     await page.getByLabel("Core key", { exact: true }).fill(FIXTURE_CORE_KEY);
     await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page.getByRole("heading", { name: "Overview", level: 1 })).toBeVisible();
-    await page.getByRole("button", { name: "Nodes", exact: true }).click();
+    await openConfiguration(page);
     await page.getByRole("button", { name: "Own machines" }).click();
     await page.getByRole("button", { name: "microsandbox Recommended" }).click();
     await page.getByRole("button", { name: /^Standard/ }).click();
@@ -336,10 +352,12 @@ test("signing out clears pending reset ownership and a late response cannot over
     await (await lateResponse).finished();
     // The old generation-1 reset response cannot restore reset progress, block
     // this login, or show the old route's result/error dialog.
+    await openConfiguration(page);
     const newDialog = await openReset(page);
     await expect(newDialog).toBeVisible();
     await newDialog.getByRole("button", { name: "Back", exact: true }).click();
     await expect(progress(page)).toHaveCount(0);
+    await page.getByRole("button", { name: "Nodes", exact: true }).click();
     await expect(page.getByRole("button", { name: "Add node", exact: true })).toBeEnabled();
     expect(await writes(request)).toEqual([`POST ${resetPath}`, "POST /core/v1/sandbox/deployment"]);
   } finally { release(); }

@@ -5,7 +5,14 @@ import { expectManagementBoundary, failNext, openConsole, setDeployment, setNode
 
 const deploymentPath = "/core/v1/sandbox/deployment";
 const rollout = (page: Page) => page.getByRole("region", { name: "Configuration rollout", exact: true });
-const fact = (scope: Locator, label: string) => scope.locator("dt").filter({ hasText: new RegExp(`^${label}$`) }).locator("..").locator("dd");
+const fact = (scope: Locator, label: string) => scope.locator("dt").filter({ hasText: new RegExp(`^${label}`) }).locator("..").locator("dd");
+async function inspectRollout(page: Page, values: Record<string, string>) {
+  await rollout(page).getByRole("button", { name: "View rollout details", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Configuration rollout", exact: true });
+  for (const [label, value] of Object.entries(values)) await expect(fact(dialog, label)).toHaveText(value);
+  await dialog.getByRole("button", { name: "Close dialog", exact: true }).click();
+  await expect(dialog).toBeHidden();
+}
 const deploymentRead = (page: Page) => read<SandboxDeployment>(page, deploymentPath);
 async function read<T>(page: Page, path: string): Promise<T> {
   const response = await page.request.get(new URL(path, page.url()).href);
@@ -46,7 +53,7 @@ test("online configuration retains existing resources and stops rapid polling wh
   page.on("request", (sent) => { if (sent.method() === "GET" && sent.url().endsWith(deploymentPath)) pending.add(sent); });
   page.on("requestfinished", (sent) => pending.delete(sent));
   page.on("requestfailed", (sent) => pending.delete(sent));
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await expect(rollout(page)).toBeVisible();
   const before = await inventory(page);
   expect(before.allocations.length).toBeGreaterThan(0);
@@ -60,8 +67,7 @@ test("online configuration retains existing resources and stops rapid polling wh
   const current = await saved.response.json() as SandboxDeployment;
   expect(current.generation).toBe(2);
   expect(current.resources.allocations).toBe(before.allocations.length);
-  await expect(rollout(page)).toContainText("Core is preparing the target configuration.");
-  await expect(fact(rollout(page), "Previous-generation sandboxes")).toHaveText(String(before.allocations.length));
+  await inspectRollout(page, { "Core preparation": "Preparing configuration", "Previous-generation sandboxes": String(before.allocations.length) });
   const after = await inventory(page);
   expect(after.nodes.map((node) => node.id)).toEqual(before.nodes.map((node) => node.id));
   expect(after.allocations).toEqual(before.allocations);
@@ -72,26 +78,27 @@ test("online configuration retains existing resources and stops rapid polling wh
   await setNode(request, { id: "node-gpu", rollout: { state: "failed", ready_generation: 1, diagnostic: "runtime_image_unavailable" } });
   await setNode(request, { id: "node-edge", rollout: { state: "unknown", ready_generation: 1 } });
   await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
-  await expect(rollout(page)).toContainText("No active preparation");
-  await expect(fact(rollout(page), "Previous-generation sandboxes")).toHaveText(String(before.allocations.length));
-  await expect(fact(rollout(page), "Preparation failed")).toHaveText("1");
-  await expect(fact(rollout(page), "Target readiness unknown")).toHaveText("1");
+  await expect(rollout(page)).toContainText("Needs attention");
+  await inspectRollout(page, { "Core preparation": "No active preparation", "Previous-generation sandboxes": String(before.allocations.length), "Preparation failed": "1", "Target readiness unknown": "1" });
   await expect(page.getByRole("button", { name: "Change resources", exact: true })).toBeEnabled();
   // Watch longer than the five-second preparation interval. Retained resources
   // are not a reason to keep that interval alive; ordinary thirty-second reads remain.
   await expect.poll(() => pending.size).toBe(0);
   const rapidRead = await page.waitForRequest((sent) => sent.method() === "GET" && sent.url().endsWith(deploymentPath), { timeout: 6500 }).then(() => true, () => false);
   expect(rapidRead).toBe(false);
-  await expect(fact(rollout(page), "Target generation")).toHaveText("2");
+  await inspectRollout(page, { "Target generation": "2" });
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await capture(page, info, "generation-settled-en-light-1280");
   await page.emulateMedia({ colorScheme: "dark" });
   await page.getByRole("button", { name: "Language and appearance" }).click();
   await page.getByRole("menuitemradio", { name: "简体中文" }).click();
   const localized = page.getByRole("region", { name: "配置更新进度", exact: true });
-  await expect(localized).toContainText("没有正在进行的准备任务");
-  await expect(fact(localized, "目标代次")).toHaveText("2");
-  await expect(fact(localized, "旧代次沙箱")).toHaveText(String(before.allocations.length));
+  await expect(localized).toContainText("需要检查");
+  await localized.getByRole("button", { name: "查看详情", exact: true }).click();
+  const details = page.getByRole("dialog", { name: "配置更新进度", exact: true });
+  await expect(fact(details, "Core 准备状态")).toHaveText("没有正在进行的准备任务");
+  await expect(fact(details, "目标代次")).toHaveText("2");
+  await expect(fact(details, "旧代次沙箱")).toHaveText(String(before.allocations.length));
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await capture(page, info, "generation-settled-zh-dark-1280");
   expect(await writes(request)).toEqual([`PUT ${deploymentPath}`]);
@@ -100,13 +107,14 @@ test("online configuration retains existing resources and stops rapid polling wh
 test("unknown target preparation preserves live old-generation service while an offline pin stays offline", async ({ page, request }, info) => {
   await page.setViewportSize({ width: 1280, height: 1000 });
   await page.emulateMedia({ colorScheme: "light", reducedMotion: "reduce" });
-  await openConsole(page, request, "nodes", { fresh: true });
+  await openConsole(page, request, "system?id=sandbox", { fresh: true });
   await setDeployment(request, { generation: 2 });
   await setNode(request, { id: "node-local", online: true, provider_ready: true, rollout: { state: "unknown", ready_generation: 1 } });
   await setNode(request, { id: "node-edge", online: false, provider_ready: true, rollout: { state: "unknown", ready_generation: 1 } });
   await setNode(request, { id: "node-gpu", rollout: { state: "update_required", ready_generation: 1 } });
   await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
-  await expect(fact(rollout(page), "Node update required")).toHaveText("1");
+  await inspectRollout(page, { "Node update required": "1" });
+  await page.getByRole("button", { name: "Nodes", exact: true }).click();
   const serving = page.getByRole("row", { name: /core-01/ });
   await expect(serving).toContainText("Available");
   await expect(serving).toContainText("Target readiness unknown");
@@ -122,18 +130,17 @@ test("unknown target preparation preserves live old-generation service while an 
   await page.getByRole("button", { name: "Overview", exact: true }).click();
   const setup = page.getByRole("region", { name: "Getting started" }).getByRole("listitem").filter({ hasText: "Get sandboxes ready" });
   await expect(setup).toContainText("Done");
-  await expect(fact(rollout(page), "Target generation")).toHaveText("2");
-  await expect(fact(rollout(page), "Target readiness unknown")).toHaveText("2");
-  await capture(page, info, "generation-overview-compact-en", rollout(page));
+  await expect(rollout(page)).toHaveCount(0);
   await page.getByRole("button", { name: "System", exact: true }).click();
-  await expect(fact(rollout(page), "Target generation")).toHaveText("2");
-  await expect(fact(rollout(page), "Node update required")).toHaveText("1");
-  await capture(page, info, "generation-system-compact-en", rollout(page));
+  await expect(rollout(page)).toHaveCount(0);
+  await page.getByRole("button", { name: "Manage sandbox configuration", exact: true }).click();
+  await inspectRollout(page, { "Target generation": "2", "Target readiness unknown": "2", "Node update required": "1" });
+  await capture(page, info, "generation-configuration-summary-en", rollout(page));
   expect(await writes(request)).toEqual([]);
 });
 
 test("a generation-only change preserves mixed allocation ownership through failed inventory reads", async ({ page, request }) => {
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await expect(rollout(page)).toBeVisible();
   let expected: { session: string; generation: string }[] = [];
   await page.route("**/core/v1/sandbox/nodes/node-local/allocations", async (route) => {
@@ -145,7 +152,8 @@ test("a generation-only change preserves mixed allocation ownership through fail
   });
   await setDeployment(request, { generation: 2 });
   await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
-  await expect(fact(rollout(page), "Target generation")).toHaveText("2");
+  await inspectRollout(page, { "Target generation": "2" });
+  await page.getByRole("button", { name: "Nodes", exact: true }).click();
   await page.getByRole("button", { name: "Open core-01", exact: true }).click();
   const table = page.getByRole("table", { name: "Sandbox allocations", exact: true });
   await expect(table.getByRole("columnheader", { name: "Configuration generation", exact: true })).toBeVisible();
@@ -167,7 +175,7 @@ test("a generation-only change preserves mixed allocation ownership through fail
 });
 
 test("E2B omitted-key updates keep the saved key while explicit same-key replacements each advance generation", async ({ page, request }) => {
-  await openConsole(page, request, "nodes", { sandbox: "e2b" });
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "e2b" });
   await expect(rollout(page)).toBeVisible();
   const initial = await deploymentRead(page);
   await editE2B(page);
@@ -175,7 +183,7 @@ test("E2B omitted-key updates keep the saved key while explicit same-key replace
   expect(omitted.input).toMatchObject({ provider: "e2b", expected_generation: 1, e2b: { template: initial.e2b!.template } });
   expect(omitted.input.e2b).not.toHaveProperty("api_key");
   expect((await omitted.response.json()).generation).toBe(1);
-  await page.getByRole("button", { name: "Cancel editing", exact: true }).click();
+  await expect(page.getByRole("dialog", { name: "Change resources", exact: true })).toBeHidden();
   const key = "fixture-same-team-key";
   for (const generation of [1, 2]) {
     await editE2B(page, key);
@@ -184,7 +192,7 @@ test("E2B omitted-key updates keep the saved key while explicit same-key replace
     const current = await explicit.response.json() as SandboxDeployment;
     expect(current.generation).toBe(generation + 1);
     expect(current.resources).toEqual(initial.resources);
-    await expect(fact(rollout(page), "Target generation")).toHaveText(String(generation + 1));
+    await inspectRollout(page, { "Target generation": String(generation + 1) });
   }
   const storage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
   expect(storage).not.toContain(key);
@@ -193,7 +201,7 @@ test("E2B omitted-key updates keep the saved key while explicit same-key replace
 });
 
 test("a different E2B team leaves the committed configuration intact and requires a deliberate reset", async ({ page, request }) => {
-  await openConsole(page, request, "nodes", { sandbox: "e2b" });
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "e2b" });
   await expect(rollout(page)).toBeVisible();
   const before = await deploymentRead(page);
   await editE2B(page, "fixture-other-team-key");
@@ -204,12 +212,13 @@ test("a different E2B team leaves the committed configuration intact and require
   expect(await deploymentRead(page)).toEqual(before);
   await expect(page.getByRole("button", { name: "Save configuration", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Keep saved key", exact: true })).toBeVisible();
-  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Change resources", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Couldn't confirm the sandbox change" })).toHaveCount(0);
   expect(await writes(request)).toEqual([`PUT ${deploymentPath}`]);
   await page.getByRole("button", { name: "Cancel editing", exact: true }).click();
   await page.getByRole("button", { name: "Reset deployment", exact: true }).click();
   const reset = page.getByRole("dialog", { name: "Reset sandbox deployment?", exact: true });
-  await expect(reset).toContainText("Archived Sessions cannot be resumed");
+  await expect(reset).toContainText("Hosted Sessions will be archived permanently.");
   expect(await writes(request)).toEqual([`PUT ${deploymentPath}`]);
   await reset.getByRole("button", { name: "Back", exact: true }).click();
   await editE2B(page);
@@ -218,14 +227,15 @@ test("a different E2B team leaves the committed configuration intact and require
 
 
 test("uncertain configuration refresh and inventory retry preserve a draft until its generation changes", async ({ page, request }) => {
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await expect(rollout(page)).toBeVisible();
   const initial = await deploymentRead(page);
-  await page.getByRole("button", { name: "Change resources", exact: true }).click();
-  await page.getByRole("button", { name: /^Large/ }).click();
-  const wizard = page.getByRole("region", { name: "Change the sandbox configuration", exact: true });
-  const draftSize = await fact(wizard, "Each sandbox").innerText();
   const committedSize = await fact(page.getByRole("region", { name: "Deployment provider", exact: true }), "Each sandbox").first().innerText();
+  await page.getByRole("button", { name: "Change resources", exact: true }).click();
+  const edit = page.getByRole("dialog", { name: "Change resources", exact: true });
+  await edit.getByRole("button", { name: /^Large/ }).click();
+  const wizard = edit.getByRole("region", { name: "Change the sandbox configuration", exact: true });
+  const draftSize = await fact(wizard, "Each sandbox").innerText();
   expect(draftSize).not.toBe(committedSize);
   await failNext(request, { method: "PUT", path: deploymentPath, status: 503, message: "Configuration outcome is unconfirmed." });
   const result = await saveConfiguration(page);
@@ -235,25 +245,28 @@ test("uncertain configuration refresh and inventory retry preserve a draft until
   await page.route("**/core/v1/sandbox/nodes", (route) => failInventory
     ? route.fulfill({ status: 503, json: { error: { type: "server_error", code: null, message: "Node inventory unavailable.", param: null } } })
     : route.continue());
-  const uncertain = page.getByRole("dialog", { name: "Couldn't confirm the sandbox change" });
-  await expect(uncertain).toBeVisible();
-  await uncertain.getByRole("button", { name: "Refresh sandbox state" }).click();
-  await expect(uncertain).toBeHidden();
-  await expect(page.getByText("Node state could not be read", { exact: true })).toBeVisible();
+  await expect(edit).toContainText("The sandbox service is unavailable. Refresh to check the current state.");
+  await expect(edit).toContainText("Refresh sandbox state to confirm whether the change was saved before submitting again.");
+  const failedInventory = page.waitForResponse((response) => response.url().endsWith("/sandbox/nodes") && response.status() === 503);
+  await edit.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
+  await failedInventory;
+  // Configuration stays authoritative even when the independent node inventory fails.
   await expect(wizard.getByRole("heading", { name: "Review and save", exact: true })).toBeVisible();
   await expect(fact(wizard, "Each sandbox")).toHaveText(draftSize);
-  await expect(fact(rollout(page), "Target generation")).toHaveText(String(initial.generation));
+  expect((await deploymentRead(page)).generation).toBe(initial.generation);
   await expect(wizard.getByRole("button", { name: "Save configuration", exact: true })).toBeEnabled();
   expect(await writes(request)).toEqual([`PUT ${deploymentPath}`]);
   failInventory = false;
-  await page.getByRole("button", { name: "Retry", exact: true }).click();
-  await expect(page.getByText("Node state could not be read", { exact: true })).toHaveCount(0);
+  const inventoryRecovered = page.waitForResponse((response) => response.url().endsWith("/sandbox/nodes") && response.ok());
+  await edit.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
+  await inventoryRecovered;
   await expect(fact(wizard, "Each sandbox")).toHaveText(draftSize);
   await expect(wizard.getByRole("button", { name: "Save configuration", exact: true })).toBeEnabled();
   expect(await writes(request)).toEqual([`PUT ${deploymentPath}`]);
   await setDeployment(request, { generation: initial.generation + 1 });
-  await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
-  await expect(fact(rollout(page), "Target generation")).toHaveText(String(initial.generation + 1));
+  await edit.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
+  await expect(edit).toBeHidden();
+  await inspectRollout(page, { "Target generation": String(initial.generation + 1) });
   await expect(wizard).toHaveCount(0);
   await expect(fact(page.getByRole("region", { name: "Deployment provider", exact: true }), "Each sandbox")).toHaveText(committedSize);
   await page.getByRole("button", { name: "Change resources", exact: true }).click();
@@ -262,24 +275,51 @@ test("uncertain configuration refresh and inventory retry preserve a draft until
   expect(await writes(request)).toEqual([`PUT ${deploymentPath}`]);
 });
 
+
 test("an observed installation change discards the old reset confirmation even at the same generation", async ({ page, request }) => {
-  await openConsole(page, request, "nodes");
+  await openConsole(page, request, "system?id=sandbox");
   await expect(rollout(page)).toBeVisible();
   // A genuine preparing projection enables normal five-second observation while
   // the confirmation is open; the test never clicks through a modal overlay.
   await setNode(request, { id: "node-local", rollout: { state: "preparing", ready_generation: 1 } });
   await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
-  await expect(rollout(page)).toContainText("Core is preparing the target configuration.");
+  await inspectRollout(page, { "Core preparation": "Preparing configuration" });
   await page.getByRole("button", { name: "Reset deployment", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Reset sandbox deployment?", exact: true });
   await expect(dialog).toBeVisible();
   const initial = await deploymentRead(page);
   await setDeployment(request, { installation_id: `${initial.installation_id}-replacement` });
   await expect(dialog).toHaveCount(0);
-  await expect(fact(rollout(page), "Target generation")).toHaveText(String(initial.generation));
+  await inspectRollout(page, { "Target generation": String(initial.generation) });
   expect(await writes(request)).toEqual([]);
   await page.getByRole("button", { name: "Reset deployment", exact: true }).click();
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Back", exact: true }).click();
   expect(await writes(request)).toEqual([]);
+});
+
+
+test("closing an uncertain edit preserves the shared write block until a successful read", async ({ page, request }) => {
+  await openConsole(page, request, "system?id=sandbox");
+  await page.getByRole("button", { name: "Change resources", exact: true }).click();
+  const edit = page.getByRole("dialog", { name: "Change resources", exact: true });
+  await edit.getByRole("button", { name: /^Large/ }).click();
+  await failNext(request, { method: "PUT", path: deploymentPath, status: 503, message: "Configuration outcome is unconfirmed." });
+  let failReads = true;
+  await page.route("**/core/v1/sandbox/deployment", (route) => route.request().method() === "GET" && failReads
+    ? route.fulfill({ status: 503, json: { error: { type: "server_error", code: null, message: "Deployment read unavailable.", param: null } } })
+    : route.continue());
+  const result = await saveConfiguration(page);
+  expect(result.response.status()).toBe(503);
+  await expect(edit).toContainText("The sandbox service is unavailable. Refresh to check the current state.");
+  await edit.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
+  await expect(edit.getByRole("button", { name: "Save configuration", exact: true })).toBeDisabled();
+  await edit.getByRole("button", { name: "Cancel editing", exact: true }).click();
+  await expect(edit).toBeHidden();
+  await expect(page.getByRole("button", { name: "Change resources", exact: true })).toBeDisabled();
+  expect(await writes(request)).toEqual([`PUT ${deploymentPath}`]);
+  failReads = false;
+  await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Change resources", exact: true })).toBeEnabled();
+  expect(await writes(request)).toEqual([`PUT ${deploymentPath}`]);
 });
