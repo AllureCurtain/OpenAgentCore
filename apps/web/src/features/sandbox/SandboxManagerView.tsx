@@ -1,23 +1,20 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
-import { type InitializeSandboxDeployment, type UpdateSandboxDeployment, type SandboxDeployment, type SandboxNode, type StartSandboxReset } from "@agents-core-web/agents-client";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { type SandboxNode } from "@agents-core-web/agents-client";
+import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Pencil, Plus, Server, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { EmptyState, HelpTip, RefreshButton } from "../../components/console-ui";
-import { ErrorDialog } from "../../components/ErrorDialog";
 import { ErrorState } from "../../components/ErrorState";
 import { useFailureToast, useToast } from "../../components/Toast";
 import { useConsoleIntent, useConsoleNavigation } from "../../lib/console-navigation";
 import { InstallationNotice } from "../../components/InstallationNotice";
 import { installationQuery } from "../../lib/installation";
-import { sandboxConfigurationRejection, sandboxRequestError, sandboxWriteUncertain } from "../../lib/sandbox-labels";
+import { sandboxRequestError } from "../../lib/sandbox-labels";
 import type { SandboxConsoleConfig } from "./console-config";
-import { sandboxAdmin, sandboxConsoleConfigQuery } from "./sandbox-queries";
-import { useSandboxManagerState } from "./use-sandbox-manager-state";
-import { writeSandboxDeployment } from "./sandbox-deployment-write";
-import { SandboxSetupWizard } from "./SandboxSetupWizard";
-import { SandboxDeploymentSettings } from "./SandboxDeploymentSettings";
+import { sandboxAdmin } from "./sandbox-queries";
+import { useSandboxPageState } from "./use-sandbox-page-state";
+import { SandboxPageAccess } from "./SandboxPageAccess";
 import { NodeEnrollment } from "./NodeEnrollment";
 import { NodeList, onOldAddress } from "./NodeList";
 import { NodeDetail } from "./NodeDetail";
@@ -26,36 +23,27 @@ import { NodeCleanupDialog, type NodeCleanup } from "./NodeCleanupDialog";
 import { sandboxSize } from "./deployment-specification";
 import "./SandboxManagerView.css";
 
-/** Nodes: the deployment provider, the node list and one node's detail (`#nodes?id=…`). */
+/** Nodes owns node enrollment, the list and individual node management. */
 export function SandboxManagerView() {
   const { i18n } = useTranslation("sandbox");
   const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
   return <section className="page-section console-page sandbox-manager sandbox-manager-page" lang={locale}>
-    <SandboxAccess />
+    <SandboxPageAccess header={<NodesPageHeader />}>{(config) => <SandboxManager consoleConfig={config} />}</SandboxPageAccess>
   </section>;
 }
 
-/** The page header; an E2B deployment has no machines, so the page is its sandbox backend. */
-function NodesPageHeader({ title, count, back, actions, cloud = false, headingRef }: { title?: ReactNode; count?: number; back?: () => void; actions?: ReactNode; cloud?: boolean; headingRef?: RefObject<HTMLHeadingElement | null> }) {
+/** Node list and node detail share one header. */
+function NodesPageHeader({ title, count, back, actions, headingRef }: { title?: ReactNode; count?: number; back?: () => void; actions?: ReactNode; headingRef?: RefObject<HTMLHeadingElement | null> }) {
   const { t } = useTranslation("sandbox");
   return <header className="page-header">
     <div className="console-page-heading">
       {back ? <button type="button" className="icon-button ghost back-button" aria-label={t("Back")} title={t("Back")} onClick={back}><ArrowLeft size={16} strokeWidth={1.6} aria-hidden="true" /></button> : null}
-      <h1 ref={headingRef} tabIndex={headingRef ? -1 : undefined}>{title ?? t(cloud ? "Sandbox backend" : "Nodes")}</h1>
+      <h1 ref={headingRef} tabIndex={headingRef ? -1 : undefined}>{title ?? t("Nodes")}</h1>
       {count === undefined ? null : <span className="heading-count">{count}</span>}
-      {back ? null : <HelpTip>{t(cloud ? "E2B runs this deployment's sandboxes in its cloud. There are no machines to add." : "Your hosts for running sandboxes.")}</HelpTip>}
+      {back ? null : <HelpTip>{t("Your hosts for running sandboxes.")}</HelpTip>}
     </div>
     {actions ? <div className="page-actions">{actions}</div> : null}
   </header>;
-}
-
-function SandboxAccess() {
-  const { t } = useTranslation("sandbox");
-  const { data: config, isPending: checking, isFetching, isError, refetch } = useQuery(sandboxConsoleConfigQuery);
-  if (isError && config === undefined) return <><NodesPageHeader /><div className="console-page-body"><p role="alert">{t("The console configuration could not be read. Refresh to try again.")}</p><button type="button" className="button outline" disabled={isFetching} onClick={() => { void refetch(); }}>{t("Refresh sandbox state")}</button></div></>;
-  if (checking) return <><NodesPageHeader /><div className="console-page-body"><p role="status">{t("Connecting to this console's Core…")}</p></div></>;
-  if (!config?.sandbox_admin) return <><NodesPageHeader /><div className="console-page-body"><p role="alert">{t("Sandbox administration is not configured on this console.")}</p><button type="button" className="button outline" disabled={isFetching} onClick={() => { void refetch(); }}>{t("Refresh sandbox state")}</button></div></>;
-  return <SandboxManager consoleConfig={config} />;
 }
 
 function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig }) {
@@ -64,14 +52,11 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const { params, navigate, back: goBack } = useConsoleNavigation();
   const client = sandboxAdmin;
   const queryClient = useQueryClient();
-  const { ownership, deploymentQuery, query, deployment, compatible, inventoryOlder, inventoryLoading, snapshot } = useSandboxManagerState();
-  const { refetch: refetchSnapshot } = query;
-  const installation = useQuery(installationQuery);
+  const { deploymentQuery, query, compatible, inventoryOlder, inventoryLoading, snapshot, installation, loading, busy, setupNeedsRefresh, confirmed, fresh, refetch, refresh } = useSandboxPageState();
+  const { t: tSandboxNav } = useTranslation("sandboxNavigation");
   const localOnly = installation.data?.local_only === true;
   const { t: tCommon } = useTranslation("common");
-  const loading = deploymentQuery.isFetching;
   const error: unknown = deploymentQuery.error;
-  const busy = ownership.data.phase === "pending";
   const [removeTarget, setRemoveTarget] = useState<SandboxNode | null>(null);
   const [editTarget, setEditTarget] = useState<SandboxNode | null>(null);
   // The Add node dialog; it stays mounted with the page so its command survives closing.
@@ -80,26 +65,6 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const [removeError, setRemoveError] = useState<string | null>(null);
   // After a removal, the host's uninstall command; it stays for the closing animation.
   const [cleanup, setCleanup] = useState<{ node: NodeCleanup; open: boolean } | null>(null);
-  // QueryClient owns this across route lifetimes. Only a successful authoritative
-  // read begun after settlement releases uncertain/pending mutation ownership.
-  const setupNeedsRefresh = ownership.data.phase === "reconcile";
-  const confirmed = deployment !== undefined && !deploymentQuery.isError && ownership.data.phase === "idle";
-  // Writes additionally wait for any read in flight.
-  const fresh = confirmed && !loading;
-  // A write with an uncertain outcome opens a dialog with the reason; the error stays for the closing animation.
-  const [writeFailure, setWriteFailure] = useState<{ error: unknown; open: boolean } | null>(null);
-  const { refetch: refetchDeployment } = deploymentQuery;
-  const refetch = useCallback(async () => {
-    const result = await refetchDeployment();
-    if (!result.isError) await refetchSnapshot();
-    return result;
-  }, [refetchDeployment, refetchSnapshot]);
-  const refresh = useCallback(() => {
-    // Retry observations without discarding a draft for the same Core lifecycle.
-    // The wizard reads the address and config file from the installation.
-    void queryClient.invalidateQueries({ queryKey: installationQuery.queryKey });
-    return refetch();
-  }, [queryClient, refetch]);
   // The enrollment dialog's reads: the node list alone, every few seconds while it waits. It settles
   // when the read does, which the dialog waits for before calling a command expired.
   const refreshNodes = useCallback(() => refetch(), [refetch]);
@@ -109,8 +74,6 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   // A refresh the administrator asks for reports its failure even while an earlier one is still unconfirmed;
   // the enrollment dialog's own repeated refreshes do not.
   const refreshByUser = () => {
-    // Reconciliation keeps an applicable draft. The authoritative lifecycle key
-    // below discards it only when Core confirms a different configuration.
     void queryClient.invalidateQueries({ queryKey: installationQuery.queryKey });
     void refetch().then((result) => {
       if (result.isError && result.data) toast.show(t("Refresh failed; showing the last loaded state."), { tone: "error", detail: sandboxRequestError(result.error, locale), key: "sandbox-read" });
@@ -121,41 +84,6 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
     const controller = new AbortController(); lifetime.current = controller;
     return () => { controller.abort(); lifetime.current = null; };
   }, []);
-  /** Whether Core confirmed the change. `fromWizard`: a configuration Core rejects is thrown back to the wizard that sent it. */
-  async function changeDeployment(operation: (signal: AbortSignal) => Promise<SandboxDeployment>, fromWizard = false): Promise<boolean> {
-    const controller = lifetime.current;
-    if (!controller || busy || loading || setupNeedsRefresh || !fresh) return false;
-    setWriteFailure(null);
-    try {
-      const deployment = await writeSandboxDeployment(queryClient, operation);
-      return deployment !== null && !controller.signal.aborted;
-    } catch (error) {
-      if (!controller.signal.aborted) {
-        if (fromWizard && sandboxConfigurationRejection(error) !== null) throw error;
-        if (sandboxWriteUncertain(error)) setWriteFailure({ error, open: true });
-        else toast.show(t("Core rejected the sandbox change"), { tone: "error", detail: sandboxRequestError(error, locale), key: "sandbox-write" });
-      }
-    }
-    return false;
-  }
-  /** First setup; own machines continue straight to adding the first node. */
-  async function initialize(input: InitializeSandboxDeployment) {
-    if (await changeDeployment((signal) => client.initializeDeployment(input, { signal }), true) && input.provider !== "e2b" && !localOnly) setAdding(true);
-  }
-  async function update(input: UpdateSandboxDeployment) {
-    await changeDeployment((signal) => client.updateDeployment({ ...input, expected_generation: snapshot!.deployment.generation }, { signal }), true);
-  }
-  const startReset = (input: StartSandboxReset) => changeDeployment((signal) => client.startReset(input, { signal }));
-  const cancelReset = (expectedGeneration: number) => changeDeployment((signal) => client.cancelReset(expectedGeneration, { signal }));
-  const writeDialog = <ErrorDialog
-    open={writeFailure?.open ?? false}
-    title={t("Couldn't confirm the sandbox change")}
-    action={{ label: t("Refresh sandbox state"), onClick: refreshByUser }}
-    onClose={() => setWriteFailure((failure) => failure && { ...failure, open: false })}
-  >
-    <p>{writeFailure ? sandboxRequestError(writeFailure.error, locale) : null}</p>
-    <p>{t("Refresh sandbox state to confirm whether the change was saved before submitting again.")}</p>
-  </ErrorDialog>;
   const askRemove = (node: SandboxNode) => { setRemoveError(null); setRemoveTarget(node); };
   async function remove() {
     const controller = lifetime.current;
@@ -188,9 +116,6 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const nodes = snapshot?.nodes ?? [];
   const allocations = snapshot?.allocations ?? [];
   const hostedNodes = Boolean(snapshot?.deployment.provider && snapshot.deployment.provider !== "e2b");
-  const configurationKey = deployment
-    ? `${deployment.installation_id}:${deployment.owner_epoch}:${deployment.provider}:${deployment.mode}:${deployment.generation}`
-    : undefined;
   // Getting started asks for Add node on arrival. A request the first settled read cannot
   // serve (no own-machines deployment, active reset, a failed read) is dropped, so the
   // dialog never opens later on its own.
@@ -259,7 +184,6 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
       </div>
       {dialog}
       {cleanupDialog}
-      {writeDialog}
       <NodeEditDialog
         key={editTarget?.id ?? "closed"}
         client={client}
@@ -281,20 +205,21 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
 
   const actions = <>
     {localOnly && hostedNodes ? <span id="add-node-blocked" className="muted">{tCommon("installationNotice.addBlocked")}</span> : null}
+    {hostedNodes ? <button className="button outline" type="button" onClick={() => navigate("system", { id: "sandbox" })}>{tSandboxNav("open")}</button> : null}
     {refreshButton}
     {hostedNodes && snapshot ? <button type="button" className="button primary" disabled={busy || loading || !fresh || !nodesConfirmed || Boolean(snapshot.deployment.reset) || localOnly} aria-describedby={localOnly ? "add-node-blocked" : undefined} onClick={() => setAdding(true)}><Plus size={16} />{t("Add node")}</button> : null}
   </>;
   return <>
     {enrollment}
-    <NodesPageHeader headingRef={heading} count={hostedNodes && nodesConfirmed ? nodes.length : undefined} actions={actions} cloud={snapshot?.deployment.provider === "e2b"} />
+    <NodesPageHeader headingRef={heading} count={hostedNodes && nodesConfirmed ? nodes.length : undefined} actions={actions} />
     <div className="console-page-body sandbox-content">
       {status}
-      {snapshot && !snapshot.deployment.provider && !snapshot.deployment.reset ? <SandboxSetupWizard key={configurationKey} coreUrl={snapshot.deployment.core_url} expectedGeneration={snapshot.deployment.generation} disabled={busy || loading || setupNeedsRefresh || error !== null} onSubmit={initialize} /> : null}
+      {snapshot && !hostedNodes ? <EmptyState icon={Server} title={tSandboxNav(snapshot.deployment.provider === "e2b" ? "cloud" : "unconfigured")} action={<button className="button outline" type="button" onClick={() => navigate("system", { id: "sandbox" })}>{tSandboxNav("open")}</button>} /> : null}
+      {snapshot?.deployment.reset && hostedNodes ? <p role="status">{tSandboxNav("reset")}</p> : null}
       {snapshot?.deployment.provider ? <>
         {staleNodes.length ? <p className="sandbox-notice sandbox-address-warning" role="status">{staleNodes.length === 1
           ? t("{{name}} is still bound to an old Core address. Remove it and add it again.", { name: staleNodes[0] })
           : t("{{count}} nodes are still bound to an old Core address: {{names}}. Remove them and add them again.", { count: staleNodes.length, names: new Intl.ListFormat(i18n.resolvedLanguage, { type: "conjunction" }).format(staleNodes) })}</p> : null}
-        <SandboxDeploymentSettings key={configurationKey} deployment={snapshot.deployment} fresh={confirmed} disabled={busy || loading || !fresh || setupNeedsRefresh} onReset={startReset} onCancelReset={cancelReset} onUpdate={update} />
         {hostedNodes ? <section aria-label={t("Sandbox nodes")}>
           {nodes.length
             ? <NodeList nodes={nodes} allocations={allocations} coreUrl={snapshot.deployment.core_url} stale={!nodesConfirmed} disabled={busy || loading || removing || !nodesConfirmed} suspends={snapshot.deployment.provider === "microsandbox"} onOpen={(node) => navigate("nodes", { id: node.id })} onRemove={askRemove} />
@@ -304,6 +229,5 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
     </div>
     {dialog}
     {cleanupDialog}
-    {writeDialog}
   </>;
 }
