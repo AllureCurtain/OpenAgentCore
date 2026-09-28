@@ -21,14 +21,9 @@ func environmentRuntimeFixture(t *testing.T) (root, workspace, credential string
 	if err := os.WriteFile(credential, []byte("private-test-credential"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	helper := filepath.Join(base, "directory-helper")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("OAC_RUNTIME_HOME", root)
 	t.Setenv("OAC_RUNTIME_WORKSPACE", workspace)
-	t.Setenv("OAC_RUNTIME_DIRECTORY_HELPER", helper)
-	for _, name := range []string{"OAC_RUNTIME_ENVIRONMENT_ID", "OAC_RUNTIME_SESSION_ID", "OAC_RUNTIME_NETWORK_ACCESS", "OAC_RUNTIME_ALLOWED_DOMAINS", "OAC_RUNTIME_WRITE_HELPER", "OAC_RUNTIME_EXPORT_HELPER", "OAC_RUNTIME_STAGING"} {
+	for _, name := range []string{"OAC_RUNTIME_ENVIRONMENT_ID", "OAC_RUNTIME_SESSION_ID", "OAC_RUNTIME_NETWORK_ACCESS", "OAC_RUNTIME_ALLOWED_DOMAINS"} {
 		t.Setenv(name, "")
 	}
 	return root, workspace, credential, environmentEnrollment{uuid.NewString(), uuid.NewString(), uuid.NewString(), "/workspace"}
@@ -75,7 +70,7 @@ func TestBindEnvironmentRuntimeUsesCanonicalOperatorWorkspace(t *testing.T) {
 	}
 }
 
-func TestBindEnvironmentRuntimeRejectsUnsafeOrMismatchedWorkspace(t *testing.T) {
+func TestBindEnvironmentRuntimeChecksIdentityAndPathValidity(t *testing.T) {
 	for _, kind := range []string{"relative", "unclean", "missing", "file", "symlink", "parent symlink", "workspace contains private", "workspace inside private", "foreign enrollment", "credential outside private", "identity conflict"} {
 		t.Run(kind, func(t *testing.T) {
 			root, workspace, credential, bound := environmentRuntimeFixture(t)
@@ -125,12 +120,21 @@ func TestBindEnvironmentRuntimeRejectsUnsafeOrMismatchedWorkspace(t *testing.T) 
 				t.Setenv("OAC_RUNTIME_ENVIRONMENT_ID", uuid.NewString())
 			}
 			t.Setenv("OAC_RUNTIME_WORKSPACE", selected)
-			if err := bindEnvironmentRuntime("wss://core/api/v1/agent-daemon/ws", bound, credential); err == nil {
-				t.Fatal("unsafe binding accepted")
+			allowed := kind == "symlink" || kind == "parent symlink" || kind == "workspace contains private" || kind == "workspace inside private" || kind == "credential outside private"
+			err := bindEnvironmentRuntime("wss://core/api/v1/agent-daemon/ws", bound, credential)
+			if allowed {
+				if err != nil {
+					t.Fatal("operator layout rejected", err)
+				}
+			} else {
+				if err == nil {
+					t.Fatal("invalid binding accepted")
+				}
+				if _, err := os.Stat(filepath.Join(root, "daemon", "environment.json")); !os.IsNotExist(err) {
+					t.Fatal("invalid binding published identity", err)
+				}
 			}
-			if _, err := os.Lstat(filepath.Join(root, "daemon", "environment.json")); !os.IsNotExist(err) {
-				t.Fatal("invalid binding published identity", err)
-			}
+
 		})
 	}
 }

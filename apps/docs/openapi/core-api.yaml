@@ -5879,7 +5879,7 @@ components:
         - access
         - allowed_domains
       type: object
-    v1.EnvironmentPackages:
+    v1.EnvironmentPackagesResponse:
       properties:
         npm:
           items:
@@ -5923,7 +5923,7 @@ components:
             - agent.environment.template
           type: string
         packages:
-          $ref: '#/components/schemas/v1.EnvironmentPackages'
+          $ref: '#/components/schemas/v1.EnvironmentPackagesResponse'
         plugins:
           items:
             type: object
@@ -7050,7 +7050,7 @@ components:
         network:
           $ref: '#/components/schemas/v1.EnvironmentNetwork'
         packages:
-          $ref: '#/components/schemas/v1.EnvironmentPackages'
+          $ref: '#/components/schemas/v1.EnvironmentPackagesResponse'
         plugins:
           items:
             type: object

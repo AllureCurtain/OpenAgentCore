@@ -1,4 +1,4 @@
-import { posix } from "node:path";
+import { isAbsolute, normalize, parse } from "node:path";
 import { parseHTTPServers, type HTTPServer } from "./mcp.js";
 
 export type StdioServer = {
@@ -9,8 +9,7 @@ export type StdioServer = {
 };
 export type EnvironmentMCPServer = HTTPServer | StdioServer;
 
-// This private projection accepts only the Runtime-owned sandbox entry. Package
-// command/env/cwd are resolved by the shared Go helper after entering isolation.
+// The Runtime launcher resolves installed package identities and their commands.
 export function parseEnvironmentMCP(value: unknown): EnvironmentMCPServer[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) throw new Error("invalid_request");
@@ -18,19 +17,15 @@ export function parseEnvironmentMCP(value: unknown): EnvironmentMCPServer[] | un
   for (const server of value) {
     if (!server || typeof server !== "object" || labels.has(server.server_label)) throw new Error("invalid_request");
     if ("command" in server) {
-      if (Object.keys(server).some(key => !["server_label", "command", "args", "allowed_tools"].includes(key)) ||
-          typeof server.server_label !== "string" || !/^[a-zA-Z0-9_-]+$/.test(server.server_label) ||
-          server.server_label === "functions" || server.allowed_tools !== null || server.command !== "/usr/bin/python3" ||
-          !Array.isArray(server.args) || server.args.length !== 8 ||
-          server.args[0] !== "-I" || server.args[1] !== "-S" ||
-          server.args[2] !== "/usr/local/bin/oac-runtime-initialize" || server.args[3] !== "stdio" ||
-          typeof server.args[4] !== "string" || !posix.isAbsolute(server.args[4]) || server.args[4].endsWith("/") || posix.normalize(server.args[4]) !== server.args[4] ||
-          /[\x00-\x1f\x7f\\]/.test(server.args[4]) ||
-          typeof server.args[5] !== "string" || !posix.isAbsolute(server.args[5]) || server.args[5].endsWith("/") || posix.normalize(server.args[5]) !== server.args[5] ||
-          /[\x00-\x1f\x7f\\]/.test(server.args[5]) ||
-          typeof server.args[6] !== "string" || !server.args[6] || server.args[6].startsWith("/") ||
-          server.args[6].split("/").some((part: string) => !part || part === "." || part === "..") ||
-          /[\x00-\x1f\x7f\\]/.test(server.args[6]) || server.args[7] !== server.server_label) throw new Error("invalid_request");
+        if (Object.keys(server).some(key => !["server_label", "command", "args", "allowed_tools"].includes(key)) ||
+            typeof server.server_label !== "string" || !/^[a-zA-Z0-9_-]+$/.test(server.server_label) || server.server_label === "functions" || server.allowed_tools !== null ||
+            typeof server.command !== "string" || !isAbsolute(server.command) || normalize(server.command) !== server.command ||
+            !Array.isArray(server.args) || server.args.length !== 4 || server.args[0] !== "runtime-mcp-exec" ||
+            typeof server.args[1] !== "string" || !isAbsolute(server.args[1]) || normalize(server.args[1]) !== server.args[1] || server.args[1] === parse(server.args[1]).root ||
+            typeof server.args[2] !== "string" || !server.args[2] || /[\\]/.test(server.args[2]) || server.args[2].split("/").some((part: string) => !part || part === "." || part === "..") ||
+            server.args[3] !== server.server_label || [server.command, ...server.args].some((part: string) => /[\x00-\x1f\x7f]/.test(part))) throw new Error("invalid_request");
+        labels.add(server.server_label);
+
     } else {
       parseHTTPServers([server]);
       if (server.allowed_tools !== null || server.required !== undefined) throw new Error("invalid_request");

@@ -2,61 +2,55 @@ package localworkspace
 
 import (
 	"errors"
+	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
-	"github.com/google/uuid"
 )
 
-func TestNativeLocalDirectoryConfinement(t *testing.T) {
-	helper := os.Getenv("OAC_TEST_LOCAL_DIRECTORY_HELPER")
-	if helper == "" {
-		t.Skip("actual pinned directory helper required")
-	}
-	root, outside := t.TempDir(), t.TempDir()
-	if err := os.Mkdir(filepath.Join(root, "nested"), 0o700); err != nil {
+func TestNativeDirectoryAPI(t *testing.T) {
+	b := nativeFileBinding(t)
+	if err := os.Mkdir(filepath.Join(b.workspace, "nested"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{filepath.Join(root, "nested", "data.bin"), filepath.Join(outside, "secret")} {
-		if err := os.WriteFile(path, []byte{0, 1, 255, 17}, 0o600); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.Symlink(outside, filepath.Join(root, "escape")); err != nil {
-		t.Fatal(err)
-	}
-	b, err := New(uuid.NewString(), uuid.NewString(), root, helper)
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(b.workspace, "nested", "data.bin"), []byte{0, 1, 255, 17}, 0600); err != nil {
 		t.Fatal(err)
 	}
 	got, err := b.ListWorkspaceDirectory(t.Context(), "nested", 10)
 	if err != nil || got.Truncated || len(got.Entries) != 1 || got.Entries[0].Name != "data.bin" || got.Entries[0].SizeBytes == nil || *got.Entries[0].SizeBytes != 4 {
-		t.Fatalf("native file metadata: %+v %v", got, err)
+		t.Fatal(got, err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "file.txt"), []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	// A link, a regular file and a missing path are not listable directories;
-	// the external link target is never listed.
-	for _, path := range []string{"escape", "escape/secret", "file.txt", "missing", "missing/deeper"} {
+	for _, path := range []string{"missing", "nested/data.bin"} {
 		if _, err := b.ListWorkspaceDirectory(t.Context(), path, 10); !errors.Is(err, agent.ErrWorkspaceNotDirectory) {
-			t.Fatal("native helper classified a non-directory path differently", path, err)
+			t.Fatal(path, err)
 		}
+	}
+	if err := os.WriteFile(filepath.Join(b.workspace, "second"), nil, 0600); err != nil {
+		t.Fatal(err)
 	}
 	got, err = b.ListWorkspaceDirectory(t.Context(), "", 1)
 	if err != nil || !got.Truncated || len(got.Entries) != 1 {
-		t.Fatalf("native directory bound: %+v %v", got, err)
+		t.Fatal(got, err)
 	}
-	if err := os.Rename(root, root+"-original"); err != nil {
+}
+
+func TestNativeFileReadPrefixAndEntryKinds(t *testing.T) {
+	b := nativeFileBinding(t)
+	if _, err := b.WriteWorkspaceFile(t.Context(), "nested/file", []byte{0, 255, 17}); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.RemoveAll(root + "-original") })
-	if err := os.Symlink(outside, root); err != nil {
+	got, err := b.ReadWorkspaceFile(t.Context(), "nested/file", 2)
+	if err != nil || !got.Truncated || len(got.Data) != 2 || got.Data[1] != 255 {
+		t.Fatal(got, err)
+	}
+	got, err = b.ReadWorkspaceFile(t.Context(), "nested/file", 3)
+	if err != nil || got.Truncated || len(got.Data) != 3 {
+		t.Fatal(got, err)
+	}
+	if _, err = b.ReadWorkspaceFile(t.Context(), "nested", 3); !errors.Is(err, agent.ErrWorkspaceReadInvalid) {
 		t.Fatal(err)
 	}
-	if _, err := b.ListWorkspaceDirectory(t.Context(), "", 10); !errors.Is(err, agent.ErrWorkspaceReadInvalid) {
-		t.Fatal("native helper followed a replaced root or hid it as an empty directory", err)
+	if _, err = b.ReadWorkspaceFile(t.Context(), "missing", 3); !os.IsNotExist(err) {
+		t.Fatal(err)
 	}
 }

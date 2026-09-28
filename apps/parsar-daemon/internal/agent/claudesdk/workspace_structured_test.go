@@ -60,7 +60,7 @@ func TestWorkspaceStructuredPreparationQualificationAndFrozenSchema(t *testing.T
 }
 
 func TestWorkspaceStructuredReadinessRequiresCompleteLocalContract(t *testing.T) {
-	features := []string{"workspace_tools", "workspace_prepare", "workspace_command_observations", "local_runtime_v1", "structured_output", "workspace_structured_output"}
+	features := []string{"workspace_tools", "workspace_prepare", "workspace_command_observations", "local_runtime_v2", "structured_output", "workspace_structured_output"}
 	if !(RuntimeInfo{Features: features}).SupportsWorkspaceStructuredOutput() {
 		t.Fatal("qualified Runtime unavailable")
 	}
@@ -71,5 +71,16 @@ func TestWorkspaceStructuredReadinessRequiresCompleteLocalContract(t *testing.T)
 				t.Fatal("incomplete workspace bundle admitted")
 			}
 		})
+	}
+}
+
+func TestLocalRuntimeRejectsObsoleteWorkspaceBundle(t *testing.T) {
+	info := RuntimeInfo{Features: []string{"workspace_tools", "workspace_prepare", "workspace_command_observations", "local_runtime_v1", "workspace_functions", "structured_output", "workspace_structured_output"}}
+	if info.SupportsLocalRuntime() || info.SupportsWorkspaceFunctions() || info.SupportsWorkspaceStructuredOutput() {
+		t.Fatal("obsolete workspace and MCP launcher contract was accepted")
+	}
+	info.Features[3] = "local_runtime_v2"
+	if !info.SupportsLocalRuntime() || !info.SupportsWorkspaceFunctions() || !info.SupportsWorkspaceStructuredOutput() {
+		t.Fatal("current workspace contract was rejected")
 	}
 }

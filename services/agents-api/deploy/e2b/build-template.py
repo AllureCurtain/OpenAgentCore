@@ -68,7 +68,7 @@ with tempfile.TemporaryDirectory(dir=state) as temporary:
         (context / name).write_bytes(Path(__file__).with_name(name).read_bytes())
     template = (Template(file_context_path=context).from_image(BASE)
                 .run_cmd('apt-get update && apt-get install -y --no-install-recommends '
-                         'ca-certificates bash git python3 python3-pip ripgrep bubblewrap socat util-linux '
+                         'ca-certificates bash git python3 python3-pip ripgrep util-linux '
                          '&& rm -rf /var/lib/apt/lists/*', user='root')
                 .copy('runtime.tar.gz', '/root/runtime.tar.gz', user='root')
                 .copy('runtime-env.json', '/etc/oac-runtime-env.json', user='root')

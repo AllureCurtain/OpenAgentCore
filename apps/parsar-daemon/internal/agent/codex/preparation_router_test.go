@@ -5,7 +5,6 @@ import (
 	"errors"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
-	"github.com/MiniMax-AI-Dev/parsar/internal/agentnetwork"
 	"github.com/google/uuid"
 	"os"
 	"path/filepath"
@@ -42,11 +41,10 @@ func TestPreparationRouterRetainsActualNativeChild(t *testing.T) {
 				t.Fatal(err)
 			}
 			for key, value := range map[string]string{
-				"OAC_RUNTIME_ENVIRONMENT_ID":   environment,
-				"OAC_RUNTIME_SESSION_ID":       session,
-				"OAC_RUNTIME_WORKSPACE":        req.WorkDir,
-				"OAC_RUNTIME_DIRECTORY_HELPER": cfg.codexBinary,
-				"OAC_RUNTIME_NETWORK_ACCESS":   "enabled",
+				"OAC_RUNTIME_ENVIRONMENT_ID": environment,
+				"OAC_RUNTIME_SESSION_ID":     session,
+				"OAC_RUNTIME_WORKSPACE":      req.WorkDir,
+				"OAC_RUNTIME_NETWORK_ACCESS": "enabled",
 			} {
 				t.Setenv(key, value)
 			}
@@ -58,8 +56,6 @@ func TestPreparationRouterRetainsActualNativeChild(t *testing.T) {
 			req.AgentStateKey = "agents-api-" + session
 			req.DisableExecutionEnvironment = false
 			req.LocalEnvironment = &proto.LocalEnvironment{ID: environment, WorkspaceDirectory: "/workspace", NetworkAccess: "enabled", CapabilitySources: &agentcapabilities.Input{}}
-			cfg.permissionProfile = "managed-workspace"
-			cfg.runtimeNetwork = agentnetwork.Policy{Access: "enabled"}
 			registry := agent.NewRegistry()
 			registry.RegisterKind(proto.SupportedAgentKind{Kind: "codex", Available: true, Capabilities: proto.AgentKindCapabilities{LocalEnvironment: true, FunctionTools: true}}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
 				return nil, errors.New("ordinary Factory must not run")

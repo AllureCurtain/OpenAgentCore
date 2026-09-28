@@ -8,9 +8,11 @@ package paths
 
 import (
 	"fmt"
+	"github.com/MiniMax-AI-Dev/parsar/internal/runtimefs"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 const DefaultProfile = "default"
@@ -25,7 +27,9 @@ func ValidateProfile(name string) error {
 	if name == "" {
 		return fmt.Errorf("profile name must not be empty")
 	}
-	if !profilePattern.MatchString(name) {
+	base := strings.ToUpper(strings.SplitN(name, ".", 2)[0])
+	reserved := base == "CON" || base == "PRN" || base == "AUX" || base == "NUL" || (len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) && base[3] >= '1' && base[3] <= '9')
+	if strings.HasSuffix(name, ".") || reserved || !profilePattern.MatchString(name) {
 		return fmt.Errorf("profile %q must match %s", name, profilePattern.String())
 	}
 	return nil
@@ -35,6 +39,9 @@ func ValidateProfile(name string) error {
 // sandbox environments without a writable home.
 func Root() (string, error) {
 	if override := os.Getenv("OAC_RUNTIME_HOME"); override != "" {
+		if !filepath.IsAbs(override) || filepath.Clean(override) != override {
+			return "", fmt.Errorf("OAC_RUNTIME_HOME must be a clean absolute directory")
+		}
 		return override, nil
 	}
 	home, err := os.UserHomeDir()
@@ -64,7 +71,7 @@ func EnsureProfileDir(profile string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := runtimefs.EnsurePrivateDir(dir); err != nil {
 		return "", fmt.Errorf("create profile dir %s: %w", dir, err)
 	}
 	return dir, nil

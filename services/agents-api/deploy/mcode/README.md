@@ -4,7 +4,8 @@ MiniMax Code uses the same Core/Runtime execution contract as the other engines.
 The text profile supports `environment:none`; the dedicated Docker profile adds
 workspace execution and the shared Files/Artifacts path. See
 [workspace qualification](../../../../contracts/agents-api/mcode-workspace-v1.md)
-for exact acceptance evidence and limits.
+for historical acceptance evidence and its limits. Inner sandbox denial results
+from that qualification do not describe the current bypass profile.
 Public MCP/functions, image input and native Subagent execution remain outside
 this batch.
 
@@ -21,7 +22,9 @@ This profile runs on a trusted execution host.
 Set `OAC_RUNTIME_MCODE_BIN` to that absolute executable and `OAC_RUNTIME_MCODE_AGENTS_API=1`
 for the daemon. The opt-in only advertises the profile for the qualified version.
 Use the existing authenticated daemon connection and operator device enrollment;
-this is not a new public enrollment API or official `self_hosted` implementation.
+native self-hosted installation uses the same Runtime protocol. See the
+[native guide](../../../../docs/self-hosted-native.md); MiniMax on Windows remains
+unsupported.
 Set `OAC_DEFAULT_HARNESS=mcode` in the independent Core deployment. Existing Sessions
 retain their engine. Do not expose a new public harness selector.
 
@@ -48,10 +51,10 @@ change them. Public Files and Artifacts use the common bound workspace helpers.
 
 The native process and ACP Session use a private control directory, while six
 original native tools execute against `/workspace` through one trusted MCP bridge
-and the upstream Linux sandbox. MCP is internal transport here; it does not enable
-caller-supplied public MCP servers. Project instructions must be read through the
+with the daemon user's ordinary permissions and no inner sandbox. MCP is internal
+transport here; its presence alone does not enable caller-supplied public MCP servers. Project instructions must be read through the
 workspace tools. Native automatic project configuration and diff/undo capture do
-not apply to this isolated tool path. Exact native-ID continuation remains
+not apply to this adapter tool path. Exact native-ID continuation remains
 required; recovery without a recorded ID fails closed. Native Bash observations
 become public `command_execution` items after command arguments arrive. Their
 text output and status are retained; absent native exit code/duration stay unknown.
@@ -84,7 +87,15 @@ child inherits only process and model-network essentials; it does not inherit
 Core/daemon tokens or arbitrary Node startup configuration. The adapter owns its
 native config, instructions and home and disables external skills, delegated work,
 web search, builtin file/shell tools, browser tools, mcode-tools and native goals.
-The workspace profile adds only its trusted isolated tool bridge.
+The workspace profile uses its tool bridge without sandbox isolation. Tools can
+read any local state available to the launching user. The outer Environment owns
+managed isolation; daemon network modes do not add another network boundary.
+
+Provide system dependencies at image/template build time or on the self-hosted
+machine before execution. Runtime does not run apt or sudo or elevate daemon
+permissions. `system_packages` is unsupported; missing dependencies fail the
+operation requiring them. npm/Python packages and setup retain direct execution
+with the user's existing permissions.
 
 The native model may still see `skill`, `task_query`, `task_output` and `task_stop`.
 The first loads an exact registered skill name and cannot execute a script; the
@@ -104,6 +115,9 @@ session listings is not qualified. Public usage breakdown is unavailable because
 native ACP context occupancy and cumulative cost are not per-Turn usage.
 
 ## Acceptance
+
+Recorded results below are historical evidence for their exact binaries and
+profiles, not qualification of the current native platforms or bypass behavior.
 
 The opt-in `TestNativeMCodePublicExecution` uses the fixed official Python SDK,
 raw HTTP, actual daemon/gateway/Worker and a dedicated PostgreSQL test database.

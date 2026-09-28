@@ -14,11 +14,12 @@ and five-operation SandboxProvider path as inline configuration.
   CRUD/list works without an execution deployment.
 - Optional nullable name, preserved verbatim, with a local 1–256 Unicode character
   bound. Network supports `enabled`, `disabled` and exact-host `restricted`; omitted/null create network
-  defaults to the pinned enabled policy. Update omission preserves; supplied name
+  defaults to the pinned enabled policy. These are configuration values, not daemon
+  network enforcement; unsupported execution combinations reject. Update omission preserves; supplied name
   or network replaces, with null clearing name or resetting network.
 - Empty/null installation fields retain empty defaults. Responses contain safe
   metadata and never `env`, `setup_commands` or inline file data. Initial files are
-  supported as described below, together with inline/referenced Skills, env, ordered setup and system/npm/Python packages; remaining populated installations reject explicitly.
+  supported as described below, together with inline/referenced Skills, env, ordered setup and npm/Python packages; `packages.system` rejects explicitly and system dependencies must be preinstalled.
 - Listing uses `after`, `limit` (default 20; 0 is treated as 1 and larger values as
   100), and `order` (default `desc`).
   Creation timestamp plus ID supplies stable local ordering. Missing/foreign IDs
@@ -37,7 +38,7 @@ from openai import OpenAI
 
 client = OpenAI(base_url="https://your-core.example/v1", api_key="your-project-key")
 template = client.beta.agents.environments.templates.create(
-    name="Python workspace", network={"access": "disabled"},
+    name="Python workspace", network={"access": "enabled"},
     env={"APP_MODE": "analysis"}, packages={"python": ["packaging==26.0"]},
     setup_commands=[{"command": "mkdir -p /workspace/outputs"}]
 )
@@ -57,8 +58,9 @@ an absolute destination inside `/workspace`: `inline` with standard-base64 `data
 `file_id` referencing a project-owned Files API upload. The guide's limits are 50
 initial files, 5 MiB per inline file, 10 MiB total inline content, and 50 MiB per
 referenced file. Session/Template JSON requests allow 16 MiB for the base64 envelope.
-Paths must be canonical, distinct and stay within the workspace; symlinks are not
-followed. A failed install never starts native execution.
+Paths must be canonical, distinct and stay within the logical workspace. Runtime
+anchors the operation to its bound workspace; this is API path scope, not a
+restriction on native tools running as the same user. A failed install never starts native execution.
 
 Configure `OAC_CREDENTIAL_KEY_FILE` with the existing execution-service
 base64 32-byte encryption key. Template writes and Session resolution need it;
@@ -166,17 +168,18 @@ content after template update/deletion.
 
 Core transfers frozen Skill archives over the authenticated Runtime connection.
 Runtime's shared parser installs them under its operator-bound capability root
-(default `/environment/initialization/capabilities/skills/<name>` for each Skill)
-before setup and native execution;
+(`skills/<name>` below the configured capability directory)
+before setup and native execution.
 The same daemon handles initial files, configuration, packages and setup; Providers
-only bootstrap it and manage compute resources. Setup and native tools can read
-that tree but cannot write it. Completed recovery loads the protected installation
+only bootstrap it and manage compute resources. Setup and native tools run with
+the launching user's permissions; snapshot file modes are an integrity hint, not
+protection from that user. Completed recovery loads the recorded installation
 without reinstalling. The common Runtime resolves installed metadata and paths before
 invoking the native executor factory.
 Codex registers native extra roots, Claude creates its own explicit Skill plugin
 envelope, and MiniMax points its native user-global catalog at the shared root.
 MiniMax retains disabled unrestricted built-in tools and uses its existing
-isolated workspace tool worker. No Provider or model/tool loop is added.
+workspace tool worker with the launching user's permissions. No Provider or model/tool loop is added.
 
 Codex nested `SKILL.md` discovery, `agents/openai.yaml` native dependency
 configuration and Claude inline/fenced shell preprocessing are not qualified in this batch and explicitly fail adapter
@@ -202,7 +205,7 @@ Hosted Template and inline `capability_directories` accept clean absolute paths
 within `/workspace`; self-hosted local selections have their
 [separate public input](environments.md#runtime-capability-preparation).
 Initial files and setup can populate hosted directories. Runtime snapshots them after
-setup and writes the shared protected `installed.json`, bound to the Session,
+setup and writes the shared `installed.json`, bound to the Session,
 Environment and source-selection digest. Recovery loads those installed bytes even
 if a source directory changes or is removed; a new Session captures its own snapshot.
 Partial or conflicting installation fails rather than silently recapturing sources.
@@ -270,13 +273,13 @@ model or daemon variable. Public `env_http_headers` remains unsupported; an adap
 may privately use native reference fields without changing public literal values.
 Caller-owned env remains available to caller code under the normal env contract.
 
-Stdio executes through the existing Runtime sandbox and a fixed static helper,
-which applies selected env/cwd and directly execs the package command. A small
-single-threaded launcher monitors the native parent process with Linux pidfds;
-bwrap retains its parent-death protection against that stable launcher. This avoids
-killing MCP servers when Codex recycles a spawning thread. Native MCP owns the
-transport; the launcher does not parse or forward protocol messages. Dependencies must be installed in the ordinary
-Environment initialization flow. The current implemented transport boundaries are:
+Stdio executes through the common daemon helper, which resolves the frozen package
+and explicitly selected env/cwd, then launches the declared command. Unix replaces
+the helper process; Windows forwards stdio within the owned process tree. Native
+MCP still owns the protocol. Process groups and Windows Jobs handle cancellation,
+not isolation. There is no Python launcher or inner mount/network sandbox. System
+dependencies must be preinstalled; npm/Python dependencies may use the ordinary
+Runtime initialization flow. The implemented transport boundaries are:
 
 | Adapter | Environment MCP implementation |
 | --- | --- |
@@ -341,6 +344,10 @@ complete upstream protocol compatibility.
 
 ### Composed initialization acceptance
 
+This section records the historical September 21 fixture and binaries. Its
+system-package and inner-isolation checks are not current support requirements;
+`packages.system` now rejects and tools run with the starting user's permissions.
+
 `services/agents-api/tests/official_environment_composition.py` combines the
 existing public fixtures in one enabled-network configuration: inline/referenced
 files, caller env, system/npm/Python packages, ordered setup, an uploaded Skill
@@ -366,7 +373,7 @@ initial Turn alone does not pass this composed workflow.
 The final Docker composition passed on 2026-09-21 with SDK 3.13.0/raw HTTP,
 independent Core/PostgreSQL, Kimi K3 (Codex/Claude) and MiniMax-M2.7. Core and the
 unchanged Codex/MiniMax images are from main `8eb3c089`; the Claude image includes
-the native-prefix correction described under System packages. All four public
+the historical native-prefix correction recorded by that batch. All four public
 runs completed with zero cleanup errors:
 
 | Profile | Result under `~/.parsar/remediation/20260921/template-composed-acceptance/` |
@@ -399,60 +406,41 @@ Templates workflow, not all upstream semantics, transports or Provider combinati
 ## Packaged Runtime initialization contract
 
 Template handlers and stores resolve public configuration without choosing a
-harness, native path or compute backend. The common runner depends on neutral
+harness, native path or compute backend. The common runner uses neutral
 Environment/Session identity and an authenticated Runtime peer. It sends initial
-files, configure/system/npm/python/setup operations, Skills, Plugins and finalization
+files, configure/npm/python/setup operations, Skills, Plugins and finalization
 through `runtime_prepare`, then uses the same daemon for execution. Providers own
-placement, creation, daemon bootstrap, inspection, renewal and reclamation; they do
-not run Core initialization commands. Harness-specific behavior stays in adapters.
+placement, creation, bootstrap, inspection, renewal and reclamation; they do not
+run Core initialization commands. Harness differences stay in adapters.
 
-The protocol accepts logical `/workspace` file and working-directory addresses and
-portable absolute source selections. Physical paths, executable selection and local
-access checks belong to Runtime. The current implementation uses these existing
-Linux packaging requirements; they are not public Template fields or requirements
-for future Runtime implementations on other platforms:
+One Go preparation implementation serves Linux, macOS and Windows. Initial files
+and setup working directories use logical `/workspace` addresses; physical paths
+and executable selection belong to Runtime. Initial files use the shared atomic
+writer, including replacement, while public Files creation retains its separate
+semantics. Transfer input and stored tool configuration are bounded. Process
+ownership and I/O settle before a typed receipt; unknown effects are never replayed.
 
-- `/workspace` is the logical workspace. The packaged Linux default binds it to
-  `/environment/workspace`; `/environment/staging` is private staging.
-- The daemon invokes the fixed trusted, fd-anchored initial-file installer and the
-  shared atomic writer. These helpers do not select a harness or invoke native
-  model tools.
-- Confidential content travels in bounded protocol frames and private helper stdin.
-  The daemon verifies native completion before sending a typed Runtime receipt.
-  Unknown effects use the existing allocation cleanup path rather than replay.
-- Runtime adapters own native configuration. Initialization cannot access a
-  harness's private history, model credentials or native tool protocol.
+Initialization and packages default under `OAC_RUNTIME_HOME`. Operators can select
+`OAC_RUNTIME_INITIALIZATION_DIRECTORY` and `OAC_RUNTIME_PACKAGE_DIRECTORY`;
+packaged Linux images set `/environment/initialization` and `/environment/packages`.
+`OAC_RUNTIME_TOOL_ENV_FILE` selects explicit tool-variable JSON. Runtime does not
+overwrite an existing configuration. No Python initialization wrapper, system-root
+seed or managed shell hook is shipped.
 
-New Providers bootstrap the same Runtime contract. New harnesses reuse common
-preparation, with native differences confined to their adapters. Neither addition
-changes template validation, storage or resolution. This interface separation does
-not claim a non-Linux installer, layout or isolation implementation.
-The trusted `/usr/local/bin/oac-runtime-initialize` receives a bounded
-version-1 JSON operation on stdin from the Linux daemon. This private helper format
-is not the Core-to-Runtime protocol. It configures read-only tool env under
-`/environment/initialization`, installs packages under `/environment/packages`,
-and runs ordered commands through distro bubblewrap. The fixed mount/process map
-excludes daemon credentials, native history and staging. User values are applied
-inside isolation, never to the launcher. Receipt and process exit must both confirm
-completion; child output is discarded because it can contain secrets. A failed step
-that ran inside that isolation (a setup command or a package manager) adds only its
-integer `exit_code` to the failed receipt; see
-[Initialization failure](#initialization-failure--september-23).
+Setup uses Bash, with Git Bash on Windows; a missing dependency fails explicitly
+rather than substituting a different shell. npm uses a local prefix and Python/pip
+a local target under the Runtime package directory. Node/npm and Python/pip must
+already be installed. No automatic system-package installation, sudo or daemon
+privilege increase occurs.
 
-Runtime receives a `tool_environment` execution flag, without template identity or
-provider information. Adapters validate the common files and apply them in their
-native tool sandbox: Claude uses its native Bash hook, Codex its managed Bash hook,
-and MiniMax its isolated native-tool worker. Native transports remain unchanged.
-Files reads do not require initialized tool configuration. Packages and setup keep
-enabled provisioning network access; requested Session network restrictions apply
-to native execution after setup. Docker setup requires
-the existing nested-sandbox deployment profile for every harness; E2B supplies
-the same Runtime layout and kernel isolation.
-
-Codex 0.153.4 can execute an original command when a native hook process fails.
-The adapter verifies the required trusted managed hook before preparation and
-stops the Turn on an observed failed hook. Earlier command effects may already
-exist; this is not an atomic hook-failure prevention guarantee.
+All commands use the launching user's permissions and host network. The daemon
+provides no filesystem, permission or network sandbox, including on Linux. Managed
+isolation belongs to the outer Environment. Configured user variables are applied
+to the command, not automatically inherited from daemon credentials, but tools may
+read any local state the same user can read. Output is discarded rather than
+included in failure diagnostics. Only a confirmed command failure can report its
+bounded integer exit status; cancellation or unknown effects retain a generic
+reason. Files reads retain their separate authorization and readiness requirements.
 
 ## Initialization failure — September 23
 
@@ -476,7 +464,7 @@ The reason names only the failed step and its exit status:
 | --- | --- |
 | Setup command `i` | `Failed to provision environment: script "setup_commands[i]" failed with exit code N` (observed) |
 | Python packages | `... script "Python package installation" failed with exit code N` (observed label; the official reason appends raw pip output, Core never does) |
-| npm or system packages | `... script "npm package installation"` / `"System package installation"` `failed with exit code N` (unverified) |
+| npm packages | `... script "npm package installation" failed with exit code N` (unverified label; system packages now reject before initialization) |
 | Initial file write or Runtime Skill preparation with a confirmed failure | `Failed to provision environment: initial file installation failed` / `Skill installation failed` (unverified) |
 | Anything else | `Failed to provision environment: initialization did not complete` |
 
@@ -484,9 +472,8 @@ The reason names only the failed step and its exit status:
 missing or malformed receipts, Plugin installation and directory finalization,
 bootstrap rejection and Core restart during initialization. All initialization
 operations return typed Runtime `rejected`, `failed` or `unknown` outcomes. The
-Linux daemon confirms the trusted helper's process exit and private receipt before
-reporting completion or failure. Only `failed` can carry a bounded `exit_code`;
-For setup and package steps, Core projects a confirmed nonzero status, never
+daemon confirms process exit and I/O settlement before reporting completion or
+failure. Only `failed` can carry a bounded `exit_code`. For setup and package steps, Core projects a confirmed nonzero status, never
 process output; zero or missing status retains the generic reason. Only a confirmed
 Skill preparation failure gets the Skill label. Plugin/finalization failures and
 uncertain effects retain the generic reason. The Store composes the reason from a fixed label and integers, so commands, env values, package names,
@@ -496,37 +483,19 @@ not retried and later steps do not run.
 
 ## System packages
 
-`packages.system` accepts package names for the Runtime's Debian apt repositories,
-in both templates and inline hosted configuration. Real apt/dpkg installs packages
-and runs package scripts before npm/Python dependencies and setup commands. Template
-updates replace the package object; omission preserves it and null clears it.
-Referencing Sessions freeze the existing template configuration.
+`packages.system` is unsupported in both Templates and inline configuration.
+Supplying the member, including null or an empty list, returns an explicit
+validation error with param `packages.system`: preinstall system dependencies in
+the sandbox image/template or on the host machine. The field is not silently
+ignored, inherited into a privileged action or translated to apt.
 
-Each Runtime image supplies a seed built before daemon, harness and credential
-installation. The common initializer extracts it into
-`/environment/packages/system` under the unprivileged Runtime identity. Matching
-package databases and base tools are included; private Runtime files and native
-history are absent. Installation uses its own process/filesystem view. Package
-output is not exposed in public diagnostics. A failed or uncertain installation
-fails the Environment through the existing lifecycle and is not replayed.
-
-Setup and native shell tools enter this installed root read-only, with the same
-workspace and adapter-owned temporary storage. Trusted launchers stay outside the
-package-controlled root. Codex uses its managed hook, Claude its full-shell prefix,
-and MiniMax Code its existing tool worker; native execution and cancellation retain
-their existing owners. Core carries only the required initialized-tool condition.
-Files operations retain their existing authorization and initialization boundary.
-The Claude image includes an adapter-specific prefix dispatcher: its exact Runtime
-MCP entry starts directly, while complete native Bash commands enter the tool root
-unchanged. This preserves native sandboxing and cwd receipts without wrapping MCP
-inside a second tool root or introducing Core engine branches.
-
-This is a single-UID tool environment, not a full operating-system service manager.
-Packages requiring additional Unix identities, privileged operations or background
-system services may fail explicitly. There is no apt mirror, package cache, arbitrary
-root installation or package retry mechanism. Existing operation and initialization
-time budgets apply. New harnesses implement the same Runtime contract rather than
-adding template-specific business logic.
+The daemon runs as its starting account. It does not install system packages,
+request sudo or elevate permissions. Operators build managed images/templates
+with required system dependencies; self-hosted users prepare them before execution.
+A missing executable or library fails the operation that requires it. npm/Python
+packages and setup retain the common user-directory initialization path.
+Historical system-package qualification below applies only to its old binaries;
+there is no system-root seed, package-root launcher or upgrade compatibility path.
 
 ## Restricted network policy
 
@@ -539,14 +508,13 @@ Public reads preserve supplied spelling, order and duplicates. Effective native
 comparison uses a separate lowercase, deduplicated copy; updates cannot change
 existing Session snapshots or retry intent.
 
-Provider bootstrap and preparation carry the same frozen policy. Runtime rejects
-mismatches and missing hosted execution policy. Read-only workspace access retains
-its existing minimal prerequisites. Core owns no native proxy configuration:
-Codex uses its managed network ceiling, while Claude and MiniMax use native sandbox
-allowlists. Provisioning remains a separate phase before runtime restrictions.
-Current qualification evidence must cover real Docker native execution, permitted
-and denied hosts, credential isolation, Files/Artifacts, cancellation and retained
-policy on recovery; resource tests alone do not establish execution compatibility.
+The daemon does not enforce `disabled` or `restricted` network modes. Stored
+configuration and successful Template CRUD do not establish execution support.
+An execution combination must reject unless its outer Environment provides and
+qualifies the requested restriction; it must not silently run unrestricted.
+The normal native self-hosted combination uses the host's existing network.
+Historical native-proxy or sandbox allowlist results below do not qualify current
+outer enforcement. Read-only Files retains its separate minimal prerequisites.
 
 ## Explicit gaps and evidence boundaries
 
@@ -567,19 +535,18 @@ Template updates replace each supplied field; omission preserves it and null cle
 it. Referencing Sessions use the composition rules below; these differ from
 Template.update replacement rules.
 
-Files and resolved Skills are installed first, followed by system, npm/Python packages and ordered commands;
+Files and resolved Skills are installed first, followed by npm/Python packages and ordered commands;
 the default cwd is `/workspace`. One command or package operation has the existing
 two-minute local budget, within the thirty-minute initialization budget. No command
 is retried after unknown effects. Completed setup never runs on reconnect.
 Package dependencies are available to native tools across working directories.
-System packages use the isolated tool root described above.
+System dependencies must already be installed; `packages.system` rejects.
 
 The [update Reference](https://developers.openai.com/api/reference/python/resources/beta/subresources/agents/subresources/environments/subresources/templates/methods/update)
 defines runtime network as post-setup and packages as preceding that policy.
-Initialization therefore uses its isolated provisioning network; native tools
-apply the requested enabled/disabled/restricted policy afterward. Allowing setup internet is
-an implementation inference from that phase boundary, not an explicit upstream
-guarantee. Env values are intentionally readable by Agent code; they must not
+Runtime initialization uses the host's existing network. The daemon does not
+provide the reference's later restricted-network enforcement. Unsupported execution
+combinations must reject; the phase ordering is not an isolation guarantee. Env values are intentionally readable by Agent code; they must not
 appear automatically in public metadata or initialization diagnostics.
 
 The [current Template reference](https://developers.openai.com/api/reference/python/resources/beta/subresources/agents/subresources/environments/subresources/templates)
@@ -592,14 +559,16 @@ unsupported hostname forms still reject. This is not full protocol compatibility
 ## Template and inline configuration composition
 
 The pinned Session description applies the template before inline configuration.
-Owned official API probes on 2026-09-23 establish the following narrower behavior:
+Owned official API probes on 2026-09-23 established composition behavior. The
+current implementation applies it only to supported fields; the table below
+excludes the now-unsupported `packages.system` member:
 
 | Session field | Omitted or null | Non-null inline value |
 |---|---|---|
 | `env` | Inherit template keys | Overlay by key; inline value wins, `{}` preserves all keys |
 | `setup_commands` | Inherit template sequence | Replace the sequence; `[]` clears it |
 | `files` | Inherit template file set | Replace the complete set; `[]` clears it |
-| `packages` | Inherit all managers | Resolve Python/npm/system independently; `{}` inherits all |
+| `packages` | Inherit supported managers | Resolve Python/npm independently; `{}` inherits both; supplying `system` rejects |
 | Individual package manager | Inherit its template list | Replace that list; `[]` clears it |
 
 Core performs this composition once, before the existing encrypted Session snapshot
@@ -654,6 +623,10 @@ does not add MiniMax, Claude or E2B native qualification.
 
 ### Real Codex Docker composition acceptance (2026-09-23)
 
+This is historical evidence for the recorded images, including their former
+system-package and inner-sandbox implementation. It does not qualify current
+Runtime permissions or permit `packages.system`.
+
 The exact `8019ac5` production build ran independently with Core, PostgreSQL and
 Docker Runtime against the real Kimi API. Three completed native model Turns prove:
 
@@ -669,8 +642,7 @@ Docker Runtime against the real Kimi API. Three completed native model Turns pro
 
 Five owned Core Sessions were created over the acceptance attempts. The first two
 failed before any model Turn because the reused private Skill-only runner omitted
-Docker `nested_sandbox: true`, already required by the documented initialization
-profile. Correcting that operator setting resolved the proc-mount failure without
+Docker `nested_sandbox: true`, required by that historical initialization profile. Correcting that operator setting resolved the proc-mount failure without
 production changes. In the corrected pair, the populated Session completed its
 native command, but the private runner then required an optional assistant `phase`
 and unwrapped JSON. The original message instead contained matching fenced JSON
@@ -686,6 +658,11 @@ qualification of other harnesses or Providers, every package manager combination
 or complete Template/Agents API semantics.
 
 ## Verification
+
+The dated results in this section are historical evidence for their exact source,
+images and inputs. They do not qualify current bypass execution, cross-platform
+preparation, or outer network enforcement. In particular, former system-package
+installation and private-file denial results are not current support promises.
 
 ### Restricted-network Docker acceptance (2026-09-21)
 
@@ -813,9 +790,10 @@ One MiniMax inline post-restart model request reported an upstream timeout after
 transport changes; this does not establish or fix the timeout cause. All completed
 runs confirmed owned resource cleanup. The three-harness-by-two-Provider matrix
 was not repeated: shared E2B initialization and the changed native adapter paths
-were covered separately. System packages were outside that batch; their current
-qualification is recorded separately. Unconfirmed reference overrides remain gaps,
-and native Codex hook failure retains the limitation stated above.
+were covered separately. System packages were outside that batch; a later
+historical qualification is recorded below. Unconfirmed reference overrides
+remained gaps in that evidence, and the retired native Codex hook's failure
+limitation was not resolved by this run.
 Private sanitized run/check/build evidence is retained under
 `~/.parsar/remediation/20260920/environment-template-setup/` and the linked board.
 These results do not establish complete Template or Agents API compatibility.

@@ -14,21 +14,20 @@ import (
 )
 
 func discoverMCodeWorkspace(rc *runContext, discovery *agentCLIDiscovery) {
-	mode := os.Getenv("OAC_RUNTIME_MCODE_WORKSPACE")
-	if mode == "" {
-		return
-	}
 	fail := func(err error) {
 		discovery.MCode.Available = false
 		fmt.Fprintf(rc.stderr, "oac-daemon: mcode workspace unavailable: %v\n", err)
 	}
-	if mode != "managed" || !discovery.MCode.Available || !mcode.SupportsExecution(discovery.MCode.Version) {
-		fail(fmt.Errorf("managed execution requires the qualified native version and opt-in"))
+	binding, err := localworkspace.Load()
+	if err != nil {
+		fail(err)
 		return
 	}
-	binding, err := localworkspace.Load()
-	if err != nil || binding == nil {
-		fail(fmt.Errorf("dedicated local Runtime binding required"))
+	if binding == nil {
+		return
+	}
+	if !discovery.MCode.Available || !mcode.SupportsExecution(discovery.MCode.Version) {
+		fail(fmt.Errorf("local execution requires the qualified native version"))
 		return
 	}
 	root, err := paths.Root()
@@ -60,7 +59,7 @@ func discoverMCodeWorkspace(rc *runContext, discovery *agentCLIDiscovery) {
 		fail(err)
 		return
 	}
-	c, err := mcode.ConfigureLocal(binary, node, os.Getenv("OAC_RUNTIME_MCODE_WORKSPACE_BRIDGE"), root, os.Getenv("OAC_RUNTIME_WORKSPACE"), binding.NetworkPolicy(), os.Getenv("OAC_RUNTIME_STAGING"))
+	c, err := mcode.ConfigureLocal(binary, node, os.Getenv("OAC_RUNTIME_MCODE_WORKSPACE_BRIDGE"), root, os.Getenv("OAC_RUNTIME_WORKSPACE"), binding.NetworkPolicy())
 	if err == nil {
 		err = mcode.CheckWorkspace(context.Background(), c)
 	}

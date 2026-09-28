@@ -3,22 +3,18 @@ import { parseEnvironmentMCP, type EnvironmentMCPServer } from "./mcp_environmen
 import type { MCPProfile } from "./mcp.js";
 import { parseSkills, workspaceSkills, type WorkspaceSkill } from "./workspace_skills.js";
 import type { CanUseTool, HookCallback, Options } from "@anthropic-ai/claude-agent-sdk";
-import { lstatSync, realpathSync, statSync } from "node:fs";
-import { isIP } from "node:net";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { realpathSync, statSync } from "node:fs";
+import { isAbsolute, parse, resolve } from "node:path";
 
 export type Workspace = {
+  tool_env?: Record<string, string>;
   home: string;
   state: string;
   scratch: string;
-  protected_dirs: string[];
-  dependency_path: string;
   env_names: string[];
   skills?: WorkspaceSkill[];
   capability_root?: string;
   mcp?: EnvironmentMCPServer[];
-  tool_environment?: boolean;
-  system_packages?: boolean;
   network_access?: "enabled" | "disabled" | "restricted";
   allowed_domains?: string[];
 };
@@ -28,15 +24,13 @@ const environmentNames = new Set([
   "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
   "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
 ]);
-const credentialNames = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
-  "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "GOOGLE_APPLICATION_CREDENTIALS"];
 const nativeTools = ["Bash", "Read", "Edit"];
 const denial = "Tool is outside the workspace execution profile.";
-const invalidPath = /[\x00-\x1f\x7f\\:*?\[\]{}()]/;
-const contains = (root: string, path: string) => path === root || path.startsWith(root + "/");
+const invalidPath = /[\x00-\x1f\x7f]/;
+
 
 function directory(value: unknown, canonical: boolean): string {
-  if (typeof value !== "string" || !isAbsolute(value) || value === "/" || invalidPath.test(value)) {
+  if (typeof value !== "string" || !isAbsolute(value) || value === parse(value).root || invalidPath.test(value)) {
     throw new Error("invalid_request");
   }
   try {
@@ -50,39 +44,22 @@ export function parseWorkspace(value: unknown, cwd: string): Workspace | undefin
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_request");
   const config = value as Record<string, unknown>;
-  if (Object.keys(config).some(key => !["home", "state", "scratch", "protected_dirs", "dependency_path", "env_names", "network_access", "allowed_domains", "tool_environment", "system_packages", "skills", "mcp", "capability_root"].includes(key)) ||
-      (config.tool_environment !== undefined && typeof config.tool_environment !== "boolean") ||
-      (config.system_packages !== undefined && typeof config.system_packages !== "boolean") ||
-      (config.system_packages === true && config.tool_environment !== true) ||
+  if (Object.keys(config).some(key => !["tool_env", "home", "state", "scratch", "env_names", "network_access", "allowed_domains", "skills", "mcp", "capability_root"].includes(key)) ||
       (config.network_access !== undefined && config.network_access !== "enabled" && config.network_access !== "disabled" && config.network_access !== "restricted") ||
-      !Array.isArray(config.protected_dirs) || !Array.isArray(config.env_names) ||
-      typeof config.dependency_path !== "string" || !config.dependency_path ||
+      !Array.isArray(config.env_names) ||
       config.env_names.some(name => typeof name !== "string" || !environmentNames.has(name)) ||
       new Set(config.env_names).size !== config.env_names.length) throw new Error("invalid_request");
+  if (config.network_access !== undefined && config.network_access !== "enabled") throw new Error("invalid_request");
+  if (config.tool_env !== undefined && (!config.tool_env || typeof config.tool_env !== "object" || Array.isArray(config.tool_env) || Object.values(config.tool_env).some(value => typeof value !== "string"))) throw new Error("invalid_request");
   const mcp = parseEnvironmentMCP(config.mcp);
-  if (config.capability_root !== undefined) {
-    const capabilityRoot = directory(config.capability_root, true);
-    if ([cwd, config.home, config.state, config.scratch].some(root =>
-        typeof root === "string" && (contains(root, capabilityRoot) || contains(capabilityRoot, root)))) throw new Error("invalid_request");
-  }
+  if (config.capability_root !== undefined) directory(config.capability_root, false);
   if ((Array.isArray(config.skills) && config.skills.length || mcp?.length) && !config.capability_root) throw new Error("invalid_request");
   if (mcp?.length && config.network_access !== "enabled") throw new Error("invalid_request");
   const domains = config.allowed_domains ?? [];
-  const hostname = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
-  if (!Array.isArray(domains) || (config.network_access === "restricted"
-      ? domains.length < 1 || domains.length > 100 || domains.some(host => typeof host !== "string" || !hostname.test(host) || host.trim() !== host || isIP(host) !== 0)
-      : domains.length !== 0)) throw new Error("invalid_request");
-  const roots = [cwd, config.home, config.state, config.scratch, ...config.protected_dirs].map(path => directory(path, true));
-  if (roots.some((root, index) => roots.some((other, otherIndex) => index !== otherIndex && contains(root, other)))) {
-    throw new Error("invalid_request");
-  }
-  const dependencies = config.dependency_path.split(":").map(path => {
-    const actual = directory(path, false);
-    if (roots.some(root => contains(root, resolve(path)) || contains(resolve(path), root) ||
-        contains(root, actual) || contains(actual, root))) throw new Error("invalid_request");
-    return actual;
-  });
-  return { ...config, ...(config.skills === undefined ? {} : { skills: parseSkills(config.skills) }), dependency_path: dependencies.join(":") } as Workspace;
+  if (!Array.isArray(domains) || domains.length !== 0) throw new Error("invalid_request");
+  for(const root of [cwd,config.home,config.state,config.scratch]) directory(root,false);
+  return { ...config, ...(config.skills === undefined ? {} : { skills: parseSkills(config.skills) }) } as Workspace;
+
 }
 
 export class WorkspaceProfile {
@@ -95,10 +72,15 @@ export class WorkspaceProfile {
     if (process.env.HOME !== config.home || process.env.CLAUDE_CONFIG_DIR !== config.state ||
         process.env.CLAUDE_CODE_PROJECT_DIR_NAME !== undefined) throw new Error("invalid_request");
     const env: Record<string, string> = {
-      PATH: config.dependency_path, HOME: config.home, TMPDIR: config.scratch, CLAUDE_CONFIG_DIR: config.state,
+      ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string,string] => entry[1] !== undefined)),
+      HOME: config.home, TMPDIR: config.scratch, CLAUDE_CONFIG_DIR: config.state,
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1",
       DISABLE_AUTOUPDATER: "1", CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1",
     };
+    for (const [name, value] of Object.entries(config.tool_env ?? {})) {
+      // Initialization cannot redirect the native Session history lookup.
+      if (!["HOME", "USERPROFILE", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_PROJECT_DIR_NAME"].includes(name.toUpperCase())) env[name] = value;
+    }
     for (const name of config.env_names) {
       const value = process.env[name];
       if (value === undefined) throw new Error("invalid_request");
@@ -108,39 +90,16 @@ export class WorkspaceProfile {
       if (!process.env[reference]) throw new Error("invalid_request");
       env[reference] = process.env[reference]!;
     }
-    if (config.system_packages) {
-      env.CLAUDE_CODE_SHELL_PREFIX = "/usr/local/bin/oac-claude-shell-prefix";
-      env.OAC_RUNTIME_TOOL_SCRATCH = config.scratch;
-    }
     const skills = workspaceSkills(config.skills ?? [], config.capability_root ?? "");
     this.skillNames = skills?.names ?? [];
     const skillTools = skills ? ["Skill"] : [];
-    const protectedRoots = [config.home, config.state, ...config.protected_dirs];
     this.options = {
       env, tools: [...nativeTools, ...skillTools, ...(subagents ? ["Agent", "SendMessage"] : [])],
       ...(skills ? { plugins: skills.paths.map(path => ({ type: "local" as const, path, skipMcpDiscovery: true })) } : {}), allowedTools: mcp?.allowed ?? [...functions], mcpServers: {}, strictMcpConfig: true,
-      settingSources: [], permissionMode: "default", persistSession: true,
-      settings: {
-        ...(skills ? { disableSkillShellExecution: true } : {}),
-        permissions: {
-          blockReadsOutsideWorkingDirectories: true, disableBypassPermissionsMode: "disable",
-          deny: [...protectedRoots, "/proc", "/sys"].flatMap(path => [
-            `Read(/${path})`, `Read(/${path}/**)`, `Edit(/${path})`, `Edit(/${path}/**)`,
-          ]),
-        },
-      },
-      sandbox: {
-        enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: false, allowUnsandboxedCommands: false,
-        excludedCommands: [], enableWeakerNestedSandbox: false, enableWeakerNetworkIsolation: false,
-        filesystem: { disabled: false, allowWrite: [cwd, config.scratch, ...(config.tool_environment ? ["/environment/packages"] : [])], denyRead: protectedRoots,
-          denyWrite: [...protectedRoots, ...(config.capability_root ? [config.capability_root] : []),
-            ...(config.system_packages ? ["/environment/packages/system"] : [])], allowRead: [] },
-        credentials: {
-          envVars: [...new Set([...credentialNames, ...config.env_names, ...(mcp?.credentialReferences() ?? [])])].map(name => ({ name, mode: "deny" })),
-          files: protectedRoots.map(path => ({ path, mode: "deny" })),
-        },
-        network: { allowedDomains: config.network_access === "enabled" ? ["*"] : config.network_access === "restricted" ? [...config.allowed_domains!] : [], strictAllowlist: true, allowAllUnixSockets: false, allowLocalBinding: false },
-      },
+      settingSources: [], permissionMode: "bypassPermissions", persistSession: true,
+      settings: {},
+      sandbox: { enabled: false },
+      allowDangerouslySkipPermissions: true,
       canUseTool: this.canUseTool,
       hooks: { PreToolUse: [{ hooks: [this.beforeTool] }] },
     };
@@ -160,7 +119,7 @@ export class WorkspaceProfile {
 
   readonly canUseTool: CanUseTool = async (name, input, { signal, agentID }) => {
     if (!signal.aborted && (agentID === undefined || this.subagents?.permitsActor(agentID)) && this.permits(name, input)) {
-      return { behavior: "allow", updatedInput: this.absoluteInput(name, input) };
+      return { behavior: "allow", updatedInput: this.nativeInput(name, input) };
     }
     return { behavior: "deny", message: denial };
   };
@@ -174,20 +133,21 @@ export class WorkspaceProfile {
     }
     if (!signal.aborted && input.hook_event_name === "PreToolUse" && (input.agent_id === undefined || this.subagents?.permitsActor(input.agent_id)) &&
         (id === undefined || id === input.tool_use_id) && this.permits(input.tool_name, input.tool_input)) {
-      if (input.tool_name === "Bash" && this.config.tool_environment) {
-        const toolInput = input.tool_input as Record<string, unknown>;
-        const quote = (text: string) => "'" + text.replaceAll("'", "'\\''") + "'";
-        return { hookSpecificOutput: { hookEventName: "PreToolUse", updatedInput: { ...toolInput,
-          command: ". /environment/initialization/tool-env.sh && eval -- " + quote(toolInput.command as string) } } };
-      }
-      return input.tool_name !== "Read" && input.tool_name !== "Edit" ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse",
-        updatedInput: this.absoluteInput(input.tool_name, input.tool_input as Record<string, unknown>) } };
+      return !["Read", "Edit", "Skill"].includes(input.tool_name) ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse",
+        updatedInput: this.nativeInput(input.tool_name, input.tool_input as Record<string, unknown>) } };
     }
     return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: denial } };
   };
 
-  private absoluteInput(name: string, input: Record<string, unknown>): Record<string, unknown> {
+  private nativeInput(name: string, input: Record<string, unknown>): Record<string, unknown> {
+    if (name === "Skill") return { ...input, skill: this.skillName(input.skill) };
     return name !== "Read" && name !== "Edit" ? input : { ...input, file_path: resolve(this.cwd, input.file_path as string) };
+  }
+
+  private skillName(value: unknown): string | undefined {
+    if (typeof value !== "string") return undefined;
+    // Public names are unique in the installed snapshot; native plugins add a namespace.
+    return this.skillNames.find(name => name === value || name.endsWith(":" + value));
   }
 
   private permits(name: string, value: unknown): boolean {
@@ -195,26 +155,11 @@ export class WorkspaceProfile {
     const input = value as Record<string, unknown>;
     if (this.structuredOutput && name === "StructuredOutput") return true;
     if (this.functions.includes(name) || this.mcp?.permits(name)) return true;
-    if (name === "Skill") return typeof input.skill === "string" && this.skillNames.includes(input.skill);
+    if (name === "Skill") return this.skillName(input.skill) !== undefined;
     if (name === "Bash") return typeof input.command === "string" && !!input.command.trim() &&
-      (input.run_in_background === undefined || input.run_in_background === false) &&
-      (input.dangerouslyDisableSandbox === undefined || input.dangerouslyDisableSandbox === false);
+      (input.run_in_background === undefined || input.run_in_background === false);
     if ((name !== "Read" && name !== "Edit") || typeof input.file_path !== "string" || !input.file_path ||
         /[\x00-\x1f]/.test(input.file_path)) return false;
-    const path = resolve(this.cwd, input.file_path);
-    if (!contains(this.cwd, path)) return false;
-    let existing = path;
-    const missing: string[] = [];
-    try {
-      while (true) {
-        try { lstatSync(existing); break; }
-        catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT" || existing === this.cwd) return false;
-          missing.unshift(existing.slice(dirname(existing).length + 1));
-          existing = dirname(existing);
-        }
-      }
-      return contains(this.cwd, join(realpathSync(existing), ...missing));
-    } catch { return false; }
+    return true;
   }
 }

@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
@@ -12,7 +13,7 @@ func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg
 	if err := validateNativeTransportEnvironment(req); err != nil {
 		return SessionPlan{}, nil, err
 	}
-	profile, err := managedPermissionProfile(req, cfg)
+	_, err := runtimePermissionProfile(req)
 	if err != nil {
 		return SessionPlan{}, nil, err
 	}
@@ -29,32 +30,24 @@ func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg
 		return SessionPlan{}, nil, err
 	}
 	disableProgrammaticTools(&plan, req.ExecutionControls)
-	if profile != "" {
-		plan.Sandbox = ""
-		plan.Permissions = profile
-		plan.ExtraConfig = append(plan.ExtraConfig, [2]string{"default_permissions", tomlQuoteString(profile)})
-		configureRestrictedShellEnvironment(&plan)
-		if req.LocalEnvironment != nil && req.LocalEnvironment.CapabilityRoot != "" {
-			configureCapabilityRoot(&plan, profile, req.LocalEnvironment.CapabilityRoot)
-		}
-		// Native login-shell snapshots live outside the managed tool filesystem.
-		plan.ExtraConfig = append(plan.ExtraConfig, [2]string{"features.shell_snapshot", "false"})
+	if req.LocalEnvironment != nil {
+		plan.Sandbox = "danger-full-access"
+		plan.Permissions = ""
+		plan.ApprovalPolicy = AskForApproval{String: "never"}
 	}
 
-	if req.LocalEnvironment != nil && req.LocalEnvironment.ToolEnvironment {
-		if err := localworkspace.VerifyToolEnvironment(req.LocalEnvironment.SystemPackages); err != nil {
+	if req.LocalEnvironment != nil {
+		values, err := localworkspace.ReadOptionalToolEnvironment()
+		if err != nil {
 			plan.Cleanup()
 			return SessionPlan{}, nil, err
 		}
-		plan.Env = append(plan.Env, "OAC_RUNTIME_TOOL_ENV=1")
-		if req.LocalEnvironment.SystemPackages {
-			if err := prepareSystemToolAnchor(); err != nil {
-				plan.Cleanup()
-				return SessionPlan{}, nil, err
+		for key, value := range values {
+			if strings.EqualFold(key, "CODEX_HOME") || strings.EqualFold(key, "HOME") || strings.EqualFold(key, "USERPROFILE") {
+				continue
 			}
-			plan.Env = append(plan.Env, "OAC_RUNTIME_SYSTEM_PACKAGES=1")
+			plan.Env = append(plan.Env, key+"="+value)
 		}
-		plan.ExtraConfig = append(plan.ExtraConfig, [2]string{"features.hooks", "true"})
 	}
 
 	if req.DisableSubagents {
@@ -105,17 +98,6 @@ func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg
 
 	plan.Env = append(plan.Env, mcpBearerEnv...)
 	plan.Env = append(plan.Env, environmentMCPEnv...)
-	if cfg.runtimeNetwork.Access == "restricted" {
-		if err := prepareManagedNetwork(&plan, cfg.runtimeNetwork); err != nil {
-			plan.Cleanup()
-			return SessionPlan{}, nil, err
-		}
-	}
-	return plan, skillRoots, nil
-}
 
-// The Runtime supplies this resolved root after validating its binding. Quote the
-// path as one TOML key; neither public options nor source directories select it.
-func configureCapabilityRoot(plan *SessionPlan, profile, root string) {
-	plan.ExtraConfig = append(plan.ExtraConfig, [2]string{"permissions." + tomlQuoteString(profile) + ".filesystem." + tomlQuoteString(root), tomlQuoteString("read")})
+	return plan, skillRoots, nil
 }

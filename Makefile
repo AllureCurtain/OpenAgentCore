@@ -3,12 +3,12 @@ SQLC_VERSION ?= v1.29.0
 SQLC ?= go run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
 SWAG_VERSION ?= v1.16.4
 
-.PHONY: help check check-database check-go check-sqlc sqlc-generate node-deps check-claude-sdk check-web check-mcode-harness build-daemon build-agents-api build-agents-api-release check-agents-api docker-build-agents-api check-agents-api-container build-agents-executor check-agents-executor build-agents-runtime build-claude-runtime build-claude-sdk-runtime build-mcode-harness build-mcode-runtime
+.PHONY: help check check-database check-go check-sqlc sqlc-generate node-deps check-claude-sdk check-web check-mcode-harness build-daemon build-agents-api build-agents-api-release check-agents-api docker-build-agents-api check-agents-api-container build-agents-runtime build-claude-runtime build-claude-sdk-runtime build-mcode-harness build-mcode-runtime
 
 help:
 	@printf '%s\n' 'make build-agents-api  Build standalone Core commands' 'make build-daemon      Build the execution daemon' 'make check             Run Core, persistence and runtime checks' 'See README.md for runtime prerequisites and deployment.'
 
-check: check-docs check-names check-distribution check-database check-sqlc check-go check-microsandbox-provider check-agents-api check-claude-sdk check-web check-mcode-harness check-agents-executor
+check: check-docs check-names check-distribution check-database check-sqlc check-go check-microsandbox-provider check-agents-api check-claude-sdk check-web check-mcode-harness
 	@printf 'OpenAgentCore checks passed.\n'
 
 .PHONY: check-names
@@ -65,7 +65,6 @@ check-agents-api: build-agents-api
 	# Persistence integration tests include bounded lifecycle waits that together exceed Go's 10m default.
 	go test ./services/agents-api/... ./packages/agents-client/... -count=1 -timeout=20m
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s services/agents-api/tests -p 'official_diagnostics_test.py'
-	PYTHONDONTWRITEBYTECODE=1 python3 services/agents-api/deploy/runtime/initialize_receipt_test.py
 	PYTHONDONTWRITEBYTECODE=1 python3 services/agents-api/deploy/e2b/managed_init_test.py
 
 docker-build-agents-api:
@@ -78,7 +77,6 @@ node-deps:
 	pnpm install --frozen-lockfile
 
 check-claude-sdk: node-deps
-	python3 services/agents-api/deploy/claude/shell_prefix_test.py
 	pnpm --filter @parsar/claude-sdk-adapter test
 	$(MAKE) build-claude-sdk-runtime
 
@@ -96,12 +94,6 @@ check-mcode-harness:
 	node --test packages/mcode-harness/*.test.mjs
 	@for script in packages/mcode-harness/*.mjs; do node --check "$$script"; done
 	bash -n scripts/build-mcode-harness.sh scripts/build-mcode-runtime.sh
-
-build-agents-executor:
-	./scripts/build-agents-executor.sh
-
-check-agents-executor:
-	./scripts/check-agents-executor.sh
 
 build-agents-runtime:
 	./scripts/build-agents-runtime.sh

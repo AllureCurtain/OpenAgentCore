@@ -129,8 +129,11 @@ options only over the daemon connection bound to the Session. For `self_hosted`,
 that is the executor enrolled for the Session's own Environment with a current
 executor credential of the Session creator's principal; rotation or revocation
 closes the socket before further dispatch. The executor host stores the bundle in
-its native harness home, as hosted Runtimes do; tools and public Files cannot reach
-that home. Revocation does not erase a bundle already delivered.
+its native harness home, as hosted Runtimes do. Public Files remains scoped to the
+bound workspace, but native tools use the starting account's permissions and can
+access whatever that user can read. The daemon does not isolate its local
+credentials from same-user tools. Revocation does not erase an already delivered
+bundle.
 
 ## Deployment defaults
 

@@ -5,16 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
-	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
-	"github.com/MiniMax-AI-Dev/parsar/internal/agentnetwork"
 	obslog "github.com/MiniMax-AI-Dev/parsar/internal/obs/log"
 )
 
@@ -26,20 +23,14 @@ const terminalSendTimeout = 2 * time.Second
 // sessionConfig is the cross-cutting knob bag — production callers go
 // through Factory which uses defaults.
 type sessionConfig struct {
-	codexBinary         string
-	permissionProfile   string
-	runtimeNetwork      agentnetwork.Policy
-	runtimeNetworkError error
-	logger              *slog.Logger
-	killTimeout         time.Duration
+	codexBinary string
+	logger      *slog.Logger
+	killTimeout time.Duration
 }
 
 func defaultSessionConfig() sessionConfig {
-	policy, err := localworkspace.RuntimeNetworkPolicy()
 	return sessionConfig{
-		codexBinary:       defaultBinary(),
-		permissionProfile: os.Getenv("OAC_RUNTIME_CODEX_PERMISSION_PROFILE"),
-		runtimeNetwork:    policy, runtimeNetworkError: err,
+		codexBinary: defaultBinary(),
 		logger:      obslog.Bg(),
 		killTimeout: rpcKillTimeout,
 	}
@@ -73,7 +64,6 @@ type Session struct {
 	operationMu               sync.Mutex
 	operations                sync.WaitGroup
 	operationsClosed          bool
-	toolEnvironment           bool
 	nativeHome                string
 	subagents                 *subagentObservations
 	observeSubagentIdentities bool
@@ -160,7 +150,6 @@ func (s *Session) registerHandlers() {
 	rpc.OnNotification("item/reasoning/summaryTextDelta", s.onReasoningDelta)
 	rpc.OnNotification("thread/tokenUsage/updated", s.onUsageUpdated)
 	rpc.OnNotification("error", s.onErrorNotif)
-	rpc.OnNotification("hook/completed", s.onToolEnvironmentHook)
 
 	s.onServerRequest("item/commandExecution/requestApproval", s.handleCodexCommandApproval)
 	s.onServerRequest("item/fileChange/requestApproval", s.handleCodexFileApproval)

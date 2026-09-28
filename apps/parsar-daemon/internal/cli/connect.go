@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
@@ -259,21 +257,8 @@ func mainLoopRemote(rc *runContext, profile string, prof auth.Profile, agentCLIs
 		Out:    rc.stderr,
 	})
 
-	rootCtx, cancel := context.WithCancel(context.Background())
+	rootCtx, cancel := daemonize.NotifyContext(context.Background())
 	defer cancel()
-
-	// Honour SIGINT / SIGTERM as graceful shutdown.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		select {
-		case sig := <-sigCh:
-			obslog.Bg().Info("received signal, shutting down", "signal", sig.String())
-			cancel()
-		case <-rootCtx.Done():
-		}
-		signal.Stop(sigCh)
-	}()
 
 	bootCtx, bootCancel := context.WithTimeout(rootCtx, bootstrapTimeout)
 	var boot *transport.BootstrapResponse

@@ -83,17 +83,11 @@ func newPreparation(parent context.Context, req proto.PromptRequestPayload, cfg 
 	for _, kv := range plan.ExtraConfig {
 		rpcCfg.ExtraArgs = append(rpcCfg.ExtraArgs, "-c", kv[0]+"="+kv[1])
 	}
-	if err := configureManagedNetworkProcess(&rpcCfg, plan.managedRequirements); err != nil {
-		cancelFn()
-		plan.Cleanup()
-		return nil, err
-	}
 
 	rpc := NewJSONRPCClient(rpcCfg)
 
 	s := &Session{
 		nativeHome:                nativeHomeFromPlan(plan),
-		toolEnvironment:           req.LocalEnvironment != nil && req.LocalEnvironment.ToolEnvironment,
 		functions:                 functions,
 		observeMessages:           req.ObserveMessages,
 		observeTools:              req.ObserveTools,
@@ -138,11 +132,7 @@ func newPreparation(parent context.Context, req proto.PromptRequestPayload, cfg 
 			return p.preparationFailed(err)
 		}
 	}
-	if s.toolEnvironment {
-		if err := verifyToolEnvironmentHook(cancelCtx, rpc, plan.Cwd); err != nil {
-			return p.preparationFailed(err)
-		}
-	}
+
 	if plan.mcpServers != nil {
 		if err := verifyMCPConfig(cancelCtx, rpc, plan); err != nil {
 			return p.preparationFailed(err)

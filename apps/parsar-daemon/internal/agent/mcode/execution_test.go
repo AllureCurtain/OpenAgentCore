@@ -17,7 +17,7 @@ func executionRequest(t *testing.T) proto.PromptRequestPayload {
 	return r
 }
 
-func TestExecutionOptionsExcludeAmbientAuthority(t *testing.T) {
+func TestExecutionOptionsInheritUserEnvironment(t *testing.T) {
 	r := executionRequest(t)
 	t.Setenv("OAC_TEST_SECRET_CANARY", "secret")
 	t.Setenv("NODE_OPTIONS", "--import=untrusted")
@@ -25,11 +25,10 @@ func TestExecutionOptionsExcludeAmbientAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, e := range opts.Env {
-		if strings.HasPrefix(e, "OAC_TEST_SECRET_CANARY=") || strings.HasPrefix(e, "NODE_OPTIONS=") {
-			t.Fatal("ambient authority inherited")
-		}
+	if !strings.Contains(strings.Join(opts.Env, "\n"), "OAC_TEST_SECRET_CANARY=secret") {
+		t.Fatal("user environment lost")
 	}
+
 	data, err := os.ReadFile(filepath.Join(opts.DataDir, "config.yaml"))
 	if err != nil {
 		t.Fatal(err)

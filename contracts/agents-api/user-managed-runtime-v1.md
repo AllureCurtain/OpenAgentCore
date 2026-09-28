@@ -17,7 +17,10 @@ file operations continue through Core and daemon, not E2B commands or files.
 
 Historical qualification recorded on 2026-09-22 against source candidate `8f0cd2530d7b58cb7fb3ea124a1fc43dacecca36`.
 These records qualify only those binaries and tested inputs. Later implementation
-changes, including shared Runtime capability preparation, require separate acceptance.
+changes, including shared Runtime capability preparation and native-platform
+support, require separate acceptance. The current daemon has no inner sandbox;
+private-file denial and namespace probes below describe the former tested
+implementation, not current tool permissions or an installation requirement.
 
 | Deployment | Codex | Claude Code | MiniMax Code |
 | --- | --- | --- | --- |

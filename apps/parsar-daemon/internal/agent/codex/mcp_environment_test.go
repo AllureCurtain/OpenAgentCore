@@ -2,6 +2,7 @@ package codex
 
 import (
 	"encoding/json"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -20,8 +21,9 @@ func TestEnvironmentMCPProjectsIsolatedStdioAndPrivateHTTPReferences(t *testing.
 	if err != nil || len(servers) != 2 || len(env) != 2 {
 		t.Fatal("environment declarations were not projected", err)
 	}
-	if servers["local"].Command != "/usr/bin/python3" || !servers["local"].ApproveTools ||
-		!slices.Equal(servers["local"].Args, []string{"-I", "-S", "/usr/local/bin/oac-runtime-initialize", "stdio", "/private/runtime/capabilities", "/private/runtime/workspace", "plugins/0", "local"}) {
+	executable, _ := os.Executable()
+	if servers["local"].Command != executable || !servers["local"].ApproveTools ||
+		!slices.Equal(servers["local"].Args, []string{"runtime-mcp-exec", "/private/runtime/capabilities", "plugins/0", "local"}) {
 		t.Fatal("native stdio bypasses the packaged launcher")
 	}
 	remote := servers["remote"]
@@ -41,7 +43,7 @@ func TestEnvironmentMCPProjectsIsolatedStdioAndPrivateHTTPReferences(t *testing.
 	if !matchesMCPConfig(raw, servers) {
 		t.Fatal("qualified native projection rejected")
 	}
-	corrupt := strings.Replace(string(raw), "oac-runtime-initialize", "untrusted-launcher", 1)
+	corrupt := strings.Replace(string(raw), "runtime-mcp-exec", "untrusted-launcher", 1)
 	if matchesMCPConfig(json.RawMessage(corrupt), servers) {
 		t.Fatal("different native launcher accepted")
 	}

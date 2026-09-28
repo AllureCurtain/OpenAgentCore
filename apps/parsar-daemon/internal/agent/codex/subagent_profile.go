@@ -15,9 +15,6 @@ func configureSubagentObservations(plan *SessionPlan, req proto.PromptRequestPay
 	if !req.ObserveSubagentIdentities || req.DisableSubagents {
 		return nil
 	}
-	if req.LocalEnvironment != nil && req.LocalEnvironment.ToolEnvironment {
-		return errors.New("codex: multi_agent with initialized tool environment requires verified child hook failure handling")
-	}
 	for _, feature := range []string{"hooks", "plugins", "code_mode", "code_mode_only", "code_mode_prewarm", "multi_agent_v2"} {
 		plan.EnableFeatures = slices.DeleteFunc(plan.EnableFeatures, func(value string) bool { return value == feature })
 		if !slices.Contains(plan.DisableFeatures, feature) {
@@ -44,12 +41,8 @@ func verifySubagentObservationProfile(ctx context.Context, rpc *JSONRPCClient, c
 	if err != nil {
 		return err
 	}
-	// Packaged managed requirements may force hooks on. Only the immutable
-	// Bash pre-hook is admissible; managed-only discovery must survive reloads.
-	for _, hook := range hooks {
-		if !hook.isRuntimeToolEnvironmentHook() {
-			return errors.New("codex: subagent observation requires all hooks except the packaged Bash pre-hook disabled")
-		}
+	if len(hooks) != 0 {
+		return errors.New("codex: subagent observation requires hooks disabled")
 	}
 
 	raw, err := rpc.Request(ctx, "configRequirements/read", nil)

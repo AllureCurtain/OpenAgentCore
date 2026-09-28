@@ -6,9 +6,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/MiniMax-AI-Dev/parsar/internal/runtimefs"
 	"io/fs"
 	"os"
-	"path"
 	"strings"
 	"unicode/utf8"
 
@@ -81,7 +81,7 @@ func ValidateDirectories(directories []string) error {
 }
 
 // ValidateLocalDirectories checks source spelling, not local access authority.
-// This Linux implementation requires canonical Unix paths. The Runtime resolver
+// Runtime requires canonical paths for its own operating system. The resolver
 // owns directory access and protected-root exclusions.
 func ValidateLocalDirectories(directories []string) error {
 	if len(directories) > 50 {
@@ -89,8 +89,7 @@ func ValidateLocalDirectories(directories []string) error {
 	}
 	seen := map[string]bool{}
 	for _, directory := range directories {
-		if !path.IsAbs(directory) || len(directory) > 4096 || !utf8.ValidString(directory) ||
-			path.Clean(directory) != directory || strings.ContainsAny(directory, "\\\x00\r\n") || seen[directory] {
+		if runtimefs.ValidateLocalPath(directory) != nil || len(directory) > 4096 || !utf8.ValidString(directory) || seen[directory] {
 			return ErrInvalid
 		}
 		seen[directory] = true

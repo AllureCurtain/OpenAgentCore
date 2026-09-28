@@ -67,7 +67,11 @@ function SandboxManager({ consoleConfig }: { consoleConfig: SandboxConsoleConfig
   const [cleanup, setCleanup] = useState<{ node: NodeCleanup; open: boolean } | null>(null);
   // The enrollment dialog's reads: the node list alone, every few seconds while it waits. It settles
   // when the read does, which the dialog waits for before calling a command expired.
-  const refreshNodes = useCallback(() => refetch(), [refetch]);
+  const { refetch: refetchInventory } = query;
+  const refreshNodes = useCallback(async () => {
+    const result = await refetchInventory();
+    return result.isSuccess && !result.data.nodesError ? result.data.nodes : null;
+  }, [refetchInventory]);
   // Where focus goes once a dialog about a node that is gone closes.
   const heading = useRef<HTMLHeadingElement>(null);
   const toast = useToast();

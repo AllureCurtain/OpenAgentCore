@@ -1,5 +1,5 @@
 // Package daemonize gives `oac-daemon connect -b` a no-cgo way to
-// detach from the controlling terminal on macOS + Linux. Strategy is
+// detach from the controlling terminal on macOS, Linux and Windows. Strategy is
 // re-exec-the-binary rather than POSIX double-fork: the parent opens
 // connect.log + connect.pid, then starts a fresh copy of its own
 // argv with stdio redirected to the log file and a sentinel env var
@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"syscall"
+	"strings"
 )
 
 // BackgroundSentinelEnv is set by the parent on the child's
@@ -38,8 +38,8 @@ type ReExecOptions struct {
 	// /dev/null; stdout+stderr are appended to this file (0o600).
 	LogPath string
 
-	// PIDPath is the absolute pidfile path. The parent writes the
-	// child's PID here before returning; existing files are replaced
+	// PIDPath is the absolute process-record path. The parent writes the
+	// child identity here before returning; existing files are replaced
 	// atomically.
 	PIDPath string
 
@@ -63,7 +63,7 @@ func Spawn(argv []string, opts ReExecOptions) (int, error) {
 		return 0, errors.New("daemonize.Spawn: LogPath and PIDPath required")
 	}
 
-	logFile, err := os.OpenFile(opts.LogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	logFile, err := openPrivateLog(opts.LogPath)
 	if err != nil {
 		return 0, fmt.Errorf("daemonize: open log %s: %w", opts.LogPath, err)
 	}
@@ -96,29 +96,42 @@ func Spawn(argv []string, opts ReExecOptions) (int, error) {
 	cmd.Stdin = devNull
 	cmd.Stdout = logFile
 	cmd.Stderr = logFile
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setsid: true, // new session → no controlling tty
+	cleanup, ready, err := configureBackground(cmd)
+	if err != nil {
+		return 0, err
 	}
+	defer cleanup()
 
 	if err := cmd.Start(); err != nil {
 		return 0, fmt.Errorf("daemonize: start child: %w", err)
 	}
 
 	pid := cmd.Process.Pid
-
-	// Release rather than Wait — don't take zombie reaping duties.
-	// Init takes over once the parent exits.
-	if err := cmd.Process.Release(); err != nil {
-		// Non-fatal; child is already running. Log to the caller's
-		// chain so it shows up in stderr but doesn't fail the spawn.
-		fmt.Fprintf(os.Stderr, "daemonize: warning: release child: %v\n", err)
+	if err := ready(); err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return 0, err
+	}
+	identity, err := identifyProcess(pid)
+	if err != nil {
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return 0, err
+	}
+	for _, entry := range cmd.Env {
+		if strings.HasPrefix(entry, stopEventEnv+"=") {
+			identity.StopEvent = strings.TrimPrefix(entry, stopEventEnv+"=")
+		}
 	}
 
-	if err := WritePIDFile(opts.PIDPath, pid); err != nil {
-		// Kill the child so we don't leave a daemon the user can't
-		// `stop` without ps-grepping.
-		_ = syscall.Kill(pid, syscall.SIGTERM)
-		return 0, fmt.Errorf("daemonize: write pidfile (child killed): %w", err)
+	if err := writeIdentity(opts.PIDPath, identity); err != nil {
+		// The parent still owns this exact process handle until publication succeeds.
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
+		return 0, fmt.Errorf("daemonize: write process record: %w", err)
+	}
+	if err := cmd.Process.Release(); err != nil {
+		fmt.Fprintf(os.Stderr, "daemonize: release child handle: %v\n", err)
 	}
 
 	return pid, nil

@@ -196,7 +196,7 @@ func validRuntimeInitialization(p RuntimeInitialization) bool {
 			}
 		}
 		return true
-	case "system", "npm", "python":
+	case "npm", "python":
 		if p.Env != nil || p.Command != "" || p.CWD != "" || len(p.Packages) == 0 || len(p.Packages) > 1000 || p.Network == "" {
 			return false
 		}

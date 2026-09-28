@@ -17,6 +17,7 @@
     "environments-and-files",
     "hosted-providers",
     "self-hosted-execution",
+    "self-hosted-native",
     "---Administration---",
     "console",
     "admin-api",

@@ -5,11 +5,10 @@ import (
 	"errors"
 	"io"
 	"os"
-	"path/filepath"
-	"syscall"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
+	"github.com/MiniMax-AI-Dev/parsar/internal/runtimefs"
 	"github.com/google/uuid"
 )
 
@@ -17,7 +16,7 @@ import (
 // only the operator root, never capability configuration or a second inventory.
 type snapshotMarker struct {
 	directory *os.Root
-	lock      *os.File
+	unlock    func()
 	name      string
 	root      string
 	completed bool
@@ -32,12 +31,7 @@ func (b *Binding) openSnapshotMarker() (*snapshotMarker, error) {
 		}
 	}
 	private, err := paths.Root()
-	if err != nil || agentcapabilities.ValidateLocalDirectories([]string{private}) != nil || private == "/" ||
-		!canonicalExistingParent(private) {
-		return nil, agentcapabilities.ErrInvalid
-	}
-	canonical, err := filepath.EvalSymlinks(private)
-	if err != nil || canonical != private {
+	if err != nil || agentcapabilities.ValidateLocalDirectories([]string{private}) != nil {
 		return nil, agentcapabilities.ErrInvalid
 	}
 	current, err := os.OpenRoot(private)
@@ -49,29 +43,9 @@ func (b *Binding) openSnapshotMarker() (*snapshotMarker, error) {
 			current.Close()
 			return nil, agentcapabilities.ErrInvalid
 		}
-		err = current.Mkdir(child, 0700)
-		if err != nil && !errors.Is(err, os.ErrExist) {
+		if err = runtimefs.MkdirPrivate(current, child); err != nil || runtimefs.SyncDirectory(current) != nil {
 			current.Close()
 			return nil, agentcapabilities.ErrInvalid
-		}
-		created := err == nil
-		info, err := current.Lstat(child)
-		if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-			current.Close()
-			return nil, agentcapabilities.ErrInvalid
-		}
-		if created {
-			parent, openErr := current.Open(".")
-			if openErr != nil {
-				current.Close()
-				return nil, agentcapabilities.ErrInvalid
-			}
-			syncErr := parent.Sync()
-			parent.Close()
-			if syncErr != nil {
-				current.Close()
-				return nil, agentcapabilities.ErrInvalid
-			}
 		}
 		next, err := current.OpenRoot(child)
 		current.Close()
@@ -84,17 +58,12 @@ func (b *Binding) openSnapshotMarker() (*snapshotMarker, error) {
 		current.Close()
 		return nil, agentcapabilities.ErrInvalid
 	}
-	lock, err := current.Open(".")
+	unlock, err := runtimefs.LockDirectory(current)
 	if err != nil {
 		current.Close()
 		return nil, agentcapabilities.ErrInvalid
 	}
-	if syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
-		lock.Close()
-		current.Close()
-		return nil, agentcapabilities.ErrInvalid
-	}
-	marker := &snapshotMarker{directory: current, lock: lock, name: identity.EnvironmentID + "-" + identity.SessionID + ".json", root: b.capabilityRoot}
+	marker := &snapshotMarker{directory: current, unlock: unlock, name: identity.EnvironmentID + "-" + identity.SessionID + ".json", root: b.capabilityRoot}
 	completed, err := marker.read()
 	if err != nil {
 		marker.close()
@@ -104,22 +73,10 @@ func (b *Binding) openSnapshotMarker() (*snapshotMarker, error) {
 	return marker, nil
 }
 
-func privateSnapshotDirectory(root *os.Root) bool {
-	file, err := root.Open(".")
-	if err != nil {
-		return false
-	}
-	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
-		return false
-	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	return ok && stat.Uid == uint32(os.Getuid())
-}
+func privateSnapshotDirectory(root *os.Root) bool { return runtimefs.PrivateDirectory(root) == nil }
 
 func (m *snapshotMarker) read() (bool, error) {
-	file, err := m.directory.OpenFile(m.name, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+	file, err := runtimefs.OpenPrivate(m.directory, m.name, os.O_RDONLY)
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
 	}
@@ -131,8 +88,7 @@ func (m *snapshotMarker) read() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	stat, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || stat.Uid != uint32(os.Getuid()) || stat.Nlink != 1 || info.Size() > 8192 {
+	if info.Size() > 8192 {
 		return false, agentcapabilities.ErrInvalid
 	}
 	// Exact bytes also reject duplicate members, trailing data and extra fields.
@@ -156,14 +112,14 @@ func (m *snapshotMarker) complete() error {
 	if err != nil {
 		return agentcapabilities.ErrInvalid
 	}
-	file, err := m.directory.OpenFile(m.name, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
+	file, err := runtimefs.OpenPrivate(m.directory, m.name, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 	if err != nil {
 		return agentcapabilities.ErrInvalid
 	}
 	_, writeErr := file.Write(append(data, '\n'))
 	syncErr := file.Sync()
 	closeErr := file.Close()
-	if writeErr != nil || syncErr != nil || closeErr != nil || m.lock.Sync() != nil {
+	if writeErr != nil || syncErr != nil || closeErr != nil || runtimefs.SyncDirectory(m.directory) != nil {
 		return agentcapabilities.ErrInvalid
 	}
 	m.completed = true
@@ -171,7 +127,6 @@ func (m *snapshotMarker) complete() error {
 }
 
 func (m *snapshotMarker) close() {
-	_ = syscall.Flock(int(m.lock.Fd()), syscall.LOCK_UN)
-	m.lock.Close()
+	m.unlock()
 	m.directory.Close()
 }

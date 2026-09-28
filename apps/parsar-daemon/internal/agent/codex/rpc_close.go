@@ -7,32 +7,32 @@ import (
 	"time"
 )
 
-// Close initiates shutdown once and waits for the owned child to be reaped.
+// Close waits for the common owner to settle the native process and descendants.
 func (c *JSONRPCClient) Close() error {
 	defer func() { _ = c.drainPending(errors.New("codex rpc: client closed")) }()
 	c.closeOnce.Do(func() {
 		c.mu.Lock()
-		cmd := c.cmd
+		process := c.process
 		stdin := c.stdin
 		c.alive = false
 		c.mu.Unlock()
 		if stdin != nil {
 			_ = stdin.Close()
 		}
-		if cmd != nil && cmd.Process != nil {
+		if process != nil {
 			grace := time.NewTimer(250 * time.Millisecond)
 			defer grace.Stop()
 			select {
 			case <-c.doneCh:
 			case <-grace.C:
-				_ = cmd.Process.Kill()
+				process.Cancel()
 			}
 		}
 	})
 	c.mu.Lock()
-	cmd := c.cmd
+	process := c.process
 	c.mu.Unlock()
-	if cmd == nil || cmd.Process == nil {
+	if process == nil {
 		return nil
 	}
 	wait := time.NewTimer(rpcKillTimeout)

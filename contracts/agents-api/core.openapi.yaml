@@ -1687,7 +1687,7 @@ definitions:
       - access
       - allowed_domains
     type: object
-  v1.EnvironmentPackages:
+  v1.EnvironmentPackagesResponse:
     properties:
       npm:
         items:
@@ -1730,7 +1730,7 @@ definitions:
           - agent.environment.template
         type: string
       packages:
-        $ref: '#/definitions/v1.EnvironmentPackages'
+        $ref: '#/definitions/v1.EnvironmentPackagesResponse'
       plugins:
         items:
           type: object
@@ -2806,7 +2806,7 @@ definitions:
       network:
         $ref: '#/definitions/v1.EnvironmentNetwork'
       packages:
-        $ref: '#/definitions/v1.EnvironmentPackages'
+        $ref: '#/definitions/v1.EnvironmentPackagesResponse'
       plugins:
         items:
           type: object

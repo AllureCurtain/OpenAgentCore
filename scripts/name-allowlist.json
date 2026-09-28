@@ -180,16 +180,6 @@
     "reason": "This persisted model-provider key fingerprint purpose remains stable across upgrade and request replay."
   },
   {
-    "path": "packages/codex-executor/Cargo.toml",
-    "regex": "\"agents-api-codex-executor\"",
-    "reason": "The Cargo package identity remains stable; the installed executable is oac-runtime-executor."
-  },
-  {
-    "path": "packages/codex-executor/Cargo.lock",
-    "regex": "\"agents-api-codex-executor\"",
-    "reason": "The Cargo package identity remains stable; the installed executable is oac-runtime-executor."
-  },
-  {
     "path": "package.json",
     "regex": "\"(?:parsar-core|parsar-mcode-harness)\"",
     "reason": "npm package names are deferred package identities, not runtime command names."
@@ -221,6 +211,11 @@
   },
   {
     "path": "apps/parsar-daemon/internal/localworkspace/binding.go",
+    "regex": "\"agents-api-(?:session)?\"",
+    "reason": "AgentStateKey is a persisted daemon/native-session resume identity carried on the existing machine wire contract; changing it would select another session."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/localworkspace/native_binding.go",
     "regex": "\"agents-api-(?:session)?\"",
     "reason": "AgentStateKey is a persisted daemon/native-session resume identity carried on the existing machine wire contract; changing it would select another session."
   },
@@ -562,22 +557,22 @@
   {
     "path": "apps/web/src/features/sessions/items/ItemRenderers.tsx",
     "regex": "parseParsarApplyPatch|Parsar apply_patch",
-    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by \u00a79."
+    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by §9."
   },
   {
     "path": "apps/web/src/features/sessions/items/apply-patch.ts",
     "regex": "parseParsarApplyPatch|Parsar apply_patch",
-    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by \u00a79."
+    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by §9."
   },
   {
     "path": "apps/web/src/features/sessions/items/apply-patch.test.tsx",
     "regex": "parseParsarApplyPatch|Parsar apply_patch",
-    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by \u00a79."
+    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by §9."
   },
   {
     "path": "apps/web/src/features/sessions/trace/TraceView.tsx",
     "regex": "parseParsarApplyPatch|Parsar apply_patch",
-    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by \u00a79."
+    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by §9."
   },
   {
     "path": "apps/web/src/features/sandbox/deployment-specification.test.ts",

@@ -60,14 +60,11 @@ func discoverClaudeSDK(rc *runContext, profile string, check func(context.Contex
 		return fail(err)
 	}
 	out.Config = claudesdk.Config{Node: node, Entrypoint: entrypoint, StateDir: filepath.Join(profileDir, "runtime", "claude-sdk")}
-	if mode := os.Getenv("OAC_RUNTIME_CLAUDE_SDK_WORKSPACE"); mode != "" {
-		if mode != "managed" {
-			return fail(fmt.Errorf("unsupported Claude SDK workspace profile"))
-		}
-		binding, err := localworkspace.Load()
-		if err != nil || binding == nil {
-			return fail(fmt.Errorf("Claude SDK workspace requires a dedicated local Runtime binding"))
-		}
+	binding, err := localworkspace.Load()
+	if err != nil {
+		return fail(err)
+	}
+	if binding != nil {
 		root, err := paths.Root()
 		if err != nil {
 			return fail(err)
@@ -76,7 +73,7 @@ func discoverClaudeSDK(rc *runContext, profile string, check func(context.Contex
 		if err != nil {
 			return fail(err)
 		}
-		out.Config, err = claudesdk.ConfigureLocal(out.Config, root, os.Getenv("OAC_RUNTIME_WORKSPACE"), binding.NetworkPolicy(), os.Getenv("OAC_RUNTIME_STAGING"))
+		out.Config, err = claudesdk.ConfigureLocal(out.Config, root, os.Getenv("OAC_RUNTIME_WORKSPACE"), binding.NetworkPolicy())
 		if err != nil {
 			return fail(err)
 		}

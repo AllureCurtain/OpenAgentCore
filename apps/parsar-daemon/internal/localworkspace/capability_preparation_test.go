@@ -39,7 +39,7 @@ func TestPreparationFreezesLocalContentsAcrossReconnect(t *testing.T) {
 		t.Fatalf("first preparation: %v", err)
 	}
 	writeSourceSkill(t, source, "second")
-	reconnect, err := New(b.environment, b.capabilityIdentity().SessionID, b.workspace, b.helper)
+	reconnect, err := New(b.environment, b.capabilityIdentity().SessionID, b.workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,27 +83,22 @@ func TestPreparationFreezesLocalContentsAcrossReconnect(t *testing.T) {
 	}
 }
 
-func TestPreparationRejectsPrivateSourcesAndLeavesFailuresInert(t *testing.T) {
+func TestPreparationUsesOperatorSourcesAndLeavesFailuresInert(t *testing.T) {
 	b, req := testBinding(t)
 	private := t.TempDir()
 	t.Setenv("OAC_RUNTIME_HOME", private)
 	writeSourceSkill(t, private, "private")
-	for _, source := range []string{private, filepath.Dir(private), b.capabilityRoot, InitializationDirectory} {
-		if root, err := b.resolveCapabilityDirectory(source); err == nil {
-			root.Close()
-			t.Fatal("protected source accepted")
-		}
+	held, err := b.resolveCapabilityDirectory(private)
+	if err != nil {
+		t.Fatal("operator source rejected", err)
+	}
+	held.Close()
+	if held, err = b.resolveCapabilityDirectory(b.capabilityRoot); err == nil {
+		held.Close()
+		t.Fatal("recursive snapshot source accepted")
 	}
 	source := filepath.Join(b.workspace, "selected")
 	writeSourceSkill(t, source, "valid")
-	link := filepath.Join(b.workspace, "link")
-	if err := os.Symlink(source, link); err != nil {
-		t.Fatal(err)
-	}
-	if root, err := b.resolveCapabilityDirectory(link); err == nil {
-		root.Close()
-		t.Fatal("source alias accepted")
-	}
 	root, err := b.resolveCapabilityDirectory("/workspace/selected")
 	if err != nil {
 		t.Fatal("logical workspace source rejected", err)
@@ -143,5 +138,43 @@ func TestPreparationEmptySelectionAndCancellation(t *testing.T) {
 	read := proto.PromptRequestPayload{WorkspaceReadOnly: true}
 	if _, err = b.Prepare(t.Context(), read); err != nil {
 		t.Fatal("Files required capability installation", err)
+	}
+}
+
+func TestRuntimePreparationRejectsMissingRequiredToolEnvironment(t *testing.T) {
+	b, req := testBinding(t)
+	t.Setenv("OAC_RUNTIME_INITIALIZATION_DIRECTORY", t.TempDir())
+	t.Setenv("OAC_RUNTIME_TOOL_ENV_FILE", "")
+	req.LocalEnvironment.ToolEnvironment = true
+	configured, err := b.Configure(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.Prepare(t.Context(), configured); err == nil {
+		t.Fatal("missing required tool environment admitted")
+	}
+	directory, err := InitializationDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(directory, "tool-env.json"), []byte(`{"READY":"yes"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.Prepare(t.Context(), configured); err != nil {
+		t.Fatal("prepared tool environment rejected", err)
+	}
+	if err = os.Remove(filepath.Join(directory, "tool-env.json")); err != nil {
+		t.Fatal(err)
+	}
+	configured.LocalEnvironment.ToolEnvironment = false
+	if _, err = b.Prepare(t.Context(), configured); err != nil {
+		t.Fatal("optional tool environment became mandatory", err)
+	}
+}
+
+func TestRuntimePreparationRejectsMissingExplicitToolEnvironment(t *testing.T) {
+	t.Setenv("OAC_RUNTIME_TOOL_ENV_FILE", filepath.Join(t.TempDir(), "missing.json"))
+	if _, err := ReadOptionalToolEnvironment(); err == nil {
+		t.Fatal("missing explicitly configured tool environment ignored")
 	}
 }

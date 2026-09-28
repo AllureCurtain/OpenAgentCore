@@ -1,13 +1,10 @@
 package localworkspace
 
 import (
-	"errors"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/google/uuid"
@@ -21,12 +18,8 @@ func testBinding(t *testing.T) (*Binding, proto.PromptRequestPayload) {
 	}
 	t.Setenv("OAC_RUNTIME_HOME", private)
 	root := t.TempDir()
-	helper := filepath.Join(t.TempDir(), "helper")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	environment, session := uuid.NewString(), uuid.NewString()
-	b, err := New(environment, session, root, helper)
+	b, err := New(environment, session, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,49 +61,15 @@ func TestBindingRejectsScopeAndPathOverrides(t *testing.T) {
 	}
 }
 
-func TestLocalHelperCannotInheritCredentials(t *testing.T) {
+func TestDirectoryValidatesRelativePaths(t *testing.T) {
 	b, _ := testBinding(t)
-	t.Setenv("OAC_TEST_PRIVATE_CREDENTIAL", "synthetic-secret")
-	script := "#!/bin/sh\n[ -z \"$OAC_TEST_PRIVATE_CREDENTIAL\" ] || exit 13\nprintf '%s' '{\"version\":1,\"directory\":{\"entries\":[],\"truncated\":false}}'\n"
-	if err := os.WriteFile(b.helper, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
 	got, err := b.ListWorkspaceDirectory(t.Context(), "", 2)
 	if err != nil || got.Entries == nil || len(got.Entries) != 0 || got.Truncated {
-		t.Fatalf("read-only helper: %+v %v", got, err)
+		t.Fatalf("empty directory: %+v %v", got, err)
 	}
 	for _, path := range []string{"/etc", "..", "a/../b", "a//b", ".", "a\\b"} {
 		if _, err := b.ListWorkspaceDirectory(t.Context(), path, 2); err == nil {
 			t.Fatalf("invalid path accepted: %q", path)
-		}
-	}
-}
-
-func TestDirectoryClassifiesNativeErrors(t *testing.T) {
-	for code, want := range map[string]error{
-		"not_directory":     agent.ErrWorkspaceNotDirectory,
-		"not_found":         fs.ErrNotExist,
-		"permission_denied": fs.ErrPermission,
-		"invalid_path":      agent.ErrWorkspaceReadInvalid,
-		"native_error":      agent.ErrWorkspaceReadUncertain,
-	} {
-		if _, err := decodeDirectory([]byte(`{"version":1,"error":"`+code+`"}`), 2); !errors.Is(err, want) {
-			t.Fatal("native error classification changed", code, err)
-		}
-	}
-}
-
-func TestDirectoryRejectsMalformedOrIncompleteResponses(t *testing.T) {
-	for _, frame := range []string{
-		`{"version":2,"directory":{"entries":[],"truncated":false}}`,
-		`{"version":1,"directory":{"entries":[]}}`,
-		`{"version":1,"directory":{"entries":null,"truncated":false}}`,
-		`{"version":1,"directory":{"entries":[{"name":"../secret","kind":"file","size_bytes":1}],"truncated":false}}`,
-		`{"version":1,"error":"unknown"}`,
-		`{"version":1,"directory":{"entries":[],"truncated":false}} {}`,
-	} {
-		if _, err := decodeDirectory([]byte(frame), 2); err == nil {
-			t.Fatal("unconfirmed response accepted", frame)
 		}
 	}
 }
@@ -123,23 +82,14 @@ func TestBindingAllowsRetainedExecutor(t *testing.T) {
 	}
 }
 
-func TestCapabilityLayoutExcludesWritableAndPrivateRoots(t *testing.T) {
+func TestCapabilityLayoutUsesOperatorDirectories(t *testing.T) {
 	b, _ := testBinding(t)
-	private := os.Getenv("OAC_RUNTIME_HOME")
-	for _, directory := range []string{b.workspace, filepath.Join(b.workspace, "caps"), private, filepath.Join(private, "caps"), PackageDirectory, filepath.Join(PackageDirectory, "caps"), "/"} {
-		if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, b.helper, directory); err == nil {
-			t.Fatal("unsafe installation layout accepted")
+	for _, directory := range []string{filepath.Join(b.workspace, "capabilities"), filepath.Join(os.Getenv("OAC_RUNTIME_HOME"), "capabilities")} {
+		if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, directory); err != nil {
+			t.Fatal(err)
 		}
 	}
-	root := t.TempDir()
-	alias := filepath.Join(root, "alias")
-	if err := os.Symlink(t.TempDir(), alias); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, b.helper, filepath.Join(alias, "new")); err == nil {
-		t.Fatal("installation parent alias accepted")
-	}
-	if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, b.helper, t.TempDir()); err != nil {
-		t.Fatal(err)
+	if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, "relative"); err == nil {
+		t.Fatal("relative installation path accepted")
 	}
 }

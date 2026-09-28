@@ -187,7 +187,7 @@ func TestManagedRuntimePreparationAllOperationsUsePeer(t *testing.T) {
 	fileBody := bytes.Repeat([]byte("bounded bytes"), 12000)
 	session, environment := hostedFailureSession(t, s, tenant, store.CreateSessionInput{
 		InitialFiles:   []store.InitialFile{{Type: "inline", Path: "/workspace/first", Data: fileBody}},
-		Initialization: store.EnvironmentSetup{Skills: []store.EnvironmentSkill{hostedFailureSkill(t)}, Plugins: []store.EnvironmentPlugin{{Metadata: agentplugin.Metadata{Type: "inline", Name: "plugin", Description: "A plugin."}, Archive: archive.Bytes()}}, Packages: v1.EnvironmentPackages{System: []string{"jq"}, NPM: []string{"is-number@7.0.0"}, Python: []string{"packaging==24.2"}}, Commands: []store.SetupCommand{{Command: "read installed bundles and create directory"}}, CapabilityDirectories: []string{"/workspace/generated"}},
+		Initialization: store.EnvironmentSetup{Skills: []store.EnvironmentSkill{hostedFailureSkill(t)}, Plugins: []store.EnvironmentPlugin{{Metadata: agentplugin.Metadata{Type: "inline", Name: "plugin", Description: "A plugin."}, Archive: archive.Bytes()}}, Packages: v1.EnvironmentPackages{NPM: []string{"is-number@7.0.0"}, Python: []string{"packaging==24.2"}}, Commands: []store.SetupCommand{{Command: "read installed bundles and create directory"}}, CapabilityDirectories: []string{"/workspace/generated"}},
 	})
 	provider := &initializingProvider{lifecycleProvider: lifecycleProvider{resources: map[string]sandbox.Info{}}}
 	var actions []string
@@ -222,7 +222,7 @@ func TestManagedRuntimePreparationAllOperationsUsePeer(t *testing.T) {
 			break
 		}
 	}
-	expected := []string{"file", "configure", "skill", "plugin", "system", "npm", "python", "setup", "finalize"}
+	expected := []string{"file", "configure", "skill", "plugin", "npm", "python", "setup", "finalize"}
 	if !reflect.DeepEqual(actions, expected) || provider.commandCalls.Load() != 0 {
 		t.Fatal("typed ordering or provider isolation", actions, provider.commandCalls.Load())
 	}

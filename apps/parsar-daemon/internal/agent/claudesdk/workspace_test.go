@@ -25,7 +25,7 @@ func workspaceFixture(t *testing.T) Config {
 	config := Config{Node: filepath.Join(root, "bin", "node"), Entrypoint: filepath.Join(root, "runtime", "dist", "main.js"), StateDir: filepath.Join(root, "state"),
 		Env: []string{"ANTHROPIC_AUTH_TOKEN=selected-provider-fixture", "ANTHROPIC_BASE_URL=https://example.invalid"},
 		Workspace: &WorkspaceConfig{Directory: filepath.Join(root, "workspace"), HomeDir: filepath.Join(root, "home"),
-			ScratchDir: filepath.Join(root, "scratch"), ProtectedDirs: []string{filepath.Join(root, "secrets")}, DependencyPath: filepath.Join(root, "bin")}}
+			ScratchDir: filepath.Join(root, "scratch")}}
 	for _, name := range []string{config.Node, config.Entrypoint, filepath.Join(filepath.Dir(config.Entrypoint), "runtime_check.js")} {
 		if err := os.WriteFile(name, nil, 0o700); err != nil {
 			t.Fatal(err)
@@ -59,8 +59,8 @@ func TestWorkspaceTrustedBindingAndEnvironment(t *testing.T) {
 		name, value, _ := strings.Cut(item, "=")
 		values[name] = value
 	}
-	if _, ok := values["OAC_TEST_PARENT_SECRET"]; ok {
-		t.Fatal("inherited parent credential")
+	if values["OAC_TEST_PARENT_SECRET"] != "parent-only" {
+		t.Fatal("lost user environment")
 	}
 	if _, ok := values["ANTHROPIC_API_KEY"]; ok {
 		t.Fatal("inherited unselected provider credential")
@@ -76,7 +76,7 @@ func TestWorkspaceTrustedBindingAndEnvironment(t *testing.T) {
 }
 
 func TestWorkspaceRejectsConflictsBeforeSideEffects(t *testing.T) {
-	for _, name := range []string{"none", "work-dir", "mcp", "caller-policy", "relative", "missing", "overlap", "symlink", "rule-pattern", "ambient-setting", "duplicate-env", "bad-env", "path-empty-component", "path-workspace", "code-in-workspace"} {
+	for _, name := range []string{"none", "work-dir", "mcp", "caller-policy", "relative", "missing", "ambient-setting", "duplicate-env", "bad-env"} {
 		t.Run(name, func(t *testing.T) {
 			config := workspaceFixture(t)
 			req := workspaceRequest()
@@ -112,15 +112,7 @@ func TestWorkspaceRejectsConflictsBeforeSideEffects(t *testing.T) {
 				config.Env = append(config.Env, "ANTHROPIC_AUTH_TOKEN=second")
 			case "bad-env":
 				config.Env = append(config.Env, "ANTHROPIC_API_KEY=bad\x00value")
-			case "path-empty-component":
-				config.Workspace.DependencyPath += ":"
-			case "path-workspace":
-				config.Workspace.DependencyPath = config.Workspace.Directory
-			case "code-in-workspace":
-				config.Node = filepath.Join(config.Workspace.Directory, "node")
-				if err := os.WriteFile(config.Node, nil, 0o700); err != nil {
-					t.Fatal(err)
-				}
+
 			}
 			if _, _, err := prepare(config, req); err == nil {
 				t.Fatal("invalid binding or request accepted")

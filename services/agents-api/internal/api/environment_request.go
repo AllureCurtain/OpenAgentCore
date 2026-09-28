@@ -13,6 +13,13 @@ func decodeSessionEnvironment(raw json.RawMessage) (*v1.Environment, error) {
 	if json.Unmarshal(raw, &environment) != nil {
 		return nil, store.ErrInvalidInput
 	}
+	var input map[string]json.RawMessage
+	if json.Unmarshal(raw, &input) != nil {
+		return nil, store.ErrInvalidInput
+	}
+	if err := rejectSystemPackages(input["packages"]); err != nil {
+		return nil, err
+	}
 	fields := []string{"type"}
 	switch environment.Type {
 	case "none":

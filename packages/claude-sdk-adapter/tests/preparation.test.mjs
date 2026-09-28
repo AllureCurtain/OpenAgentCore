@@ -20,10 +20,10 @@ registerHooks({ resolve(specifier, context, next) {
 globalThis.startupFixture = async ({options, initializeTimeoutMs}) => {
   assert.equal(initializeTimeoutMs,15000);
   assert.equal(options.model,"fixed-model");
-  assert.equal(options.env.UNSELECTED_CANARY,undefined);
+  assert.equal(options.env.UNSELECTED_CANARY,"must-not-inherit");
   assert.equal(options.env.HOME,process.env.HOME);
   assert.deepEqual(options.tools,["Bash","Read","Edit"]);
-  assert.equal(options.sandbox.failIfUnavailable,true);
+  assert.equal(options.sandbox.enabled,false);
   assert.equal(options.hooks.PreToolUse.length,1);
   const child = options.spawnClaudeCodeProcess({command:process.execPath,env:options.env,signal:options.abortController.signal,
     args:["-e","process.stdin.resume();process.stdin.on('end',()=>process.exit(0));"]});
@@ -88,7 +88,7 @@ function placement() {
     const path = join(root, name); mkdirSync(path); return [name, path];
   }));
   return { root, request: { type: "prepare", model: "fixed-model", system_prompt: "", cwd: dirs.workspace,
-    workspace: { home: dirs.home, state: dirs.state, scratch: dirs.scratch, dependency_path: dirs.deps, protected_dirs: [], env_names: [] } } };
+    workspace: { home: dirs.home, state: dirs.state, scratch: dirs.scratch,   env_names: [] } } };
 }
 
 test("prepare validates a workspace-only immutable configuration and prompt-only Start", () => {

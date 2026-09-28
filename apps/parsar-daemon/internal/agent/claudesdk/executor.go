@@ -29,7 +29,6 @@ func NewExecutorFactory(config Config) agent.ExecutorFactory {
 	config.Env = slices.Clone(config.Env)
 	if config.Workspace != nil {
 		workspace := *config.Workspace
-		workspace.ProtectedDirs = slices.Clone(workspace.ProtectedDirs)
 		config.Workspace = &workspace
 	}
 	checked := &runtimeCheckCache{}
