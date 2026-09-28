@@ -35,7 +35,7 @@ export function useExecutorInstall(environmentId: string, remoteUrl: string): Ex
  * for a credential from the section above at a hidden prompt. Shown only when
  * the console serves the self-hosted installer with a verified digest.
  */
-export function ExecutorInstallPanel({ install, archived }: { install: ExecutorInstallRead; archived: boolean }) {
+export function ExecutorInstallPanel({ install, archived, connected = false }: { install: ExecutorInstallRead; archived: boolean; connected?: boolean }) {
   const { t } = useTranslation("sessions");
   const { t: tCommon } = useTranslation("common");
   const headingId = useId();
@@ -69,6 +69,10 @@ export function ExecutorInstallPanel({ install, archived }: { install: ExecutorI
       <div className="executor-install-title">
         <h3 id={headingId}>{t("executor.install.title")}</h3>
         <HelpTip>{t("executor.install.lifecycle")}</HelpTip>
+        <span className={`executor-install-progress${connected ? " is-done" : ""}`}>
+          {connected ? <Check size={14} aria-hidden="true" /> : null}
+          {t(connected ? "executor.install.hostDone" : "executor.install.hostPending")}
+        </span>
       </div>
       {body}
     </section>

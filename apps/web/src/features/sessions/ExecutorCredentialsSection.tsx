@@ -1,8 +1,8 @@
 import { AgentCoreError, type ExecutorCredential, type IssuedExecutorCredential } from "@agents-core-web/agents-client";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Copy, Download, Plus } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { Trans, useTranslation } from "react-i18next";
+import { Plus } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { EmptyState, Section, StatusDot } from "../../components/console-ui";
@@ -14,10 +14,11 @@ import { failedLast, useFailureToast, useToast } from "../../components/Toast";
 import { useDeleteFlow } from "../../lib/delete-flow";
 import { formatDateTime, shortId } from "../../lib/format";
 import { admin, useProjects } from "../../lib/projects";
-import { useCopy } from "../api-keys/IssuedKey";
-import { saveBlob } from "../skills/skill-operations";
-import { ExecutorInstallPanel, InstallCommand, useExecutorInstall, useSelectWhenCopyFails } from "./ExecutorInstallPanel";
-import { executorCredentialsQuery } from "./session-queries";
+import { ExecutorInstallPanel, useExecutorInstall } from "./ExecutorInstallPanel";
+import { CredentialFile } from "./executor-credential-file";
+import { executorConnectionQuery } from "./executor-connection-query";
+import { executorConnectionState } from "./executor-connection";
+import { ExecutorConnectionPanel } from "./ExecutorConnectionPanel";
 
 /** An issuance that gets no answer in this time has an unknown outcome. */
 const WRITE_TIMEOUT_MS = 30_000;
@@ -30,17 +31,6 @@ function newKeyId(): string {
   bytes[8] = (bytes[8]! & 0x3f) | 0x80;
   const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
-/**
- * The self-hosted executor's credential as one line of JSON. The installer
- * also accepts it pretty-printed, but a one-line paste survives terminals that
- * warn about or bracket multi-line pastes; `--credential-file` reads the same
- * JSON from the downloaded file.
- */
-function credentialText(credential: IssuedExecutorCredential): string {
-  const { key_id, environment_id, executor_token } = credential;
-  return JSON.stringify({ key_id, environment_id, executor_token });
 }
 
 /**
@@ -92,8 +82,10 @@ export function ExecutorCredentialsSection({ projectId, sessionId, environmentId
   const install = useExecutorInstall(environmentId, remoteUrl);
   // The one-time dialog repeats the command, so it is copied and run before the credential is pasted.
   const command = install.kind === "ready" ? install.command : null;
-  const query = useQuery(executorCredentialsQuery(projectId, sessionId, environmentId));
-  const credentials = query.data ?? null;
+  const query = useQuery(executorConnectionQuery(projectId, sessionId, environmentId));
+  const credentials = query.data?.data ?? null;
+  const connectionStale = failedLast(query) || query.isStale;
+  const connectionState = executorConnectionState(query.data, connectionStale);
   const { refetch } = query;
   const reread = () => { void refetch(); };
   useFailureToast(credentials && failedLast(query) ? message(query.error) : null, t("executor.refreshFailed"), "executor-credentials-read");
@@ -140,7 +132,7 @@ export function ExecutorCredentialsSection({ projectId, sessionId, environmentId
   const findListed = async (keyId: string): Promise<ExecutorCredential | null | undefined> => {
     const result = await refetch();
     if (!result.data || result.isError) return undefined;
-    return result.data.find((credential) => sameKey(credential.key_id, keyId)) ?? null;
+    return result.data.data.find((credential) => sameKey(credential.key_id, keyId)) ?? null;
   };
   // An issued key ID whose secret never arrived is rotated for a fresh one, if it is still active.
   const recoverLost = (found: ExecutorCredential): boolean => {
@@ -300,8 +292,9 @@ export function ExecutorCredentialsSection({ projectId, sessionId, environmentId
           <div><button className="button outline" type="button" onClick={finishShown}>{t("executor.issued.done")}</button></div>
         </section>
       ) : null}
+      <ExecutorConnectionPanel read={query.data} stale={connectionStale} failed={failedLast(query)} refreshing={query.isFetching} archived={archived} busy={busy} onRefresh={reread} onRotate={openRotation} />
       {body}
-      <ExecutorInstallPanel install={install} archived={archived} />
+      <ExecutorInstallPanel install={install} archived={archived} connected={connectionState === "connected"} />
       <Modal
         open={shown?.open ?? false}
         title={t("executor.issued.title")}
@@ -356,50 +349,5 @@ export function ExecutorCredentialsSection({ projectId, sessionId, environmentId
         ) : null}
       </ConfirmDialog>
     </Section>
-  );
-}
-
-/**
- * The one-time credential: copied to paste at the installer's hidden prompt,
- * or downloaded as a file for automation (`--credential-file`). What to do
- * next comes first: in the dialog, run the install command shown with it; on
- * the page, run the Connect a host command below; without the installer, save
- * the credential.
- */
-function CredentialFile({ credential, next, command = null }: { credential: IssuedExecutorCredential; next: "inline" | "panel" | "save"; command?: string | null }) {
-  const { t } = useTranslation("sessions");
-  const text = credentialText(credential);
-  const { state, copy } = useCopy(text);
-  const file = useRef<HTMLPreElement>(null);
-  useSelectWhenCopyFails(state, file);
-  // A downloaded credential's object URL goes with the credential: on Done or when this leaves the page.
-  const downloads = useRef<(() => void)[]>([]);
-  useEffect(() => {
-    const revokes = downloads.current;
-    return () => { for (const revoke of revokes.splice(0)) revoke(); };
-  }, []);
-  const download = () => {
-    downloads.current.push(saveBlob(new Blob([`${text}\n`], { type: "application/json" }), `executor-credential-${credential.environment_id.slice(0, 8)}.json`));
-  };
-  return (
-    <div className="executor-credential">
-      <p className="executor-credential-notice">{t("executor.issued.notice")}</p>
-      <p className="executor-credential-next">{t(`executor.issued.next.${next}`)}</p>
-      {command ? <InstallCommand value={command} /> : null}
-      <div role="region" aria-label={t("executor.issued.fileLabel")}><pre ref={file} className="executor-credential-file"><code>{text}</code></pre></div>
-      <div className="executor-credential-actions">
-        <button className="button primary" type="button" onClick={() => void copy()}>
-          {state === "copied" ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
-          {state === "copied" ? t("executor.issued.copied") : t("executor.issued.copy")}
-        </button>
-        <button className="button outline" type="button" onClick={download}>
-          <Download size={14} aria-hidden="true" />{t("executor.issued.download")}
-        </button>
-      </div>
-      {state === "failed" ? <p className="executor-credential-error" role="alert">{t("executor.issued.copyFailed")}</p> : null}
-      <p className="executor-credential-hint">
-        <Trans t={t} i18nKey={next === "save" ? "executor.issued.downloadHint.installer" : "executor.issued.downloadHint.command"} components={{ chmod: <code>chmod 600 &lt;file&gt;</code>, flag: <code>--credential-file &lt;absolute path&gt;</code> }} />
-      </p>
-    </div>
   );
 }
