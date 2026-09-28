@@ -6,6 +6,7 @@ bytes, structured Python commands, timeouts and private path/resource configurat
 Only fresh child exit status and identity-bound stdout establish stage completion.
 """
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -14,6 +15,14 @@ import signal
 import subprocess
 import sys
 import uuid
+
+if 'qualification_control' in sys.modules:
+    control = sys.modules['qualification_control']
+else:
+    _control_spec = importlib.util.spec_from_file_location(
+        'qualification_control', Path(__file__).with_name('qualification_control.py'))
+    control = importlib.util.module_from_spec(_control_spec)
+    _control_spec.loader.exec_module(control)
 
 CHECKS = ('fresh-install', 'current-lifecycle', 'managed-native',
           'current-generations', 'node-runtime', 'diagnostics-observations')
@@ -123,16 +132,8 @@ def execute_stage(stage, package, request, evidence, script_hash):
     env = dict(os.environ, PYTHONDONTWRITEBYTECODE='1', PYTHONPATH=str(package))
     output = evidence / (stage['name'] + '.stdout.private.json')
     with output.open('xb') as stdout, (evidence / (stage['name'] + '.stderr.private.log')).open('xb') as stderr:
-        with subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr,
-                              cwd=package, env=env, start_new_session=True) as process:
-            try:
-                process.communicate(canonical(request), timeout=stage['timeout_seconds'])
-            except BaseException:
-                os.killpg(process.pid, signal.SIGKILL)
-                process.wait()
-                raise
-            if process.returncode:
-                raise ValueError('Qualification stage failed; private receipts retained')
+        control.run_child(argv, canonical(request), stdout, stderr, stage['timeout_seconds'],
+                          cwd=package, env=env)
     if output.stat().st_size > 8 * 1024 * 1024:
         raise ValueError('Oversized stage result')
     result = json.loads(output.read_bytes())
@@ -177,7 +178,7 @@ def main():
         print(json.dumps({'ready': True, 'required_checks': list(CHECKS)}))
         return 0
     try:
-        print(json.dumps(qualify(json.load(sys.stdin)), sort_keys=True))
+        print(json.dumps(control.serve(qualify, sys.stdin), sort_keys=True))
         return 0
     except Exception:
         # Native output, credentials and private paths stay in private receipts.

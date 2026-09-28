@@ -49,6 +49,7 @@ PROMOTION_FILES = {
     "Makefile", "contracts/agents-api/node-generation-protocol.md",
     "scripts/promote-qualified-release.py",
     "scripts/promote-qualified-release.test.py", "scripts/qualify-core-release.py",
+    "scripts/qualification_control.py", "scripts/qualification-control.test.py",
 }
 
 
@@ -183,7 +184,8 @@ def verify_landed(tree, promotion_commit, allow_pending=False):
         original = base64.b64decode(api("contents/Makefile?ref=" + SOURCE)["content"]).decode()
         updated = base64.b64decode(api("contents/Makefile?ref=" + promotion_commit)["content"]).decode()
         anchor = "\tPYTHONDONTWRITEBYTECODE=1 python3 scripts/core-distribution-manifest.test.py\n"
-        addition = "\tPYTHONDONTWRITEBYTECODE=1 python3 scripts/promote-qualified-release.test.py\n"
+        addition = ("\tPYTHONDONTWRITEBYTECODE=1 python3 scripts/promote-qualified-release.test.py\n"
+                    "\tPYTHONDONTWRITEBYTECODE=1 python3 scripts/qualification-control.test.py\n")
         if original.count(anchor) != 1 or updated != original.replace(anchor, anchor + addition):
             raise ValueError("Makefile change exceeds promotion test registration")
     reviewed_tree = api("commits/" + promotion_commit)["commit"]["tree"]["sha"]
@@ -279,9 +281,11 @@ if actual != expected: raise ValueError('Remote candidate bytes changed')
 def qualification(request, host, remote, adapter, downloaded, package, manifest_hash):
     adapter_bytes = adapter.read_bytes()
     request["adapter_sha256"] = hashlib.sha256(adapter_bytes).hexdigest()
+    control_hash = file_identity(adapter.with_name("qualification_control.py"))["sha256"]
     command = shlex.join(["mkdir", "-m", "700", remote])
     run(["ssh", "-o", "BatchMode=yes", host, command])
-    run(["scp", "-q", "--", str(adapter), *[str(p) for p in sorted(downloaded.iterdir())],
+    run(["scp", "-q", "--", str(adapter), str(adapter.with_name("qualification_control.py")),
+         *[str(p) for p in sorted(downloaded.iterdir())],
          host + ":" + remote + "/"])
     qualification_adapter.verify_package(package, manifest_hash)
     run(["scp", "-q", "-r", "--", str(package), host + ":" + remote + "/tools"])
@@ -289,11 +293,16 @@ def qualification(request, host, remote, adapter, downloaded, package, manifest_
     request["qualification_manifest_sha256"] = manifest_hash
     verify_remote(request, host)
     # Hash and execute the same bytes, avoiding a check-then-open script race.
-    bootstrap = ("import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_bytes(); "
+    bootstrap = ("import hashlib,pathlib,sys,types; p=pathlib.Path(sys.argv[1]); b=p.read_bytes(); "
                  "hashlib.sha256(b).hexdigest()==sys.argv[2] or sys.exit('Adapter bytes changed'); "
+                 "c=p.with_name('qualification_control.py'); raw=c.read_bytes(); "
+                 "hashlib.sha256(raw).hexdigest()==sys.argv[3] or sys.exit('Control bytes changed'); "
+                 "m=types.ModuleType('qualification_control'); m.__file__=str(c); "
+                 "exec(compile(raw,str(c),'exec'),m.__dict__); sys.modules[m.__name__]=m; "
                  "sys.argv=[str(p)]; exec(compile(b,str(p),'exec'),{'__name__':'__main__','__file__':str(p)})")
-    argv = ["python3", "-c", bootstrap, remote + "/" + adapter.name, request["adapter_sha256"]]
-    response = run(["ssh", "-o", "BatchMode=yes", host, shlex.join(argv)], input=canonical(request))
+    argv = ["python3", "-c", bootstrap, remote + "/" + adapter.name, request["adapter_sha256"], control_hash]
+    response = qualification_adapter.control.transport(
+        ["ssh", "-o", "BatchMode=yes", host, shlex.join(argv)], request)
     verify_remote(request, host)
     result = json.loads(response)
     required = {"source": SOURCE, "tree": request["tree"], "run_id": request["run_id"],
@@ -307,10 +316,19 @@ def qualification(request, host, remote, adapter, downloaded, package, manifest_
 
 
 def verify_tooling(promotion_commit):
-    for name in ("promote-qualified-release.py", "qualify-core-release.py", "core-distribution-manifest.py"):
+    for name in ("promote-qualified-release.py", "qualify-core-release.py", "qualification_control.py", "core-distribution-manifest.py"):
         expected = base64.b64decode(api("contents/scripts/" + name + "?ref=" + promotion_commit)["content"])
         if pathlib.Path(__file__).with_name(name).read_bytes() != expected:
             raise ValueError("Local tooling differs from reviewed commit: " + name)
+
+
+def publish_release(release_id, body_file):
+    if type(release_id) is not int or release_id <= 0:
+        raise ValueError("Invalid verified Release ID")
+    updated = json.loads(run(["gh", "api", "--method", "PATCH", "repos/" + REPO + "/releases/" + str(release_id),
+                              "--input", str(body_file)]))
+    if updated.get("id") != release_id or updated.get("draft") is not False or updated.get("prerelease") is not False:
+        raise ValueError("Publication response identity mismatch")
 
 
 def promote(assets, state, host, remote_root, promotion_commit, *, source, package, manifest_hash,
@@ -383,8 +401,17 @@ def promote(assets, state, host, remote_root, promotion_commit, *, source, packa
                      + "Qualified checks: " + ", ".join(REQUIRED_CHECKS) + ".\n"
                      + "Asset inventory SHA256: " + request["inventory_sha256"] + ".\n"
                      + "Promotion tooling commit: " + promotion_commit + ".\n")
-    gh("release", "edit", TAG, "--draft=false", "--prerelease=false", "--latest",
-       "--notes-file", str(notes))
+    # Downloading can take minutes. Revalidate immediately before mutation.
+    verify_landed(metadata["source_tree"], promotion_commit)
+    verify_tag()
+    final_draft = release_state()
+    if (not final_draft or final_draft["id"] != initial_release["id"] or not final_draft["draft"]
+            or final_draft["target_commitish"] != SOURCE):
+        raise ValueError("Draft identity changed during final verification")
+    publication = state / "publication.json"
+    publication.write_text(canonical({"draft": False, "prerelease": False, "make_latest": "true",
+                                       "body": notes.read_text()}) + "\n")
+    publish_release(final_draft["id"], publication)
     download(state / "published", inventory)
     final = release_state()
     if not final or final["id"] != current["id"] or final["draft"] or final["prerelease"]:

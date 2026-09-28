@@ -1983,14 +1983,20 @@ diagnostics-observations in that order. Every child must exit successfully and
 return only its own passed check, the current controller identity and its observed
 owned resources. Resources and the previous result flow between live children;
 a supplied pass file, skipped check or old report cannot release the candidate.
-Verify package and candidate bytes again after each stage. Control tests exercise
+Verify package and candidate bytes again after each stage. The small shared
+`qualification_control.py` is pinned to the reviewed tooling commit and private
+package. A live SSH stdin channel carries the request then heartbeats; EOF, timeout,
+SIGTERM or SIGHUP stops later work and cleans up owned foreground children,
+including detached descendants. Private nested workers use the same channel.
+Already-issued writes may have unknown outcomes: retain intents/resources and do
+not replay or claim rollback. Control tests exercise
 short-lived fixture children only and never establish live qualification.
 
 The caller supplies the independently reviewed promotion-tooling commit. Its
 changes from the candidate may only affect the exact promotion files enumerated
 in the controller, including CONTRIBUTING, docs/maintainers and the current-batch
 node-generation protocol wording correction; the Makefile
-exception permits only registration of the controller test. Main must contain the
+exception permits only registration of the controller and control-channel tests. Main must contain the
 candidate source and have the reviewed tooling commit's tree. This permits normal
 merge commit identity changes and release-only documentation updates without
 rebuilding or relabeling the original candidate. The candidate's bundled docs and
@@ -2005,7 +2011,9 @@ waits in the same process, within the explicit merge-wait budget, for the exact
 reviewed batch tree to reach main. An ancestor main waits; conflicting main changes
 fail immediately. Cancellation or expiration retains evidence and cannot turn a
 saved result into resume authority. It verifies unchanged draft identity,
-target, tag and downloaded bytes immediately before publication and checks the
+target, tag and downloaded bytes immediately before publication. After the final
+download it rechecks main/tree/tag and the same draft ID, then updates that verified
+Release ID directly rather than resolving the tag again. It checks the
 published bytes afterward. Conflicting assets are never overwritten. An interrupted
 run is reconciled before another invocation; stored qualification output is evidence,
 not a resumable permission to publish. Preserve its isolated local/remote evidence

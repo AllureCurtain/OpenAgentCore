@@ -96,7 +96,8 @@ SSH for the fresh Core/node stages; no new service or credentials are required.
 GitHub credentials stay on the operator host; nodes continue to download from their console.
 
 The adapter protocol is documented in `scripts/qualify-core-release.py`: one JSON
-request on stdin, one bound JSON result on stdout, redacted diagnostics on stderr,
+request as the first stdin line followed by `ping` heartbeat lines, one bound JSON
+result on stdout, redacted diagnostics on stderr,
 and a nonzero exit for any failed or skipped required check. The six current-batch
 checks cover fresh installation, current lifecycle, managed native execution,
 current generations, node Runtime and diagnostics/observations. Their actual
@@ -121,7 +122,14 @@ preceding child, initially empty/null. Private wrappers adapt host-specific harn
 interfaces and must verify their detailed subchecks before returning
 `status: passed`, exact `checks: {stage-name: passed}`, the five identity fields
 (source/tree/run_id/inventory_sha256/adapter_sha256), and `owned_resources`.
-The run ID is a canonical UUID string. Child stdout/stderr remain private files;
+The run ID is a canonical UUID string. `qualification_control.py` is part of the
+reviewed tooling bytes and the pinned private package. The sender holds the same
+SSH stdin open, sends heartbeats every five seconds and never reloads a pass file.
+The receiver stops later work on EOF or a thirty-second heartbeat timeout. Signal
+handlers enter the same owned-child cleanup path. Nested SSH workers use this
+protocol too; closing a local SSH process alone is insufficient. A write already
+sent may still have an unknown result; retain its intent and resources without
+replay or a rollback claim. Child stdout/stderr remain private files;
 nonzero exit, timeout, changed bytes or mismatched identity stops the sequence.
 
 After all six stages pass, the same controller waits up to `--merge-wait-seconds`
@@ -166,3 +174,9 @@ Core reads only its environment; the
 lists the variables. The Docker-hosted variant of the standalone archive is retired: it
 could not describe a complete Runtime release by itself. Docker-hosted deployments use
 the Core distribution and its installer, whose manifest carries the complete release.
+
+Immediately after the final asset download, the controller repeats the exact
+main/tree, tag, draft and Release ID checks. Publication uses the verified Release
+ID through the existing authenticated API, so a replacement tag lookup cannot
+select another release. Published bytes and final release/tag identity are checked
+again afterward.

@@ -14,6 +14,7 @@ from unittest import mock
 
 spec = importlib.util.spec_from_file_location(
     "promotion", pathlib.Path(__file__).with_name("promote-qualified-release.py"))
+PathControl = pathlib.Path(__file__).with_name('qualification_control.py')
 promotion = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(promotion)
 
@@ -162,10 +163,11 @@ class PromotionTests(unittest.TestCase):
     def qualify(self, checks=None, failure=False, wrong_identity=False):
         adapter = self.root / "adapter.py"
         adapter.write_text("# Transport test fixture, never live acceptance\n")
+        adapter.with_name('qualification_control.py').write_bytes(PathControl.read_bytes())
         request = {"source": promotion.SOURCE, "tree": self.tree, "run_id": "test-run",
                    "inventory_sha256": "c" * 64, "directory": "/tmp/test", "inventory": {}}
 
-        def transport(argv, **kwargs):
+        def transport(argv, request_input=None, **kwargs):
             if "exec(compile" in argv[-1]:
                 if failure:
                     raise subprocess.CalledProcessError(1, argv)
@@ -179,7 +181,8 @@ class PromotionTests(unittest.TestCase):
                 return json.dumps(result)
             return ""
 
-        with mock.patch.object(promotion, "run", side_effect=transport):
+        with mock.patch.object(promotion, "run", side_effect=transport), \
+             mock.patch.object(promotion.qualification_adapter.control, "transport", side_effect=transport):
             return promotion.qualification(request, "mx2", "/tmp/test", adapter, self.assets, self.package, self.manifest_hash)
 
     def test_nonzero_ssh_missing_checks_and_replayed_result_rejected(self):
@@ -227,16 +230,54 @@ class PromotionTests(unittest.TestCase):
                      mock.patch.object(promotion, "verify_tooling"), \
              mock.patch.object(promotion, "api", return_value={"commit": {"tree": {"sha": self.tree}}}), \
              mock.patch.object(promotion, "verify_tag"), \
-             mock.patch.object(promotion, "release_state", side_effect=[draft, draft, draft, final]), \
+             mock.patch.object(promotion, "release_state", side_effect=[draft, draft, draft, draft, final]), \
              mock.patch.object(promotion, "download", side_effect=download), \
              mock.patch.object(promotion, "verify_files"), \
              mock.patch.object(promotion, "qualification", side_effect=lambda *args: events.append("qualified") or {}), \
              mock.patch.object(promotion, "wait_for_landed", side_effect=lambda *args: events.append("landed")), \
-             mock.patch.object(promotion, "gh", side_effect=lambda *args: events.append(args[:3])), \
+             mock.patch.object(promotion, "verify_landed", side_effect=lambda *args: events.append("rechecked")), \
+             mock.patch.object(promotion, "publish_release", side_effect=lambda release_id, body: events.append(("publish", release_id))), \
              mock.patch("builtins.print"):
             promotion.promote(self.assets, self.root / "success", "mx2", "/tmp/acceptance", "d" * 40, **self.kwargs)
         self.assertEqual(events, ["downloaded", "qualified", "landed", "before-publication",
-                                  ("release", "edit", promotion.TAG), "published"])
+                                  "rechecked", ("publish", 1), "published"])
+
+    def test_final_identity_changes_never_publish(self):
+        draft = {"id": 1, "draft": True, "target_commitish": promotion.SOURCE}
+        ready = json.dumps({"ready": True, "required_checks": list(promotion.REQUIRED_CHECKS)})
+        for change in ("main", "tag", "replacement", "published"):
+            with self.subTest(change=change):
+                final = dict(draft)
+                if change == "replacement":
+                    final["id"] = 2
+                if change == "published":
+                    final["draft"] = False
+                with mock.patch.object(promotion, "run", return_value=ready), \
+                     mock.patch.object(promotion, "verify_tooling"), \
+                     mock.patch.object(promotion, "api", return_value={"commit": {"tree": {"sha": self.tree}}}), \
+                     mock.patch.object(promotion, "verify_tag", side_effect=[None, None, ValueError("changed") if change == "tag" else None]), \
+                     mock.patch.object(promotion, "release_state", side_effect=[draft, draft, draft, final]), \
+                     mock.patch.object(promotion, "download") as download, \
+                     mock.patch.object(promotion, "verify_files"), \
+                     mock.patch.object(promotion, "qualification", return_value={}), \
+                     mock.patch.object(promotion, "wait_for_landed"), \
+                     mock.patch.object(promotion, "verify_landed", side_effect=ValueError("changed") if change == "main" else None), \
+                     mock.patch.object(promotion, "publish_release") as publish:
+                    with self.assertRaises(ValueError):
+                        promotion.promote(self.assets, self.root / change, "mx2", "/tmp/acceptance", "d" * 40, **self.kwargs)
+                    self.assertEqual(download.call_args_list[-1].args[0].name, "before-publication")
+                    publish.assert_not_called()
+
+    def test_publication_targets_verified_release_id(self):
+        body = self.root / "publication.json"
+        body.write_text('{"draft":false}')
+        with mock.patch.object(promotion, "run", return_value='{"id":37,"draft":false,"prerelease":false}') as run:
+            promotion.publish_release(37, body)
+            self.assertEqual(run.call_args.args[0], ["gh", "api", "--method", "PATCH",
+                "repos/" + promotion.REPO + "/releases/37", "--input", str(body)])
+        with mock.patch.object(promotion, "run", return_value='{"id":38,"draft":false,"prerelease":false}'):
+            with self.assertRaisesRegex(ValueError, "identity mismatch"):
+                promotion.publish_release(37, body)
 
     def test_download_hashes_stream_without_storing_an_archive(self):
         payload = b"downloaded bytes"
@@ -331,7 +372,7 @@ print(json.dumps(r))
         self.script.write_text("import sys;sys.exit(9)\n")
         self.freeze()
         (self.assets / 'old-pass.json').write_text('{"status":"passed"}')
-        with self.assertRaisesRegex(ValueError, 'stage failed'):
+        with self.assertRaisesRegex(ValueError, 'child failed'):
             promotion.qualification_adapter.qualify(self.request)
         self.assertFalse((self.assets / 'qualification/supervision.result.json').exists())
 
