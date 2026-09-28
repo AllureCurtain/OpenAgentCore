@@ -68,6 +68,12 @@ described in `apps/web/DESIGN.md`. Keep explanations behind help tips, but keep
 errors, warnings and safety notices visible. Browser-derived metrics state their
 coverage, keep missing values missing, bound their fan-out and time, report a failed
 read as failed and never imply deployment-wide or billing totals.
+Sandbox deployment setup, configuration, reset and progress belong to the System
+secondary page (`#system?id=sandbox`). Nodes owns node management; Overview and
+metrics pages link to these owners instead of repeating their controls or details.
+Keep uncommon resource edits and rollout details in dialogs, and avoid repeating
+the same information within or across pages. Core responses remain the source of
+truth for deployment and connection state.
 
 For subsequent alignment and milestone closure batches, the main thread coordinates
 design, shared interface agreements, file ownership, integration and merge. First
