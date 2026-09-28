@@ -176,7 +176,6 @@ func TestRuntimePreparationInitialActions(t *testing.T) {
 	base := RuntimePreparePayload{Step: "begin", EnvironmentID: uuid.NewString(), SessionID: uuid.NewString()}
 	for _, initialization := range []RuntimeInitialization{
 		{Action: "configure", Env: map[string]string{"EXAMPLE": "value"}},
-		{Action: "system", Network: "enabled", Packages: []string{"git"}},
 		{Action: "npm", Network: "disabled", Packages: []string{"typescript"}},
 		{Action: "python", Network: "enabled", Packages: []string{"requests"}},
 		{Action: "setup", Network: "enabled", Command: "echo done"},
@@ -204,7 +203,7 @@ func TestRuntimePreparationInitialActions(t *testing.T) {
 		{Action: "exec", Command: "echo done"},
 		{Action: "configure", Packages: []string{"git"}},
 		{Action: "configure", Env: map[string]string{"A=B": "value"}},
-		{Action: "system", Network: "enabled"},
+		{Action: "system", Network: "enabled", Packages: []string{"git"}},
 		{Action: "npm", Network: "invalid", Packages: []string{"a"}},
 		{Action: "python", Network: "enabled", Packages: []string{"--help"}},
 		{Action: "setup", Network: "enabled", Command: "x", CWD: "/environment"},

@@ -1,102 +1,43 @@
 # Codex colocated Runtime
 
-These operator inputs select the V1 native isolation profile. The explicit service
-configuration below enables basic Docker-hosted admission; it does not replace
-the accepted caller-managed `self_hosted` path. Use one dedicated sandbox and retained
-home/workspace per Session. Core stays outside it. Do not mount another Session's
-history, host home, Docker socket, or product/Core credentials.
+A managed Session runs the daemon, Codex and workspace in a dedicated outer
+Environment. Core stays outside it. Use Codex 0.153.4 and its matching
+`codex-resources`. The same daemon supports native self-hosted installations; see
+[the native guide](../../../../docs/self-hosted-native.md) for platform status.
 
-The shared Runtime and its two management modes are defined in
-[the contributor guide](../../../../CONTRIBUTING.md#product-and-execution-service-separation).
-User-managed installation and enrollment are outside this qualification batch.
+Codex tools run with the daemon user's existing permissions. There is no inner
+filesystem, permission or network sandbox, no immutable Codex requirements file,
+and no managed Bash wrapper. Tools may read Runtime state that the user can read.
+Model credentials still belong in authenticated Runtime configuration, never image
+layers. Do not mount another Session's history, host home, Docker socket or Core
+credentials into the Environment.
 
-Use Codex 0.153.4 and its matching `codex-resources` directory. Install the immutable
-requirements file at `/etc/codex/requirements.toml`, mount only the authorized
-Environment parent at `/environment`, containing `workspace`, private `staging`, tool `initialization` and `packages`
-directories on one mount for trusted writes. Retain daemon/native state beneath `/home`. Set
-`OAC_RUNTIME_CODEX_PERMISSION_PROFILE=managed-workspace` on the daemon. This operator
-setting enables adapter selection of the immutable Runtime network profile at
-startup and on both new/resumed threads;
-it also filters native shell inheritance to process essentials, retaining default
-secret exclusions. Native shell snapshots are disabled for this managed path:
-their private storage is unavailable inside the tool sandbox, so loading one would
-abort the pinned harness's login-shell wrapper. Ordinary shell startup remains
-native. Model credentials remain available to the trusted harness;
-it is not a request option or a public capability. Missing/invalid native profiles
-must fail, without falling back to an unrestricted run. Ordinary deployments leave
-this setting unset. It is incompatible with remote/none/read-only preparations.
-
-The requirements file is outside the workspace and read-only. It fixes the allowed
-profile and denies reads of daemon authentication, generated provider configuration
-and native history under the declared daemon state layout. Minimal native reads
-exclude other home contents; native helper aliases under the Session tmp directory
-remain readable so the pinned harness can start its sandbox and apply_patch.
-The workspace and initialized package prefix are writable by native tools;
-initialized tool configuration is read-only. Staging and its ancestors
-are unavailable for native tool writes; staging is also explicitly denied for reads.
-The image includes enabled and disabled native network profiles with the same
-filesystem restrictions. Bootstrap freezes `OAC_RUNTIME_NETWORK_ACCESS`;
-preparation must match it, and the adapter selects the native profile. Public
-omission defaults to enabled. Restricted domains are unimplemented and rejected.
-The trusted harness and daemon retain model/Core connectivity with either policy.
-Do not expose private stock filesystem RPC as public Files.
-Public file access needs the existing bounded, authorized filesystem primitives.
-
-The Docker candidate uses a non-root user, no capabilities, no-new-privileges,
-read-only root, private PID namespace, dedicated bridge networking, bounded tmpfs
-and process/memory/CPU limits. Stock Codex's inner bubblewrap sandbox needs user,
-mount and PID namespaces. `seccomp.json` retains the Moby default restrictions and
-adds clone, unshare, setns, mount, umount2 and pivot_root for that inner sandbox.
-No host capability or privileged container is required. On the tested AppArmor
-host, Docker's default profile denies namespaced mounts; the candidate uses
-container-specific `apparmor=unconfined`. This removes that outer LSM layer, so the
-native sandbox, outer namespace/capability restrictions and actual isolation
-checks remain required. Do not alter the host-wide AppArmor or seccomp policy.
+The existing outer Docker configuration is unchanged: non-root user, dropped
+capabilities, no-new-privileges, read-only root, private PID namespace, dedicated
+bridge networking, bounded tmpfs and process/memory/CPU limits. Its existing
+`nested_sandbox` setting and seccomp file are deployment settings, not evidence
+that the daemon adds inner isolation. The container-specific AppArmor exception
+in that configuration removes an outer LSM layer; do not change host-wide policy.
 
 Seccomp source: [Moby profiles, revision 65adc7e](https://github.com/moby/profiles/blob/65adc7e022c97f55e45c054ff012988027733b87/seccomp/default.json), Apache-2.0.
 Unmodified source SHA-256:
 `785b2429264afba4d594320337cb17f144f3c7d51585f9805eef72e28f4f9334`.
-The final extra syscall rule is the only change to the parsed upstream profile.
+The retained extra syscall rule is unchanged by removal of the inner sandbox.
+Historical qualification of private-file denial under the former native sandbox
+does not describe current tool permissions or qualify the new deployment.
 
-Before treating this as a qualified deployment, verify native workspace execution,
-credential/symlink/process-metadata denial, permission downgrade rejection, real
-model execution, cancellation, daemon/container restart with retained history and
-files, and missing-history rejection. An alive container or a selected profile is
-not an isolation or public API acceptance result. Qualification applies only to
-the selected deployment profile, not complete protocol compatibility or another
-engine/provider.
+The packaged image retains `/environment/workspace`, initialization, package and
+staging directories plus daemon/native state under `/home/runtime`. Docker also
+mounts the workspace at `/workspace`. Runtime binds public Files/Artifacts to its
+configured workspace; native tools execute with ordinary user permissions. The
+shared helper artifacts remain in the matched Runtime bundle. The Docker engine
+must support volume subpath mounts; its recorded qualification used 29.1.3.
 
-The optional local file writer uses the existing `oac-codex-write` binary
-outside `/environment`, with `OAC_RUNTIME_WRITE_HELPER` selecting that immutable
-executable and `OAC_RUNTIME_STAGING=/environment/staging`. Set
-`OAC_RUNTIME_WORKSPACE=/environment/workspace`; the public file path remains
-`/workspace/...` and Core sends only the relative path to the bound Runtime.
-Docker mounts the existing volume's `workspace` subdirectory at `/workspace` as
-a second view of the same files. The image contains the initial directory before
-volume population, so bootstrap works with an empty volume. Native tools receive
-only that additional workspace root; staging remains private. Trusted atomic
-rename stays within `/environment`. A symlink is insufficient because stock Codex
-mounts canonical roots. The qualified Docker version is 29.1.3; the engine must
-support volume subpath mounts. Other versions need their own deployment checks.
-Workspace and staging must share the same mount for atomic rename. Do not mount
-them separately or put daemon/model credentials, native history or other tenants
-inside `/environment`. The read-only Runtime can omit both writer settings.
-
-Hosted Turn output publication additionally requires the immutable
-`oac-workspace-export` executable selected by
-`OAC_RUNTIME_EXPORT_HELPER`. The Runtime bundle includes it outside the workspace.
-It exports regular files below `outputs` through the authenticated daemon connection;
-Core stores immutable copies and publishes them with successful Turn completion.
-Use a matched Core/Runtime release: older Runtime images without bounded output
-export are ineligible for hosted execution. Listing and downloading already
-published artifacts uses the execution database and requires no running Environment.
-The export capability does not replace the deployment isolation checks above.
-
-The installer runs as a trusted bounded daemon child with a minimal environment.
-Native tools retain their narrower filesystem policy. Qualify direct reads,
-symlink and process-root aliases, attempted staging modification, real uploaded
-bytes consumed by Codex, cancellation and retained-history restart before using
-this writer profile for public admission. Configuration alone is not that proof.
+Published Artifacts are immutable Core-owned copies of successful Turn outputs;
+listing and downloading them requires no running Environment. Validate actual
+execution, file operations, cancellation, process settlement and retained native
+history using the current binary and outer deployment. An alive container alone
+is not acceptance.
 
 ## Managed Runtime image and Docker adapter
 
@@ -135,11 +76,10 @@ the container, explicitly removes its named volumes and confirms absence. Keep t
 reference and retry cleanup when an operation fails; an HTTP timeout is not proof
 that a resource disappeared. Never use broad container or volume pruning.
 
-RunCommand is for trusted initialization, using an explicit context deadline,
-argument vector and nonroot user. It preserves nonzero status and limits each
-output stream to1MiB. Disconnecting an exec stream does not stop the command:
-an unconfirmed result requires allocation cleanup before reuse. Routine agent
-execution, cancellation and Files continue through Core/daemon/Runtime.
+Provider commands are limited to bootstrap and resource lifecycle. Runtime owns
+initial files, configuration, npm/Python packages, setup and capabilities over its
+authenticated protocol. An unconfirmed bootstrap result requires allocation
+cleanup before reuse; compute readiness does not prove Runtime readiness.
 
 ## Standalone operator configuration
 
@@ -185,19 +125,26 @@ With the qualified Codex image and Docker provider configured, create an idle or
 initial-text Session using `environment: {"type": "openai_hosted"}`. Core commits
 its identity before automatically provisioning it. Queries expose durable
 connection status; execution separately prepares the native harness. Session
-deletion revokes authority before owned container/volume cleanup. Supported network
-policies are enabled, disabled and restricted to exact ASCII hostnames. Templates
-and inline configuration share initial files, env, packages, ordered setup and inline
-Skills; see the [supported fields and limits](../../../../contracts/agents-api/environment-templates.md).
-Other hostname forms, Plugins, Skill references, capability-directory imports and
-hosted MCP combinations remain explicit gaps.
+deletion revokes authority before owned container/volume cleanup. The daemon does
+not enforce `disabled` or `restricted` networking; combinations without matching
+outer enforcement are unsupported. Templates and inline configuration share
+initial files, env, npm/Python packages, ordered setup and capabilities; see the
+[supported fields and limits](../../../../contracts/agents-api/environment-templates.md).
 
 ### Environment initialization
 
-Templates and inline env/setup/npm/Python configuration share the packaged Runtime
-initializer. Enable the existing `nested_sandbox: true` Docker provider setting
-when admitting these configurations: user commands and package hooks require
-bubblewrap user/PID/mount isolation. Runtime execution still uses native Codex
-isolation. The image includes the trusted initializer and managed native Bash
-hook; do not inject user env into the daemon or app-server launcher.
-See [initialization contract and limits](../../../../contracts/agents-api/environment-templates.md).
+Templates and inline env/setup/npm/Python configuration share the daemon's Go
+Runtime preparation implementation on all platforms. The packaged image sets
+`OAC_RUNTIME_INITIALIZATION_DIRECTORY=/environment/initialization` and
+`OAC_RUNTIME_PACKAGE_DIRECTORY=/environment/packages` to retain its resource layout.
+No Python initialization wrapper is shipped. It runs commands directly as UID/GID 1000 using configured tool
+variables; it does not inject those variables into the daemon or native harness
+launcher. Cancellation and finite receipts remain Runtime responsibilities.
+
+System dependencies must be installed during image/template construction. The
+daemon never runs apt, sudo or another privilege escalation, and
+`system_packages` is unsupported. A missing executable or library fails the
+operation requiring it. The image no longer contains a system-root seed or
+system-package launcher. Native self-hosted users prepare their own dependencies
+before starting the daemon. See
+[initialization contract and limits](../../../../contracts/agents-api/environment-templates.md).

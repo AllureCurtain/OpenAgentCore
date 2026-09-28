@@ -86,7 +86,7 @@ func TestTemplateCompositionOfficialClientPostgres(t *testing.T) {
 	for label, id := range receipt.Sessions {
 		env := map[string]string{"TEMPLATE_ONLY": marker + "-template-env", "SHARED": marker + "-template-shared"}
 		commands := []store.SetupCommand{{Command: "printf " + marker + "-template-command", CWD: "/workspace"}}
-		packages := v1.EnvironmentPackages{Python: []string{"packaging==25.0"}, NPM: []string{"semver@7.7.2"}, System: []string{"jq"}}
+		packages := v1.EnvironmentPackages{Python: []string{"packaging==25.0"}, NPM: []string{"semver@7.7.2"}}
 		paths := []string{"/workspace/template-only.txt", "/workspace/overlap.txt"}
 		contents := []string{marker + "-template-file", marker + "-source"}
 		switch label {

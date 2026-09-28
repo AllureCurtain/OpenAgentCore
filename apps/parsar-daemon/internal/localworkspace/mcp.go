@@ -9,8 +9,6 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 )
 
-const MCPInitializer = "/usr/local/bin/oac-runtime-initialize"
-
 // MCPStdioCommand resolves the common installed manifest in the daemon.
 func MCPStdioCommand(server proto.EnvironmentMCP) (string, []string) {
 	executable, err := os.Executable()

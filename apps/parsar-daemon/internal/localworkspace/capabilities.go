@@ -45,7 +45,6 @@ func (b *Binding) Prepare(ctx context.Context, r proto.PromptRequestPayload) (pr
 	}
 	local := *r.LocalEnvironment
 	local.Skills, local.MCP, local.CapabilityRoot = manifest.Skills, nil, b.capabilityRoot
-	local.ExecutionMode = b.ExecutionMode()
 	for i := range local.Skills {
 		local.Skills[i].InstallationRoot = b.capabilityRoot
 	}
@@ -66,7 +65,6 @@ func (b *Binding) Prepare(ctx context.Context, r proto.PromptRequestPayload) (pr
 		for i := range local.MCP {
 			local.MCP[i].InstallationRoot = b.capabilityRoot
 			local.MCP[i].WorkspaceRoot = b.workspace
-			local.MCP[i].ExecutionMode = b.ExecutionMode()
 		}
 		if err != nil {
 			return r, err

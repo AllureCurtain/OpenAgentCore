@@ -8,7 +8,6 @@ import (
 // LocalEnvironment names a frozen workspace selection. Runtime must verify it
 // against the bound local root before resolving capabilities or native execution.
 type LocalEnvironment struct {
-	ExecutionMode      string                   `json:"-"`
 	CapabilityRoot     string                   `json:"-"`
 	ID                 string                   `json:"id"`
 	WorkspaceDirectory string                   `json:"workspace_directory"`
@@ -22,8 +21,6 @@ type LocalEnvironment struct {
 	MCP []EnvironmentMCP `json:"-"`
 	// ToolEnvironment consumes Core-completed confidential initialization.
 	ToolEnvironment bool `json:"tool_environment,omitempty"`
-	// SystemPackages requires the installed Runtime tool root during execution.
-	SystemPackages bool `json:"system_packages,omitempty"`
 	// NetworkAccess must match the immutable Runtime policy for execution.
 	NetworkAccess  string   `json:"network_access,omitempty"`
 	AllowedDomains []string `json:"allowed_domains,omitempty"`
@@ -32,7 +29,6 @@ type LocalEnvironment struct {
 // EnvironmentMCP is transient Runtime configuration. Do not log it: HTTP headers
 // and the selected user bearer may be confidential. It is not agent.tools MCP.
 type EnvironmentMCP struct {
-	ExecutionMode    string `json:"-"`
 	InstallationRoot string
 	WorkspaceRoot    string
 	PackageRoot      string

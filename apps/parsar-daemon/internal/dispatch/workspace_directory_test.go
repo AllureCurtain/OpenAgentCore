@@ -3,6 +3,8 @@ package dispatch_test
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -17,9 +19,14 @@ func TestWorkspaceDirectoryRetainsEnvironmentAndTransferredOwner(t *testing.T) {
 		return &fakeSession{out: out, ctx: ctx, closeOutOnCancel: true}, nil
 	}
 	r := preparationRouter(t, sender, time.Minute, func(context.Context, proto.PromptRequestPayload) (agent.Prepared, error) { return p, nil })
+	for _, name := range []string{"file", "second"} {
+		if err := os.WriteFile(filepath.Join(os.Getenv("OAC_RUNTIME_WORKSPACE"), name), []byte("abc"), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionPrepare, "prepare", preparationRequest()))
 	ready := waitPreparationStatus(t, sender, "prepare", "ready", "")
-	request := proto.WorkspaceReadPayload{Operation: "directory", Handle: ready.Handle, EnvironmentID: preparationEnvironmentID, MaxEntries: 2}
+	request := proto.WorkspaceReadPayload{Operation: "directory", Handle: ready.Handle, EnvironmentID: preparationEnvironmentID, MaxEntries: 1}
 	for _, phase := range []string{"idle", "active"} {
 		_ = r.Handle(t.Context(), mustEnv(t, proto.TypeWorkspaceRead, phase, request))
 		result := waitWorkspaceRead(t, sender, phase)

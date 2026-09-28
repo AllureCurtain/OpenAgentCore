@@ -92,6 +92,22 @@ For example, a tool environment file can contain `{"EXAMPLE_SETTING":"value"}`.
 Treat files containing credentials as secrets. Retain the credential and tool
 configuration files at their configured paths; installation records those paths.
 
+Runtime preparation uses one Go implementation on all platforms. Its local
+initialization and package directories default to `initialization` and `packages`
+under `OAC_RUNTIME_HOME`. Operators can select absolute paths with
+`OAC_RUNTIME_INITIALIZATION_DIRECTORY` and `OAC_RUNTIME_PACKAGE_DIRECTORY`;
+managed images set these to `/environment/initialization` and
+`/environment/packages`. They change storage layout, not execution permissions.
+`OAC_RUNTIME_TOOL_ENV_FILE` selects an explicit tool-variable JSON file; preparation
+does not overwrite an existing configuration.
+
+npm and Python packages install only into the Runtime package directory using
+npm's prefix and pip's target options. Node/npm and Python/pip must already be
+installed. Setup requires Bash; on Windows it requires Git Bash, found from Git's
+installation or `CLAUDE_CODE_GIT_BASH_PATH`. Missing dependencies fail preparation;
+Runtime does not substitute PowerShell, cmd.exe or WSL for Bash setup.
+
+
 `oac-daemon start --foreground` stays attached to the terminal instead of starting
 in the background. An operator can use their own service manager to run it; the
 native installer does not configure one.
@@ -133,7 +149,9 @@ upgrade, adoption of a historical container installation, or cross-version nativ
 history migration. Preserve an old installation's files and use a fresh Runtime
 home and Session when moving versions.
 
-Managed system-package installation remains under its existing contract while the
-ordinary apt ownership decision is pending. This guide does not claim that apt has
-been migrated or that a native daemon can install packages without the launching
-user's required permissions.
+System dependencies must be present before Runtime execution: install them while
+building the managed image/template, or prepare them as the self-hosted user.
+Runtime does not run apt, request sudo or elevate the daemon's privileges.
+`system_packages` is unsupported; a missing dependency fails the operation that
+requires it. npm/Python package installation and setup retain their supported
+initialization flow using the launching user's existing permissions.

@@ -15,7 +15,6 @@ import (
 
 // WorkspaceConfig is frozen deployment input, separate from public Agent options.
 type WorkspaceConfig struct {
-	ExecutionMode                                     string
 	Binary, Node, Bridge, Directory, Network, Scratch string
 	AllowedDomains                                    []string
 }
@@ -23,17 +22,13 @@ type WorkspaceConfig struct {
 func ConfigureLocal(binary, node, bridge, root, workspace string, network agentnetwork.Policy, staging string) (WorkspaceConfig, error) {
 	c := WorkspaceConfig{Binary: binary, Node: node, Bridge: bridge, Directory: workspace, Network: network.Access, AllowedDomains: network.Hosts(),
 		Scratch: filepath.Join(root, "runtime", "mcode-tools", "scratch")}
-	binding, bindingErr := localworkspace.Load()
-	if bindingErr == nil && binding != nil {
-		c.ExecutionMode = binding.ExecutionMode()
-	}
 	if runtime.GOOS == "windows" || network.Access != "enabled" || len(network.AllowedDomains) != 0 {
 		return c, fmt.Errorf("mcode: native execution requires Linux or macOS and unrestricted host access")
 	}
 	if network.Validate() != nil {
 		return c, fmt.Errorf("mcode: explicit workspace network policy is required")
 	}
-	for _, path := range []string{binary, node, bridge, root, workspace, staging} {
+	for _, path := range []string{binary, node, bridge, root, workspace} {
 		if !filepath.IsAbs(path) || filepath.Clean(path) != path || path == "/" {
 			return c, fmt.Errorf("mcode: canonical absolute deployment paths are required")
 		}
@@ -56,9 +51,6 @@ func ConfigureLocal(binary, node, bridge, root, workspace string, network agentn
 }
 
 func prepareWorkspaceOptions(ctx context.Context, c WorkspaceConfig, req proto.PromptRequestPayload) (launchOptions, error) {
-	if req.LocalEnvironment != nil && req.LocalEnvironment.ExecutionMode != c.ExecutionMode {
-		return launchOptions{}, fmt.Errorf("mcode: execution mode mismatch")
-	}
 	if c.Network != "enabled" || len(c.AllowedDomains) != 0 {
 		return launchOptions{}, fmt.Errorf("mcode: Runtime does not implement network isolation")
 	}

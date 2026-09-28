@@ -16,9 +16,8 @@ import (
 func TestHostedEnvironmentDefaultsAndExplicitGaps(t *testing.T) {
 	for _, raw := range []string{
 		`{"type":"openai_hosted"}`,
-		`{"type":"openai_hosted","packages":{"system":["jq","libpq-dev"]}}`,
 		`{"type":"openai_hosted","network":null,"env":null,"files":null,"packages":null,"plugins":null,"skills":null,"setup_commands":null,"capability_directories":null}`,
-		`{"type":"openai_hosted","network":{"access":"enabled","allowed_domains":null},"env":{},"files":[],"packages":{"npm":[],"python":null,"system":[]},"plugins":[],"skills":[],"setup_commands":[],"capability_directories":[]}`,
+		`{"type":"openai_hosted","network":{"access":"enabled","allowed_domains":null},"env":{},"files":[],"packages":{"npm":[],"python":null},"plugins":[],"skills":[],"setup_commands":[],"capability_directories":[]}`,
 	} {
 		got, err := decodeSessionEnvironment(json.RawMessage(raw))
 		if err != nil || got.Network == nil || got.Network.Access != "enabled" {
@@ -63,7 +62,7 @@ func TestHostedEnvironmentResponseHasPinnedShapeAndNoConnectionAction(t *testing
 	if json.Unmarshal(raw, &got) != nil {
 		t.Fatal("invalid environment JSON")
 	}
-	expected := map[string]any{"id": "environment", "type": "openai_hosted", "capability_directories": []any{}, "files": []any{}, "plugins": []any{}, "skills": []any{}, "packages": map[string]any{"npm": []any{}, "python": []any{}, "system": []any{}}, "network": map[string]any{"access": "enabled", "allowed_domains": []any{}}}
+	expected := map[string]any{"id": "environment", "type": "openai_hosted", "capability_directories": []any{}, "files": []any{}, "plugins": []any{}, "skills": []any{}, "packages": map[string]any{"npm": []any{}, "python": []any{}}, "network": map[string]any{"access": "enabled", "allowed_domains": []any{}}}
 	if !reflect.DeepEqual(got, expected) {
 		t.Fatal("hosted response shape changed", string(raw))
 	}

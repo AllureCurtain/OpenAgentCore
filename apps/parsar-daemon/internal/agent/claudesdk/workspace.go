@@ -18,7 +18,6 @@ import (
 // State directories must already exist.
 // PublicDirectory may name a second mount of the same workspace inode.
 type WorkspaceConfig struct {
-	ExecutionMode   string
 	Directory       string
 	PublicDirectory string
 	NetworkAccess   string
@@ -29,7 +28,6 @@ type WorkspaceConfig struct {
 
 type workspaceProfile struct {
 	ToolEnv        map[string]string                  `json:"tool_env,omitempty"`
-	ExecutionMode  string                             `json:"execution_mode,omitempty"`
 	CapabilityRoot string                             `json:"capability_root,omitempty"`
 	MCP            []environmentMCPServer             `json:"mcp,omitempty"`
 	Skills         []agentcapabilities.InstalledSkill `json:"skills,omitempty"`
@@ -42,7 +40,7 @@ type workspaceProfile struct {
 }
 
 func prepareWorkspace(config Config, req proto.PromptRequestPayload) (*workspaceProfile, []string, error) {
-	if req.DisableExecutionEnvironment || req.MCPHTTPServers != nil || (req.LocalEnvironment != nil && req.LocalEnvironment.ExecutionMode != config.Workspace.ExecutionMode) {
+	if req.DisableExecutionEnvironment || req.MCPHTTPServers != nil {
 		return nil, nil, fmt.Errorf("claudesdk: workspace profile does not support the requested execution combination")
 	}
 	if req.WorkDir != "" && req.WorkDir != config.Workspace.Directory {
@@ -85,14 +83,13 @@ func workspaceCwd(w *WorkspaceConfig) string {
 	return w.Directory
 }
 
-// Workspace Env is a replacement, unlike the existing none profile's overlay.
-// Only explicitly selected provider settings reach either readiness or execution.
+// Harness state paths and selected model credentials overlay the user environment.
 func workspaceEnvironment(config Config) (*workspaceProfile, []string, error) {
 	fail := func() (*workspaceProfile, []string, error) {
 		return nil, nil, fmt.Errorf("claudesdk: invalid trusted workspace configuration")
 	}
 	w := config.Workspace
-	if w == nil || (w.ExecutionMode != "" && w.ExecutionMode != "native") || (w.NetworkAccess != "" && w.NetworkAccess != "enabled") || len(w.AllowedDomains) != 0 {
+	if w == nil || (w.NetworkAccess != "" && w.NetworkAccess != "enabled") || len(w.AllowedDomains) != 0 {
 		return fail()
 	}
 	for _, path := range []string{config.Node, config.Entrypoint, filepath.Join(filepath.Dir(config.Entrypoint), "runtime_check.js")} {
@@ -113,7 +110,7 @@ func workspaceEnvironment(config Config) (*workspaceProfile, []string, error) {
 			return fail()
 		}
 	}
-	profile := &workspaceProfile{ExecutionMode: w.ExecutionMode, Home: w.HomeDir, State: config.StateDir, Scratch: w.ScratchDir, EnvNames: []string{}, NetworkAccess: w.NetworkAccess, AllowedDomains: []string{}}
+	profile := &workspaceProfile{Home: w.HomeDir, State: config.StateDir, Scratch: w.ScratchDir, EnvNames: []string{}, NetworkAccess: w.NetworkAccess, AllowedDomains: []string{}}
 	env := []string{}
 	for _, entry := range os.Environ() {
 		name, _, _ := strings.Cut(entry, "=")
@@ -155,8 +152,4 @@ func canonicalWorkspaceDir(dir string) bool {
 }
 func workspacePathSyntax(dir string) bool {
 	return filepath.IsAbs(dir) && filepath.Clean(dir) == dir && strings.IndexFunc(dir, func(r rune) bool { return r < 32 || r == 127 }) == -1
-}
-func pathContains(parent, child string) bool {
-	rel, err := filepath.Rel(parent, child)
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }

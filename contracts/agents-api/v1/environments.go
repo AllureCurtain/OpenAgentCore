@@ -28,5 +28,4 @@ type EnvironmentNetworkInput struct {
 type EnvironmentPackages struct {
 	NPM    []string `json:"npm" binding:"required"`
 	Python []string `json:"python" binding:"required"`
-	System []string `json:"system" binding:"required"`
 }

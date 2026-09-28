@@ -20,7 +20,6 @@ type EnvironmentTemplateRequest struct {
 type EnvironmentPackagesInput struct {
 	NPM    []string `json:"npm,omitempty" extensions:"x-nullable"`
 	Python []string `json:"python,omitempty" extensions:"x-nullable"`
-	System []string `json:"system,omitempty" extensions:"x-nullable"`
 }
 
 // EnvironmentTemplate returns safe configuration metadata only.

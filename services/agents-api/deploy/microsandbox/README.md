@@ -101,9 +101,10 @@ substituting a local image for an already saved release.
 
 The provider performs the existing Runtime bootstrap, starts the daemon as
 uid/gid 1000 and creates `/run/oac` as a private control directory. No model,
-Core or tenant credential belongs in the image. The ordinary Runtime initializer
-and native isolation profile still apply; snapshot restore does not rerun setup
-commands or initial file writes.
+Core or tenant credential belongs in the image. The Runtime initializer executes
+with that user's existing permissions; the microVM is the isolation boundary.
+System dependencies belong in the image: Runtime does not run apt or sudo and
+rejects `system_packages`. Snapshot restore does not rerun setup or initial files.
 
 ## Deployment and node configuration
 
@@ -127,8 +128,8 @@ retention.
 The private node provider file supplies its absolute helper/runtime/firmware paths,
 short Runtime home and explicit host network policy. Permit the required Core,
 model and package-registry endpoints. Creation and restore apply the same host
-policy. Native tool-network policy remains separate and uses the existing Runtime
-controls. Never repoint a retained backend namespace or overwrite node identity
+policy. The daemon does not enforce `disabled` or `restricted` native network
+modes; combinations without required outer enforcement are unsupported. Never repoint a retained backend namespace or overwrite node identity
 to bypass a configuration mismatch.
 
 Use the existing [standalone Core setup](../../README.md) for the database,

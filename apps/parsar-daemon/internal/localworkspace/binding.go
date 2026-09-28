@@ -16,7 +16,6 @@ import (
 
 // Binding freezes operator-owned identity and paths for one Runtime lifetime.
 type Binding struct {
-	executionMode  string
 	environment    string
 	networkAccess  string
 	allowedDomains []string
@@ -39,7 +38,6 @@ func New(environment, session, workspace, helper string) (*Binding, error) {
 		return nil, err
 	}
 	b.helper = helper
-	b.executionMode = os.Getenv("OAC_RUNTIME_EXECUTION_MODE")
 	return b, nil
 }
 
@@ -50,7 +48,6 @@ func NewWithCapabilityDirectory(environment, session, workspace, helper, directo
 		return nil, err
 	}
 	b.helper = helper
-	b.executionMode = os.Getenv("OAC_RUNTIME_EXECUTION_MODE")
 	return b, nil
 }
 
@@ -100,7 +97,6 @@ func (b *Binding) Configure(r proto.PromptRequestPayload) (proto.PromptRequestPa
 	}
 	if !r.WorkspaceReadOnly {
 		local := *r.LocalEnvironment
-		local.ExecutionMode = b.ExecutionMode()
 		if local.WorkspaceDirectory != "/workspace" && local.WorkspaceDirectory != b.workspace {
 			return r, errors.New("request does not match the local workspace selection")
 		}
@@ -109,7 +105,7 @@ func (b *Binding) Configure(r proto.PromptRequestPayload) (proto.PromptRequestPa
 		}
 		sources := *local.CapabilitySources
 		present := len(sources.Skills)+len(sources.Plugins)+len(sources.Directories) > 0
-		if present != local.Capabilities || local.SystemPackages && !local.ToolEnvironment {
+		if present != local.Capabilities {
 			return r, agentcapabilities.ErrInvalid
 		}
 		local.Skills, local.MCP, local.CapabilityRoot = nil, nil, ""

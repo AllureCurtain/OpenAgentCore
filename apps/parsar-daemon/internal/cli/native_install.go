@@ -127,7 +127,6 @@ func runStart(rc *runContext, args []string) error {
 		return errors.New("start: this installation version is unsupported; reinstall explicitly")
 	}
 	for key, value := range map[string]string{
-		"OAC_RUNTIME_EXECUTION_MODE":       "native",
 		"OAC_RUNTIME_WORKSPACE":            config.Workspace,
 		"OAC_RUNTIME_CAPABILITY_DIRECTORY": config.CapabilityDirectory,
 		"OAC_RUNTIME_TOOL_ENV_FILE":        config.ToolEnvironmentFile,

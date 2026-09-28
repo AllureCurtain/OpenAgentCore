@@ -14,7 +14,7 @@ jobs:
       matrix:
         os: [ubuntu-22.04, macos-14, windows-2022]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         shell: bash
@@ -38,7 +38,26 @@ jobs:
           go test -race -count=1
           ./apps/parsar-daemon/internal/localworkspace
           ./apps/parsar-daemon/internal/cli
-          -run 'TestNative|TestPreparationFreezesLocalContentsAcrossReconnect|TestSnapshotMarker'
+          -run 'TestNative|TestRuntimeInit|TestRuntimePreparationRejects|TestPreparationFreezesLocalContentsAcrossReconnect|TestSnapshotMarker'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - name: Install pinned native Harness dependencies
+        run: |
+          npm install --global pnpm@10.30.3
+          pnpm install --frozen-lockfile --filter @parsar/claude-sdk-adapter...
+          pnpm --filter @parsar/claude-sdk-adapter build
+          npm install --prefix "$RUNNER_TEMP/native-tools" --no-save @openai/codex@0.153.4
+          mkdir -p "$RUNNER_TEMP/claude-runtime"
+          cp packages/claude-sdk-adapter/package.json "$RUNNER_TEMP/claude-runtime/"
+          cp -R packages/claude-sdk-adapter/dist "$RUNNER_TEMP/claude-runtime/"
+          npm install --prefix "$RUNNER_TEMP/claude-runtime" --omit=dev --ignore-scripts --package-lock=false
+      - name: Verify native Harness startup without model requests
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            export CLAUDE_CODE_GIT_BASH_PATH='C:\Program Files\Git\bin\bash.exe'
+          fi
+          node scripts/native-harness-smoke.mjs --codex-package "$RUNNER_TEMP/native-tools/node_modules/@openai/codex" --claude-runtime "$RUNNER_TEMP/claude-runtime"
       - uses: actions/upload-artifact@v6
         with:
           name: oac-daemon-${{ runner.os }}-${{ runner.arch }}

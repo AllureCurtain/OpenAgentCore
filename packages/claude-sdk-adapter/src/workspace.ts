@@ -7,7 +7,6 @@ import { realpathSync, statSync } from "node:fs";
 import { isAbsolute, parse, resolve } from "node:path";
 
 export type Workspace = {
-  execution_mode?: "native";
   tool_env?: Record<string, string>;
   home: string;
   state: string;
@@ -45,8 +44,7 @@ export function parseWorkspace(value: unknown, cwd: string): Workspace | undefin
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_request");
   const config = value as Record<string, unknown>;
-  if (Object.keys(config).some(key => !["tool_env", "execution_mode", "home", "state", "scratch", "env_names", "network_access", "allowed_domains", "skills", "mcp", "capability_root"].includes(key)) ||
-      (config.execution_mode !== undefined && config.execution_mode !== "native") ||
+  if (Object.keys(config).some(key => !["tool_env", "home", "state", "scratch", "env_names", "network_access", "allowed_domains", "skills", "mcp", "capability_root"].includes(key)) ||
       (config.network_access !== undefined && config.network_access !== "enabled" && config.network_access !== "disabled" && config.network_access !== "restricted") ||
       !Array.isArray(config.env_names) ||
       config.env_names.some(name => typeof name !== "string" || !environmentNames.has(name)) ||
@@ -79,7 +77,10 @@ export class WorkspaceProfile {
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1",
       DISABLE_AUTOUPDATER: "1", CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1",
     };
-    Object.assign(env, config.tool_env ?? {});
+    for (const [name, value] of Object.entries(config.tool_env ?? {})) {
+      // Initialization cannot redirect the native Session history lookup.
+      if (!["HOME", "USERPROFILE", "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_PROJECT_DIR_NAME"].includes(name.toUpperCase())) env[name] = value;
+    }
     for (const name of config.env_names) {
       const value = process.env[name];
       if (value === undefined) throw new Error("invalid_request");

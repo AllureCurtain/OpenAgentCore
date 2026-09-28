@@ -53,7 +53,7 @@ func TestRuntimeSetupReceiptOutcomes(t *testing.T) {
 	}
 }
 func TestRuntimeSetupFailureLabels(t *testing.T) {
-	for action, want := range map[string]store.ProvisioningFailure{"setup": {Step: store.ProvisioningSetupCommand, Index: 2, ExitCode: 3}, "python": {Step: store.ProvisioningPythonPackages, Index: 2, ExitCode: 3}, "npm": {Step: store.ProvisioningNPMPackages, Index: 2, ExitCode: 3}, "system": {Step: store.ProvisioningSystemPackages, Index: 2, ExitCode: 3}, "skill": {Step: store.ProvisioningSkill, Index: 2, ExitCode: 3}, "configure": {}, "": {}} {
+	for action, want := range map[string]store.ProvisioningFailure{"setup": {Step: store.ProvisioningSetupCommand, Index: 2, ExitCode: 3}, "python": {Step: store.ProvisioningPythonPackages, Index: 2, ExitCode: 3}, "npm": {Step: store.ProvisioningNPMPackages, Index: 2, ExitCode: 3}, "skill": {Step: store.ProvisioningSkill, Index: 2, ExitCode: 3}, "configure": {}, "": {}} {
 		op := runtimeSetupOperation{Request: proto.RuntimePreparePayload{Action: action}, Index: 2}
 		if action != "skill" {
 			op.Request = proto.RuntimePreparePayload{Action: "initialize", Initialization: &proto.RuntimeInitialization{Action: action}}

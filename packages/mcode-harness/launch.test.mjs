@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {mkdtemp,mkdir,writeFile,copyFile,rm} from 'node:fs/promises';
+import {mkdtemp,mkdir,writeFile,copyFile,rm,realpath} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {ToolExecutor} from './tool-executor.mjs';
 
 test('Runtime directly executes host worker with bound cwd and initialized environment',async t=>{
- const root=await mkdtemp(join(tmpdir(),'mcode-host-'));
+ const root=await realpath(await mkdtemp(join(tmpdir(),'mcode-host-')));
  t.after(()=>rm(root,{recursive:true,force:true}));
  await mkdir(join(root,'dist'));
  const workspace=join(root,'workspace');await mkdir(workspace);

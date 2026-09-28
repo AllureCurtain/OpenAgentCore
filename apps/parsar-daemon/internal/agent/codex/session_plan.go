@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
@@ -47,6 +48,9 @@ func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg
 			return SessionPlan{}, nil, err
 		}
 		for key, value := range values {
+			if strings.EqualFold(key, "CODEX_HOME") || strings.EqualFold(key, "HOME") || strings.EqualFold(key, "USERPROFILE") {
+				continue
+			}
 			plan.Env = append(plan.Env, key+"="+value)
 		}
 	}

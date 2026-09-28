@@ -5,81 +5,86 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
+
+	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
+	"github.com/MiniMax-AI-Dev/parsar/internal/runtimefs"
 )
 
-// ReadToolEnvironment selects the immutable user configuration. It never reads
-// process environment or introduces live-execution prerequisites for Files.
-func ReadToolEnvironment() (map[string]string, error) {
-	info, err := os.Stat(toolEnvironmentPath())
-	if err != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 {
-		return nil, errors.New("initialized user environment unavailable")
+// InitializationDirectory resolves the operator's local resource layout. The
+// protocol and preparation operations do not distinguish Environment sources.
+func InitializationDirectory() (string, error) {
+	return initializationPath("OAC_RUNTIME_INITIALIZATION_DIRECTORY", "initialization")
+}
+func PackageDirectory() (string, error) {
+	return initializationPath("OAC_RUNTIME_PACKAGE_DIRECTORY", "packages")
+}
+func initializationPath(setting, name string) (string, error) {
+	if path := os.Getenv(setting); path != "" {
+		if runtimefs.ValidateLocalPath(path) != nil {
+			return "", errors.New("invalid Runtime initialization directory")
+		}
+		return path, nil
 	}
-	body, err := os.ReadFile(toolEnvironmentPath())
+	root, err := paths.Root()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(root, name), nil
+}
+
+// ReadToolEnvironment reads bounded explicit configuration, never ambient secrets.
+func ReadToolEnvironment() (map[string]string, error) {
+	path, err := toolEnvironmentPath()
+	if err != nil {
+		return nil, err
+	}
+	body, err := runtimefs.ReadPrivatePath(path, 1<<20)
 	var values map[string]string
-	if err != nil || json.Unmarshal(body, &values) != nil || values == nil {
+	if err != nil || json.Unmarshal(body, &values) != nil || values == nil || !validToolEnvironment(values) {
 		return nil, errors.New("initialized user environment unavailable")
 	}
 	return values, nil
 }
-
-// These paths belong to the packaged Runtime, not a harness or public template.
-const (
-	InitializationDirectory = "/environment/initialization"
-	ToolEnvironmentShell    = InitializationDirectory + "/tool-env.sh"
-	ToolEnvironmentJSON     = InitializationDirectory + "/tool-env.json"
-	PackageDirectory        = "/environment/packages"
-	SystemPackageDirectory  = PackageDirectory + "/system"
-	SystemPackageReceipt    = InitializationDirectory + "/system-root.json"
-	SystemToolLauncher      = "/usr/local/bin/oac-tool-root"
-)
-
-// VerifyToolEnvironment is required only for execution consuming initialized
-// tool configuration. It never makes Files reads depend on execution setup.
-func VerifyToolEnvironment(systemPackages bool) error {
-	paths := []string{InitializationDirectory, PackageDirectory, ToolEnvironmentShell, ToolEnvironmentJSON}
-	if systemPackages {
-		paths = append(paths, SystemPackageDirectory, SystemPackageReceipt, SystemToolLauncher)
-	}
-	for _, path := range paths {
-		actual, err := filepath.EvalSymlinks(path)
-		info, statErr := os.Lstat(path)
-		if err != nil || statErr != nil || actual != path {
-			return errors.New("initialized tool configuration unavailable")
-		}
-		if path == InitializationDirectory || path == PackageDirectory || path == SystemPackageDirectory {
-			if !info.IsDir() {
-				return errors.New("initialized tool directory unavailable")
+func validToolEnvironment(values map[string]string) bool {
+	seen := map[string]bool{}
+	for key, value := range values {
+		if runtime.GOOS == "windows" {
+			folded := strings.ToUpper(key)
+			if seen[folded] {
+				return false
 			}
-		} else if !info.Mode().IsRegular() || info.Size() > 1024*1024 {
-			return errors.New("initialized tool configuration is not immutable")
+			seen[folded] = true
+		}
+		if key == "" || strings.ContainsAny(key, "=\x00\r\n") || strings.ContainsRune(value, 0) {
+			return false
 		}
 	}
-	if systemPackages {
-		raw, err := os.ReadFile(SystemPackageReceipt)
-		var receipt struct {
-			Version int `json:"version"`
-		}
-		if err != nil || json.Unmarshal(raw, &receipt) != nil || receipt.Version != 1 {
-			return errors.New("installed system tools unavailable")
-		}
-	}
-	return nil
+	return true
 }
 
-// ReadOptionalToolEnvironment permits a directory-only Runtime without user
-// variables. Declared MCP variables still require the immutable explicit file.
+// ReadOptionalToolEnvironment permits a Runtime without explicit user variables.
 func ReadOptionalToolEnvironment() (map[string]string, error) {
-	if _, err := os.Stat(toolEnvironmentPath()); errors.Is(err, os.ErrNotExist) {
+	path, err := toolEnvironmentPath()
+	if err != nil {
+		return nil, err
+	}
+	if _, err = os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return map[string]string{}, nil
 	}
 	return ReadToolEnvironment()
 }
-
-// Native installations can select an explicit tool configuration file. Packaged
-// installations retain their existing resource layout, without a sandbox.
-func toolEnvironmentPath() string {
+func toolEnvironmentPath() (string, error) {
 	if path := os.Getenv("OAC_RUNTIME_TOOL_ENV_FILE"); path != "" {
-		return path
+		if runtimefs.ValidateLocalPath(path) != nil {
+			return "", errors.New("invalid Runtime tool environment file")
+		}
+		return path, nil
 	}
-	return ToolEnvironmentJSON
+	directory, err := InitializationDirectory()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(directory, "tool-env.json"), nil
 }

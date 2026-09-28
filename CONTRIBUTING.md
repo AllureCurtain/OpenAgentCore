@@ -664,14 +664,14 @@ installation directories are not portable public paths.
 Inline and referenced Skill ZIPs use the same confidential initialization snapshot and installer.
 Core validates portable manifests and bounded regular-file archives, returns only
 safe Skill metadata, and freezes content before native preparation. The Runtime
-owns `/environment/initialization/capabilities/skills/<name>`; setup and native tools may read but
-not modify this tree. Public Plugin ZIPs preserve their complete package
+owns `/environment/initialization/capabilities/skills/<name>`; the manifest validates the installed snapshot before reuse. This is state
+consistency, not protection from the launching user. Public Plugin ZIPs preserve their complete package
 layout and reuse the shared archive and portable Skill parsers. Core keeps safe
 Plugin metadata separate from encrypted archives. Templates inherit or replace
 Plugin and capability-directory lists through the same hosted resolver.
 
 After ordered setup, the existing initializer snapshots declared workspace-contained
-capability directories into protected storage and writes one installed manifest.
+capability directories into Runtime storage and writes one installed manifest.
 This is an initialization artifact, not a second lifecycle owner or database ledger.
 Directory bytes are observed after setup; they are not frozen at Session creation.
 The common daemon resolves the manifest only for executable preparation and passes
@@ -690,40 +690,21 @@ fails explicitly, without silent partial activation or a generic plugin framewor
 
 Environment-origin MCP declarations use the shared Plugin parser and frozen
 installed packages. The installation manifest retains selected MCP package roots;
-Runtime re-parses those protected packages without another configuration copy,
+Runtime re-parses those installed packages without another configuration copy,
 credential cache or lifecycle ledger. Native adapters must explicitly qualify and
 project supported declarations before public admission. Parent-directory Skill
 discovery does not activate nested Plugin MCP configuration.
 
-The packaged stdio entry enters the existing initialization sandbox before parsing
-or executing a server. It mounts only the fixed static daemon helper, which resolves
-the selected installed declaration, reads explicitly selected initialized user
-variables, applies package-relative cwd and replaces itself with the server. Native
-MCP stdin/stdout pass directly to the sandbox; no protocol forwarding loop,
-Provider command or second Plugin parser is introduced. The existing Python stdio
-entry remains a single-threaded launcher and monitors the native parent process
-through Linux pidfds. Native Codex recycles spawning threads, so binding bwrap's
-parent-death signal directly to those threads kills live MCP connections. The
-launcher gives bwrap a stable parent, retains its parent-death/PID namespace cleanup,
-and kills and reaps only that child when the native process exits. A pre-exec
-parent-death signal and expected-parent PID check close the reproduced fork-to-exec
-orphan window; bind libc before fork and keep this entry single-threaded. Missing
-pidfd support fails closed. This fixes the OS process lifetime boundary without adding a
-Core execution owner, retry or reconnect loop.
-Model/daemon launch variables are never credential sources. Hosted stdio requires
-enabled network; native HTTP requires its own qualified network and redirect behavior.
-Claude composes the existing MCP identity/observation profile with its workspace
-profile. Verify the complete native inventory before admitting tool identities;
-MCP allowlist patterns never grant local Bash or file authority. Only declared
-random bearer references enter native query env, with native Bash denial retained.
-With system packages, Claude uses its packaged shell-prefix dispatcher. Only the
-exact fixed Runtime stdio invocation bypasses the tool root; it immediately execs
-the existing isolated launcher. All other full command strings pass unchanged to
-the tool root. The native Bash sandbox and cwd receipt remain in their original
-order. Do not move wrapping into Bash input hooks or add a directory-state owner.
-Keep this native distinction in the adapter; Core and the common launcher do not
-select an engine. Per-server env cannot disable the native global prefix because
-Claude selects the executable before merging that env.
+The common daemon stdio entry resolves the installed declaration and launches its
+server under the same user permissions as the Harness. Unix replaces the helper
+process; Windows forwards native stdio within the owned process tree. Explicit
+initialized values override the selected declaration's variables. There is no
+Python sandbox launcher, mount policy, shell prefix or separate credential sandbox.
+Process groups and Windows Jobs own cancellation and descendant cleanup only.
+Claude composes MCP identity and observation with the same workspace profile;
+MiniMax keeps its existing supported transport qualification. A public capability
+advertisement must still match the installed engine's actual supported transport.
+
 Environment-origin literal HTTP headers remain rejected for the pinned Claude
 client because its interpolation and cross-origin forwarding change their meaning.
 MiniMax accepts environment stdio only. Its adapter reads the existing Session-private
@@ -733,7 +714,7 @@ never fabricate a delayed start event, guess normalized identities or add a regi
 of our own. Its unqualified HTTP transport remains rejected.
 These mechanisms alone do not establish public MCP support or full compatibility.
 
-Name, enabled/disabled/exact-domain restricted network, initial files, inline/referenced Skills, Plugins, workspace capability directories and env/setup/system/npm/Python are
+Name, initial files, inline/referenced Skills, Plugins, workspace capability directories and env/setup/npm/Python are
 implemented independently of remaining installation fields. Reject unsupported
 inputs rather than persisting them for silent
 omission; expand inline and template initialization together in separately qualified
@@ -1254,13 +1235,12 @@ continue bounded scans for late resources without issuing another Create. This
 conservative internal lifecycle does not define user-managed enrollment or prove
 complete upstream expiry/error semantics.
 
-Qualify the actual Docker/native sandbox before default cutover: real model
-execution, file access, owned cancellation, restart with retained native history
-and files, and rejection when required history is missing. Generated code and file
-tools must not read daemon/model credentials, foreign Session history or another
-tenant's workspace. Same-container placement, matching UID, mode bits, directory
-bindings and capability flags do not prove isolation. Retain failed probes and
-unverified limits; private functionality is not public hosted acceptance.
+Qualify the actual Runtime before cutover: execution, file access, owned
+cancellation, restart with retained history and files, and clear failure when
+required history is missing. Daemon tools run with the launching account's full
+permissions. Managed isolation is provided by the outer Environment. A user who
+installs on a host does not receive a sandbox or protection from their own tools.
+Keep failed probes and unverified platform combinations explicit.
 
 Before migration, archive existing edits and validation evidence. Reuse verified
 authorization, resource/lifecycle ownership and safe filesystem primitives as
@@ -1269,38 +1249,16 @@ mechanisms. Remove superseded unused code, configuration, tests, scripts and
 task-owned temporary resources as each replacement is accepted. Preserve necessary
 regressions, still-used official capabilities, product data and others' work.
 
-The opt-in Codex deployment selector `OAC_RUNTIME_CODEX_PERMISSION_PROFILE` chooses a
-native named profile at harness startup and on both new/resumed threads, omitting
-the legacy sandbox override. It is operator configuration, never a prompt option,
-and rejects remote, none and temporary read preparations. Native managed
-requirements own allowed profiles and deny-read enforcement. Keep the selector
-unset for existing deployments. Managed native shells disable shell snapshots,
-whose private files are inaccessible to tool execution; retain normal native shell
-startup without granting tools access to harness state.
-The [co-location qualification inputs](services/agents-api/deploy/codex/README.md)
-record the pinned native/Docker prerequisites and limits; this switch alone does
-not admit hosted Environments or authorize a workspace.
+All Harness adapters use bypass execution. Do not restore named Codex permission
+profiles, bubblewrap wrappers, native Claude sandbox settings or MiniMax
+SandboxManager branches. There is one execution path for every Environment origin.
+Resource paths are ordinary operator configuration, not a permission boundary.
 
-A managed Runtime's network policy is immutable deployment input, transferred
-through the provider-neutral bootstrap and checked against execution preparation.
-The shared policy includes enabled, disabled and an exact-host restricted allowlist.
-Core preserves public spelling/order/duplicates and only permits Template overrides
-that narrow authority. Adapters translate a normalized copy into native settings;
-Core and Docker never select native profile names. Every hosted execution peer
-must support `local_environment_network_policy` and receive the complete bound
-policy; missing policy never falls back to enabled or an older peer path. Read-only
-workspace access does not require execution network policy. A declaration alone
-does not qualify an image or admit public hosted creation.
-
-Codex restricted networking uses its native managed network requirements and proxy.
-Its adapter preserves the image's filesystem, approval and hook requirements and
-adds the frozen exact-host ceiling in Session-private state. The existing RPC
-client owns a bubblewrap child that mounts those requirements read-only and runs
-the stock native app-server in a PID namespace; teardown retains the same owner.
-Preparation regenerates the non-secret requirements from the frozen policy. Keep
-the file with Session state so cleanup cannot race a running child's mount.
-Claude and MiniMax translate the same policy into their native sandbox allowlists.
-These translations do not add a Core network service or model/tool loop.
+The daemon does not enforce disabled or restricted network policies. Such a
+combination must be rejected unless its outer Environment implementation provides
+and qualifies the requested behavior. Do not advertise daemon-level network
+isolation or silently run a restricted request with unrestricted semantics.
+The normal self-hosted combination uses the host's existing network access.
 
 A dedicated local Runtime uses one Environment-scoped device credential and an
 immutable binding to that Environment's Session. It is excluded from general
@@ -1315,8 +1273,7 @@ freezes the Environment, Session and workspace root;
 requests cannot supply a replacement root. The V1 path uses only the exact local
 Environment reference. Use the same preparation/start lifecycle for native execution and the
 existing bounded workspace controls for directory access. Local idle directory
-reads use the existing filesystem helper directly, with no model credentials or
-temporary harness. These private capabilities alone do not authorize public requests or establish
+reads use the common Go filesystem implementation without a temporary Harness. These private capabilities alone do not authorize public requests or establish
 Provider lifecycle. Self-hosted enrollment supplies the exact local binding.
 Core rechecks the persisted Environment/device binding for preparation and active
 reads; capability discovery cannot select or authorize a general device for this
@@ -3357,8 +3314,8 @@ runs its lifecycle tests and script checks, while its exact-source Linux build a
 Docker qualification (including `native.test.mjs` under both network policies)
 are required when the companion changes.
 
-Claude hosted functions compose the existing SDK function bridge with the native
-workspace sandbox. Only declared function tools and the verified native tool
+Claude hosted functions compose the existing SDK function bridge with the common
+workspace execution profile. Only declared function tools and the verified native tool
 inventory are available. The bundle advertises this combination separately from
 basic workspace execution; function preparations require that verified combination.
 Service-origin hosted MCP remains unqualified; Environment Plugin declarations
@@ -3368,38 +3325,20 @@ credential, history, subagent or network authority.
 ### Claude dedicated Docker Runtime
 
 Build the pinned SDK bundle with `scripts/build-claude-sdk-runtime.sh`, then use
-`scripts/build-claude-runtime.sh` with the existing shared workspace helper build.
-See [deployment and engine onboarding](services/agents-api/deploy/claude/README.md).
-The helper executables retain their historical Codex names; their local directory,
-write and export operations are shared and do not launch an engine.
+`scripts/build-claude-runtime.sh`. Native self-hosted installations use the same
+bundle and daemon protocol. See [engine setup](services/agents-api/deploy/claude/README.md).
+The shared local binding selects the actual workspace. SDK history, home and
+scratch remain under `OAC_RUNTIME_HOME/runtime/claude-sdk` for session ownership,
+without restricting tools. Authentication remains under `OAC_RUNTIME_HOME/daemon`.
+The daemon requires neither nested sandbox privileges nor host security changes.
 
-`OAC_RUNTIME_CLAUDE_SDK_WORKSPACE=managed` requires the shared dedicated local binding,
-canonical workspace and its same-inode `/workspace` mount, and explicit immutable
-network policy. Native history, home and scratch live separately under
-`OAC_RUNTIME_HOME/runtime/claude-sdk`; daemon authentication stays under
-`OAC_RUNTIME_HOME/daemon`. The trusted image and protected staging directory
-remain outside writable workspace roots. No product state or native user profile
-is imported. The separate unbound `environment:none` profile keeps its behavior.
-
-The Docker operator option `nested_sandbox` is false by default. The qualified
-Claude image requires it: Docker supplies an init process and permits nested procfs
-mounting by removing its outer `/proc` masks/read-only submounts. `/sys/firmware`
-and powercap remain masked; the root and sysfs mounts remain read-only, capabilities
-remain dropped, and the existing seccomp/no-new-privileges policy remains enabled.
-Do not enable privileged mode, weaken the native sandbox, mount host process state,
-or apply host-global policy changes. This is an image deployment prerequisite,
-not a public API option or an engine-name branch in the Provider.
-
-The SDK adapter advertises `local_runtime_v1` only for its Linux bridge contract.
-Registration combines that contract with the verified operator binding. Core uses
-an explicit accepted engine profile independently of advertisements. This profile
-supports native Bash/Read/Edit, preparation, shared Files/Artifacts, cancellation
-and same-history continuation. The separately advertised `workspace_functions`
-combination supports declared public functions with text results. Service-origin
-HTTP MCP remains unqualified here; its existing `none` support is retained.
-Environment Plugin MCP follows the separately qualified transport path above.
-Native Bash network access uses the harness's HTTP proxy; no alternate networking
-or tool loop is implemented by Core.
+The adapter advertises `local_runtime_v1` after checking the installed bridge and
+native binary. Windows additionally needs Git Bash for its Bash tool. Registration
+combines that check with the local binding; Core consumes the same readiness
+contract on every platform. The profile supports Bash/Read/Edit, preparation,
+shared Files/Artifacts, cancellation and history continuation. Other capabilities
+remain subject to their actual engine qualification; bypass execution does not
+silently qualify a new MCP or function combination.
 
 Recovery uses the SDK's history APIs. An explicitly supplied native identity must
 exist. If Core requires existing history without having recorded an identity, the
@@ -3452,7 +3391,7 @@ features, not new Core lifecycle or public protocol variants.
 The current qualified path is Claude SDK, `environment:none` or Core-managed
 Docker `openai_hosted`, medium verbosity, single Agent, with optional ordinary
 function tools and text results. The workspace uses its existing preparation and
-native sandbox with only the SDK's configured `StructuredOutput` tool added to
+bypass execution profile with the SDK's configured `StructuredOutput` tool added to
 inventory and permission checks. Frozen schemas reach preparation before the
 input handoff; Start cannot replace them. Skills, Plugins, capability directories,
 HTTP MCP, Subagent/tool-discovery combinations and schemas without an explicit
@@ -3578,24 +3517,17 @@ The qualified live workspace fixture also checks binary, empty and bounded reads
 before input and during real execution, plus effects before cancellation and reads
 on fresh-process history continuation.
 
-The optional private `agent.WorkspaceDirectoryLister` requires the Linux-only
-`workspace_directory` bridge feature on the same Executor.
-The pinned SDK has no directory-enumeration control; its fuzzy file suggestions are
-not an inventory. This narrow adapter operation therefore reads metadata inside the
-already qualified co-located mount/process boundary. It pins the configured workspace
-root and opens each relative directory component with `O_DIRECTORY | O_NOFOLLOW`,
-using `/proc/self/fd` paths anchored to held descriptors. It rejects directory symlink
-traversal; `lstat` reports a symlink entry itself without following its target.
-The fixed workspace policy requires canonical, disjoint protected roots and excludes
-dynamic permission replacement and remote-workspace fallback. It does not implement
-an additional permission engine or authorize an unqualified placement.
+The optional private `agent.WorkspaceDirectoryLister` uses the portable
+`workspace_directory` bridge feature. Node reads directory metadata under the
+selected workspace; there is no Linux `/proc/self/fd` dependency. Public daemon
+Files operations share the Go Binding implementation on all platforms. Their
+relative path and result bounds define the Files API, not Harness permissions.
 
 Directory requests are bounded to 8 KiB and 1,000 immediate entries, with explicit
 truncation, literal names, kinds, and sizes only for regular files. They do not promise
 ordering, snapshots, recursion, or public pagination. Missing and permission errors
 are returned only from distinguishable filesystem outcomes; unknown results stop the
-owner. Each operation closes its directory and intermediate descriptors before a
-successful receipt; the root descriptor remains owned until bridge release.
+owner. Each operation closes its directory before a successful receipt.
 Caller cancellation, Turn transitions and owner shutdown retain the existing workspace
 read settlement rules. This adapter gap fill alone does not enable public Claude Files; the dedicated
 Runtime integration supplies public placement and ownership.
@@ -3945,15 +3877,14 @@ Providers only place, create, bootstrap, inspect, renew and reclaim resources; t
 do not execute Core initialization commands. The common runner uses only neutral
 Environment/Session identity and a Runtime peer, with no Provider, deployment or OS
 branch. Harness differences belong to native adapters. Package installation and
-setup retain enabled provisioning network access; the requested network policy
-constrains native execution after setup.
+setup use the host network; the daemon does not introduce a network sandbox.
 A missing authenticated Runtime connection waits before capability initialization
 is claimed; an operation whose effect is unknown is not replayed. Self-hosted
 capability directories remain in immutable Environment configuration and never
 create a managed initialization row or allocation.
 
 The private `runtime_prepare`/`runtime_prepare_result` exchange carries typed
-initial files, configure/system/npm/python/setup operations, inert Skill/Plugin
+initial files, configure/npm/python/setup operations, inert Skill/Plugin
 archives and finalization selections, with canonical Session and Environment
 identities. Files and setup working directories use logical `/workspace` addresses;
 setup commands are explicit typed input, while executable selection and physical
@@ -3966,25 +3897,22 @@ filesystem work through settlement, including disconnect or cancellation.
 
 The source-selection protocol accepts portable absolute Unix, Windows drive and
 UNC paths without consulting Core's filesystem. Runtime interprets and authorizes
-local paths. The current implementation is Linux-only, with its existing packaged
-helpers and layout; the interface imposes no Linux executable or platform field.
-The common Linux binding authorizes local directories, excluding aliases, Runtime
-credentials, native history and initialization roots or their ancestors. One shared
-parser writes `installed.json` below the operator-owned capability directory
-(default `/environment/initialization/capabilities`, selected at startup through
-`OAC_RUNTIME_CAPABILITY_DIRECTORY`). The root cannot overlap the workspace or
-private Runtime state and is never a public input. All adapters consume the same
-resolved installation root. The manifest
-binds Session/Environment identities and the ordered source-selection digest.
-A private completion receipt records only the installation root outside the
-installed tree, so a deleted snapshot cannot be mistaken for first preparation.
-It is written durably before execution, contains no capability configuration and
-is never exposed as a second inventory. Filesystem locking prevents overlapping
-installation. A partial, invalid or foreign
-snapshot fails closed without deleting files or silently reinstalling. Directory
-sources are copied only during first preparation; reconnect loads protected installed
-contents and validates the selection without rereading source directories. A new
-Session uses its own Environment and fresh snapshot.
+local paths. Linux, Windows and macOS use the same preparation implementation,
+parser and installed manifest. Runtime paths are chosen by the operator and never
+by a transfer request. Installation and package directories default under
+`OAC_RUNTIME_HOME`; packaged images can select their existing directories through
+explicit Runtime configuration. The manifest binds Session/Environment identities
+and the ordered source-selection digest. A completion receipt prevents a deleted
+snapshot from being mistaken for first preparation, while filesystem locking
+prevents concurrent installation. Invalid, partial or foreign snapshots fail
+without deleting data or silently reinstalling. Reconnection loads installed
+contents without rereading sources; a new Session captures a fresh snapshot.
+
+The daemon runs as its launching account and never uses sudo or elevates its
+permissions. Only user-directory dependencies are installed during preparation.
+System dependencies belong in managed image/template builds or must be installed
+by the self-hosted user. `packages.system` is rejected explicitly, including in
+templates; it is not ignored or translated into a privileged operation.
 
 Synchronous executor admission validates the frozen descriptor only. The admitted
 asynchronous preparation owner ensures capabilities are ready before invoking the

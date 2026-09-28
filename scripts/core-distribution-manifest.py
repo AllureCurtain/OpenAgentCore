@@ -164,8 +164,6 @@ def verify_runtime(image, daemon, helpers, source):
     files = {"/usr/local/bin/oac-daemon": pathlib.Path(daemon)}
     for name in ("oac-codex-directory", "oac-codex-write", "oac-workspace-export"):
         files["/usr/local/bin/" + name] = helpers / name
-    files["/usr/local/bin/oac-runtime-initialize"] = source / "services/agents-api/deploy/runtime/initialize.py"
-    files["/usr/local/bin/oac-tool-root"] = source / "services/agents-api/deploy/runtime/tool-root.py"
     environment = dict(value.split("=", 1) for value in details["Config"]["Env"] if "=" in value)
     if "OAC_RUNTIME_MCODE_BIN" in environment:
         for name in ("launch.mjs", "bridge.mjs", "check.mjs", "tool-executor.mjs", "subagent-snapshot.mjs", "source.json"):

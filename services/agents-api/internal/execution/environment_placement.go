@@ -17,7 +17,6 @@ type environmentPlacement struct {
 	Skills                []store.EnvironmentSkillMetadata `json:"skills,omitempty"`
 	Type                  string                           `json:"type"`
 	ToolEnvironment       bool                             `json:"initialization,omitempty"`
-	SystemPackages        bool                             `json:"-"`
 	NetworkAccess         string                           `json:"-"`
 	AllowedDomains        []string                         `json:"-"`
 	WorkspaceDirectory    string                           `json:"workspace_directory"`
@@ -68,7 +67,6 @@ func parseEnvironmentPlacement(configuration json.RawMessage) (environmentPlacem
 		decoder := json.NewDecoder(bytes.NewReader(configuration))
 		decoder.DisallowUnknownFields()
 		if decoder.Decode(&local) == nil && agentcapabilities.ValidateDirectories(local.CapabilityDirectories) == nil {
-			placement.SystemPackages = local.Packages != nil && len(local.Packages.System) > 0
 			placement.NetworkAccess = "enabled"
 			if local.Network != nil {
 				if (agentnetwork.Policy{Access: local.Network.Access, AllowedDomains: local.Network.AllowedDomains}).Validate() != nil {
@@ -95,9 +93,6 @@ func (d *Dispatcher) configurePreparedEnvironment(session store.Session, environ
 	if err != nil || !environmentDeviceMatches(session, environment, bound) {
 		return store.ErrInvalidInput
 	}
-	if placement.SystemPackages && !placement.ToolEnvironment {
-		return store.ErrInvalidInput
-	}
 	sources := &agentcapabilities.Input{Plugins: append([]agentplugin.Metadata(nil), placement.Plugins...), Directories: append([]string(nil), placement.CapabilityDirectories...)}
 	for _, metadata := range placement.Skills {
 		if store.ValidateInstalledSkillMetadata(metadata) != nil {
@@ -109,7 +104,7 @@ func (d *Dispatcher) configurePreparedEnvironment(session store.Session, environ
 		ID: environment.ID, WorkspaceDirectory: placement.WorkspaceDirectory,
 		CapabilitySources: sources,
 		Capabilities:      len(sources.Skills)+len(sources.Plugins)+len(sources.Directories) > 0,
-		ToolEnvironment:   placement.ToolEnvironment, SystemPackages: placement.SystemPackages,
+		ToolEnvironment:   placement.ToolEnvironment,
 	}
 	req.LocalEnvironment.NetworkAccess = placement.NetworkAccess
 	req.LocalEnvironment.AllowedDomains = append([]string(nil), placement.AllowedDomains...)

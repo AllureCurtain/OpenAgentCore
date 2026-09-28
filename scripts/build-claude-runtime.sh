@@ -27,8 +27,6 @@ for helper in oac-codex-directory oac-codex-write oac-workspace-export; do
   cp "$helpers_dir/$helper" "$context/"
 done
 cp "$repo_root/services/agents-api/deploy/claude/Dockerfile" "$context/Dockerfile"
-cp "$repo_root/services/agents-api/deploy/runtime/initialize.py" "$context/runtime-initialize.py"
-cp "$repo_root/services/agents-api/deploy/runtime/build-system-seed.py" "$repo_root/services/agents-api/deploy/runtime/tool-root.py" "$context/"
 mkdir -p "$output_dir"
 cp -R "$context/." "$output_dir/"
 printf 'Claude Runtime image context: %s\n' "$output_dir"

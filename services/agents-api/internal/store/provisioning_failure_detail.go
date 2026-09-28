@@ -24,7 +24,7 @@ func (f ProvisioningFailureDetail) sanitized() *ProvisioningFailureDetail {
 			value := *f.Index
 			result.Index = &value
 		}
-	case ProvisioningPythonPackages, ProvisioningNPMPackages, ProvisioningSystemPackages:
+	case ProvisioningPythonPackages, ProvisioningNPMPackages:
 	case ProvisioningInitialFile, ProvisioningSkill:
 		value := *f.Step
 		result.Step = &value

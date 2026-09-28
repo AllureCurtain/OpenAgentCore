@@ -35,8 +35,6 @@ cp "$helpers_dir/oac-codex-directory" "$helpers_dir/oac-codex-write" "$helpers_d
 cp "$native_dir/bin/codex" "$context/codex"
 cp -R "$native_dir/codex-resources" "$context/codex-resources"
 cp "$repo_root/services/agents-api/deploy/codex/Dockerfile" "$context/Dockerfile"
-cp "$repo_root/services/agents-api/deploy/runtime/initialize.py" "$context/runtime-initialize.py"
-cp "$repo_root/services/agents-api/deploy/runtime/build-system-seed.py" "$repo_root/services/agents-api/deploy/runtime/tool-root.py" "$context/"
 # Preserve the previous bundle if compilation or validation failed.
 mkdir -p "$output_dir"
 cp -R "$context/." "$output_dir/"

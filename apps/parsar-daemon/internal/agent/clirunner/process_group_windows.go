@@ -101,8 +101,9 @@ func startProcessGroup(opts StartOptions) (*Process, error) {
 		waitErr = cmd.Wait()
 		// A successful leader exit cannot leave detached descendants behind.
 		_ = group.cancel()
-		group.finish()
-		close(p.done)
+		if group.finish() {
+			close(p.done)
+		}
 	}()
 	return p, nil
 }
@@ -130,10 +131,12 @@ func resumeInitialThread(pid uint32) error {
 }
 
 type ownedJob struct {
-	mu        sync.Mutex
-	handle    windows.Handle
-	finished  bool
-	cancelled bool
+	mu             sync.Mutex
+	handle         windows.Handle
+	finished       bool
+	cancelled      bool
+	processes      []windows.Handle
+	observationErr error
 }
 
 func (g *ownedJob) cancel() error {
@@ -142,13 +145,29 @@ func (g *ownedJob) cancel() error {
 	if g.finished {
 		return os.ErrProcessDone
 	}
+	if !g.cancelled {
+		// Hold process handles before termination removes them from the Job list.
+		g.processes, g.observationErr = jobProcessHandles(g.handle)
+	}
 	g.cancelled = true
 	return windows.TerminateJobObject(g.handle, 1)
 }
 
-// Querying the Job, rather than waiting only for its leader, confirms cleanup.
-// An observation failure retains ownership and blocks reconnect.
-func (g *ownedJob) finish() {
+// Job accounting can reach zero before the process objects become signaled.
+// Keep ownership until both observations confirm cleanup; never wait with mu held.
+func (g *ownedJob) finish() bool {
+	g.mu.Lock()
+	processes, observationErr := g.processes, g.observationErr
+	g.mu.Unlock()
+	if observationErr != nil {
+		return false
+	}
+	for _, process := range processes {
+		status, err := windows.WaitForSingleObject(process, windows.INFINITE)
+		if err != nil || status != windows.WAIT_OBJECT_0 {
+			return false
+		}
+	}
 	type accounting struct {
 		UserTime, KernelTime, PeriodUserTime, PeriodKernelTime           int64
 		PageFaults, TotalProcesses, ActiveProcesses, TerminatedProcesses uint32
@@ -164,5 +183,9 @@ func (g *ownedJob) finish() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.finished = true
+	for _, process := range processes {
+		windows.CloseHandle(process)
+	}
 	windows.CloseHandle(g.handle)
+	return true
 }

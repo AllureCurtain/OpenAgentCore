@@ -183,9 +183,12 @@ test("workspace functions retain native sandbox and exact tool authority", async
 
 test("initialized environment is ordinary child environment on every layout", t => {
  const {dirs,config}=fixture(t);
- for(const execution_mode of [undefined,"native"]) {
-  const profile=new WorkspaceProfile(dirs.workspace,{...config,execution_mode,tool_env:{USER_VALUE:"initialized"}});
+ {
+  const profile=new WorkspaceProfile(dirs.workspace,{...config,tool_env:{USER_VALUE:"initialized",HOME:"/wrong",CLAUDE_CONFIG_DIR:"/wrong",home:"/wrong"}});
   assert.equal(profile.options.env.USER_VALUE,"initialized");
+  assert.equal(profile.options.env.HOME,dirs.home);
+  assert.equal(profile.options.env.CLAUDE_CONFIG_DIR,dirs.state);
+  assert.equal(profile.options.env.home,undefined);
   assert.deepEqual(profile.options.sandbox,{enabled:false});
  }
 });

@@ -8,8 +8,26 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 )
 
+var errSystemPackages = &fieldError{
+	param:   "packages.system",
+	message: "Runtime system package installation is not supported. Preinstall system dependencies in the sandbox image or template, or on the host machine.",
+}
+
+func rejectSystemPackages(raw json.RawMessage) error {
+	var packages map[string]json.RawMessage
+	if json.Unmarshal(raw, &packages) == nil {
+		if _, supplied := packages["system"]; supplied {
+			return errSystemPackages
+		}
+	}
+	return nil
+}
+
 func decodeEnvironmentSetup(fields map[string]json.RawMessage) (store.EnvironmentSetup, error) {
 	var result store.EnvironmentSetup
+	if err := rejectSystemPackages(fields["packages"]); err != nil {
+		return result, err
+	}
 	if value, ok := fields["env"]; ok {
 		var entries map[string]*string
 		if json.Unmarshal(value, &entries) != nil {
@@ -50,20 +68,17 @@ func decodeEnvironmentSetup(fields map[string]json.RawMessage) (store.Environmen
 		var input struct {
 			NPM    []*string `json:"npm"`
 			Python []*string `json:"python"`
-			System []*string `json:"system"`
 		}
-		if decodeInputObject(value, &input, "npm", "python", "system") != nil {
+		if decodeInputObject(value, &input, "npm", "python") != nil {
 			return result, store.ErrInvalidInput
 		}
-		for name, entries := range map[string][]*string{"npm": input.NPM, "python": input.Python, "system": input.System} {
+		for name, entries := range map[string][]*string{"npm": input.NPM, "python": input.Python} {
 			var target *[]string
 			switch name {
 			case "npm":
 				target = &result.Packages.NPM
 			case "python":
 				target = &result.Packages.Python
-			case "system":
-				target = &result.Packages.System
 			}
 			for _, entry := range entries {
 				if entry == nil {

@@ -17,11 +17,18 @@ docker build --platform linux/amd64 -t agents-runtime:claude \
 
 The bundle pins SDK `0.3.269` and native Claude Code `2.1.269`. The Dockerfile pins
 Node's Linux amd64 manifest. Keep the exported SDK bundle immutable. Configure
-Core's existing managed Runtime file with the resulting immutable image ID, a
-private Docker network, the existing `deploy/codex/seccomp.json`, and
-`"nested_sandbox": true`. This option enables child reaping and the outer procfs
-layout required by native bubblewrap; all native sandbox restrictions remain on.
-It is disabled for existing deployments unless explicitly selected.
+Core's database-owned managed deployment with the resulting immutable Runtime
+image. Existing Docker outer security settings are unchanged; the daemon and
+native adapter do not add an inner sandbox. Tools run as UID/GID 1000 and can
+access files available to that user.
+
+Install required system dependencies while building the image/template. Runtime
+has no automatic apt installation, sudo or elevated daemon permissions;
+`system_packages` is unsupported and missing dependencies cause operation failure.
+npm/Python package and setup commands run directly with the existing user's
+permissions. The packaged image no longer needs bubblewrap or socat for an inner
+sandbox. For native self-hosting and platform limits, see the
+[native guide](../../../../docs/self-hosted-native.md).
 
 Set `OAC_DEFAULT_HARNESS=claude_sdk`. Configure the deployment default model provider
 with the Core key, in Web or through Core's API:
@@ -35,15 +42,16 @@ curl -fsS -X PUT http://127.0.0.1:8091/core/v1/harnesses/claude_sdk/model-provid
 A Session may instead supply its own `x_agents_core.model_provider`. Use the
 endpoint and model supported by your actual provider. Do not bake keys into the
 image. Core freezes the bundle in the Session's encrypted snapshot and delivers it
-to the adapter; it is not a public Agent field. Workspace tool processes cannot
-inherit the provider secret.
+to the adapter; it is not a public Agent field. Ordinary environment projection
+does not isolate locally stored credentials from tools running as the same user.
 Follow the existing Core setup for independent PostgreSQL credentials, migrations,
 API authentication and managed Runtime enrollment. Parsar is not a dependency.
 
 The supported hosted profile accepts text execution with medium verbosity and
 native Bash/Read/Edit and declared public functions with text results. Files and Artifacts use the shared public interfaces.
-Workspace HTTP MCP, multi-agent, structured output, user-managed enrollment
-and other environment installations remain explicit gaps. The existing
+Check the current qualified engine profile for MCP, subagents and structured
+output combinations. Historical hosted-profile acceptance does not qualify native
+self-hosted platforms or every feature combination. The existing
 `environment:none` function/MCP profile is separate. This is not complete upstream
 protocol compatibility.
 

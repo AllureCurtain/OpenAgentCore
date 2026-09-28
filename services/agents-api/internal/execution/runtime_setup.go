@@ -28,7 +28,7 @@ func (operation runtimeSetupOperation) provisioningFailure(exitCode int) store.P
 		action = operation.Request.Initialization.Action
 	}
 	switch action {
-	case "setup", "python", "npm", "system", "skill":
+	case "setup", "python", "npm", "skill":
 		return store.ProvisioningFailure{Step: action, Index: operation.Index, ExitCode: exitCode}
 	}
 	return store.ProvisioningFailure{}
@@ -57,7 +57,7 @@ func setupOperations(setup store.EnvironmentSetup) []runtimeSetupOperation {
 	for _, packages := range []struct {
 		action string
 		values []string
-	}{{"system", setup.Packages.System}, {"npm", setup.Packages.NPM}, {"python", setup.Packages.Python}} {
+	}{{"npm", setup.Packages.NPM}, {"python", setup.Packages.Python}} {
 		if len(packages.values) > 0 {
 			result = append(result, initialize(proto.RuntimeInitialization{Action: packages.action, Network: "enabled", Packages: packages.values}))
 		}

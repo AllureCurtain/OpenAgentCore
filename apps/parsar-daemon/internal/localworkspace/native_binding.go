@@ -9,14 +9,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// ExecutionMode selects the installation layout, never a permission boundary.
-func (b *Binding) ExecutionMode() string {
-	if b == nil {
-		return ""
-	}
-	return b.executionMode
-}
-
 func newNativeBinding(environment, session, workspace, capabilities string) (*Binding, error) {
 	for _, value := range []string{environment, session} {
 		id, err := uuid.Parse(value)
@@ -33,7 +25,7 @@ func newNativeBinding(environment, session, workspace, capabilities string) (*Bi
 	if err != nil || !info.IsDir() {
 		return nil, errors.New("local workspace root must be an existing directory")
 	}
-	return &Binding{environment: environment, stateKey: "agents-api-" + session, workspace: workspace, capabilityRoot: capabilities, executionMode: "native", writer: &fileWriter{}}, nil
+	return &Binding{environment: environment, stateKey: "agents-api-" + session, workspace: workspace, capabilityRoot: capabilities, writer: &fileWriter{}}, nil
 }
 
 // ReadToolEnvironment reads explicit initialization values for this installation.

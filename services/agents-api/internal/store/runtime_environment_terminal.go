@@ -21,7 +21,6 @@ const (
 	ProvisioningSetupCommand   = "setup"
 	ProvisioningPythonPackages = "python"
 	ProvisioningNPMPackages    = "npm"
-	ProvisioningSystemPackages = "system"
 	ProvisioningInitialFile    = "file"
 	ProvisioningSkill          = "skill"
 )
@@ -37,13 +36,12 @@ type ProvisioningFailure struct {
 
 // reason renders the public Session error. The setup_commands and Python package
 // labels match observed official errors (which append raw pip output for Python;
-// Core never does). The npm, system package, file and Skill labels are unverified.
+// Core never does). The npm, file and Skill labels are unverified.
 // A script step without a reported exit status keeps the generic reason.
 func (f ProvisioningFailure) reason() string {
 	label := map[string]string{
 		ProvisioningPythonPackages: "Python package installation",
 		ProvisioningNPMPackages:    "npm package installation",
-		ProvisioningSystemPackages: "System package installation",
 	}[f.Step]
 	if f.Step == ProvisioningSetupCommand && f.Index >= 0 {
 		label = fmt.Sprintf("setup_commands[%d]", f.Index)

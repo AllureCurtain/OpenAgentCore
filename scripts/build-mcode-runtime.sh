@@ -28,8 +28,6 @@ for helper in oac-codex-directory oac-codex-write oac-workspace-export; do
   cp "$helpers/$helper" "$context/"
 done
 cp "$repo_root/services/agents-api/deploy/mcode/Dockerfile" "$context/Dockerfile"
-cp "$repo_root/services/agents-api/deploy/runtime/initialize.py" "$context/runtime-initialize.py"
-cp "$repo_root/services/agents-api/deploy/runtime/build-system-seed.py" "$repo_root/services/agents-api/deploy/runtime/tool-root.py" "$context/"
 mkdir -p "$output"
 cp -R "$context/." "$output/"
 printf 'MiniMax Code Runtime image context: %s\n' "$output"
