@@ -15,16 +15,12 @@ type preparedMutationSession struct {
 	*fakeSession
 	cancelEntered chan struct{}
 	cancelOnce    sync.Once
-	beforeCancel  func()
 	functions     atomic.Int32
 	steers        atomic.Int32
 	reads         atomic.Int32
 }
 
 func (s *preparedMutationSession) Cancel(ctx context.Context) error {
-	if s.beforeCancel != nil {
-		s.beforeCancel()
-	}
 	s.cancelOnce.Do(func() { close(s.cancelEntered) })
 	return s.fakeSession.Cancel(ctx)
 }
@@ -162,8 +158,11 @@ func TestPreparedHandoffReleaseWaitsForMutationReceipt(t *testing.T) {
 			}
 			select {
 			case <-session.cancelEntered:
-				t.Fatal("native release overtook an admitted receipt")
-			case <-time.After(50 * time.Millisecond):
+			case <-time.After(2 * time.Second):
+				t.Fatal("native cleanup was blocked by the outbound receipt")
+			}
+			if r.ActiveRuns() != 1 || hasFrame(sender.recSender, proto.TypeDone, "run") {
+				t.Fatal("Run ownership or Done overtook the admitted receipt")
 			}
 			close(sender.release)
 			select {
@@ -179,7 +178,7 @@ func TestPreparedHandoffReleaseWaitsForMutationReceipt(t *testing.T) {
 			case <-time.After(2 * time.Second):
 				t.Fatal("release did not follow the completed receipt")
 			}
-			waitFor(t, func() bool { return r.ActiveRuns() == 0 }, "mutation release cleanup")
+			waitFor(t, func() bool { return r.ActiveRuns() == 0 && hasFrame(sender.recSender, proto.TypeDone, "run") }, "mutation release cleanup")
 			if session.cancels() != 1 {
 				t.Fatalf("Session release calls = %d, want 1", session.cancels())
 			}
@@ -239,7 +238,6 @@ func TestPreparedHandoffRouterShutdownWaitsForReceiptAttempt(t *testing.T) {
 		t.Run(operation, func(t *testing.T) {
 			sender := &blockingPreparedReceiptSender{recSender: &recSender{}, deliveryID: operation + "-delivery", inputID: operation + "-input", entered: make(chan struct{}), release: make(chan struct{}), exited: make(chan struct{})}
 			defer close(sender.release)
-			var cancelBeforeReceipt atomic.Bool
 			session := &preparedMutationSession{fakeSession: &fakeSession{closeOutOnCancel: true}, cancelEntered: make(chan struct{})}
 			p := &controlledPreparation{closed: make(chan struct{})}
 			p.start = func(_ context.Context, _ string, _ proto.MessageInput, out chan<- proto.Envelope) (agent.Session, error) {
@@ -250,13 +248,6 @@ func TestPreparedHandoffRouterShutdownWaitsForReceiptAttempt(t *testing.T) {
 			startCancellationPreparation(t, r, sender.recSender)
 			waitPreparationStatus(t, sender.recSender, "request", "started", "")
 
-			session.beforeCancel = func() {
-				select {
-				case <-sender.exited:
-				default:
-					cancelBeforeReceipt.Store(true)
-				}
-			}
 			var mutation proto.Envelope
 			switch operation {
 			case "function":
@@ -283,8 +274,13 @@ func TestPreparedHandoffRouterShutdownWaitsForReceiptAttempt(t *testing.T) {
 			if err := r.Shutdown(ctx); err != nil {
 				t.Fatal(err)
 			}
-			if cancelBeforeReceipt.Load() || session.cancels() != 1 || r.ActiveRuns() != 0 {
-				t.Fatalf("shutdown crossed receipt barrier: early=%t cancels=%d active=%d", cancelBeforeReceipt.Load(), session.cancels(), r.ActiveRuns())
+			select {
+			case <-sender.exited:
+			default:
+				t.Fatal("shutdown returned before the receipt attempt ended")
+			}
+			if session.cancels() != 1 || r.ActiveRuns() != 0 {
+				t.Fatalf("shutdown did not join native cleanup: cancels=%d active=%d", session.cancels(), r.ActiveRuns())
 			}
 		})
 	}

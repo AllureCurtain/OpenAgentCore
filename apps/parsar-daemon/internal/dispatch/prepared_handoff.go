@@ -53,7 +53,8 @@ type preparedHandoff struct {
 	outputDone  chan struct{}
 
 	// Every admitted native mutation holds a read lock through its receipt.
-	// A release attempt takes the write lock before native cancellation.
+	// Release joins these receipts after native cancellation/settlement, since
+	// an admitted receipt may itself require cancellation to finish.
 	operations sync.RWMutex
 
 	published           bool // started status committed; protected by Router.mu
@@ -164,9 +165,8 @@ func (r *Router) runPreparedRelease(state *sessionState, handoff *preparedHandof
 		}
 		<-handoff.startDone
 	}
-	// Admission is closed; all earlier mutations retain their native receipt wait.
-	handoff.operations.Lock()
-	handoff.operations.Unlock()
+	// Admission is closed, but native cancellation must be able to release an
+	// already-written input or tool operation that is waiting for its receipt.
 	turn := handoff.turn
 	var settlement agent.TurnSettlement
 	var nativeErr error
@@ -221,6 +221,15 @@ func (r *Router) runPreparedRelease(state *sessionState, handoff *preparedHandof
 		// A failed Turn settlement is not repaired into a cancellation receipt by Close.
 		nativeErr = errors.Join(nativeErr, closeErr)
 	}
+	if closeErr == nil {
+		// Native settlement (or confirmed resource close after failure) comes
+		// first. Keep every admitted operation and its outbound receipt owned
+		// until it returns; neither cancellation acknowledgement nor reuse can
+		// pass this join. Failed Close retains the same owner for a later retry.
+		handoff.operations.Lock()
+		handoff.operations.Unlock()
+		<-handoff.outputDone
+	}
 	r.mu.Lock()
 	attempt.err = nativeErr
 	if closeErr != nil {
@@ -236,7 +245,6 @@ func (r *Router) runPreparedRelease(state *sessionState, handoff *preparedHandof
 	release.succeeded, release.outcome = true, outcome
 	close(attempt.done)
 	r.mu.Unlock()
-	<-handoff.outputDone
 	r.mu.Lock()
 	outputErr, terminal, closed := handoff.outputErr, handoff.terminal, r.closed
 	r.mu.Unlock()

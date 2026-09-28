@@ -250,7 +250,9 @@ def run_acceptance(client, foreign, http, session, runtime, evidence_path, secre
 
     try:
         assert expected_environment_type in ("self_hosted", "openai_hosted")
-        assert session.environment.type == expected_environment_type and session.environment.workspace_directory == "/workspace"
+        assert session.environment.type == expected_environment_type
+        if expected_environment_type == "self_hosted":
+            assert session.environment.workspace_directory == "/workspace"
         assert client.beta.agents.environments.retrieve(eid).status == "connected", "Runtime is not connected"
         assert not list(sessions.turns.list(sid)) and not list(sessions.items.list(sid)), "Use an unused Session"
         assert not list(sessions.artifacts.list(sid)), "Use a Session without existing Artifacts"
