@@ -122,10 +122,12 @@ class Provider:
 
     def qualified(self, cloud):
         self.check_domain(cloud)
+        template = self.config['Template'].split(':', 1)[0]
+        if cloud.template_id not in (template, self.config['Template']):
+            raise Failure('invalid')
         resources = self.config.get('Resources')
         if resources is not None:
-            template = self.config['Template'].split(':', 1)[0]
-            if (cloud.template_id != template or type(cloud.cpu_count) is not int or
+            if (type(cloud.cpu_count) is not int or
                     cloud.cpu_count != resources['cpus'] or type(cloud.memory_mb) is not int or
                     cloud.memory_mb != resources['memory_mib']):
                 raise Failure('invalid')
@@ -206,15 +208,16 @@ class Provider:
             raise Failure('unconfirmed') from None
         self.receipt.save(status='created', ids=[cloud.sandbox_id], connection=connection_material(cloud))
         # A create response must not steer envd traffic to an unrelated host.
-        self.check_domain(self.owns(cloud))
-        # Creation responses do not include resources. Inspect before credentials
-        # or bootstrap are written, retaining the allocation for owned cleanup.
-        if self.config.get('Resources') is not None:
-            try:
-                self.qualified(self.owns(Sandbox.get_info(cloud.sandbox_id, **self.options())))
-            except Failure:
-                self.receipt.save(status='configuration_rejected', settled=True)
-                raise
+        self.check_domain(cloud)
+        # SDK Create returns connection material, but no metadata or resources.
+        # Read its exact ID before writing credentials, even when Core adopts the
+        # template's resources and does not supply explicit limits.
+        try:
+            detail = self.owns(Sandbox.get_info(cloud.sandbox_id, **self.options()))
+            self.qualified(detail)
+        except Failure:
+            self.receipt.save(status='configuration_rejected', settled=True)
+            raise
         # Refuse a pre-rename template before writing any executor credential.
         check = run(cloud, {'Args': ['/usr/bin/python3', '-I', '-c',
                     "import os,sys; sys.exit(78 if not os.path.isfile('/opt/oac-e2b/managed_init.py') and os.path.isdir('/opt/parsar-e2b') else 0)"]},
