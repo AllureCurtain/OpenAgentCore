@@ -143,7 +143,8 @@ interrupted additions can reuse complete components on the next run. Installatio
 settings are committed only after all selected Harnesses pass readiness checks.
 
 The installed `bin/oac-daemon` locates its own installation. Use that executable
-for `start`, `status`, `logs -n 100`, `logs -f` and `stop`. An explicit
+for `start`, `status`, `logs -n 100`, `logs -f` and `stop`. Direct `connect` is
+rejected for an installed Runtime; `start` validates its components and selection. An explicit
 `OAC_RUNTIME_HOME` overrides this location; keep it consistent if set. If adding a
 Harness while the daemon is running, restart it to refresh Harness discovery.
 

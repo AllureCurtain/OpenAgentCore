@@ -4068,6 +4068,8 @@ installation steps. See [native installation](docs/self-hosted-native.md).
 An installed daemon discovers and registers only the adapter kinds named by its
 verified installation manifest. The host PATH stays available to tools; its other
 Harness executables and activation variables cannot extend that installation.
+Direct `connect` rejects an installation manifest and directs the operator to
+`start`; unmanaged image bootstrap remains available without that manifest.
 
 All mutations use the installation directory lock. Publish complete checksum-verified
 components from staging, then commit configuration after native readiness passes.

@@ -66,6 +66,15 @@ func runConnect(ctx *runContext, args []string) error {
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("connect: parse flags: %w", err)
 	}
+	installation, err := nativeInstallationPath()
+	if err != nil {
+		return err
+	}
+	if _, err = os.Lstat(installation); err == nil {
+		return errors.New("connect: this Runtime has a native installation; use oac-daemon start to validate its installed Harnesses")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return errors.New("connect: cannot inspect native installation; use oac-daemon start")
+	}
 	// Hydrate inline pairing inputs from env in BOTH parent and the
 	// re-execed background child. Server-spawned sandboxes pass the
 	// token via OAC_RUNTIME_DAEMON_CONNECT_TOKEN/URL env rather than --url
