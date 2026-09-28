@@ -111,6 +111,9 @@ environment = {
 }
 ```
 
+The API accepts portable absolute Unix, Windows drive and UNC source paths without
+checking Core's filesystem. The current Linux Runtime requires canonical local Unix
+paths and applies its own access checks; this does not add Windows support.
 These paths refer to directories visible inside that Runtime. Populate them before
 first execution. `/workspace` maps to its bound workspace; an operator-prepared
 Runtime may use its exact canonical absolute workspace instead. Directory aliases,
@@ -133,7 +136,7 @@ create entries in the public API-managed installation arrays.
 Closing an executor, cancelling a Turn or losing its connection preserves the
 snapshot and workspace. The compute owner remains responsible for explicit resource
 cleanup. This source-level capability behavior requires its own real acceptance;
-[earlier qualification](https://github.com/MiniMax-AI/parsar-core/blob/f9c46331224d589fc823ff69c2bc0fdc21525aec/contracts/agents-api/user-managed-runtime-v1.md) covered
+[earlier qualification](https://github.com/MiniMax-AI/parsar-core/blob/8f64eb5458f0b784beb9d1dddb7a5ab4e8434a05/contracts/agents-api/user-managed-runtime-v1.md) covered
 only its recorded inputs and binaries, not local directory preparation or additional
 platforms.
 
@@ -182,7 +185,7 @@ key_id=$(python3 -c 'import uuid; print(uuid.uuid4())'); echo "credential ID: $k
 Rotate with `{"key_id":"…","rotate":true}` on the same route; revoke with
 `DELETE …/executor-credentials/<key_id>`. After an uncertain response, list the
 credentials with `GET` before trying again. The
-[credential contract](https://github.com/MiniMax-AI/parsar-core/blob/f9c46331224d589fc823ff69c2bc0fdc21525aec/contracts/agents-api/environment-executor-credentials.md)
+[credential contract](https://github.com/MiniMax-AI/parsar-core/blob/8f64eb5458f0b784beb9d1dddb7a5ab4e8434a05/contracts/agents-api/environment-executor-credentials.md)
 has every rule and error.
 
 
@@ -198,4 +201,4 @@ continuation or automatic data deletion.
 Credential replacement for executors created by the current installer updates and
 restarts the same owned container. It does not authorize adopting an older executor.
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f9c46331224d589fc823ff69c2bc0fdc21525aec/docs/getting-started/self-hosted.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/8f64eb5458f0b784beb9d1dddb7a5ab4e8434a05/docs/getting-started/self-hosted.md)
