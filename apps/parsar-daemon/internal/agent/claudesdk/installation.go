@@ -9,7 +9,7 @@ import (
 )
 
 func Installation() agent.Installation {
-	return agent.Installation{Version: "0.3.269", Supported: func() bool { return runtime.GOOS == "linux" || runtime.GOOS == "darwin" || runtime.GOOS == "windows" },
+	return agent.Installation{AgentKind: "claude_sdk", Version: "0.3.269", Supported: func() bool { return runtime.GOOS == "linux" || runtime.GOOS == "darwin" || runtime.GOOS == "windows" },
 		Environment: func(dir, node string) map[string]string {
 			return map[string]string{"OAC_RUNTIME_CLAUDE_SDK_ENTRYPOINT": filepath.Join(dir, "dist", "main.js"), "OAC_RUNTIME_CLAUDE_SDK_NODE": node}
 		},

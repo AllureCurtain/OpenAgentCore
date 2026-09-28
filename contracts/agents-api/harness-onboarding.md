@@ -246,7 +246,8 @@ Subagent. Native background work must remain owned through settlement and cancel
 ## Native installer participation
 
 An adapter may supply `agent.Installation` from `installation.go` in its own
-package: pinned version, supported platforms, activation environment and a bounded
+package: registered agent kind, pinned version, supported platforms, activation
+environment and a bounded
 readiness probe. Register it in `cli/native_harness.go` and add its pinned component
 to the native distribution builder. This optional contract does not change
 Executor/Turn semantics. Runtime owns checksums, copying, locks and additive

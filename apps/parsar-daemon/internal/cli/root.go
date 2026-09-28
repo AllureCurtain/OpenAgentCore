@@ -19,12 +19,13 @@ type command struct {
 	run     func(ctx *runContext, args []string) error
 }
 
-// runContext bundles the streams a command writes to. Tests inject
-// buffers; production uses the OS streams.
+// runContext carries command I/O and an optional installed Harness selection.
+// Tests inject streams; production uses the OS streams.
 type runContext struct {
-	stdin  io.Reader
-	stdout io.Writer
-	stderr io.Writer
+	installedKinds map[string]bool
+	stdin          io.Reader
+	stdout         io.Writer
+	stderr         io.Writer
 }
 
 func defaultRunContext() *runContext {

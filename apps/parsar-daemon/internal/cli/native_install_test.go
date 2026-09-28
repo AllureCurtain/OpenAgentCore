@@ -224,3 +224,20 @@ func TestNativeInstallationPlatformMismatchAndUnsupportedSelection(t *testing.T)
 		}
 	}
 }
+
+func TestNativeInstallationDoesNotRepairMissingDaemon(t *testing.T) {
+	rc, args, root, _ := nativeInstallFixture(t)
+	if err := runInstall(rc, args); err != nil {
+		t.Fatal(err)
+	}
+	binary := filepath.Join(root, "bin", nativeExe("oac-daemon"))
+	if err := os.Remove(binary); err != nil {
+		t.Fatal(err)
+	}
+	if err := runInstall(rc, args); err == nil {
+		t.Fatal("silently repaired a modified installation")
+	}
+	if _, err := os.Stat(binary); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("recreated a removed daemon")
+	}
+}

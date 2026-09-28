@@ -152,7 +152,7 @@ func runInstall(rc *runContext, args []string) error {
 			return err
 		}
 	}
-	if err = installNativeBinary(o.Directory); err != nil {
+	if err = installNativeBinary(o.Directory, len(previous.Harnesses) > 0); err != nil {
 		return err
 	}
 	for _, name := range append([]string{"node"}, selected...) {
@@ -190,7 +190,7 @@ func verifyNativeComponents(root string, selected []string) error {
 	return nil
 }
 
-func installNativeBinary(root string) error {
+func installNativeBinary(root string, existing bool) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
@@ -221,6 +221,9 @@ func installNativeBinary(root string) error {
 		return nil
 	} else if !errors.Is(e, os.ErrNotExist) {
 		return e
+	}
+	if existing {
+		return errors.New("install: existing daemon binary is missing; preserve the installation and reinstall separately")
 	}
 	in, err := os.Open(exe)
 	if err != nil {
@@ -289,6 +292,9 @@ func runStart(rc *runContext, args []string) error {
 	if err != nil {
 		return fmt.Errorf("start: installation unavailable or incompatible: %w", err)
 	}
+	previousKinds := rc.installedKinds
+	rc.installedKinds = nativeInstallationKinds(config.Harnesses)
+	defer func() { rc.installedKinds = previousKinds }()
 	values := nativeHarnessEnvironment(root, config.Harnesses)
 	values["OAC_RUNTIME_WORKSPACE"] = config.Workspace
 	values["OAC_RUNTIME_CAPABILITY_DIRECTORY"] = config.CapabilityDirectory

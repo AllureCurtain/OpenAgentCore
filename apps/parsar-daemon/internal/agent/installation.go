@@ -6,6 +6,7 @@ import "context"
 // It supplies activation paths and readiness checks, never execution or model
 // configuration. Runtime owns copying, checksums, publication and installation locks.
 type Installation struct {
+	AgentKind   string
 	Version     string
 	Supported   func() bool
 	Environment func(directory, node string) map[string]string

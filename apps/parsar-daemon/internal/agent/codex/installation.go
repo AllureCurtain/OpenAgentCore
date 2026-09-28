@@ -17,7 +17,7 @@ func Installation() agent.Installation {
 		}
 		return filepath.Join(dir, "bin", name)
 	}
-	return agent.Installation{Version: "0.153.4", Supported: func() bool { return runtime.GOOS == "linux" || runtime.GOOS == "darwin" || runtime.GOOS == "windows" },
+	return agent.Installation{AgentKind: "codex", Version: "0.153.4", Supported: func() bool { return runtime.GOOS == "linux" || runtime.GOOS == "darwin" || runtime.GOOS == "windows" },
 		Environment: func(dir, node string) map[string]string {
 			return map[string]string{"OAC_RUNTIME_CODEX_BIN": binary(dir)}
 		},
