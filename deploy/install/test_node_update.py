@@ -29,7 +29,7 @@ class UpdateTests(unittest.TestCase):
         binary.chmod(0o700)
         runtime = {"source_commit": "b" * 40, "image_id": "sha256:" + "a" * 64, "image_manifest_digest": "sha256:" + "c" * 64, "microsandbox_ref": "oac-runtime@sha256:" + "d" * 64, "runtime_sha256": "e" * 64, "firmware_sha256": "f" * 64}
         spec = {"runtime": runtime, "resources": {"cpus": 1, "memory_mib": 1024}}
-        self.provider = {"generation": 1, "provider": "docker", "installation_id": self.args.installation_id, "specification": spec, "docker": {"image": runtime["image_id"]}}
+        self.provider = {"generation": 1, "provider": "docker", "installation_id": self.args.installation_id, "specification": spec, "docker": {"image": runtime["image_id"], "seccomp_file": str(self.root / "runtime/seccomp.json")}}
         self.identity = {"core_url": self.args.core_url, "credential": "a" * 64, "identity": {"installation_id": self.args.installation_id, "provider": "docker", "node_id": "7073346d-3c83-4361-9354-2709a9cf17ed", "deployment_generation": 1, "specification_digest": node_spec.digest("docker", spec)}}
         for name, value in (("provider.json", self.provider), ("state/node/identity.json", self.identity), ("registered.json", {})):
             node_generations.atomic_json(self.root / name, value)

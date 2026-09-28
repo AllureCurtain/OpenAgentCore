@@ -129,6 +129,18 @@ local generation collection does not claim physical Docker image GC. The final d
 cleanup and permanently prevents re-adoption. The small immutable configuration
 and ownership journals remain as local identity records.
 
+Fresh installations also persist the verified Runtime file checksums separately
+from the host program. Collection of the original generation removes only those
+exact private Runtime helper, executable, firmware, seccomp and import-cache files
+that no retained configuration references. All remaining files are checked before
+the first deletion; unknown hashes, changed bytes, links or missing ownership
+metadata refuse cleanup. Interruption resumes under the same collection journal.
+The current node executable, preparer, identity, base provider configuration and
+manifests remain, so restart can read its enrolled identity and construct a newer
+retained provider after the original Runtime bytes have gone. Shared native paths
+are compared across all retained configurations before removal. The v1
+legacy-unfenced marker still prevents any collection of its original payload.
+
 New preparation records its exact identity before downloads and records import
 start before invoking the native importer. An interrupted download can repair only
 missing bytes at the original paths. If collection precedes any import attempt,

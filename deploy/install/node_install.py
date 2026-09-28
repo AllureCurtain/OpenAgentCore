@@ -431,6 +431,7 @@ def register_node(root, args, token):
              "source_commit": manifest["source_commit"], "generation": args.configuration["generation"],
              "specification_digest": args.configuration["specification_digest"]}
     write_once(root / "installation.json", json_text(state))
+    node_generations.record_root_runtime(root, args, manifest, sums, sys.modules[__name__])
     for name in names:
         if name == "runtime/seccomp.json":
             if getattr(args, "bundle", None) is None:

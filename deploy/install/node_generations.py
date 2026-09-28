@@ -102,6 +102,68 @@ def marker_identity(args):
             "specification_digest": args.specification_digest}
 
 
+def record_root_runtime(root, args, manifest, sums, installer):
+    checksums = {"runtime/seccomp.json": sums["runtime/seccomp.json"]}
+    if args.provider == "microsandbox":
+        checksums.update({name: installer.distribution.artifact(manifest, name)["sha256"] for name in installer.MICRO})
+    archive = installer.distribution.artifact(manifest, "images/runtime.tar.gz")
+    checksums["images/runtime.tar.gz"] = archive["sha256"]
+    checksums["images/runtime.tar"] = archive["unpacked_sha256"]
+    value = {"installation_id": args.installation_id, "source_commit": manifest["source_commit"], "sha256": checksums}
+    path = root / "runtime-artifacts.json"
+    if installer.existing_file(path):
+        if installer.private_json(path) != value:
+            raise installer.InstallError("Original Runtime artifact ownership differs")
+        return
+    atomic_json(path, value)
+
+
+def root_runtime_files(root, value, others, installer):
+    """Return only verified original Runtime files that no retained config uses."""
+    def paths(configuration):
+        if configuration["provider"] == "docker":
+            return [Path(configuration["docker"]["seccomp_file"])]
+        return [Path(configuration["microsandbox"][key]) for key in ("helper_path", "runtime_path", "firmware_path")]
+    names = ["runtime/seccomp.json", "images/runtime.tar.gz", "images/runtime.tar"]
+    if value["provider"] == "microsandbox":
+        names.extend(installer.MICRO)
+    own_paths = paths(value)
+    if not any(path == root / name for path in own_paths for name in names):
+        return []
+    referenced = {Path(os.path.realpath(path)) for item in others for path in paths(item)}
+    auxiliary = {root / name for name in ("runtime/seccomp.json", "images/runtime.tar.gz", "images/runtime.tar")}
+    # An original Runtime provider also retains its import cache and policy.
+    if any(path in referenced for path in own_paths):
+        referenced.update(auxiliary)
+    candidates = [root / name for name in names if root / name not in referenced]
+    if not candidates:
+        return []
+    record = root / "runtime-artifacts.json"
+    installer.no_links(record)
+    if not installer.existing_file(record):
+        raise installer.InstallError("Original Runtime artifact ownership is missing; preserve its files")
+    saved = installer.private_json(record)
+    base = installer.private_json(root / "provider.json")
+    if not base or base.get("installation_id") != value["installation_id"] or base.get("provider") != value["provider"]:
+        raise installer.InstallError("Original Runtime configuration differs")
+    source = base["specification"]["runtime"]["source_commit"]
+    if (not saved or set(saved) != {"installation_id", "source_commit", "sha256"}
+            or saved["installation_id"] != value["installation_id"] or saved["source_commit"] != source
+            or not isinstance(saved["sha256"], dict) or set(saved["sha256"]) != set(names)
+            or any(not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest) for digest in saved["sha256"].values())):
+        raise installer.InstallError("Original Runtime artifact ownership differs")
+    if value["provider"] == "microsandbox" and any(
+            saved["sha256"][name] != base["specification"]["runtime"][field]
+            for name, field in zip(installer.MICRO[1:], ("runtime_sha256", "firmware_sha256"))):
+        raise installer.InstallError("Original Runtime artifact hashes differ from its specification")
+    for path in candidates:
+        installer.no_links(path)
+        if installer.existing_file(path):
+            if path.stat().st_nlink != 1 or installer.file_digest(path) != saved["sha256"][str(path.relative_to(root))]:
+                raise installer.InstallError("Original Runtime file differs; refusing deletion")
+    return candidates
+
+
 def retained_configs(root, installer):
     directory = root / "state/node/generations"
     result = {}
@@ -329,6 +391,7 @@ def collect(args, installer):
             journal = dict(marker_identity(args), native_complete=False)
             atomic_json(directory / (str(args.generation) + ".collecting"), journal)
         others = [item for generation, item in configurations.items() if generation != args.generation]
+        original_files = root_runtime_files(root, value, others, installer)
         if not journal["native_complete"]:
             preparation = generation_marker(root, args.generation, ".preparing", args.specification_digest, args.installation_id, installer)
             if preparation is None or preparation["import_started"]:
@@ -351,6 +414,15 @@ def collect(args, installer):
                 finally:
                     os.close(descriptor)
 
+        for path in original_files:
+            path.unlink(missing_ok=True)
+        for parent in {path.parent for path in original_files}:
+            if parent.exists():
+                descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
         atomic_json(directory / (str(args.generation) + ".dropped"), marker_identity(args))
         # Keep the immutable configuration and permanent journal as restart
         # identity. They contain no provider credentials and are not readiness.

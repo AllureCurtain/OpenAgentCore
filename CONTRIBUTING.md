@@ -822,7 +822,10 @@ before removing its executable and durable file cleanup before the dropped marke
 CLI errors and unknown native ownership cannot establish absence. Docker daemon
 images are shared host content, so automatic node GC retains them; only the host
 administrator can establish whole-host authority to remove them. Microsandbox
-image GC remains scoped to the installation-private store.
+image GC remains scoped to the installation-private store. Fresh nodes persist
+verified original Runtime file ownership separately from the host program; collect
+only exact unreferenced Runtime paths, keeping program, identity, base configuration
+and manifests readable across interrupted cleanup and restart.
 
 Use one E2B classifier. Omitted key preserves the current key; identical selection
 with omitted key is a no-op. Explicit key submission, including identical bytes,

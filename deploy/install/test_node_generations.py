@@ -25,6 +25,7 @@ class CollectionTests(unittest.TestCase):
                       "specification": {"resources": {"cpus": 1, "memory_mib": 1024}, "runtime": {"source_commit": "b" * 40, "image_id": "sha256:" + "a" * 64, "image_manifest_digest": "sha256:" + "c" * 64, "microsandbox_ref": "oac-runtime@sha256:" + "d" * 64, "runtime_sha256": "e" * 64, "firmware_sha256": "f" * 64}}}
         self.args = SimpleNamespace(installation_id="test-installation", generation=1, specification_digest=node_spec.digest("docker", self.value["specification"]))
         self.release = self.root / "releases" / ("b" * 40)
+        self.value["docker"]["seccomp_file"] = str(self.release / "runtime/seccomp.json")
         self.release.mkdir(parents=True)
         (self.release / "artifact").write_bytes(b"immutable bytes")
         node_generations.atomic_json(self.root / "provider.json", self.value)
@@ -173,7 +174,7 @@ class CollectionTests(unittest.TestCase):
         runtime.write_bytes(b"verified native executable")
         runtime.chmod(0o700)
         image = self.value["specification"]["runtime"]["microsandbox_ref"]
-        self.value["microsandbox"] = {"runtime_home": str(home), "runtime_path": str(runtime), "firmware_path": str(self.release / "firmware"), "runtime_sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(), "image": image}
+        self.value["microsandbox"] = {"helper_path": str(self.release / "helper"), "runtime_home": str(home), "runtime_path": str(runtime), "firmware_path": str(self.release / "firmware"), "runtime_sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(), "image": image}
         self.args.specification_digest = node_spec.digest("microsandbox", self.value["specification"])
         node_generations.atomic_json(self.root / "provider.json", self.value)
         return runtime, image, home

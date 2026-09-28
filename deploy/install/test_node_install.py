@@ -104,6 +104,8 @@ class NodeInstallTests(unittest.TestCase):
         self.manifest["artifacts"] = {name: {"filename": name.replace("/", "-") + "-" + self.manifest["source_commit"],
                                              "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
                                       for name, raw in self.payloads.items() if name.startswith("native/") or name == "images/runtime.tar.gz"}
+        self.manifest["microsandbox"] = {"runtime_sha256": hashlib.sha256(self.payloads[installer.MICRO[1]]).hexdigest(),
+                                         "firmware_sha256": hashlib.sha256(self.payloads[installer.MICRO[2]]).hexdigest()}
         self.manifest["artifacts"]["images/runtime.tar.gz"].update(unpacked_sha256=hashlib.sha256(b"runtime archive").hexdigest(), unpacked_size=len(b"runtime archive"))
         self.payloads["manifest.json"] = json.dumps(self.manifest).encode()
         self.payloads["SHA256SUMS"] = "".join(hashlib.sha256(raw).hexdigest() + "  " + name + "\n"
@@ -236,6 +238,119 @@ class NodeInstallTests(unittest.TestCase):
         self.args.generation = 1
         self.args.specification_digest = json.loads((self.root / "state/node/identity.json").read_text())["identity"]["specification_digest"]
         return self.args
+
+    def prepare_successor_runtime(self):
+        self.manifest["source_commit"] = "f" * 40
+        self.refresh_manifest()
+        config = json.loads(self.configuration_response(None).read())
+        config["generation"] = 2
+        self.args.generation = 2
+        self.args.specification_digest = config["specification_digest"]
+        with mock.patch.object(installer.node_spec, "fetch", return_value=config):
+            installer.node_generations.prepare(self.args, installer)
+        return installer.private_json(self.root / "state/node/generations/2.json")
+
+    def test_original_runtime_gc_interruption_preserves_restart_identity_and_successor(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        successor = self.prepare_successor_runtime()
+        keep = (installer.COMMON[0], "generation-preparer.pyz", "provider.json", "registered.json",
+                "installation.json", "preparation.json", "runtime-artifacts.json", "state/node/identity.json")
+        before = {name: (self.root / name).read_bytes() for name in keep}
+        original = installer.private_json(self.root / "provider.json")
+        self.args.generation = 1
+        self.args.specification_digest = node_spec.digest("microsandbox", original["specification"])
+        real_unlink = Path.unlink
+        def interrupted(path, *args, **kwargs):
+            if path == self.root / installer.MICRO[1]:
+                raise OSError("interrupted original Runtime cleanup")
+            return real_unlink(path, *args, **kwargs)
+        with mock.patch.object(Path, "unlink", new=interrupted):
+            with self.assertRaises(OSError): installer.node_generations.collect(self.args, installer)
+        self.assertFalse((self.root / installer.MICRO[0]).exists())
+        self.assertTrue((self.root / installer.MICRO[1]).exists())
+        self.assertTrue(installer.private_json(self.root / "state/node/generations/1.collecting")["native_complete"])
+        self.assertEqual(installer.private_json(self.root / "provider.json"), original)
+        self.assertEqual(installer.node_generations.retained_configs(self.root, installer)[2], successor)
+        count = len(self.calls)
+        installer.node_generations.collect(self.args, installer)
+        self.assertEqual(len(self.calls), count)
+        for name in ("runtime/seccomp.json", "images/runtime.tar.gz", "images/runtime.tar") + installer.MICRO:
+            self.assertFalse((self.root / name).exists(), name)
+        for name, raw in before.items(): self.assertEqual((self.root / name).read_bytes(), raw, name)
+        self.assertEqual(installer.node_generations.retained_configs(self.root, installer), {2: successor})
+        self.assertTrue(installer.node_generations.image_available(successor, installer))
+
+    def test_original_runtime_gc_refuses_changed_sibling_before_deleting_any_file(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        self.prepare_successor_runtime()
+        original = installer.private_json(self.root / "provider.json")
+        self.args.generation = 1
+        self.args.specification_digest = node_spec.digest("microsandbox", original["specification"])
+        firmware = self.root / installer.MICRO[2]
+        firmware.write_bytes(b"changed private file")
+        before = {name: (self.root / name).read_bytes() for name in ("runtime/seccomp.json",) + installer.MICRO}
+        count = len(self.calls)
+        with self.assertRaisesRegex(installer.InstallError, "refusing deletion"):
+            installer.node_generations.collect(self.args, installer)
+        self.assertEqual(len(self.calls), count)
+        for name, raw in before.items(): self.assertEqual((self.root / name).read_bytes(), raw, name)
+
+    def test_original_runtime_gc_missing_ownership_refuses_and_preserves_unknown_files(self):
+        self.install()
+        self.prepare_successor_runtime()
+        (self.root / "runtime-artifacts.json").unlink()
+        unknown = self.root / "native/bin/operator-owned-file"
+        unknown.write_bytes(b"unowned")
+        self.args.generation = 1
+        original = installer.private_json(self.root / "provider.json")
+        self.args.specification_digest = node_spec.digest("docker", original["specification"])
+        seccomp = (self.root / "runtime/seccomp.json").read_bytes()
+        with self.assertRaisesRegex(installer.InstallError, "ownership is missing"):
+            installer.node_generations.collect(self.args, installer)
+        self.assertEqual((self.root / "runtime/seccomp.json").read_bytes(), seccomp)
+        self.assertEqual(unknown.read_bytes(), b"unowned")
+
+    def test_shared_original_firmware_survives_until_its_last_generation(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        successor = self.prepare_successor_runtime()
+        successor["microsandbox"]["firmware_path"] = str(self.root / installer.MICRO[2])
+        installer.node_generations.atomic_json(self.root / "state/node/generations/2.json", successor)
+        original = installer.private_json(self.root / "provider.json")
+        self.args.generation = 1
+        self.args.specification_digest = node_spec.digest("microsandbox", original["specification"])
+        installer.node_generations.collect(self.args, installer)
+        self.assertFalse((self.root / installer.MICRO[0]).exists())
+        self.assertFalse((self.root / installer.MICRO[1]).exists())
+        self.assertTrue((self.root / installer.MICRO[2]).exists())
+        self.assertTrue(installer.node_generations.image_available(successor, installer))
+        self.args.generation = 2
+        self.args.specification_digest = node_spec.digest("microsandbox", successor["specification"])
+        def inventory(command, *_args, **_kwargs):
+            if command[1:3] == ["image", "list"]: return ""
+            if command[1:3] == ["sandbox", "list"]: return "[]"
+            raise AssertionError(command)
+        with mock.patch.object(installer, "checked", side_effect=inventory):
+            installer.node_generations.collect(self.args, installer)
+        self.assertFalse((self.root / installer.MICRO[2]).exists())
+        self.assertTrue((self.root / "provider.json").exists())
+        self.assertTrue((self.root / installer.COMMON[0]).exists())
+
+    def test_original_runtime_gc_preserves_exact_shared_native_file_references(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        original = installer.private_json(self.root / "provider.json")
+        other = json.loads(json.dumps(original))
+        other["generation"] = 2
+        directory = self.root / "state/node/generations"
+        directory.mkdir(mode=0o700, exist_ok=True)
+        installer.node_generations.atomic_json(directory / "2.json", other)
+        before = {name: (self.root / name).read_bytes() for name in ("runtime/seccomp.json",) + installer.MICRO}
+        installer.node_generations.collect(self.recovery_args(), installer)
+        for name, raw in before.items(): self.assertEqual((self.root / name).read_bytes(), raw, name)
+        self.assertEqual(installer.node_generations.retained_configs(self.root, installer), {2: other})
 
     def test_interrupted_new_generation_recovers_partial_download_at_same_identity(self):
         self.args.provider = "microsandbox"
