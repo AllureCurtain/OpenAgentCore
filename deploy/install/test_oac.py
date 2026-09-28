@@ -64,6 +64,35 @@ class OacTests(unittest.TestCase):
         self.assertEqual(before, {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*") if p.is_file()})
         self.assertEqual(self.host.recreated, [])
 
+    def test_web_start_checks_written_core_before_starting_services(self):
+        self.host.remote_core["https://core.example"] = (200, self.host.core_installation_id)
+        self.install("web-only", **{"web.core_url": "https://core.example"})
+        for edited in (False, True):
+            if edited:
+                self.edit(lambda config: config["web"].update(core_url="https://unapplied.example"))
+            for status in (404, 200):
+                with self.subTest(edited=edited, status=status):
+                    oac_cli.stop(self.root, out=self.output.append)
+                    self.host.recreated.clear()
+                    self.host.remote_core["https://core.example"] = (status, self.host.core_installation_id)
+                    self.host.remote_core["https://unapplied.example"] = (200 if status == 404 else 404, None)
+                    before = {str(p.relative_to(self.root)): p.read_bytes()
+                              for p in self.root.rglob("*") if p.is_file()}
+                    with mock.patch.object(oac_cli, "http", wraps=self.host.http) as requests:
+                        if status == 404:
+                            with self.assertRaisesRegex(oac_cli.OacError, "not supported;.*reinstall"):
+                                oac_cli.start(self.root, out=self.output.append)
+                            self.assertEqual(self.host.running(), set())
+                            self.assertEqual(self.host.recreated, [])
+                        else:
+                            oac_cli.start(self.root, out=self.output.append)
+                            self.assertEqual(self.host.running(), {"web"})
+                    urls = [call.args[0] for call in requests.call_args_list]
+                    self.assertIn("https://core.example/core/v1/installation", urls)
+                    self.assertFalse(any("unapplied.example" in url for url in urls))
+                    self.assertEqual(before, {str(p.relative_to(self.root)): p.read_bytes()
+                                             for p in self.root.rglob("*") if p.is_file()})
+
     def test_foreign_operator_refuses_all_mutations_before_lock_creation(self):
         self.install()
         (self.root / ".oac.lock").unlink()

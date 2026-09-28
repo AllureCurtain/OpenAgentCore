@@ -721,6 +721,10 @@ def start(root, out=print):
                 out("Warning: config.json has changes that are not applied; starting with the files last written.")
             for name in edited_files(state, disk, rendered):
                 out(f"Warning: generated/{name} was edited by hand.")
+        written = written_view(root, state, config)
+        if state["mode"] == "web-only" and paired_core(root, written)[0] == 404:
+            raise OacError("The paired Core version is not supported; preserve its data and reinstall "
+                           "the current release separately. Nothing was started.")
         for name, image in state["images"].items():
             if run(["docker", "image", "inspect", image], check=False, stdin=subprocess.DEVNULL,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
@@ -730,7 +734,7 @@ def start(root, out=print):
         desired = configuration.rendered_inputs(read_generated(root, {"compose.json"} | ({unit} if unit else set())), unit)
         will_run = set(desired) - {"migrate"}
         converge(root, state, desired, will_run)
-        health(root, written_view(root, state, config), will_run)
+        health(root, written, will_run)
     out("Services started.")
 
 
