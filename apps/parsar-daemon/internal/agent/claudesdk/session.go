@@ -78,23 +78,24 @@ func NewFactory(config Config) agent.Factory {
 }
 
 type bridgeEvent struct {
-	Fact        json.RawMessage             `json:"fact"`
-	InputID     string                      `json:"input_id"`
-	ResultID    string                      `json:"result_id"`
-	Usage       json.RawMessage             `json:"usage,omitempty"`
-	Type        string                      `json:"type"`
-	Delta       string                      `json:"delta"`
-	SessionID   string                      `json:"session_id"`
-	Text        string                      `json:"text"`
-	Code        string                      `json:"code"`
-	ItemID      string                      `json:"item_id"`
-	Message     *proto.OutputMessagePayload `json:"message"`
-	Call        *proto.FunctionCallPayload  `json:"call"`
-	CallID      string                      `json:"call_id"`
-	DeliveryID  string                      `json:"delivery_id"`
-	ID          string                      `json:"id"`
-	Stage       string                      `json:"stage"`
-	Observation *proto.ToolObservation      `json:"observation"`
+	EngineErrorCode json.RawMessage             `json:"engine_error_code"`
+	Fact            json.RawMessage             `json:"fact"`
+	InputID         string                      `json:"input_id"`
+	ResultID        string                      `json:"result_id"`
+	Usage           json.RawMessage             `json:"usage,omitempty"`
+	Type            string                      `json:"type"`
+	Delta           string                      `json:"delta"`
+	SessionID       string                      `json:"session_id"`
+	Text            string                      `json:"text"`
+	Code            string                      `json:"code"`
+	ItemID          string                      `json:"item_id"`
+	Message         *proto.OutputMessagePayload `json:"message"`
+	Call            *proto.FunctionCallPayload  `json:"call"`
+	CallID          string                      `json:"call_id"`
+	DeliveryID      string                      `json:"delivery_id"`
+	ID              string                      `json:"id"`
+	Stage           string                      `json:"stage"`
+	Observation     *proto.ToolObservation      `json:"observation"`
 }
 
 func (s *session) run(ctx context.Context, runID string, start startRequest, out chan<- proto.Envelope, prepared *prepared) {
@@ -141,7 +142,7 @@ func (s *session) run(ctx context.Context, runID string, start startRequest, out
 	if prepared != nil {
 		binding, err := prepared.awaitStart(scanner, failure)
 		if binding == nil {
-			prepared.failure = s.drain(scanner, stderrDone, err)
+			prepared.failure, _ = s.drain(scanner, stderrDone, err)
 			close(s.settled)
 			return
 		}
@@ -159,8 +160,11 @@ func (s *session) run(ctx context.Context, runID string, start startRequest, out
 	}
 	var content strings.Builder
 	var result *bridgeEvent
+	var classifiedFailure error
+	var engineCode string
 	var usage proto.Usage
 	var usageSession string
+	var failedResultID string
 	usageIDs := map[string]bool{}
 	var sequence uint64
 	terminal := false
@@ -236,6 +240,14 @@ func (s *session) run(ctx context.Context, runID string, start startRequest, out
 			usage = nextUsage
 			usageIDs[event.ResultID] = true
 			usageSession = event.SessionID
+			failedResultID = ""
+			var nativeResult struct {
+				Subtype string `json:"subtype"`
+				IsError bool   `json:"is_error"`
+			}
+			if json.Unmarshal(event.Usage, &nativeResult) == nil && (nativeResult.Subtype == "error_during_execution" || nativeResult.Subtype == "success" && nativeResult.IsError) {
+				failedResultID = event.ResultID
+			}
 			emit(proto.TypeUsage, proto.UsagePayload{Usage: usage})
 		case "result":
 			if !s.matchesInputSession(event.SessionID) || event.SessionID == "" || start.Resume != "" && event.SessionID != start.Resume || usageSession != "" && event.SessionID != usageSession || !s.functionsComplete() || !s.steeringComplete() || !mcp.complete() || !commands.complete() {
@@ -247,6 +259,13 @@ func (s *session) run(ctx context.Context, runID string, start startRequest, out
 			terminal = true
 		case "error":
 			failure = bridgeFailure(event.Code)
+			if event.Code == "execution_failed" && event.SessionID != "" && s.matchesInputSession(event.SessionID) &&
+				event.SessionID == usageSession && event.ResultID != "" && event.ResultID == failedResultID {
+				var code string
+				_ = json.Unmarshal(event.EngineErrorCode, &code)
+				engineCode, _ = proto.NormalizeEngineFailure(code, nil)
+				classifiedFailure = failure
+			}
 			terminal = true
 		default:
 			failure = fmt.Errorf("claudesdk: unknown SDK bridge event")
@@ -256,7 +275,8 @@ func (s *session) run(ctx context.Context, runID string, start startRequest, out
 			break
 		}
 	}
-	failure = s.drain(scanner, stderrDone, failure)
+	var bridgeClean bool
+	failure, bridgeClean = s.drain(scanner, stderrDone, failure)
 	if result == nil && failure == nil {
 		failure = fmt.Errorf("claudesdk: SDK result is missing")
 	}
@@ -277,7 +297,10 @@ func (s *session) run(ctx context.Context, runID string, start startRequest, out
 	// Router completion cleanup calls Cancel while consuming Done. Settle first.
 	close(s.settled)
 	if failure != nil {
-		emit(proto.TypeError, proto.ErrorPayload{Error: failure.Error()})
+		if failure != classifiedFailure || !bridgeClean {
+			engineCode = ""
+		}
+		emit(proto.TypeError, proto.ErrorPayload{Error: failure.Error(), Code: engineCode})
 	}
 	emit(proto.TypeDone, s.outcome)
 }
@@ -294,7 +317,7 @@ func launch(ctx context.Context, config Config, start startRequest, env []string
 	return &session{process: process, functions: functionState{calls: map[string]*pendingFunction{}}, settled: make(chan struct{})}, nil
 }
 
-func (s *session) drain(scanner *bridgeOutput, stderrDone <-chan struct{}, failure error) error {
+func (s *session) drain(scanner *bridgeOutput, stderrDone <-chan struct{}, failure error) (error, bool) {
 	for scanner.Scan() {
 	}
 	if scanner.Err() != nil {
@@ -304,10 +327,11 @@ func (s *session) drain(scanner *bridgeOutput, stderrDone <-chan struct{}, failu
 	<-stderrDone
 	s.stopWorkspaceReads()
 	s.stopWorkspaceDirectories()
-	if err := s.process.Wait(); err != nil && failure == nil {
+	waitErr := s.process.Wait()
+	if waitErr != nil && failure == nil {
 		failure = fmt.Errorf("claudesdk: SDK process failed")
 	}
-	return failure
+	return failure, scanner.Err() == nil && waitErr == nil
 }
 
 func bridgeFailure(code string) error {

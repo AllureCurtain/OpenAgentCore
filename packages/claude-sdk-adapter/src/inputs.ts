@@ -92,6 +92,13 @@ export class Inputs implements AsyncIterable<SDKUserMessage> {
     return receipts;
   }
 
+  // Only current, admitted input identities can support terminal error attribution.
+  pendingInputIDs(message: SDKMessage): string[] {
+    if (message.type !== "assistant" && message.type !== "result") return [];
+    const ids = message.user_message_uuids ?? (message.user_message_uuid ? [message.user_message_uuid] : []);
+    return ids.every(id => { const input = this.submitted.get(id); return input !== undefined && !input.completed; }) ? ids : [];
+  }
+
   get complete(): boolean { return [...this.submitted.values()].every(input => input.completed); }
 
   get hasInput(): boolean { return this.submitted.size > 0; }

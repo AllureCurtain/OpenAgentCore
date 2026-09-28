@@ -46,10 +46,12 @@ type Dispatcher struct {
 }
 
 type Result struct {
-	Done           proto.DonePayload `json:"done"`
-	ErrorCode      string            `json:"error_code,omitempty"`
-	Error          string            `json:"error,omitempty"`
-	AppliedThrough int64             `json:"applied_through"`
+	EngineErrorCode  string            `json:"engine_error_code,omitempty"`
+	EngineHTTPStatus *int              `json:"engine_http_status,omitempty"`
+	Done             proto.DonePayload `json:"done"`
+	ErrorCode        string            `json:"error_code,omitempty"`
+	Error            string            `json:"error,omitempty"`
+	AppliedThrough   int64             `json:"applied_through"`
 }
 
 // Run claims once before subscribing or sending. Uncertain deliveries are not replayed.

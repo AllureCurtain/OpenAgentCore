@@ -1,3 +1,4 @@
+import { NativeFailure } from "./native_failure.js";
 import { StructuredOutput } from "./structured_output.js";
 import { toolSearchEnvironment } from "./tool_search.js";
 import { Subagents } from "./subagents.js";
@@ -32,9 +33,12 @@ export type Event =
   | { type: "usage"; session_id: string; result_id: string; usage: NativeUsage }
   | { type: "delta"; delta: string }
   | { type: "result"; session_id: string; text: string }
-  | { type: "error"; code: "invalid_request" | "history_unavailable" | "execution_failed" | "cancelled" };
+  | { type: "error"; code: "invalid_request" | "history_unavailable" | "execution_failed" | "cancelled"; engine_error_code?: string; session_id?: string; result_id?: string };
 
 export async function execute(request: Start | Prepare, emit: (event: Event) => Promise<void>, abort: AbortController, functions = new FunctionBridge(emit), inputs = new Inputs(immediateInput(request)), reads = new WorkspaceReads(emit, abort), directories = new WorkspaceDirectories(emit, abort)): Promise<void> {
+  const nativeFailure = new NativeFailure();
+  const nativeResultFailure = new Error("unsuccessful native result");
+  let classifiedFailure: { engine_error_code: string; session_id: string; result_id: string } | undefined;
   const definitions = (request.functions ?? []).map(tool => ({ name: tool.name, description: tool.description, inputSchema: tool.parameters, deferLoading: tool.defer_loading }));
   const names = definitions.map(tool => `mcp__functions__${tool.name}`);
   const allowed = [...names, ...(request.tool_search ? ["ToolSearch"] : [])];
@@ -132,6 +136,7 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
       inputs.release(request.input);
     } else stream = query({ prompt: inputs, options });
     for await (const message of stream) {
+      const errorCode = nativeFailure.observe(message, nativeID, inputs.pendingInputIDs(message));
       subagents?.consume(message);
       structured?.consume(message, nativeID);
       await functions.consume(message, nativeID);
@@ -157,7 +162,10 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
         resultIDs.add(message.uuid);
         await emit({ type: "usage", session_id: nativeID, result_id: message.uuid, usage: resultUsage(message) });
         for (const event of inputs.consume(message)) await emit(event);
-        if (message.subtype !== "success" || message.is_error) throw new Error("unsuccessful native result");
+        if (message.subtype !== "success" || message.is_error) {
+          if (errorCode) classifiedFailure = { engine_error_code: errorCode, session_id: nativeID, result_id: message.uuid };
+          throw nativeResultFailure;
+        }
         if (structured) await emit(structured.complete(message));
         result = { type: "result", session_id: nativeID, text: message.result };
       }
@@ -167,18 +175,20 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
     functions.assertComplete();
     mcp?.assertComplete();
     commands?.assertComplete();
-  } catch {
+  } catch (error) {
+    if (error !== nativeResultFailure) classifiedFailure = undefined;
     failed = true;
   } finally {
     profile?.close();
     inputs.close();
     functions.close();
-    try { await directories.close(); } catch { failed = true; }
+    try { await directories.close(); } catch { failed = true; classifiedFailure = undefined; }
     await reads.close();
     stream?.close();
     warm?.close();
     abort.signal.removeEventListener("abort", closeInputs);
     const exits = await Promise.all(children);
+    if (!exits.length) classifiedFailure = undefined;
     if (!exits.length || exits.some(code => code !== 0)) failed = true;
     if (subagents && abort.signal.aborted && exits.length === 1) {
       try { for (const event of await subagents.facts(Date.now())) await emit(event); }
@@ -189,6 +199,6 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
   }
   if (cancellationFactsFailed) await emit({ type: "error", code: "execution_failed" });
   else if (abort.signal.aborted) await emit({ type: "error", code: "cancelled" });
-  else if (failed || !result || !inputs.complete) await emit({ type: "error", code: "execution_failed" });
+  else if (failed || !result || !inputs.complete) await emit({ type: "error", code: "execution_failed", ...classifiedFailure });
   else await emit(result);
 }

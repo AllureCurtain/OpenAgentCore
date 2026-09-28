@@ -81,3 +81,9 @@ ownership. No request bodies, secrets or file contents enter audit records.
 Do not add product users, RBAC, cross-Project shared assets, administrator execution, or old
 private-protocol compatibility to this management model. Existing public
 execution and Runtime ownership rules remain in [CONTRIBUTING.md](../CONTRIBUTING.md).
+
+Native failure classification is adapter-owned and uses finite structured native
+values. Optional Runtime error metadata is normalized once and retained through
+normal delivery and journal draining; it never replaces Core terminal authority,
+cancellation receipts, Usage or native identity. See
+[native failure classification](../contracts/agents-api/native-error-classification.md).

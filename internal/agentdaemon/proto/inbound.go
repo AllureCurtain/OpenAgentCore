@@ -229,7 +229,9 @@ type UsagePayload struct {
 
 // ErrorPayload reports a prompt-level failure.
 type ErrorPayload struct {
-	Error string `json:"error"`
+	Error      string `json:"error"`
+	Code       string `json:"code,omitempty"`
+	HTTPStatus *int   `json:"http_status,omitempty"`
 }
 
 // DonePayload mirrors connector.PromptOutput shape. Redeclared (not

@@ -242,7 +242,7 @@ func (s *Session) onTurnCompleted(raw json.RawMessage) {
 		if errText != "" {
 			body = appendOnNewline(body, errText)
 		}
-		s.emitTerminal(body, true)
+		s.emitTerminalFailure(body, true, classifyTurnError(p.Turn.Error))
 		s.finishAfterTerminal()
 		return
 	}
@@ -392,6 +392,10 @@ func (s *Session) emitUsage(u TurnUsage) {
 }
 
 func (s *Session) emitTerminal(message string, asError bool) {
+	s.emitTerminalFailure(message, asError, proto.ErrorPayload{})
+}
+
+func (s *Session) emitTerminalFailure(message string, asError bool, failure proto.ErrorPayload) {
 	if !s.terminal.CompareAndSwap(false, true) {
 		return
 	}
@@ -414,7 +418,8 @@ func (s *Session) emitTerminal(message string, asError bool) {
 	}
 	var events []proto.Envelope
 	if asError {
-		env, err := proto.NewEnvelope(proto.TypeError, s.runID, proto.ErrorPayload{Error: message})
+		failure.Error = message
+		env, err := proto.NewEnvelope(proto.TypeError, s.runID, failure)
 		if err == nil {
 			events = append(events, env)
 		}

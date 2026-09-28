@@ -135,6 +135,10 @@ func runSDKHelper() {
 		runSteeringHelper(request, mode, scanner, encode)
 		return
 	}
+	if strings.HasPrefix(mode, "classified-") {
+		runClassifiedFailureHelper(request, mode, encode)
+		return
+	}
 	if strings.HasPrefix(mode, "usage-") {
 		runUsageHelper(request, mode, encode)
 		return
