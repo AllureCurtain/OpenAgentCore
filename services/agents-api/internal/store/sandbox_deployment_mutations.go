@@ -49,10 +49,10 @@ func E2BResourcesPending(input SandboxDeploymentSetupRequest) bool {
 func validateSandboxSelection(input SandboxDeploymentSetupRequest) error {
 	if E2BResourcesPending(input) {
 		if input.Runtime != nil {
-			return &SandboxConfigurationError{Message: "invalid sandbox configuration: E2B Runtime is selected by its immutable template build"}
+			return sandboxConfigurationError(&sandbox.ValidationError{Param: "runtime", Message: "invalid sandbox configuration: E2B Runtime is selected by its immutable template build"})
 		}
 	} else if err := input.DeploymentSpec.Validate(input.Provider); err != nil {
-		return &SandboxConfigurationError{Message: err.Error()}
+		return sandboxConfigurationError(err)
 	}
 	switch input.Provider {
 	case "docker", "microsandbox":
@@ -106,7 +106,7 @@ func (s *Store) sandboxSelectionEqual(d sqlc.RuntimeDeployment, input SandboxDep
 func (s *Store) saveSandboxSelection(ctx context.Context, q *sqlc.Queries, d sqlc.RuntimeDeployment, input SandboxDeploymentSetupRequest) error {
 	// Only a complete specification is stored, including derived E2B resources.
 	if err := input.DeploymentSpec.Validate(input.Provider); err != nil {
-		return &SandboxConfigurationError{Message: err.Error()}
+		return sandboxConfigurationError(err)
 	}
 	if d.Generation == math.MaxInt64 {
 		return ErrSandboxDeploymentConflict

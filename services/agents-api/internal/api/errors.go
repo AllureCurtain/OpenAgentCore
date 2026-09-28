@@ -93,6 +93,9 @@ func writeFieldError(w http.ResponseWriter, err error) bool {
 }
 
 func writeStoreError(w http.ResponseWriter, r *http.Request, err error, notFoundParam ...string) {
+	if writeCoreValidationError(w, err) {
+		return
+	}
 	var cursor *store.InvalidCursorError
 	var selection *store.MCPCredentialSelectionError
 	var sandboxConfiguration *store.SandboxConfigurationError

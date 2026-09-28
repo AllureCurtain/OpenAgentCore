@@ -3797,3 +3797,11 @@ code. Include only safe Core-owned facts; never pass submitted values, secrets,
 native text or provider bodies. Invalid/empty details are omitted. Preserve the
 public and machine error serializers, observer callbacks and streaming interfaces.
 The Core client ignores malformed optional details and never retries a mutation.
+
+Core operation validators preserve the original error text, sentinel identity,
+and validation precedence. Package-owned typed errors carry fixed field metadata;
+only the marked Core error mapper translates it to operation codes and safe
+bounds/catalog details. Preserve Project/key rune limits and node byte limits
+separately. Keep sandbox validation metadata through its existing store wrapper
+without changing transaction or provider authority. Public Session provider
+validation remains byte-compatible; cover it with handler-level golden responses.

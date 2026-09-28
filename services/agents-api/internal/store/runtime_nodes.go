@@ -35,8 +35,14 @@ func retainedLimit(provider string, active, retained int) int {
 	return retained
 }
 func validateRuntimeNode(name string, active, retained int) error {
-	if strings.TrimSpace(name) == "" || len(name) > 128 || strings.ContainsAny(name, "\x00\r\n") || active < 1 || retained < active || retained > 1000000 {
-		return ErrInvalidInput
+	if strings.TrimSpace(name) == "" || len(name) > 128 || strings.ContainsAny(name, "\x00\r\n") {
+		return &AdminValidationError{Code: "invalid_name", Param: "name", MaxLength: 128, message: ErrInvalidInput.Error()}
+	}
+	if active < 1 {
+		return &AdminValidationError{Code: "invalid_node_capacity", Param: "max_active", message: ErrInvalidInput.Error()}
+	}
+	if retained < active || retained > 1000000 {
+		return &AdminValidationError{Code: "invalid_node_capacity", Param: "max_retained", message: ErrInvalidInput.Error()}
 	}
 	return nil
 }

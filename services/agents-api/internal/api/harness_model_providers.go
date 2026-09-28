@@ -163,10 +163,13 @@ func (h *Handler) setHarnessModelProvider(w http.ResponseWriter, r *http.Request
 	var input v1.ModelProviderInput
 	// Neither message echoes submitted values, which may include the key.
 	if checkValue("model_provider", raw, harnessModelProviderShape) != nil || decodeInputObject(raw, &input, "protocol", "base_url", "api_key", "context_window", "max_output_tokens") != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request_error", "The body must be a complete model provider: protocol, base_url, api_key and optional nonnegative context_window and max_output_tokens.")
+		writeError(w, http.StatusBadRequest, "invalid_model_provider", "The body must be a complete model provider: protocol, base_url, api_key and optional nonnegative context_window and max_output_tokens.")
 		return
 	}
 	if err := input.ValidateHarness(harness); err != nil {
+		if writeCoreModelProviderError(w, err, harness) {
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}

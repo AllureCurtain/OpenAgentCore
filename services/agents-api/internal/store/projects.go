@@ -50,7 +50,7 @@ func adminResourceName(value string, max int) (string, error) {
 	control := strings.ContainsFunc(value, unicode.IsControl)
 	value = strings.TrimSpace(value)
 	if value == "" || !utf8.ValidString(value) || utf8.RuneCountInString(value) > max || control {
-		return "", fmt.Errorf("%w: name must contain 1–%d characters without controls", ErrInvalidInput, max)
+		return "", &AdminValidationError{Code: "invalid_name", Param: "name", MaxLength: max, message: fmt.Sprintf("%s: name must contain 1–%d characters without controls", ErrInvalidInput, max)}
 	}
 	return value, nil
 }
