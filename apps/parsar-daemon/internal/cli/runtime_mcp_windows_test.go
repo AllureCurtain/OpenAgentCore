@@ -4,10 +4,13 @@ package cli
 
 import (
 	"encoding/json"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentplugin"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -60,6 +63,21 @@ func TestWindowsRuntimeMCPPackageManagers(t *testing.T) {
 
 func checkWindowsMCPStdio(t *testing.T, invocation mcpInvocation, wantArgs []string) {
 	t.Helper()
+	previousEnv := os.Environ()
+	previousCWD, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		os.Clearenv()
+		for _, entry := range previousEnv {
+			key, value, ok := strings.Cut(entry, "=")
+			if ok {
+				_ = os.Setenv(key, value)
+			}
+		}
+		_ = os.Chdir(previousCWD)
+	}()
 	input, err := os.CreateTemp(t.TempDir(), "input")
 	if err != nil {
 		t.Fatal(err)
@@ -99,4 +117,63 @@ func checkWindowsMCPStdio(t *testing.T, invocation mcpInvocation, wantArgs []str
 	if json.Unmarshal(raw, &got) != nil || got.Input != "local stdio payload\n" || filepath.Clean(got.CWD) != filepath.Clean(invocation.cwd) || got.Value != "selected" || !slices.Equal(got.Args, wantArgs) {
 		t.Fatalf("stdio invocation changed: %s", raw)
 	}
+}
+
+func TestWindowsRuntimeMCPExplicitPath(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := t.TempDir()
+	body, err := os.ReadFile(node)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(directory, "selected-node.exe"), body, 0700); err != nil {
+		t.Fatal(err)
+	}
+	fixture := filepath.Join(directory, "stdio.cjs")
+	if err = os.WriteFile(fixture, []byte(`let input="";process.stdin.on("data",v=>input+=v);process.stdin.on("end",()=>process.stdout.write(JSON.stringify({input,cwd:process.cwd(),value:process.env.OAC_MCP_FIXTURE_VALUE,args:process.argv.slice(2)})))`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("Path", os.Getenv("PATH"))
+	manifest := agentcapabilities.Manifest{MCP: []agentcapabilities.InstalledMCP{{PackageRoot: "plugins/0", Server: agentplugin.MCPServer{Name: "test", Type: "stdio", Command: "selected-node", Args: []string{fixture}, CWD: directory, EnvVars: []string{"PATH", "OAC_MCP_FIXTURE_VALUE"}}}}}
+	invocation, err := resolveMCPInvocation(manifest, directory, "plugins/0", "test", map[string]string{"PATH": directory, "OAC_MCP_FIXTURE_VALUE": "selected"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, entry := range invocation.env {
+		key, value, _ := strings.Cut(entry, "=")
+		if strings.EqualFold(key, "PATH") {
+			count++
+			if value != directory {
+				t.Fatal("explicit PATH lost")
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatal("duplicate PATH variants", count)
+	}
+	checkWindowsMCPStdio(t, invocation, nil)
+	// npm resolution must also use the selected installation, not ambient npm.
+	npmBin := filepath.Join(directory, "node_modules", "npm", "bin")
+	if err = os.MkdirAll(npmBin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(directory, "npm.cmd"), []byte("@exit /b 1"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(directory, "node.exe"), body, 0700); err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(npmBin, "npm-cli.js"), source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	invocation.command, invocation.args = "npm", []string{"npm", "selected installation"}
+	checkWindowsMCPStdio(t, invocation, []string{"selected installation"})
 }

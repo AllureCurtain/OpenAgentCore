@@ -140,3 +140,41 @@ func TestPreparationEmptySelectionAndCancellation(t *testing.T) {
 		t.Fatal("Files required capability installation", err)
 	}
 }
+
+func TestRuntimePreparationRejectsMissingRequiredToolEnvironment(t *testing.T) {
+	b, req := testBinding(t)
+	t.Setenv("OAC_RUNTIME_INITIALIZATION_DIRECTORY", t.TempDir())
+	t.Setenv("OAC_RUNTIME_TOOL_ENV_FILE", "")
+	req.LocalEnvironment.ToolEnvironment = true
+	configured, err := b.Configure(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.Prepare(t.Context(), configured); err == nil {
+		t.Fatal("missing required tool environment admitted")
+	}
+	directory, err := InitializationDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(directory, "tool-env.json"), []byte(`{"READY":"yes"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.Prepare(t.Context(), configured); err != nil {
+		t.Fatal("prepared tool environment rejected", err)
+	}
+	if err = os.Remove(filepath.Join(directory, "tool-env.json")); err != nil {
+		t.Fatal(err)
+	}
+	configured.LocalEnvironment.ToolEnvironment = false
+	if _, err = b.Prepare(t.Context(), configured); err != nil {
+		t.Fatal("optional tool environment became mandatory", err)
+	}
+}
+
+func TestRuntimePreparationRejectsMissingExplicitToolEnvironment(t *testing.T) {
+	t.Setenv("OAC_RUNTIME_TOOL_ENV_FILE", filepath.Join(t.TempDir(), "missing.json"))
+	if _, err := ReadOptionalToolEnvironment(); err == nil {
+		t.Fatal("missing explicitly configured tool environment ignored")
+	}
+}

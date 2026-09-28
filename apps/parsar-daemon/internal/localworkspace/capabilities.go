@@ -49,7 +49,7 @@ func (b *Binding) Prepare(ctx context.Context, r proto.PromptRequestPayload) (pr
 		local.Skills[i].InstallationRoot = b.capabilityRoot
 	}
 	if local.ToolEnvironment {
-		if _, err = b.ReadToolEnvironment(); err != nil {
+		if _, err = ReadToolEnvironment(); err != nil {
 			return r, err
 		}
 	}

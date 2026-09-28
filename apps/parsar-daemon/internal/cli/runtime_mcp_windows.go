@@ -10,6 +10,9 @@ import (
 )
 
 func execRuntimeMCP(invocation mcpInvocation) error {
+	if err := configureMCPProcess(invocation); err != nil {
+		return err
+	}
 	binary, args, err := localworkspace.ResolvePackageManagerCommand(invocation.command, invocation.args[1:])
 	if err != nil {
 		return errRuntimeMCP

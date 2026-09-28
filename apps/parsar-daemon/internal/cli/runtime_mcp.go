@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -63,7 +64,7 @@ func resolveMCPInvocation(manifest agentcapabilities.Manifest, installationRoot,
 		for _, entry := range os.Environ() {
 			key, value, ok := strings.Cut(entry, "=")
 			if ok {
-				env[key] = value
+				env[mcpEnvironmentKey(key)] = value
 			}
 		}
 
@@ -72,7 +73,7 @@ func resolveMCPInvocation(manifest agentcapabilities.Manifest, installationRoot,
 			if !exists || strings.ContainsRune(value, 0) {
 				return mcpInvocation{}, errRuntimeMCP
 			}
-			env[key] = value
+			env[mcpEnvironmentKey(key)] = value
 		}
 		cwd := server.CWD
 		if !filepath.IsAbs(cwd) {
@@ -86,4 +87,27 @@ func resolveMCPInvocation(manifest agentcapabilities.Manifest, installationRoot,
 		return result, nil
 	}
 	return mcpInvocation{}, errRuntimeMCP
+}
+
+func mcpEnvironmentKey(key string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToUpper(key)
+	}
+	return key
+}
+
+// This command is a dedicated MCP launcher process. Apply its final environment
+// before executable lookup so PATH and npm selection agree on every platform.
+func configureMCPProcess(invocation mcpInvocation) error {
+	if os.Chdir(invocation.cwd) != nil {
+		return errRuntimeMCP
+	}
+	os.Clearenv()
+	for _, entry := range invocation.env {
+		key, value, _ := strings.Cut(entry, "=")
+		if os.Setenv(key, value) != nil {
+			return errRuntimeMCP
+		}
+	}
+	return nil
 }

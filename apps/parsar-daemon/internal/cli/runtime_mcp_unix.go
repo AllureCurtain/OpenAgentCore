@@ -3,22 +3,13 @@
 package cli
 
 import (
-	"os"
 	"os/exec"
-	"strings"
 	"syscall"
 )
 
 func execRuntimeMCP(invocation mcpInvocation) error {
-	if os.Chdir(invocation.cwd) != nil {
-		return errRuntimeMCP
-	}
-	os.Clearenv()
-	for _, entry := range invocation.env {
-		key, value, _ := strings.Cut(entry, "=")
-		if os.Setenv(key, value) != nil {
-			return errRuntimeMCP
-		}
+	if err := configureMCPProcess(invocation); err != nil {
+		return err
 	}
 	command, err := exec.LookPath(invocation.command)
 	if err != nil {
