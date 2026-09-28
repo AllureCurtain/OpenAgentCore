@@ -71,6 +71,6 @@ func discoverMCodeWorkspace(rc *runContext, discovery *agentCLIDiscovery) {
 	discovery.MCodeWorkspace = &c
 	caps := &discovery.MCode.Capabilities
 	caps.EnvironmentNone = false
-	caps.Preparation, caps.LocalEnvironment, caps.LocalEnvironmentNetworkPolicy = true, true, true
+	caps.Preparation, caps.LocalEnvironment = true, true
 	caps.WorkspaceReadPreparation = true
 }

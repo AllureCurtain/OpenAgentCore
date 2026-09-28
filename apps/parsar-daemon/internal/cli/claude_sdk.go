@@ -94,7 +94,7 @@ func discoverClaudeSDK(rc *runContext, profile string, check func(context.Contex
 		}
 		caps := &out.Info.Capabilities
 		caps.EnvironmentNone, caps.FunctionTools = false, info.SupportsWorkspaceFunctions()
-		caps.Preparation, caps.LocalEnvironment, caps.LocalEnvironmentNetworkPolicy = true, true, true
+		caps.Preparation, caps.LocalEnvironment = true, true
 		caps.WorkspaceReadPreparation, caps.NativeSessionRecovery = true, true
 	}
 	out.Info.Available, out.Info.Version = true, info.SDK
