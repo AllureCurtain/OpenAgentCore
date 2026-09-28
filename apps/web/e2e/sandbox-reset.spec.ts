@@ -138,9 +138,13 @@ test("an applied reset with a lost response stays blocked through failed reads a
   await setDeployment(request, { resources: { allocations: 1, pending: 0 } });
   await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
   await expect(page.getByRole("button", { name: "Reset deployment", exact: true })).toBeEnabled();
-  let failReads = true;
+  let failReads = false;
   await page.route(resetURL, async (route) => {
-    await route.fetch(); // Core accepted the mutation, but its response never reached this browser.
+    if (route.request().method() !== "POST") return route.continue();
+    const accepted = await route.fetch(); // Core accepted the mutation, but its response never reached this browser.
+    expect(accepted.ok()).toBe(true);
+    // Only fail reconciliation reads after acceptance; earlier reads must allow the explicit submission.
+    failReads = true;
     await route.abort("failed");
   });
   await page.route(deploymentURL, (route) => failReads ? route.fulfill(unavailable) : route.continue());
