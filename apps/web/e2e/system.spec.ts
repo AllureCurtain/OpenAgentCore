@@ -20,6 +20,11 @@ test("sets, replaces and clears a harness's default model provider, and keeps it
 
   await codex.getByRole("button", { name: "Set the default model provider for Codex" }).click();
   const set = page.getByRole("dialog", { name: "Set default model provider for Codex" });
+  await expect(set.getByRole("combobox", { name: "Protocol", exact: true })).toHaveText("OpenAI Responses");
+  await set.getByRole("combobox", { name: "Protocol", exact: true }).click();
+  await expect(page.getByRole("option")).toHaveText(["Anthropic Messages", "OpenAI Responses", "OpenAI Chat Completions"]);
+  await page.screenshot({ path: test.info().outputPath("provider-protocol-options.png"), animations: "disabled" });
+  await page.getByRole("option", { name: "OpenAI Chat Completions", exact: true }).click();
   await set.getByLabel("Base URL").fill("https://model.example/v1");
   await set.getByLabel("API key").fill(KEY);
   await expect(set).toContainText("Your application specifies the model in the Agent’s model field.");
@@ -46,20 +51,26 @@ test("sets, replaces and clears a harness's default model provider, and keeps it
   await set.getByLabel("Context window").fill("200000");
   await set.getByRole("button", { name: "Save" }).click();
   await expect(set).toBeHidden();
-  for (const text of ["OpenAI Responses", "https://model.example/v1", "Configured", "200,000", "32,000"]) await expect(codex).toContainText(text);
+  for (const text of ["OpenAI Chat Completions", "https://model.example/v1", "Configured", "200,000", "32,000"]) await expect(codex).toContainText(text);
   expect(await page.content()).not.toContain(KEY);
 
   // Replacing starts from the saved fields but never from the key; closing the form forgets a typed key.
   await codex.getByRole("button", { name: "Replace the default model provider for Codex" }).click();
   let replace = page.getByRole("dialog", { name: "Replace default model provider for Codex" });
+  await expect(replace.getByRole("combobox", { name: "Protocol", exact: true })).toHaveText("OpenAI Chat Completions");
   await expect(replace.getByLabel("Base URL")).toHaveValue("https://model.example/v1");
   await expect(replace.getByLabel("API key")).toHaveValue("");
   await expect(replace.getByRole("button", { name: "Save" })).toBeDisabled();
   await replace.getByLabel("API key").fill(KEY);
+  await replace.getByRole("combobox", { name: "Protocol", exact: true }).click();
+  await page.getByRole("option", { name: "Anthropic Messages", exact: true }).click();
   await replace.getByRole("button", { name: "Cancel" }).click();
   expect(await page.content()).not.toContain(KEY);
   await codex.getByRole("button", { name: "Replace the default model provider for Codex" }).click();
   replace = page.getByRole("dialog", { name: "Replace default model provider for Codex" });
+  await expect(replace.getByRole("combobox", { name: "Protocol", exact: true })).toHaveText("OpenAI Chat Completions");
+  await replace.getByRole("combobox", { name: "Protocol", exact: true }).click();
+  await page.getByRole("option", { name: "Anthropic Messages", exact: true }).click();
   await expect(replace.getByLabel("API key")).toHaveValue("");
   await replace.getByLabel("Base URL").fill("https://model.example/v2");
   await replace.getByLabel("API key").fill(KEY);
@@ -67,6 +78,7 @@ test("sets, replaces and clears a harness's default model provider, and keeps it
   await replace.getByLabel("API key").press("Enter");
   await expect(replace).toBeHidden();
   await expect(codex).toContainText("https://model.example/v2");
+  await expect(codex).toContainText("Anthropic Messages");
 
   await codex.getByRole("button", { name: "Clear the default model provider for Codex" }).click();
   const confirm = page.getByRole("dialog", { name: "Clear default model provider" });
@@ -77,6 +89,9 @@ test("sets, replaces and clears a harness's default model provider, and keeps it
   // MiniMax Code needs both limits; the form shows Core's reason. A disabled harness may still be configured.
   await mcode.getByRole("button", { name: "Set the default model provider for MiniMax Code" }).click();
   const limits = page.getByRole("dialog", { name: "Set default model provider for MiniMax Code" });
+  await expect(limits.getByRole("combobox", { name: "Protocol", exact: true })).toHaveText("Anthropic Messages");
+  await limits.getByRole("combobox", { name: "Protocol", exact: true }).click();
+  await page.getByRole("option", { name: "OpenAI Responses", exact: true }).click();
   await limits.getByLabel("Base URL").fill("https://model.example/anthropic");
   await limits.getByLabel("API key").fill(KEY);
   await limits.getByRole("button", { name: "Save" }).click();

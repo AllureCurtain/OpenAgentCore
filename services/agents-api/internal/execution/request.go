@@ -22,13 +22,13 @@ func (d *Dispatcher) executionRequest(ctx context.Context, session store.Session
 	}
 	options := map[string]any{}
 	if snapshot.ModelProviderConfigured {
-		options, err = d.sessionModelOptions(ctx, session, snapshot.Agent.Model)
+		options, err = d.sessionModelOptions(ctx, session)
 		if err != nil {
 			return proto.PromptRequestPayload{}, err
 		}
 	} else if snapshot.Environment != nil && v1.ModelProviderRequired(snapshot.Environment.Type) {
-		// A Session from before deployment defaults moved into Core. Without a
-		// bundle its harness would fall back to a built-in endpoint and hang.
+		// Require the frozen bundle before dispatch so the harness cannot
+		// select an implicit provider endpoint.
 		return proto.PromptRequestPayload{}, store.ErrModelProviderRequired
 	} else if d.Options != nil {
 		options, err = d.Options(ctx, session)

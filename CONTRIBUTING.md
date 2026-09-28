@@ -2403,8 +2403,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   creation with `model_provider_required`; legacy rows without a snapshot are
   rejected at message admission and dispatch, never sent to a harness that would
   fall back to a built-in endpoint. There is no operator options file: its
-  retirement fails startup, and historical snapshots keep their frozen native
-  options. Keep runtime dispatch on the common adapter path and fail closed for
+  retirement fails startup. Sessions retain only the common frozen provider
+  bundle; historical native-option snapshots are unsupported. Keep runtime dispatch on the common adapter path and fail closed for
   missing/decryption-failed snapshots. Agent edits/deletion, default changes,
   restart and idle suspend/resume never resolve defaults again. Record caller
   intent for every new hosted Session before resolving defaults; other inline
@@ -2423,6 +2423,25 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   identity; retries cannot replace it. Keep this administrator query separate from
   runtime observations and do not touch activity or wake sandboxes. The versioned
   contract is `contracts/agents-api/execution-configuration.md`.
+- Model communication uses `internal/modeltransport` in the Runtime. Core sends one
+  frozen confidential `model_provider` bundle, independent of engine and placement;
+  it must not manufacture native provider options or retain a historical-options
+  dispatch path. The adapter declares native protocols. Native matches connect
+  directly; mismatches use one private loopback endpoint owned by the existing
+  Session execution resource. Its credential is distinct from the upstream key.
+  Keep endpoint cleanup on final native teardown, including preparation failure,
+  rather than on individual Turn completion. No second Session manager is added.
+  CLIProxyAPI's pinned translator is an embedded conversion dependency, not a
+  gateway service. Requests, JSON responses and incremental SSE events share the
+  same conversion implementation for hosted and self-hosted execution. The
+  dependency owns protocol fields, tools, reasoning and usage conversion. Do not
+  add local field maps, parameter restoration or parallel compatibility rules.
+  Keep SDK format selection, HTTP/SSE framing, limits, cancellation and resource
+  cleanup here. Pin dependency versions and qualify upgrades with contract and
+  native engine tests; document upstream limitations instead of silently promising
+  lossless conversion. Preserve model identity, reject incomplete streams and
+  never redirect upstream credentials. See `contracts/agents-api/model-protocol-conversion.md` for coverage,
+  limits and dependency qualification. Go 1.26.8 is the pinned build toolchain.
 - Provider input validation uses the adapter-owned rules in `internal/harnessconfig`.
   Keep one internal registry for protocol and token-limit validation; Core owns
   credential environment and endpoint admission policy. These rules are not a
@@ -3456,7 +3475,7 @@ Do not bypass them by dropping fields, changing model identity or fabricating us
 Operators may configure the daemon provider environment or the deployment default
 model provider for `claude_sdk` (HTTPS `base_url` and a write-only key), which Core
 freezes in the Session's encrypted snapshot and delivers as the adapter-owned
-`claude_provider`; it never enters public Session configuration. The adapter exclusively selects the
+`model_provider`; it never enters public Session configuration. The adapter exclusively selects the
 provider environment and removes credentials from native tool environments. Product `claude_code` and product execution are unchanged.
 The `none` public profile accepts only
 text, explicit model/system instructions, managed state, exact native resume and

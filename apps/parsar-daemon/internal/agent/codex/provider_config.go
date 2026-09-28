@@ -18,8 +18,8 @@ import (
 const oacProviderSlug = "oac"
 
 // providerConfig is the daemon-internal view of the model provider the
-// server-side injector resolved for this prompt. Flattened from
-// agent_options["codex_provider"] (a string-keyed map) into a typed
+// Runtime prepared for this Session. Flattened from the common
+// agent_options["model_provider"] bundle into a typed
 // struct before TOML emission. Field names mirror the codex-rs
 // ModelProviderInfo enum (model-provider-info/src/lib.rs) so the
 // rendered TOML deserialises 1:1 against upstream.

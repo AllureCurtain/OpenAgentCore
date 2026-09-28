@@ -3,14 +3,15 @@ package store_test
 import (
 	"bytes"
 	"encoding/json"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/device"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/api"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/credentialcrypto"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 	"github.com/google/uuid"
-	"net/http/httptest"
-	"strings"
-	"testing"
 )
 
 func TestModelExecutionHTTPWriteOnlyAndStrictAdmission(t *testing.T) {
@@ -58,7 +59,19 @@ func TestModelExecutionHTTPWriteOnlyAndStrictAdmission(t *testing.T) {
 	if w := call("POST", "/v1/agents/sessions", strings.Replace(body, "model-http-canary", "changed-key", 1), key); w.Code != 409 {
 		t.Fatal("conflicting credentials accepted", w.Code)
 	}
-	for _, invalid := range []string{strings.Replace(body, `"protocol":"responses"`, `"protocol":"anthropic"`, 1), strings.Replace(body, `"api_key":"model-http-canary"`, `"api_key":"model-http-canary","unknown":true`, 1), strings.Replace(body, `"type":"openai_hosted"`, `"type":"none"`, 1), strings.Replace(body, `"api_key":"model-http-canary"`, `"api_key":null`, 1)} {
+	for _, protocol := range []string{"anthropic", "chat_completions"} {
+		crossProtocol := strings.Replace(body, `"protocol":"responses"`, `"protocol":"`+protocol+`"`, 1)
+		response := call("POST", "/v1/agents/sessions", crossProtocol, uuid.NewString())
+		var created struct{ ID string }
+		if response.Code != 201 || json.Unmarshal(response.Body.Bytes(), &created) != nil || created.ID == "" {
+			t.Fatalf("cross-protocol Session rejected: %d", response.Code)
+		}
+		provider, err := st.SessionModelExecution(t.Context(), tenant, created.ID)
+		if err != nil || provider == nil || provider.Protocol != protocol || provider.BaseURL != "https://example.com/v1" || provider.APIKey != "model-http-canary" {
+			t.Fatal("Session did not freeze its complete upstream bundle", err)
+		}
+	}
+	for _, invalid := range []string{strings.Replace(body, `"protocol":"responses"`, `"protocol":"unknown"`, 1), strings.Replace(body, `"api_key":"model-http-canary"`, `"api_key":"model-http-canary","unknown":true`, 1), strings.Replace(body, `"type":"openai_hosted"`, `"type":"none"`, 1), strings.Replace(body, `"api_key":"model-http-canary"`, `"api_key":null`, 1)} {
 		if w := call("POST", "/v1/agents/sessions", invalid, uuid.NewString()); w.Code != 400 {
 			t.Fatalf("invalid execution accepted: %d %s", w.Code, w.Body)
 		}

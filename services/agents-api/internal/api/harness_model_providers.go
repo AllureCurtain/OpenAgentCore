@@ -141,7 +141,7 @@ var harnessModelProviderShape = shape{kind: objectValue, members: []member{
 }}
 
 // @Summary Replace a harness's deployment default model provider
-// @Description Core key only. The body is the complete x_agents_core.model_provider bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, the harness's protocol (responses for codex, anthropic for claude_sdk and mcode) and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions that resolve no Session or Agent bundle freeze this default into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key.
+// @Description Core key only. The body is the complete x_agents_core.model_provider bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, an upstream protocol (responses, anthropic or chat_completions), automatically adapted by Runtime to the selected harness and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions that resolve no Session or Agent bundle freeze this default into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key.
 // @Tags Deployment Model Providers
 // @Accept json
 // @Produce json

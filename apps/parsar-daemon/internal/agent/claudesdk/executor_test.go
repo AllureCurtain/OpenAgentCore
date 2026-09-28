@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -144,14 +145,35 @@ func awaitExecutorTurn(t *testing.T, turn agent.Turn, out <-chan proto.Envelope,
 }
 func TestExecutorRetainsProcessAcrossTurnsAndCancellation(t *testing.T) {
 	config, req := persistentConfig(t, "")
+	req.AgentOptions["model_provider"] = map[string]any{
+		"protocol": "chat_completions", "base_url": "https://provider.example/v1", "api_key": "fixture-key",
+	}
 	owner, err := NewExecutorFactory(config)(t.Context(), req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer owner.Close(context.Background())
 	pid := owner.(*executor).base.process.Cmd.Process.Pid
+	endpoint := owner.(*executor).modelEndpoint
+	if endpoint == nil {
+		t.Fatal("missing model conversion endpoint")
+	}
+	client := &http.Client{Timeout: time.Second}
+	checkEndpoint := func() {
+		t.Helper()
+		response, err := client.Get(endpoint.BaseURL + "/v1/messages")
+		if err != nil {
+			t.Fatal("model endpoint closed before Executor", err)
+		}
+		response.Body.Close()
+		if response.StatusCode != http.StatusUnauthorized {
+			t.Fatal("model endpoint lost its credential boundary")
+		}
+	}
+	checkEndpoint()
 	first, out := consumeExecutorTurn(t, owner, "first", "hello")
 	awaitExecutorTurn(t, first, out, true)
+	checkEndpoint()
 	next, out := consumeExecutorTurn(t, owner, "next", "wait")
 	if event := <-out; event.Type != proto.TypeDelta {
 		t.Fatal(event.Type)
@@ -163,6 +185,7 @@ func TestExecutorRetainsProcessAcrossTurnsAndCancellation(t *testing.T) {
 		t.Fatal(err)
 	}
 	awaitExecutorTurn(t, next, out, true)
+	checkEndpoint()
 	third, out := consumeExecutorTurn(t, owner, "third", "hello")
 	awaitExecutorTurn(t, third, out, true)
 	if owner.(*executor).base.process.Cmd.Process.Pid != pid {
@@ -172,6 +195,14 @@ func TestExecutorRetainsProcessAcrossTurnsAndCancellation(t *testing.T) {
 	case <-owner.(*executor).base.process.Done():
 		t.Fatal("native process exited between Turns")
 	default:
+	}
+	checkEndpoint()
+	if err := owner.Close(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if response, err := client.Get(endpoint.BaseURL + "/v1/messages"); err == nil {
+		response.Body.Close()
+		t.Fatal("model endpoint survived Executor.Close")
 	}
 }
 func TestExecutorLateTurnEventInvalidatesWithoutRetargeting(t *testing.T) {

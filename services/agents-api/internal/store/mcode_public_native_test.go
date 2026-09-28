@@ -87,11 +87,9 @@ func TestNativeMCodePublicExecution(t *testing.T) {
 			if page, e := h.s.ListTurns(ctx, h.tenant, identity.Session, "", 100, true); e == nil {
 				diagnostic, _ := json.Marshal(page)
 				text := string(diagnostic)
-				if provider, ok := options["mcode_provider"].(map[string]any); ok {
-					if opts, ok := provider["options"].(map[string]any); ok {
-						if key, ok := opts["apiKey"].(string); ok && key != "" {
-							text = strings.ReplaceAll(text, key, "[REDACTED]")
-						}
+				if provider, ok := options["model_provider"].(map[string]any); ok {
+					if key, ok := provider["api_key"].(string); ok && key != "" {
+						text = strings.ReplaceAll(text, key, "[REDACTED]")
 					}
 				}
 				_ = os.WriteFile(filepath.Join(home, "failed-turns.json"), []byte(text), 0600)

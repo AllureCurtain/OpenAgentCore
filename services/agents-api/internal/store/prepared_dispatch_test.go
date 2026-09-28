@@ -163,9 +163,9 @@ func TestSelfHostedProviderReachesOnlyBoundExecutor(t *testing.T) {
 	if frame.DecodePayload(&prepare) != nil {
 		t.Fatal("invalid preparation")
 	}
-	provider, _ := prepare.Configuration.AgentOptions["codex_provider"].(map[string]any)
+	provider, _ := prepare.Configuration.AgentOptions["model_provider"].(map[string]any)
 	fixture := store.FixtureModelProvider("codex")
-	if provider["base_url"] != fixture.BaseURL || provider["bearer_token"] != fixture.APIKey {
+	if provider["base_url"] != fixture.BaseURL || provider["api_key"] != fixture.APIKey {
 		t.Fatal("bound executor did not receive the frozen provider", prepare.Configuration.AgentOptions)
 	}
 	_ = bystander.conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
