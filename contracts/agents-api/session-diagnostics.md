@@ -14,8 +14,10 @@ contact an executor, provision an Environment, repair history or change executio
 
 The object is `core.session_diagnostics`, with `session_id`, official Session
 `status`, and nullable `failure`. Each read uses one repeatable-read database
-snapshot and the existing public status projection. Failure is null unless that
-projection says `failed`. Its fields are:
+snapshot and the existing public status projection. Each Session or Turn snapshot
+read has a five-second budget, shortened by any earlier caller deadline.
+The transaction is closed after the read, including cancellation. Failure is null
+unless that projection says `failed`. Its fields are:
 
 | Field | Value |
 | --- | --- |

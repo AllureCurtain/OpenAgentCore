@@ -66,7 +66,9 @@ func (h *Handler) getSessionDiagnostics(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusServiceUnavailable, "diagnostics_unavailable", "Session diagnostics are unavailable.")
 		return
 	}
-	session, err := source.GetSessionDiagnosticsSnapshot(r.Context(), tenantID(r), chi.URLParam(r, "session_id"))
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	session, err := source.GetSessionDiagnosticsSnapshot(ctx, tenantID(r), chi.URLParam(r, "session_id"))
 	if err != nil {
 		writeStoreError(w, r, err)
 		return
@@ -123,7 +125,9 @@ func (h *Handler) getTurnDiagnostics(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "diagnostics_unavailable", "Session diagnostics are unavailable.")
 		return
 	}
-	snapshot, err := source.GetTurnDiagnosticsSnapshot(r.Context(), tenantID(r), chi.URLParam(r, "session_id"), chi.URLParam(r, "turn_id"))
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	snapshot, err := source.GetTurnDiagnosticsSnapshot(ctx, tenantID(r), chi.URLParam(r, "session_id"), chi.URLParam(r, "turn_id"))
 	if err != nil {
 		writeStoreError(w, r, err)
 		return

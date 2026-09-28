@@ -58,3 +58,13 @@ it.each([
   const value = { ...session, failure: { source: "environment", code: "environment_provisioning_failed", params, failed_at: time } };
   expect(() => projectSessionDiagnostics(value, id)).toThrow();
 });
+
+const provisioning = { source: "environment", code: "environment_provisioning_failed", params: { step: "setup", index: null, exit_code: null }, failed_at: null };
+it.each([
+  ["Session status", () => projectSessionDiagnostics({ ...session, status: ["failed"], failure: null }, id)],
+  ["Turn status", () => projectTurnDiagnostics({ ...snapshot, status: ["failed"], failure: null }, id, turn)],
+  ["failure source", () => projectSessionDiagnostics({ ...session, failure: { ...provisioning, source: ["environment"] } }, id)],
+  ["provisioning step", () => projectSessionDiagnostics({ ...session, failure: { ...provisioning, params: { ...provisioning.params, step: ["setup"] } } }, id)],
+] as const)("rejects arrays in %s", (_field, project) => {
+  expect(project).toThrow();
+});
