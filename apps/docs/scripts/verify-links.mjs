@@ -1,22 +1,5 @@
 #!/usr/bin/env node
-// Fails when a page links to a route that does not exist.
-//
-// The manual is a reading path: install, configure, bootstrap a Project, make a
-// request, add capacity. A link that 404s breaks that path silently, because the
-// page it lives on still renders. This resolves every root-relative link against
-// the page files themselves, so it needs no running server.
-//
-// `content/docs/api-reference/*` is generated in English only, and fumadocs
-// serves the default language for a missing translation, so a Chinese page may
-// link to the English route and have it resolve. A link is therefore accepted
-// when the target exists in either locale.
-//
-// Markdown that is not a page - the README - is checked too, against the
-// filesystem, because its links are relative file paths. Removing a file it
-// points at is otherwise invisible until a reviewer clicks it.
-//
-// Read-only. Run from apps/docs: node scripts/verify-links.mjs
-
+// Validate documentation routes, anchors and package README file links.
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -35,28 +18,20 @@ function mdxFiles(dir) {
   return out
 }
 
-// index.mdx is the directory itself; index.zh.mdx is its Chinese counterpart.
 function routeOf(file) {
-  const rel = path.relative(contentRoot, file).replace(/\.mdx$/, "")
-  const parts = rel.split(path.sep)
-  let name = parts.pop()
-  const isZh = name.endsWith(".zh")
-  if (isZh) name = name.slice(0, -3)
-  const slug = name === "index" ? parts.join("/") : [...parts, name].join("/")
-  const base = slug ? `/${slug}` : "/"
-  return isZh ? (base === "/" ? "/zh" : `/zh${base}`) : base
+  const rel = path.relative(contentRoot, file).split(path.sep).join("/")
+    .replace(/\.mdx$/, "").replace(/(^|\/)index$/, "").replace(/\/$/, "")
+  return rel ? `/${rel}` : "/"
 }
 
 const files = mdxFiles(contentRoot)
-const routes = new Set(files.map(routeOf))
 
 function resolves(target) {
   const [rawPath, anchor] = target.split("#")
-  const clean = rawPath.split("?")[0].replace(/^\/en(?=\/|$)/, "") || "/"
+  const clean = rawPath.split("?")[0] || "/"
   if (clean.startsWith("/images/")) return fs.existsSync(path.join(appRoot, "public", clean))
   const route = clean.length > 1 ? clean.replace(/\/+$/, "") : clean
-  const bare = route === "/zh" ? "/" : route.startsWith("/zh/") ? route.slice(3) : route
-  const targetFile = files.find(file => routeOf(file) === bare)
+  const targetFile = files.find(file => routeOf(file) === route)
   if (!targetFile) return false
   if (!anchor) return true
   const text = fs.readFileSync(targetFile, "utf8")

@@ -1,20 +1,5 @@
 #!/usr/bin/env node
-// Smoke-checks every documentation page against a running server.
-//
-// A page that exists on disk but 404s in the browser is the failure this catches:
-// a missing layout, a bad slug, or a locale route that was never generated.
-//
-// Both locales are probed for every page, including pages that have no translated
-// twin. That is deliberate: Fumadocs falls back to the default language for an
-// untranslated page, so `/zh/api-reference/files` is a real, reachable URL even
-// though only `api-reference/files.mdx` exists on disk. The Chinese manual links
-// into those pages freely, so both forms have to resolve.
-//
-// Not part of `pnpm verify`, because it needs a built site that is already
-// serving. Usage, after `pnpm build && pnpm start`:
-//
-//   node scripts/check-site.mjs [origin]        # default http://127.0.0.1:4001
-
+// Check every English documentation route against a running built site.
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
@@ -35,12 +20,11 @@ function walk(dir) {
 
 // content/docs/index.mdx            -> /
 // content/docs/foo.mdx              -> /foo
-// content/docs/foo.zh.mdx           -> /foo        (the zh twin of the same route)
 // content/docs/a/index.mdx          -> /a
 // content/docs/a/b.mdx              -> /a/b
 function slugFor(file) {
   let rel = path.relative(contentRoot, file).split(path.sep).join("/")
-  rel = rel.replace(/\.zh\.mdx$/, "").replace(/\.mdx$/, "").replace(/(^|\/)index$/, "")
+  rel = rel.replace(/\.mdx$/, "").replace(/(^|\/)index$/, "")
   return rel.replace(/\/$/, "")
 }
 
@@ -48,7 +32,6 @@ const slugs = [...new Set(walk(contentRoot).map(slugFor))].sort()
 const routes = []
 for (const slug of slugs) {
   routes.push(slug ? `/${slug}` : "/")
-  routes.push(slug ? `/zh/${slug}` : "/zh")
 }
 
 const failures = []
@@ -78,4 +61,4 @@ if (failures.length > 0) {
   for (const line of failures.sort()) console.error(`  ${line}`)
   process.exit(1)
 }
-console.log(`${checked} routes returned 200 at ${origin} (${slugs.length} pages, both locales).`)
+console.log(`${checked} routes returned 200 at ${origin} (${slugs.length} pages).`)

@@ -180,7 +180,7 @@ func TestSubagentFactsPrecedeFrozenRootTerminal(t *testing.T) {
 
 func TestSubagentRootFirstRetainsChildUntilTerminal(t *testing.T) {
 	s, f, out := observationSession(t, "inProgress")
-	s.emitDone("frozen", nil)
+	s.emitDoneAt("frozen", nil, nil)
 	for i := 0; i < 4; i++ {
 		select {
 		case e := <-out:
@@ -208,7 +208,7 @@ func TestSubagentRootFirstRetainsChildUntilTerminal(t *testing.T) {
 
 func TestSubagentCancellationAfterRootFrozenCollectsNativeTerminal(t *testing.T) {
 	s, f, out := observationSession(t, "inProgress")
-	s.emitDone("frozen", nil)
+	s.emitDoneAt("frozen", nil, nil)
 	for i := 0; i < 4; i++ {
 		select {
 		case <-out:

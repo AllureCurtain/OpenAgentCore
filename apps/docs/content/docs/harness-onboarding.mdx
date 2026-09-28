@@ -1,14 +1,17 @@
-# Add a native harness to OpenAgentCore
+---
+title: "Add a Harness"
+description: "Implement and validate a native Harness adapter."
+---
 
 Implement one adapter for a native SDK or machine-readable protocol. Core and
 Runtime use the common contract; adding a harness should not add engine-name
 branches to public handlers, storage, scheduling or environment providers.
 
-The [harness contract](harnesses.md) defines observable behavior. Start with the
-[developer guide](../../docs/development.md) for a working checkout; the
-[contributor guide](../../CONTRIBUTING.md#harness-qualification-and-onboarding)
+The [harness contract](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/contracts/agents-api/harnesses.md) defines observable behavior. Start with the
+[developer guide](/development) for a working checkout; the
+[contributor guide](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/CONTRIBUTING.md#harness-qualification-and-onboarding)
 owns architecture and required checks. The pinned public Agents API in
-[upstream.json](upstream.json) is separate from the internal adapter protocol.
+[upstream.json](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/contracts/agents-api/upstream.json) is separate from the internal adapter protocol.
 
 ## Ownership
 
@@ -38,21 +41,21 @@ machines differ in provisioning and connection; their connected Runtime uses thi
 same contract. Operating-system support belongs in the implementation and its
 qualification. Self-hosted Runtime supports Linux, macOS and Windows; managed Providers remain
 Linux-only. A platform-neutral interface alone does not qualify a harness on
-another platform. See [native Runtime validation](../../docs/self-hosted-native.md)
+another platform. See [native Runtime validation](/self-hosted-native)
 for the current acceptance limits. Resource management owns machine selection, allocation and Environment creation
 and reclamation. Executor close does not release that allocation or delete the
 workspace. Environment reclamation is an explicit resource-management action that
 coordinates with execution. Runtime connection, installed capability snapshot,
 Session Executor and Turn each have their own lifetime. Native factories receive
 capabilities only after the common Runtime has loaded its bound installed snapshot;
-see [capability preparation](environments.md#runtime-capability-preparation).
+see [capability preparation](/environments-and-files#runtime-capability-preparation).
 Model providers supply
 model communication configuration, not Turn scheduling or native process ownership.
 
 ## Required adapter interfaces
 
 The canonical signatures and ownership comments are in
-[`agent/executor.go`](../../apps/parsar-daemon/internal/agent/executor.go):
+[`agent/executor.go`](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/apps/parsar-daemon/internal/agent/executor.go):
 
 ```go
 type ExecutorFactory func(context.Context, proto.PromptRequestPayload) (Executor, error)
@@ -104,7 +107,7 @@ semantics in each case.
 
 ## Events, inputs and optional capabilities
 
-Use [`internal/agentdaemon/proto`](../../internal/agentdaemon/proto) for neutral
+Use [`internal/agentdaemon/proto`](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/internal/agentdaemon/proto) for neutral
 requests, events and receipts. Each Turn emits only its own events with its Run ID,
 in order, and one terminal outcome. Native IDs and usage must be observed rather
 than invented. Capture the originating Turn before asynchronous native callbacks;
@@ -150,7 +153,7 @@ lifecycle.
 The static registration surface requires a build. Dynamic plugins are outside
 this contract. A small adapter does not remove the need for native qualification.
 The runnable test-only example is
-[`testdata/onboarding/main.go`](../../apps/parsar-daemon/testdata/onboarding/main.go).
+[`testdata/onboarding/main.go`](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/apps/parsar-daemon/testdata/onboarding/main.go).
 It registers a text-only synthetic harness and is never shipped as a real engine.
 
 ## Required behavior versus optional operations
@@ -169,14 +172,14 @@ explicitly and record the gap. Never advertise a capability to bypass selection.
 Structured-output adapters consume `ExecutionControls.OutputFormat` and publish
 confirmed native output through the existing Message contract. Register public
 qualification separately from the Runtime capability; see the
-[structured-output boundary](structured-output.md). No Core engine-name branch is required.
+[structured-output boundary](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/contracts/agents-api/structured-output.md). No Core engine-name branch is required.
 
 Initial requests, `Executor.StartTurn` and steering consume the same ordered
 `proto.MessageInput`. Text-only adapters use `TextOnly()` to reject images without
 discarding content. Image adapters translate each part natively and acknowledge
 an active batch only after all its messages are applied. Register
 `MessageImages` and qualify `MessageImagePlacements` separately; see the
-[message-input contract and real acceptance](message-input.md).
+[message-input contract and real acceptance](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/contracts/agents-api/message-input.md).
 
 Hosted workspace execution additionally requires verified preparation, workspace
 reads/output export, network behavior and credential/history isolation. Reuse the
@@ -208,7 +211,7 @@ it does not expand to match another harness's feature list.
   development, then `make check` and applicable real regressions. API changes
   require `make openapi`; query changes require `make sqlc-generate`.
 - Review: follow the repository
-  [blind review workflow](../../CONTRIBUTING.md#workflow-and-quality).
+  [blind review workflow](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/CONTRIBUTING.md#workflow-and-quality).
 
 Record exact revisions, image/package versions, commands, results and limits.
 Keep keys in private operator files; never commit them or include them in logs or
@@ -218,7 +221,7 @@ full board. Acceptance of one engine is not complete public protocol compatibili
 
 ## Minimal runnable example and native references
 
-[`testdata/onboarding/main.go`](../../apps/parsar-daemon/testdata/onboarding/main.go)
+[`testdata/onboarding/main.go`](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/apps/parsar-daemon/testdata/onboarding/main.go)
 is a runnable synthetic adapter. It demonstrates registration, a Session-owned
 Executor, fresh Turns, durable steering, cancellation and history binding through
 the actual gateway and Router. Run `TestThirdHarnessPublicOnboarding` against a
@@ -227,20 +230,22 @@ not shipped and is not evidence for a real SDK or sandbox.
 
 Use the native adapters as implementation references after choosing a native API:
 
-- [Codex](../../apps/parsar-daemon/internal/agent/codex/executor.go): app-server transport.
-- [Claude](../../apps/parsar-daemon/internal/agent/claudesdk/executor.go): Go ownership and a [TypeScript SDK bridge](../../packages/claude-sdk-adapter/README.md).
-- [MiniMax](../../apps/parsar-daemon/internal/agent/mcode): ACP and native workspace companion.
+- [Codex](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/apps/parsar-daemon/internal/agent/codex/executor.go): app-server transport.
+- [Claude](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/apps/parsar-daemon/internal/agent/claudesdk/executor.go): Go ownership and a [TypeScript SDK bridge](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/packages/claude-sdk-adapter/README.md).
+- [MiniMax](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/apps/parsar-daemon/internal/agent/mcode): ACP and native workspace companion.
 
 Start with the mandatory text lifecycle, then qualify optional operations using
-[harness coverage](harnesses.md) and each operation's contract. Do not copy an
+[harness coverage](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/contracts/agents-api/harnesses.md) and each operation's contract. Do not copy an
 adapter's native limitations into the shared Core protocol.
 
 ## Optional Subagent observations
 
 A harness that supports the Subagent resource reads implements the existing
-[neutral observation contract](subagents.md#common-adapter-contract). It reports
+[neutral observation contract](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/contracts/agents-api/subagents.md#common-adapter-contract). It reports
 verified child identity, lifecycle effects and owned Turn/Item history through
 the authenticated Run, then qualifies those facts with real execution. It does
 not add routes, storage branches or a harness-specific Core scheduler. Report
 unsupported native facts explicitly; completing a child task is not closing its
 Subagent. Native background work must remain owned through settlement and cancel.
+
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/codex/core-simplify-docs-20260929/contracts/agents-api/harness-onboarding.md)

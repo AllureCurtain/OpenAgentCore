@@ -36,6 +36,9 @@ ARTIFACTS = {
 # bundle's commit, so no bundled link leads outside the bundle.
 BUNDLED_DOCS = (
     "README.md",
+    "README.zh-CN.md",
+    "docs/user-guide.md",
+    "docs/development.md",
     "docs/configuration.md",
     "docs/getting-started/README.md",
     "docs/getting-started/install.md",
