@@ -105,7 +105,7 @@ func prepareConfiguration(config Config, req proto.PromptRequestPayload) (startR
 	}
 	var provider []string
 	for name, raw := range req.AgentOptions {
-		if name == "claude_provider" {
+		if name == "model_provider" {
 			var err error
 			provider, err = providerEnvironment(raw)
 			if err != nil {

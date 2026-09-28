@@ -1186,7 +1186,7 @@ export type CoreHarnessKind = "claude_sdk" | "codex" | "mcode";
 
 /** A complete replacement bundle. API keys are write-only. */
 export interface ModelProviderInput {
-  protocol: "anthropic" | "responses";
+  protocol: "anthropic" | "responses" | "chat_completions";
   base_url: string;
   api_key: string;
   context_window?: number;
@@ -1195,7 +1195,7 @@ export interface ModelProviderInput {
 }
 
 export interface ModelProviderView {
-  protocol: "anthropic" | "responses";
+  protocol: "anthropic" | "responses" | "chat_completions";
   base_url: string;
   context_window?: number;
   max_output_tokens?: number;

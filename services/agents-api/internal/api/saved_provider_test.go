@@ -131,7 +131,7 @@ func TestSavedProviderInvalidInput(t *testing.T) {
 		`{"model_provider":{"protocol":"responses","base_url":"https://user:saved-provider-secret@example.test","api_key":"saved-provider-secret"}}`,
 		`{"model_provider":{"protocol":"responses","base_url":"https://example.test","api_key":"saved-provider-secret","API_KEY":"secret"}}`,
 		`{"model_provider":{"protocol":"responses","base_url":"https://example.test","api_key":"saved-provider-secret","api_key":"other"}}`,
-		`{"harness":"claude_sdk","model_provider":` + savedProviderFixture + `}`,
+		`{"harness":"claude_sdk","model_provider":` + strings.Replace(savedProviderFixture, `"responses"`, `"unknown"`, 1) + `}`,
 		`{"model_provider":` + strings.Replace(savedProviderFixture, `"max_output_tokens":8000`, `"max_output_tokens":100001`, 1) + `}`,
 	} {
 		for _, path := range []string{"/v1/agents", "/v1/agents/" + uuid.NewString()} {
@@ -140,6 +140,37 @@ func TestSavedProviderInvalidInput(t *testing.T) {
 			if response.Code != http.StatusBadRequest || s.writes != 0 || strings.Contains(response.Body.String(), "saved-provider-secret") {
 				t.Fatalf("extension=%s status=%d writes=%d body=%s", extension, response.Code, s.writes, response.Body)
 			}
+		}
+	}
+}
+
+func TestSavedProviderProtocolHarnessMatrix(t *testing.T) {
+	for _, harness := range []string{"codex", "claude_sdk", "mcode"} {
+		for _, protocol := range []string{"anthropic", "responses", "chat_completions"} {
+			t.Run(harness+"/"+protocol, func(t *testing.T) {
+				h, recording, _ := testHandler(t)
+				s := &savedProviderStore{}
+				recording.ResourceStore = s
+				provider := strings.Replace(savedProviderFixture, `"responses"`, `"`+protocol+`"`, 1)
+				body := `{"model":"fixture","x_agents_core":{"harness":"` + harness + `","model_provider":` + provider + `}}`
+				for _, path := range []string{"/v1/agents", "/v1/agents/" + uuid.NewString()} {
+					response := credentialRequest(h, http.MethodPost, path, body)
+					want := http.StatusOK
+					if path == "/v1/agents" {
+						want = http.StatusCreated
+					}
+					if response.Code != want || s.provider == nil || s.provider.Protocol != protocol || s.provider.APIKey != "saved-provider-secret" {
+						t.Fatalf("provider bundle rejected or changed: status=%d", response.Code)
+					}
+					assertSavedProviderRedacted(t, response.Body.String())
+					var result struct {
+						Core v1.SavedAgentCore `json:"x_agents_core"`
+					}
+					if json.Unmarshal(response.Body.Bytes(), &result) != nil || result.Core.Harness != harness || result.Core.ModelProvider == nil || result.Core.ModelProvider.Protocol != protocol {
+						t.Fatal("safe view changed the selected harness or upstream protocol")
+					}
+				}
+			})
 		}
 	}
 }

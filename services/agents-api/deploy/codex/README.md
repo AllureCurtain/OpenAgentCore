@@ -171,11 +171,12 @@ Node providers use explicit local Unix Docker sockets, ignoring ambient
 socket is mounted in a Runtime. Caller-managed `self_hosted` enrollment retains
 its separate public lifecycle.
 
-Hosted Codex needs a Responses-compatible model provider: either the Session's
+Hosted Codex needs a model provider: either the Session's
 `x_agents_core.model_provider` or the deployment default for `codex`, set with the
 Core key in Web or through `PUT /core/v1/harnesses/codex/model-provider`. Core
 freezes the bundle in the Session's encrypted snapshot and delivers it as the
-adapter's `codex_provider`; a hosted Session without one is rejected with 400
+common `model_provider` bundle. Runtime automatically adapts Chat Completions or
+Anthropic to Codex Responses; a hosted Session without a provider is rejected with 400
 `model_provider_required`. Do not place credentials in images.
 
 With the qualified Codex image and Docker provider configured, create an idle or

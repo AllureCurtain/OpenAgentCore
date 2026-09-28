@@ -32,7 +32,7 @@ function safeBaseURL(value: string): boolean {
 /** The safe provider view shared by frozen Session configuration and saved Agent reads. */
 export function safeProvider(value: unknown, invalid: Invalid): ModelProviderView {
   if (!isRecord(value) || !onlyFields(value, providerFields) ||
-    (value.protocol !== "responses" && value.protocol !== "anthropic") ||
+    (value.protocol !== "responses" && value.protocol !== "anthropic" && value.protocol !== "chat_completions") ||
     typeof value.base_url !== "string" || typeof value.api_key_configured !== "boolean" ||
     (value.context_window !== undefined && !isNonnegativeInteger(value.context_window)) ||
     (value.max_output_tokens !== undefined && !isNonnegativeInteger(value.max_output_tokens)) ||

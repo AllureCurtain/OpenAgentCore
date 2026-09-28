@@ -28,26 +28,31 @@ func TestSavedProviderSafeView(t *testing.T) {
 }
 
 func TestSavedProviderExplicitHarnessCompatibility(t *testing.T) {
-	for _, tc := range []struct {
-		harness, protocol string
-		valid             bool
-	}{
-		{"", "responses", true}, {"", "anthropic", true},
-		{"codex", "responses", true}, {"codex", "anthropic", false},
-		{"claude_sdk", "anthropic", true}, {"claude_sdk", "responses", false},
-		{"mcode", "anthropic", true}, {"mcode", "responses", false},
-	} {
-		t.Run(tc.harness+"/"+tc.protocol, func(t *testing.T) {
-			x := &SavedAgentCoreInput{Harness: tc.harness, ModelProvider: &ModelProviderInput{
-				Protocol: tc.protocol, BaseURL: "https://example.test", APIKey: "fixture", ContextWindow: 100, MaxOutputTokens: 20,
-			}}
-			if err := x.Validate(); (err == nil) != tc.valid {
-				t.Fatalf("valid=%v error=%v", tc.valid, err)
-			}
-		})
+	for _, harness := range []string{"", "codex", "claude_sdk", "mcode"} {
+		for _, protocol := range []string{"anthropic", "responses", "chat_completions"} {
+			t.Run(harness+"/"+protocol, func(t *testing.T) {
+				x := &SavedAgentCoreInput{Harness: harness, ModelProvider: &ModelProviderInput{
+					Protocol: protocol, BaseURL: "https://example.test", APIKey: "fixture", ContextWindow: 100, MaxOutputTokens: 20,
+				}}
+				if err := x.Validate(); err != nil {
+					t.Fatalf("Runtime-translatable saved provider rejected: %v", err)
+				}
+				if harness != "" {
+					if err := x.SafeView().ModelProvider.ValidateHarness(harness); err != nil {
+						t.Fatalf("safe saved provider rejected: %v", err)
+					}
+				}
+			})
+		}
 	}
-	x := &SavedAgentCoreInput{Harness: "mcode", ModelProvider: &ModelProviderInput{Protocol: "anthropic", BaseURL: "https://example.test", APIKey: "fixture"}}
-	if x.Validate() == nil {
-		t.Fatal("MiniMax limits must be complete")
+	for _, protocol := range []string{"anthropic", "responses", "chat_completions"} {
+		for _, limits := range [][2]int32{{0, 0}, {100, 0}, {0, 20}} {
+			x := &SavedAgentCoreInput{Harness: "mcode", ModelProvider: &ModelProviderInput{
+				Protocol: protocol, BaseURL: "https://example.test", APIKey: "fixture", ContextWindow: limits[0], MaxOutputTokens: limits[1],
+			}}
+			if x.Validate() == nil || x.SafeView().ModelProvider.ValidateHarness("mcode") == nil {
+				t.Fatal("MiniMax limits must be complete for every upstream protocol")
+			}
+		}
 	}
 }

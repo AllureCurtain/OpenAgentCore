@@ -76,7 +76,7 @@ export const system: TranslationShape<typeof english> = {
       contextHelpRequired: "模型的上下文窗口，单位为 token。MiniMax Code 必须填写。",
       outputHelp: "模型单次回复最多输出的 token 数。可选；填写时，上下文窗口必须不小于它。",
       outputHelpRequired: "模型单次回复最多输出的 token 数。MiniMax Code 必须填写，且上下文窗口不能小于它。",
-      protocolHelp: "每个执行框架只使用一种协议，Core 不接受其他协议。",
+      protocolHelp: "选择模型服务支持的协议，Runtime 会自动完成协议转换。",
       wholeNumber: "请输入整数。",
       tooLarge: "请输入不超过 2147483647 的整数。",
       needsContext: "请设置不小于该值的上下文窗口。",

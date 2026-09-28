@@ -74,15 +74,15 @@ func prepareOptionsWithSkills(ctx context.Context, req proto.PromptRequestPayloa
 		return result, err
 	}
 	config := map[string]any{"logLevel": "error", "skills": map[string]any{"external": map[string]any{"enabled": false}}}
-	if provider, ok := opts["mcode_provider"].(map[string]any); ok {
-		config["custom_provider"] = map[string]any{"oac": provider}
-	} else {
-		return result, fmt.Errorf("mcode: a OpenAgentCore-managed model is required")
-	}
 	result.Model = optionString(opts, "model")
 	if result.Model == "" {
 		return result, fmt.Errorf("mcode: model is required")
 	}
+	provider, err := modelProviderConfig(opts["model_provider"], result.Model)
+	if err != nil {
+		return result, err
+	}
+	config["custom_provider"] = map[string]any{"oac": provider}
 	if req.StrictResume {
 		configureTextExecution(config)
 		if !req.DisableSubagents {

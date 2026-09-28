@@ -74,7 +74,7 @@ export const system = {
       contextHelpRequired: "The model's context window, in tokens. MiniMax Code needs it.",
       outputHelp: "The most tokens the model writes in one response. Optional; it needs a context window at least as large.",
       outputHelpRequired: "The most tokens the model writes in one response. MiniMax Code needs it, with a context window at least as large.",
-      protocolHelp: "Each harness speaks one protocol; Core accepts no other.",
+      protocolHelp: "Choose the protocol supported by your model provider. Runtime handles protocol conversion automatically.",
       wholeNumber: "Enter a whole number.",
       tooLarge: "Enter a whole number up to 2147483647.",
       needsContext: "Set a context window at least this large.",

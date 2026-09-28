@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
+	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 )
 
 // SessionPlan holds the resolved per-prompt launch plan derived from
@@ -79,23 +80,7 @@ type SessionPlan struct {
 //	env                   map[string]any  extra env vars (KEY=string-value)
 //	mcp_servers           map[string]any  rendered MCP server config — written
 //	                                      to <CODEX_HOME>/config.toml [mcp_servers]
-//	codex_provider        map[string]any  full provider config — written to
-//	                                      <CODEX_HOME>/config.toml
-//	                                      [model_providers.<oacProviderSlug>].
-//	                                      Required for any real prompt; when
-//	                                      missing, codex falls back to its
-//	                                      builtin "openai" provider which only
-//	                                      speaks api.openai.com.
-//	                                      Recognised keys: name (string),
-//	                                      base_url (string, required when
-//	                                      codex_provider is present),
-//	                                      bearer_token (string, required),
-//	                                      wire_api (string; defaults to
-//	                                      "responses"),
-//	                                      http_headers (map[string]string),
-//	                                      query_params (map[string]string),
-//	                                      request_max_retries (number),
-//	                                      stream_max_retries (number).
+//	model_provider       object          frozen upstream protocol, endpoint, credential and token limits
 //	reasoning_summary     string          one of auto/concise/detailed/none —
 //	                                      routed via -c model_reasoning_summary
 //	mode                  string          Codex collaboration mode: default/plan
@@ -181,17 +166,23 @@ func BuildSessionPlan(runID, agentStateKey, workDir string, opts map[string]any)
 		}
 	}
 
-	// codex_provider carries the full ModelProviderInfo the server-side
-	// injectCodexManagedModel resolved. When set, we materialise it into
-	// the [model_providers.<oacProviderSlug>] block and pin
-	// thread/start.model_provider to that slug, so codex skips its
-	// builtin "openai" provider entirely.
-	provider, hasProvider, err := normaliseProviderConfig(opts["codex_provider"])
+	// The native adapter selects Responses; Runtime converts other upstream protocols.
+	preparedOptions, endpoint, err := modeltransport.PrepareOptions(opts, modeltransport.Responses)
 	if err != nil {
+		return plan, err
+	}
+	if endpoint != nil {
+		cleanup = func() { _ = endpoint.Close() }
+		plan.Cleanup = cleanup
+	}
+	provider, hasProvider, err := normaliseProviderConfig(preparedOptions["model_provider"])
+	if err != nil {
+		cleanup()
 		return plan, err
 	}
 	if hasProvider {
 		if err := writeCodexProviderConfig(codexHome, provider); err != nil {
+			cleanup()
 			return plan, err
 		}
 		plan.ModelProvider = oacProviderSlug
@@ -383,55 +374,16 @@ func normaliseMCPServers(raw any) (map[string]mcpServerConfig, error) {
 	return out, nil
 }
 
-// normaliseProviderConfig flattens agent_options["codex_provider"] (a
-// string-keyed map produced by injectCodexManagedModel) into a typed
-// providerConfig. Returns hasProvider=false when the key is absent, so
-// BuildSessionPlan can skip the TOML write entirely; that path is only
-// exercised by tests that don't care about model auth.
-//
-// base_url + bearer_token are validated by writeCodexProviderConfig
-// itself (single source of truth) so this function only normalises
-// shapes.
+// normaliseProviderConfig receives the adapter's prepared native endpoint.
 func normaliseProviderConfig(raw any) (providerConfig, bool, error) {
 	if raw == nil {
 		return providerConfig{}, false, nil
 	}
-	m, ok := raw.(map[string]any)
-	if !ok {
-		return providerConfig{}, false, fmt.Errorf("codex: codex_provider must be object, got %T", raw)
+	provider, err := modeltransport.ParseProvider(raw)
+	if err != nil || provider.Protocol != modeltransport.Responses {
+		return providerConfig{}, false, modeltransport.ErrConfiguration
 	}
-	cfg := providerConfig{}
-	if v, ok := m["name"].(string); ok {
-		cfg.Name = v
-	}
-	if v, ok := m["base_url"].(string); ok {
-		cfg.BaseURL = v
-	}
-	if v, ok := m["bearer_token"].(string); ok {
-		cfg.BearerToken = v
-	}
-	if v, ok := m["wire_api"].(string); ok {
-		cfg.WireAPI = v
-	}
-	if hdrs, ok := m["http_headers"].(map[string]any); ok {
-		cfg.HTTPHeaders = make(map[string]string, len(hdrs))
-		for k, v := range hdrs {
-			if s, ok := v.(string); ok {
-				cfg.HTTPHeaders[k] = s
-			}
-		}
-	}
-	if params, ok := m["query_params"].(map[string]any); ok {
-		cfg.QueryParams = make(map[string]string, len(params))
-		for k, v := range params {
-			if s, ok := v.(string); ok {
-				cfg.QueryParams[k] = s
-			}
-		}
-	}
-	cfg.RequestMaxRetries = intOpt(m, "request_max_retries")
-	cfg.StreamMaxRetries = intOpt(m, "stream_max_retries")
-	return cfg, true, nil
+	return providerConfig{BaseURL: provider.BaseURL, BearerToken: provider.APIKey, WireAPI: "responses"}, true, nil
 }
 
 // intOpt extracts an integer-shaped value from a map. JSON-decoded

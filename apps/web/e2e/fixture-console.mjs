@@ -422,8 +422,6 @@ function registeredNode(nodeId) {
 
 const HARNESS_PROVIDER = /^\/harnesses\/([^/]+)\/model-provider$/;
 const PROVIDER_FIELDS = new Set(["protocol", "base_url", "api_key", "context_window", "max_output_tokens"]);
-/** Each harness's protocol, as Core's registry declares it; only mcode requires token limits. */
-const HARNESS_PROTOCOL = { claude_sdk: "anthropic", codex: "responses", mcode: "anthropic" };
 /** Core's one message for a body that is not a complete provider; it never echoes a value. */
 const PROVIDER_SHAPE = "The body must be a complete model provider: protocol, base_url, api_key and optional nonnegative context_window and max_output_tokens.";
 const httpsBase = (value) => { try { const url = new URL(value); return url.protocol === "https:" && Boolean(url.hostname) && !url.username && !url.password && !url.search && !url.hash; } catch { return false; } };
@@ -436,10 +434,9 @@ function providerProblem(harness, input) {
   if (Object.keys(input).some((key) => !PROVIDER_FIELDS.has(key)) || ["protocol", "base_url", "api_key"].some((key) => typeof input[key] !== "string") ||
     !tokenLimit(input.context_window) || !tokenLimit(input.max_output_tokens)) return PROVIDER_SHAPE;
   if (!httpsBase(input.base_url)) return "model provider requires an HTTPS base_url without credentials, query or fragment";
-  if (input.protocol !== "anthropic" && input.protocol !== "responses") return "unsupported model provider protocol";
+  if (!["anthropic", "responses", "chat_completions"].includes(input.protocol)) return "unsupported model provider protocol";
   if (!input.api_key.trim() || Buffer.byteLength(input.api_key) > 16384 || /[\0\r\n]/.test(input.api_key)) return "invalid model provider API key";
   if ((input.max_output_tokens ?? 0) > (input.context_window ?? 0)) return "invalid model token limits";
-  if (input.protocol !== HARNESS_PROTOCOL[harness]) return "selected harness does not support this model provider protocol";
   if (harness === "mcode" && !(input.context_window > 0 && input.max_output_tokens > 0)) return "selected harness requires positive model context_window and max_output_tokens";
   return null;
 }

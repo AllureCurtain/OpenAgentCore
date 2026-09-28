@@ -63,7 +63,7 @@ func TestWorkspaceProviderCredentialsReplaceAmbientSelection(t *testing.T) {
 	config := workspaceFixture(t)
 	original := slices.Clone(config.Env)
 	req := workspaceRequest()
-	req.AgentOptions["claude_provider"] = map[string]any{"base_url": "https://provider.example/anthropic", "bearer_token": "selected-secret"}
+	req.AgentOptions["model_provider"] = map[string]any{"protocol": "anthropic", "base_url": "https://provider.example/anthropic", "api_key": "selected-secret"}
 	start, env, err := prepare(config, req)
 	if err != nil {
 		t.Fatal(err)
@@ -75,8 +75,8 @@ func TestWorkspaceProviderCredentialsReplaceAmbientSelection(t *testing.T) {
 	if !slices.Contains(env, "ANTHROPIC_AUTH_TOKEN=selected-secret") || slices.Contains(env, "ANTHROPIC_AUTH_TOKEN=selected-provider-fixture") {
 		t.Fatal("provider selection was not exclusive")
 	}
-	for _, value := range []any{nil, "secret", map[string]any{"base_url": "http://provider.example", "bearer_token": "secret"}, map[string]any{"base_url": "https://user:pass@provider.example", "bearer_token": "secret"}} {
-		req.AgentOptions["claude_provider"] = value
+	for _, value := range []any{nil, "secret", map[string]any{"protocol": "anthropic", "base_url": "http://provider.example", "api_key": "secret"}, map[string]any{"protocol": "anthropic", "base_url": "https://user:pass@provider.example", "api_key": "secret"}} {
+		req.AgentOptions["model_provider"] = value
 		if _, _, err := prepare(config, req); err == nil || strings.Contains(err.Error(), "secret") {
 			t.Fatal("unsafe provider accepted or disclosed")
 		}

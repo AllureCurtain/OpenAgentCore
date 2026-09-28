@@ -4397,6 +4397,7 @@ components:
           enum:
             - anthropic
             - responses
+            - chat_completions
           type: string
       required:
         - api_key
@@ -4417,6 +4418,7 @@ components:
           enum:
             - anthropic
             - responses
+            - chat_completions
           type: string
       required:
         - api_key_configured

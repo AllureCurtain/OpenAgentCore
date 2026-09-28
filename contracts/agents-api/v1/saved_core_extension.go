@@ -21,7 +21,7 @@ type SavedAgentCore struct {
 }
 
 type ModelProviderView struct {
-	Protocol         string `json:"protocol" enums:"anthropic,responses" binding:"required"`
+	Protocol         string `json:"protocol" enums:"anthropic,responses,chat_completions" binding:"required"`
 	BaseURL          string `json:"base_url" binding:"required"`
 	ContextWindow    int32  `json:"context_window,omitempty"`
 	MaxOutputTokens  int32  `json:"max_output_tokens,omitempty"`

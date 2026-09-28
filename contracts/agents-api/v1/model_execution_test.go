@@ -3,13 +3,27 @@ package v1
 import "testing"
 
 func TestModelExecutionValidation(t *testing.T) {
-	for _, tc := range []struct {
-		protocol, harness string
-		valid             bool
-	}{{"anthropic", "claude_sdk", true}, {"anthropic", "mcode", true}, {"responses", "codex", true}, {"responses", "mcode", false}, {"anthropic", "codex", false}, {"responses", "", false}} {
+	for _, harness := range []string{"codex", "claude_sdk", "mcode"} {
+		for _, protocol := range []string{"anthropic", "responses", "chat_completions"} {
+			t.Run(harness+"/"+protocol, func(t *testing.T) {
+				p := ModelProviderInput{Protocol: protocol, BaseURL: "https://example.com/v1", APIKey: "secret", ContextWindow: 200000, MaxOutputTokens: 8000}
+				if err := p.ValidateHarness(harness); err != nil {
+					t.Fatalf("Runtime-translatable provider rejected: %v", err)
+				}
+				p.ContextWindow, p.MaxOutputTokens = 0, 0
+				if err := p.ValidateHarness(harness); (err == nil) != (harness != "mcode") {
+					t.Fatalf("incorrect optional token-limit admission: %v", err)
+				}
+			})
+		}
+	}
+	for _, tc := range []struct{ protocol, harness string }{
+		{"responses", ""}, {"responses", "unknown"}, {"unknown", "codex"},
+		{"openai", "codex"}, {"chat", "claude_sdk"}, {"chat-completions", "mcode"},
+	} {
 		p := ModelProviderInput{Protocol: tc.protocol, BaseURL: "https://example.com/v1", APIKey: "secret", ContextWindow: 200000, MaxOutputTokens: 8000}
-		if (p.ValidateHarness(tc.harness) == nil) != tc.valid {
-			t.Fatalf("incorrect protocol validation: %s/%s", tc.protocol, tc.harness)
+		if p.ValidateHarness(tc.harness) == nil {
+			t.Fatalf("unsupported protocol or harness accepted: %s/%s", tc.protocol, tc.harness)
 		}
 	}
 	for _, url := range []string{"http://example.com", "https://user:pass@example.com", "https://example.com?key=secret", "https://example.com#secret", "https://",
