@@ -9,11 +9,8 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
 )
 
-// runStop sends SIGTERM to the pid in ~/.oac/daemon/<profile>/
-// connect.pid, escalates to SIGKILL after killTimeout, then removes
-// the pidfile. Idempotent: missing / stale pidfile cleans up and
-// exits 0 — the user's goal is "no background daemon" and that holds
-// either way.
+// runStop requests cleanup from the recorded daemon identity. A timeout keeps
+// the ownership record; only confirmed exit permits removing it.
 func runStop(ctx *runContext, args []string) error {
 	fs := newFlagSet("stop")
 	profile := fs.String("profile", paths.DefaultProfile, "profile name to stop")
@@ -44,12 +41,9 @@ func runStop(ctx *runContext, args []string) error {
 		return fmt.Errorf("stop: read pidfile: %w", err)
 	}
 
-	fmt.Fprintf(ctx.stdout, "oac-daemon: sending SIGTERM to pid=%d\n", pid)
-	if err := daemonize.SignalAndWait(pid, killTimeout); err != nil {
+	fmt.Fprintf(ctx.stdout, "oac-daemon: requesting stop for pid=%d\n", pid)
+	if err := daemonize.StopPIDFile(pidPath, killTimeout); err != nil {
 		return fmt.Errorf("stop: signal: %w", err)
-	}
-	if err := daemonize.RemovePIDFile(pidPath); err != nil {
-		return fmt.Errorf("stop: remove pidfile: %w", err)
 	}
 	fmt.Fprintln(ctx.stdout, "oac-daemon: stopped")
 	return nil

@@ -30,12 +30,12 @@ _openapi:
           assert active Turn settlement. Read this after an uncertain archive
           response; never infer released from a missing sandbox alone.
       - content: >-
-          Core key only. Requires maintenance and the current deployment
-          generation. Permanently closes execution, requests cancellation and
-          releases sandbox/snapshots through existing cleanup. Session history
-          and persisted files/artifacts remain; unpersisted workspace contents
-          are lost. A cleanup_pending response is not proof of resource release.
-          Does not affect caller-managed Runtime.
+          Core key only. Requires the current deployment generation; no
+          maintenance mode is required. Permanently closes execution, requests
+          cancellation and releases sandbox/snapshots through existing cleanup.
+          Session history and persisted files/artifacts remain; unpersisted
+          workspace contents are lost. A cleanup_pending response is not proof
+          of resource release. Does not affect caller-managed Runtime.
       - content: >-
           Core key only. Each observation is labelled with its owning Project
           ID. Uses the existing read-only Runtime sampler, with bounded

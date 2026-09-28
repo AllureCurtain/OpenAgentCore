@@ -12,7 +12,7 @@ import (
 )
 
 const getSessionItem = `-- name: GetSessionItem :one
-SELECT id, session_id, turn_id, created_at, position, payload, output_index FROM session_items WHERE session_id = $1 AND id = $2
+SELECT id, session_id, turn_id, created_at, position, payload, output_index, settled_at FROM session_items WHERE session_id = $1 AND id = $2
 `
 
 type GetSessionItemParams struct {
@@ -31,6 +31,7 @@ func (q *Queries) GetSessionItem(ctx context.Context, arg GetSessionItemParams) 
 		&i.Position,
 		&i.Payload,
 		&i.OutputIndex,
+		&i.SettledAt,
 	)
 	return i, err
 }
@@ -175,15 +176,57 @@ func (q *Queries) ListSessionItems(ctx context.Context, arg ListSessionItemsPara
 	return items, nil
 }
 
+const listTurnItemDiagnostics = `-- name: ListTurnItemDiagnostics :many
+SELECT id, created_at, settled_at FROM session_items
+WHERE session_id = $1 AND turn_id = $2
+ORDER BY created_at, position, id
+LIMIT 1001
+`
+
+type ListTurnItemDiagnosticsParams struct {
+	SessionID pgtype.UUID `json:"session_id"`
+	TurnID    pgtype.UUID `json:"turn_id"`
+}
+
+type ListTurnItemDiagnosticsRow struct {
+	ID        pgtype.UUID        `json:"id"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	SettledAt pgtype.Timestamptz `json:"settled_at"`
+}
+
+func (q *Queries) ListTurnItemDiagnostics(ctx context.Context, arg ListTurnItemDiagnosticsParams) ([]ListTurnItemDiagnosticsRow, error) {
+	rows, err := q.db.Query(ctx, listTurnItemDiagnostics, arg.SessionID, arg.TurnID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListTurnItemDiagnosticsRow{}
+	for rows.Next() {
+		var i ListTurnItemDiagnosticsRow
+		if err := rows.Scan(&i.ID, &i.CreatedAt, &i.SettledAt); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const putSessionItem = `-- name: PutSessionItem :one
-INSERT INTO session_items(id, session_id, turn_id, created_at, payload, position, output_index)
+INSERT INTO session_items(id, session_id, turn_id, created_at, payload, position, output_index, settled_at)
 VALUES ($1, $2, $3, $4, $5,
     (SELECT COALESCE(max(position), -1) + 1 FROM session_items WHERE session_id = $2),
     CASE WHEN $6::boolean THEN
         (SELECT COALESCE(max(output_index), -1) + 1 FROM session_items WHERE turn_id = $3)
-    END)
-ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload
-RETURNING id, session_id, turn_id, created_at, position, payload, output_index
+    END,
+    CASE WHEN $5::jsonb->>'status' IN ('completed', 'incomplete', 'failed') THEN $4::timestamptz END)
+ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload,
+    settled_at = CASE WHEN session_items.payload->>'status' = 'in_progress'
+        AND EXCLUDED.payload->>'status' IN ('completed', 'incomplete', 'failed')
+        THEN COALESCE(session_items.settled_at, EXCLUDED.created_at) ELSE session_items.settled_at END
+RETURNING id, session_id, turn_id, created_at, position, payload, output_index, settled_at
 `
 
 type PutSessionItemParams struct {
@@ -213,6 +256,7 @@ func (q *Queries) PutSessionItem(ctx context.Context, arg PutSessionItemParams) 
 		&i.Position,
 		&i.Payload,
 		&i.OutputIndex,
+		&i.SettledAt,
 	)
 	return i, err
 }

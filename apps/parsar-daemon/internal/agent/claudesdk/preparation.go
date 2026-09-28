@@ -2,129 +2,66 @@ package claudesdk
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-	"slices"
-	"strings"
+	"errors"
 	"sync"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 )
 
+// prepared is a single admission for direct adapter callers. It uses the same
+// Executor as pooled Runtime execution; workspace reads retain the owner.
 type prepared struct {
-	mu      sync.Mutex
-	session *session
-	ready   chan struct{}
-	started chan struct{}
-	binding *preparedStart
-	closed  bool
-	failure error
+	mu       sync.Mutex
+	executor *executor
+	session  *session
+	binding  *preparedStart
+	closed   bool
 }
 
 type preparedStart struct {
-	runID  string
-	prompt proto.MessageInput
-	out    chan<- proto.Envelope
+	turn agent.Turn
+	done chan struct{}
 }
 
-var _ agent.PreparedCancellation = (*prepared)(nil)
-
-// NewPreparationFactory retains a trusted workspace process without submitting model input.
 func NewPreparationFactory(config Config) agent.PreparationFactory {
-	return func(owner context.Context, req proto.PromptRequestPayload) (agent.Prepared, error) {
-		if owner == nil {
-			owner = context.Background()
+	factory := NewExecutorFactory(config)
+	return func(ctx context.Context, req proto.PromptRequestPayload) (agent.Prepared, error) {
+		if config.Workspace == nil {
+			return nil, errors.New("claudesdk: workspace preparation requires a bound workspace")
 		}
-		if config.Workspace == nil || req.RunID != "" || len(req.Input) != 0 || req.ConversationID != "" {
-			return nil, fmt.Errorf("claudesdk: preparation requires workspace configuration without input or conversation")
-		}
-		snapshot := config
-		snapshot.Env = slices.Clone(config.Env)
-		workspace := *config.Workspace
-		workspace.ProtectedDirs = slices.Clone(workspace.ProtectedDirs)
-		snapshot.Workspace = &workspace
-		start, env, err := prepareConfiguration(snapshot, req)
-		if err != nil {
+		resource, err := factory(ctx, req)
+		if resource == nil {
 			return nil, err
 		}
-		start.Type = "prepare"
-		info, err := CheckRuntime(owner, snapshot)
-		if err != nil || !info.supportsWorkspacePreparation() {
-			return nil, fmt.Errorf("claudesdk: packaged runtime does not support workspace preparation")
-		}
-		if start.OutputFormat != nil && !info.SupportsWorkspaceStructuredOutput() {
-			return nil, fmt.Errorf("claudesdk: packaged runtime does not support workspace structured output")
-		}
-		if start.Subagents != nil && !info.SupportsSubagents() {
-			return nil, fmt.Errorf("claudesdk: packaged runtime does not support subagent resources")
-		}
-		if start.observeFunctions && !info.supportsWorkspaceCommands() {
-			return nil, fmt.Errorf("claudesdk: packaged runtime does not support workspace command observations")
-		}
-		if len(start.Functions) > 0 && !info.SupportsWorkspaceFunctions() {
-			return nil, fmt.Errorf("claudesdk: packaged runtime does not support workspace functions")
-		}
-		s, err := launch(owner, snapshot, start, env)
-		if err != nil {
-			return nil, err
-		}
-		s.reads.supported = slices.Contains(info.Features, "workspace_read")
-		s.directories.supported = slices.Contains(info.Features, "workspace_directory")
-		p := &prepared{session: s, ready: make(chan struct{}), started: make(chan struct{})}
-		go s.run(owner, "", start, nil, p)
-		select {
-		case <-p.ready:
-			if owner.Err() == nil {
-				return p, nil
-			}
-			_ = p.Close()
-			return nil, owner.Err()
-		case <-s.settled:
-			return nil, p.failure
-		}
+		e := resource.(*executor)
+		return &prepared{executor: e, session: e.base}, err
 	}
 }
 
-// Start transfers ownership once; ctx bounds this operation, not the Session lifetime.
-func (p *prepared) Start(ctx context.Context, runID string, prompt proto.MessageInput, out chan<- proto.Envelope) (agent.Session, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+func (p *prepared) Start(ctx context.Context, run string, input proto.MessageInput, out chan<- proto.Envelope) (agent.Session, error) {
 	p.mu.Lock()
 	if p.closed || p.binding != nil {
 		p.mu.Unlock()
-		return nil, fmt.Errorf("claudesdk: preparation is no longer available")
+		return nil, errors.New("claudesdk: admission is unavailable")
 	}
-	var err error
-	if strings.TrimSpace(runID) == "" || prompt.Validate() != nil || out == nil {
-		err = fmt.Errorf("claudesdk: start requires a run identity, prompt and output channel")
-	} else if ctx.Err() != nil {
-		err = ctx.Err()
-	} else if p.session.process.Context().Err() != nil {
-		err = p.session.process.Context().Err()
-	} else {
-		select {
-		case <-p.session.process.Done():
-			err = fmt.Errorf("claudesdk: prepared process has exited")
-		case <-p.session.settled:
-			err = fmt.Errorf("claudesdk: preparation has ended")
-		default:
-		}
-	}
-	if err != nil {
-		p.closed = true
-		p.mu.Unlock()
-		_ = p.session.Cancel(context.Background())
-		return nil, err
-	}
-	p.binding = &preparedStart{runID: runID, prompt: prompt, out: out}
-	close(p.started)
+	binding := &preparedStart{done: make(chan struct{})}
+	p.binding = binding
 	p.mu.Unlock()
-	return p.session, nil
+	turn, err := p.executor.StartTurn(ctx, run, input, out)
+	p.mu.Lock()
+	binding.turn = turn
+	if turn == nil {
+		p.binding = nil
+	}
+	close(binding.done)
+	p.mu.Unlock()
+	if turn != nil {
+		go func() { _, _ = turn.AwaitSettlement(context.Background()); _ = p.executor.Close(context.Background()) }()
+	}
+	return turn, err
 }
 
-// Close settles unused ownership and is inert after transfer.
 func (p *prepared) Close() error {
 	p.mu.Lock()
 	if p.binding != nil {
@@ -133,51 +70,47 @@ func (p *prepared) Close() error {
 	}
 	p.closed = true
 	p.mu.Unlock()
-	return p.session.Cancel(context.Background())
+	return p.executor.Close(context.Background())
 }
 
-// Cancel follows the resource across transfer and waits for the existing output settlement.
 func (p *prepared) Cancel(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	p.mu.Lock()
 	p.closed = true
+	binding := p.binding
 	p.mu.Unlock()
-	return p.session.Cancel(ctx)
+	if binding == nil {
+		return p.executor.Close(ctx)
+	}
+	select {
+	case <-binding.done:
+	default:
+		if err := p.executor.Close(ctx); err != nil {
+			return err
+		}
+		select {
+		case <-binding.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	if binding.turn == nil {
+		return p.executor.Close(ctx)
+	}
+	if err := binding.turn.Cancel(ctx); err != nil {
+		return err
+	}
+	p.executor.retire()
+	return nil
 }
 
 func (p *prepared) CancellationOutcome() proto.DonePayload {
-	return p.session.CancellationOutcome()
-}
-
-func (p *prepared) awaitStart(scanner *bridgeOutput, failure error) (*preparedStart, error) {
-	if failure == nil {
-		if scanner.Scan() {
-			var event bridgeEvent
-			if json.Unmarshal(scanner.Bytes(), &event) != nil {
-				failure = fmt.Errorf("claudesdk: invalid SDK bridge output")
-			} else if event.Type == "error" {
-				failure = bridgeFailure(event.Code)
-			} else if event.Type != "prepared" {
-				failure = fmt.Errorf("claudesdk: SDK preparation receipt is missing")
-			}
-		} else {
-			failure = fmt.Errorf("claudesdk: SDK preparation receipt is missing")
-		}
-	}
-	if failure != nil {
-		p.session.process.Cancel()
-		return nil, failure
-	}
-	close(p.ready)
-	select {
-	case <-p.started:
-	case <-p.session.process.Context().Done():
-	case <-p.session.process.Done():
-	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.binding != nil {
-		return p.binding, nil
+	if p.binding == nil || p.binding.turn == nil {
+		return proto.DonePayload{}
 	}
-	p.closed = true
-	return nil, fmt.Errorf("claudesdk: preparation ended before start")
+	return p.binding.turn.CancellationOutcome()
 }

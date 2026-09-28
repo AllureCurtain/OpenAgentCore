@@ -1,6 +1,7 @@
-import { queryOptions } from "@tanstack/react-query";
+import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import { SandboxAdminClient, type SandboxAllocation, type SandboxDeployment, type SandboxNode, type SandboxNodeHistoryRange } from "@agents-core-web/agents-client";
 
+import { sandboxDeploymentQuery } from "../sandbox/sandbox-queries";
 import { sandboxConsoleConfig } from "../sandbox/console-config";
 
 export interface FleetSnapshot {
@@ -23,10 +24,11 @@ export const consoleConfigQuery = queryOptions({
   queryFn: ({ signal }) => sandboxConsoleConfig(signal),
 });
 
-async function loadFleet(readAllocations: boolean, signal: AbortSignal): Promise<FleetSnapshot> {
+async function loadFleet(readAllocations: boolean, signal: AbortSignal, cache: QueryClient): Promise<FleetSnapshot> {
   const sandbox = client();
   const [deployment, nodes] = await Promise.all([
-    sandbox.retrieveDeployment({ signal }),
+    // Keep reset truth in the shared deployment cache, even if a node read fails.
+    cache.fetchQuery({ ...sandboxDeploymentQuery, staleTime: 0 }),
     sandbox.listNodes({ signal }),
   ]);
   const allocations = readAllocations
@@ -44,7 +46,7 @@ async function loadFleet(readAllocations: boolean, signal: AbortSignal): Promise
 export function fleetQuery(allocations: boolean) {
   return queryOptions({
     queryKey: ["sandbox-fleet", allocations ? "with-allocations" : "nodes"],
-    queryFn: ({ signal }) => loadFleet(allocations, signal),
+    queryFn: ({ signal, client }) => loadFleet(allocations, signal, client),
   });
 }
 

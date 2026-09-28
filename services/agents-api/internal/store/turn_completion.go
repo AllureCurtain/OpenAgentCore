@@ -61,15 +61,8 @@ func (s *Store) CompleteExecution(ctx context.Context, tenantID, sessionID, turn
 				if ms <= 0 {
 					return ErrInvalidInput
 				}
-				if ms/1000 < current.CreatedAt.Time.Unix() {
-					managed, err := q.SessionHasRuntimeNode(ctx, session)
-					if err != nil {
-						return err
-					}
-					if !managed {
-						return ErrInvalidInput
-					}
-				}
+				// Native and Core timestamps come from independent host clocks.
+				// Preserve source time; committed activity uses the database clock.
 				sourceCompleted = pgtype.Timestamptz{Time: time.UnixMilli(ms), Valid: true}
 			}
 		}

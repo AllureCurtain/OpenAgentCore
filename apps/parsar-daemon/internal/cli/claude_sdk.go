@@ -60,14 +60,11 @@ func discoverClaudeSDK(rc *runContext, profile string, check func(context.Contex
 		return fail(err)
 	}
 	out.Config = claudesdk.Config{Node: node, Entrypoint: entrypoint, StateDir: filepath.Join(profileDir, "runtime", "claude-sdk")}
-	if mode := os.Getenv("OAC_RUNTIME_CLAUDE_SDK_WORKSPACE"); mode != "" {
-		if mode != "managed" {
-			return fail(fmt.Errorf("unsupported Claude SDK workspace profile"))
-		}
-		binding, err := localworkspace.Load()
-		if err != nil || binding == nil {
-			return fail(fmt.Errorf("Claude SDK workspace requires a dedicated local Runtime binding"))
-		}
+	binding, err := localworkspace.Load()
+	if err != nil {
+		return fail(err)
+	}
+	if binding != nil {
 		root, err := paths.Root()
 		if err != nil {
 			return fail(err)
@@ -76,7 +73,7 @@ func discoverClaudeSDK(rc *runContext, profile string, check func(context.Contex
 		if err != nil {
 			return fail(err)
 		}
-		out.Config, err = claudesdk.ConfigureLocal(out.Config, root, os.Getenv("OAC_RUNTIME_WORKSPACE"), binding.NetworkPolicy(), os.Getenv("OAC_RUNTIME_STAGING"))
+		out.Config, err = claudesdk.ConfigureLocal(out.Config, root, os.Getenv("OAC_RUNTIME_WORKSPACE"), binding.NetworkPolicy())
 		if err != nil {
 			return fail(err)
 		}
@@ -94,7 +91,7 @@ func discoverClaudeSDK(rc *runContext, profile string, check func(context.Contex
 		}
 		caps := &out.Info.Capabilities
 		caps.EnvironmentNone, caps.FunctionTools = false, info.SupportsWorkspaceFunctions()
-		caps.Preparation, caps.LocalEnvironment, caps.LocalEnvironmentNetworkPolicy = true, true, true
+		caps.Preparation, caps.LocalEnvironment = true, true
 		caps.WorkspaceReadPreparation, caps.NativeSessionRecovery = true, true
 	}
 	out.Info.Available, out.Info.Version = true, info.SDK
@@ -128,6 +125,9 @@ func registerClaudeSDK(registry *agent.Registry, discovery *claudeSDKDiscovery) 
 		}
 	}
 	registry.RegisterKind(discovery.Info, factory)
+	if discovery.Info.Available {
+		registry.RegisterExecutor("claude_sdk", claudesdk.NewExecutorFactory(discovery.Config))
+	}
 	if discovery.Info.Available && discovery.Info.Capabilities.LocalEnvironment {
 		registry.RegisterPreparation("claude_sdk", true, claudesdk.NewPreparationFactory(discovery.Config))
 	}

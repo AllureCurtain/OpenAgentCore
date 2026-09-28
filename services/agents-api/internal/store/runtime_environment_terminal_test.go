@@ -157,7 +157,6 @@ func TestProvisioningFailureReasons(t *testing.T) {
 		{Step: ProvisioningSetupCommand, Index: 12, ExitCode: 1}: `Failed to provision environment: script "setup_commands[12]" failed with exit code 1`,
 		{Step: ProvisioningPythonPackages, ExitCode: 1}:          `Failed to provision environment: script "Python package installation" failed with exit code 1`,
 		{Step: ProvisioningNPMPackages, ExitCode: 1}:             `Failed to provision environment: script "npm package installation" failed with exit code 1`,
-		{Step: ProvisioningSystemPackages, ExitCode: 100}:        `Failed to provision environment: script "System package installation" failed with exit code 100`,
 		{Step: ProvisioningInitialFile}:                          "Failed to provision environment: initial file installation failed",
 		{Step: ProvisioningSkill}:                                "Failed to provision environment: Skill installation failed",
 		// Missing or impossible statuses, unknown steps and old receipts stay generic.

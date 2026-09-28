@@ -22,10 +22,13 @@ type runtimeManager struct {
 	setupInstallationID string
 	loadDeployment      func(context.Context) (*RuntimeProvider, error)
 	prepareDeployment   RuntimeDeploymentPreparer
+	publishUnconfigured func(uint64)
+	resetCursor         string
+	resetRequestedAt    time.Time
 	setupGate           chan struct{}
 	mutationGate        chan struct{}
 	switching           bool
-	switchDrained       chan struct{}
+	switchDrained       *deploymentDrain
 	ctx                 context.Context
 	cancel              context.CancelFunc
 	mu                  sync.Mutex
@@ -176,8 +179,17 @@ func (m *runtimeManager) applyInventory(previous map[string]*runtimeNode, ids []
 	m.mu.Unlock()
 	// Inventory includes offline nodes. Only explicit removal retires a lane;
 	// the Store requires all retained resources to be cleaned before removal.
+	if err := m.cancelLifecycles(retired); err != nil {
+		// No cancellation was authorized. Keep each retiring identity and gate;
+		// acquiring its gate later cannot substitute for successful cancellation.
+		// Undo only the retirement tasks that will not be started. Existing callers
+		// and workers retain their accounting until ordinary owner shutdown settles.
+		for range retired {
+			m.active.Done()
+		}
+		return nil, err
+	}
 	for _, n := range retired {
-		n.lifecycle.stop()
 		go m.retire(n)
 	}
 	return nodes, nil
@@ -221,6 +233,14 @@ func (m *runtimeManager) run(ctx context.Context) error {
 	}
 	m.running = true
 	m.mu.Unlock()
+	if m.loadDeployment != nil {
+		if err := m.store.CollectSandboxGenerations(ctx); err != nil {
+			return err
+		}
+	}
+	if err := m.resetStep(ctx); err != nil {
+		return err
+	}
 	if _, err := m.syncNodes(ctx); err != nil && !errors.Is(err, errRuntimeTransition) {
 		return err
 	}
@@ -235,6 +255,14 @@ func (m *runtimeManager) run(ctx context.Context) error {
 		case err := <-m.failed:
 			return err
 		case <-ticker.C:
+			if m.loadDeployment != nil {
+				if err := m.store.CollectSandboxGenerations(ctx); err != nil {
+					return err
+				}
+			}
+			if err := m.resetStep(ctx); err != nil {
+				return err
+			}
 			if _, err := m.syncNodes(ctx); err != nil && !errors.Is(err, errRuntimeTransition) {
 				return err
 			}

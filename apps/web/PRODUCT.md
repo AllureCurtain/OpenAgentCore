@@ -82,33 +82,48 @@ workbench.
   Creator column naming the creating key. Detail pages show the resource's facts
   and offer Delete.
 - **Platform**: Projects and keys (projects, their assets and usage, named keys,
-  write history), Nodes (sandbox setup as pages — where sandboxes run, the
-  backend (microsandbox by default; Docker only after a confirmation of its weaker
-  isolation) or E2B account, the size of each sandbox (own machines only; E2B takes the
-  template build's), a review, and advanced settings
-  with the complete form — then the node list with each node's capacity (active
-  sandboxes against its limit, for every backend), host figures and allocations,
-  enrollment, renaming, sandbox limits (beside the host's CPUs and memory and at most
-  how many sandboxes of the deployment's size they hold) and removal; Add node
-  asks for the node's sandbox limits before it issues the one-time command, which installs
-  the node with sudo as a system service (a disclosure gives the command without sudo, as a
-  user service); both commands download from the installation's public URL, never the
-  browser's address; it issues none before the installation is read, while the public URL is
-  loopback, or when the console lacks the provider's node files; after Remove, a dialog gives
-  the host's uninstall command, or says none can be given without a usable public URL), System (the
-  installation's public address, API base URL, installation ID and source commit, read-only;
-  each harness's default model provider, set, replaced or cleared there beside its read-only startup
-  state; the sandbox configuration every project shares, with a link to Nodes where it
-  changes; and Core's startup settings from config.json, with the file and the apply command
-  that change them).
+  write history), Nodes (the node list, capacity, host figures, allocations and
+  individual node operations). Add node asks for limits before issuing its
+  one-time command; installers use Core's public URL and require supported node
+  artifacts. Removal offers the host's uninstall command. System owns installation
+  facts, each harness's default model provider, startup settings, and a link to
+  the Sandbox configuration secondary page. That page owns setup, resource edits,
+  rollout details and reset. Setup selects a backend, size and Runtime, then asks
+  for a deliberate save; own-machine setup continues to Add node.
 - A node whose provider is not ready names the reason (Docker unreachable, no Docker
   limits, missing Runtime image, no KVM, missing microsandbox components, a host too
   small) and its fix in the help tip beside its status, wherever that status shows.
 - A node enrolled with an earlier Core address gets no new sandboxes, so on the Nodes
   list and its page its status is Old address, with "Remove and add again", never
   Available.
-- **E2B deployments** have no machines: the Nodes entry becomes Sandbox backend,
-  and Overview and Sandbox metrics show the sandboxes Core holds in E2B's cloud
+- **Sandbox reset** is an explicit administrator operation in System → Sandbox configuration. Auto clear is
+  the default, with a one-hour deadline (5 minutes–24 hours); Force clear requires
+  destructive confirmation. Reset stops new hosted Session admission, clears idle,
+  suspended and pending hosted work, and waits for busy Turns and file writes until
+  Core forces the remaining work. It does not affect self-hosted execution.
+  Histories and persisted Files/Artifacts remain; archived Sessions cannot resume,
+  and unpersisted workspace contents may be lost. Cancel stops further clearing
+  without undoing archives. Core alone reports progress and completion, including
+  resources blocked on named offline nodes; force does not bypass their cleanup.
+  Completion clears the backend configuration and retires old nodes/enrollment
+  credentials. A new configuration is then a separate deliberate save.
+- **Online sandbox configuration** changes the same backend's resources, Runtime
+  or E2B template without retiring existing nodes or changing existing Sessions'
+  resource ownership. New placement follows Core's qualified capacity; saving a
+  target does not promise immediate placement on it. Configuration rollout shows
+  Core's target preparation and retained previous-generation sandbox count. A
+  settled rollout can still have failed, update-required or unknown nodes and old
+  resources. An offline node stays offline even when it has a recorded serving
+  generation. Node and allocation detail distinguish the serving pin, target
+  preparation and each resource's configuration generation.
+- **E2B credential replacement** uses the same configuration form. Setup requires
+  a key; leaving it blank during an update keeps the saved key. An explicit key,
+  even the same value, is verified as a replacement and advances the target generation
+  after successful verification.
+  Another backend or E2B team requires a deliberate reset. A rejected or uncertain
+  replacement never clears the committed configuration or replays the write.
+- **E2B deployments** have no machines: Nodes offers a link to System's sandbox configuration.
+  Overview and Sandbox metrics show the sandboxes Core holds in E2B's cloud
   (running, starting, size, template build) instead of node capacity, with no node column
   or Add node action; a sandbox's dialog adds its disk use.
 - **microsandbox** suspends idle sandboxes into snapshots, so its nodes show how
@@ -152,6 +167,12 @@ workbench.
   page, the console tells developers to set `OPENAI_BASE_URL` (the installation's
   API base URL) and `OPENAI_API_KEY` (a key of the project), with curl and Python
   samples that list Agents and create a Session.
+- **One home for each setting.** System owns sandbox configuration through its
+  Sandbox configuration secondary page. This is the only place to set up,
+  update, reset or inspect deployment rollout. Nodes owns the node list and
+  individual node operations. Overview and metrics link to these owners instead
+  of repeating their configuration or rollout panels. Resource editing uses a
+  dialog; rollout counts and generations appear in its details dialog.
 - **Web API only.** Every read and write goes through `/core/v1/**`. The console
   holds no API key and sends nothing to `/v1`.
 - **No asset writes except delete.** Assets are created and changed only by
@@ -172,6 +193,13 @@ workbench.
   submit that result; environment connection waits stay distinct from function waits.
 - **Session history is read-only.** A Session page reads the Session, its Items and
   Turns and polls while work is in flight; there is no live event stream.
+- **Failure diagnostics.** Failed Session and Turn rows read Core diagnostics and
+  translate its classified reason. The console never infers a cause from raw
+  logs. Unavailable or mismatched diagnostics offer an explicit read retry;
+  refreshing does not replay execution. Trace Timing keeps each Item's Core
+  receipt interval separate from public Turn times and native tool duration.
+  Historical missing timestamps stay unknown, negative clock intervals stay
+  missing, and bounded response truncation remains visible.
 - **Executor credentials.** Only Core issues the credential file a self-hosted
   executor needs, with the deployment's Core key. A Session page whose environment
   is self-hosted has an Executor credentials section: issue a credential (shown
@@ -179,6 +207,18 @@ workbench.
   old one stops working immediately) or revoke it (the executor disconnects and
   won't retry; its container keeps running until stopped). The file lets one
   executor connect for that environment only; it cannot call the Agents API.
+- **Default provider observations.** Each configured harness offers Usage details
+  for Core's last successful use and any newer classified provider error. Missing
+  records remain unknown; an error at or before the last success is no longer
+  actionable. These are best-effort observations, not readiness checks. Failed
+  refreshes qualify retained records, and replacing the provider starts a new
+  observation history.
+- **Host connection.** Core's connection observation and credential metadata
+  share one five-second read while visible. Never connected, connected,
+  disconnected, bound credential revoked, and unknown are distinct; a recent
+  heartbeat alone never proves connectivity. Only a fresh connected read marks
+  Run on host done. Stale or failed reads withhold completion. Recovery rotates
+  the bound key and reruns the same command rather than suggesting a new key.
 - **Connect a host.** When the console serves the self-hosted installer, the
   section also gives the command that installs the executor on the
   administrator's host from Core's `public_url` (checksum-verified, no secret in
@@ -190,6 +230,10 @@ workbench.
   connected. Without a `public_url`, with a loopback one, or when the Session's
   `remote_url` is not `wss://`, the section says why instead of showing a
   command.
+- **Typed write errors.** Known Core codes use shared bilingual copy and safe
+  typed details. Exact Core field paths attach definite refusals to the relevant
+  input. Unknown codes retain Core's fallback message; uncertain write outcomes
+  stay form-level and are never retried automatically.
 - **Read failures.** Overview and Session log distinguish unavailable reads from
   successful empty results. Failed reads have a visible retry; retained or partial
   data says it may be incomplete or out of date, and Session filter totals stay

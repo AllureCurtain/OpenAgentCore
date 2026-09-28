@@ -6,13 +6,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,6 +18,8 @@ import (
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/device"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/gateway"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/api"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/credentialcrypto"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
@@ -29,10 +29,10 @@ import (
 
 const hostedFailureCanary = "CANARY-hosted-init-7c21"
 
-// leakyReceipt is a failed receipt that also carries canary output in fields
-// Core must never read, as a leaking or newer Runtime could send.
-func leakyReceipt(fields string) sandbox.CommandResult {
-	return sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed",` + fields + `"output":"` + hostedFailureCanary + `","stderr":"` + hostedFailureCanary + `"}`}
+// Failed receipts carry only a finite code and a bounded status. Public
+// projections must never include the confidential operation's canary text.
+func failedInitialization(exitCode int) proto.RuntimePrepareResultPayload {
+	return proto.RuntimePrepareResultPayload{Outcome: "failed", ErrorCode: "runtime_preparation_failed", ExitCode: exitCode}
 }
 
 func hostedFailureSkill(t *testing.T) store.EnvironmentSkill {
@@ -53,45 +53,49 @@ func hostedFailureSkill(t *testing.T) store.EnvironmentSkill {
 }
 
 // hostedFailureProvider fails one initialization step with a controlled result.
-// Every failure it reports is produced next to canary output, which the
-// initializer discards and Core must never publish.
+// The confidential inputs contain canaries that Core must never publish.
 type hostedFailureProvider struct {
 	lifecycleProvider
+	initializationPeer
 	fail   string // runtime-initialize action, or "file" for the initial file writer
 	skip   int    // matching steps that succeed before the failure
-	result sandbox.CommandResult
+	result proto.RuntimePrepareResultPayload
 	err    error
 	steps  []string
 }
 
-func (p *hostedFailureProvider) RunCommand(_ context.Context, _ sandbox.Reference, c sandbox.Command) (sandbox.CommandResult, error) {
-	action := "file"
-	if c.Args[len(c.Args)-1] == "/usr/local/bin/oac-runtime-initialize" {
-		var operation struct {
-			Action string `json:"action"`
-		}
-		if json.Unmarshal(c.Stdin, &operation) != nil || operation.Action == "" {
-			return sandbox.CommandResult{}, sandbox.ErrInvalid
-		}
-		action = operation.Action
+func (p *hostedFailureProvider) setRuntimeGateway(t *testing.T, endpoint string, registry *gateway.Registry) {
+	p.initializationPeer.setRuntimeGateway(t, endpoint, registry)
+	p.apply = p.prepare
+}
+func (p *hostedFailureProvider) Create(ctx context.Context, b sandbox.Bootstrap) (sandbox.Info, error) {
+	info, err := p.lifecycleProvider.Create(ctx, b)
+	if err == nil {
+		err = p.connect(b)
+	}
+	return info, err
+}
+func (p *hostedFailureProvider) RunCommand(ctx context.Context, r sandbox.Reference, c sandbox.Command) (sandbox.CommandResult, error) {
+	return p.initializationPeer.RunCommand(ctx, r, c)
+}
+func (p *hostedFailureProvider) prepare(request proto.RuntimePreparePayload, _ []byte) proto.RuntimePrepareResultPayload {
+	action := request.Action
+	if request.Initialization != nil {
+		action = request.Initialization.Action
 	}
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.steps = append(p.steps, action)
-	p.mu.Unlock()
 	if action == p.fail {
 		if p.skip == 0 {
-			return p.result, p.err
+			if p.err != nil {
+				return proto.RuntimePrepareResultPayload{Outcome: "unknown", ErrorCode: "runtime_preparation_unconfirmed"}
+			}
+			return p.result
 		}
 		p.skip--
 	}
-	if action == "file" {
-		size, err := strconv.Atoi(c.Args[len(c.Args)-1])
-		if err != nil {
-			return sandbox.CommandResult{}, sandbox.ErrInvalid
-		}
-		return sandbox.CommandResult{Stdout: fmt.Sprintf(`{"version":1,"outcome":"completed","size_bytes":%d}`, size)}, nil
-	}
-	return sandbox.CommandResult{Stdout: `{"version":1,"outcome":"completed"}`}, nil
+	return completedInitialization(request, nil)
 }
 
 func hostedFailureStore(t *testing.T) *store.Store {
@@ -140,7 +144,7 @@ func TestHostedInitializationFailureRecordsSafeSessionFailure(t *testing.T) {
 	type failure struct {
 		fail   string
 		skip   int
-		result sandbox.CommandResult
+		result proto.RuntimePrepareResultPayload
 		err    error
 	}
 	for _, test := range []struct {
@@ -151,28 +155,28 @@ func TestHostedInitializationFailureRecordsSafeSessionFailure(t *testing.T) {
 		steps  []string
 	}{
 		{"setup exit status", store.CreateSessionInput{Initialization: store.EnvironmentSetup{Commands: commands[1:]}},
-			failure{fail: "setup", result: leakyReceipt(`"exit_code":3,`)},
+			failure{fail: "setup", result: failedInitialization(3)},
 			`Failed to provision environment: script "setup_commands[0]" failed with exit code 3`, []string{"configure", "setup"}},
 		{"later setup command", store.CreateSessionInput{Initialization: store.EnvironmentSetup{Commands: commands}},
-			failure{fail: "setup", skip: 1, result: sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":3}` + "\n"}},
+			failure{fail: "setup", skip: 1, result: failedInitialization(3)},
 			`Failed to provision environment: script "setup_commands[1]" failed with exit code 3`, []string{"configure", "setup", "setup"}},
 		{"python package", store.CreateSessionInput{Initialization: store.EnvironmentSetup{Packages: v1.EnvironmentPackages{Python: []string{"oac-nonexistent-zz"}}, Commands: commands[2:]}},
-			failure{fail: "python", result: leakyReceipt(`"exit_code":1,`)},
+			failure{fail: "python", result: failedInitialization(1)},
 			`Failed to provision environment: script "Python package installation" failed with exit code 1`, []string{"configure", "python"}},
-		{"old image without exit status", store.CreateSessionInput{Initialization: store.EnvironmentSetup{Commands: commands[1:]}},
-			failure{fail: "setup", result: leakyReceipt("")},
+		{"failure without exit status", store.CreateSessionInput{Initialization: store.EnvironmentSetup{Commands: commands[1:]}},
+			failure{fail: "setup", result: failedInitialization(0)},
 			"Failed to provision environment: initialization did not complete", []string{"configure", "setup"}},
 		{"unknown effect", store.CreateSessionInput{Initialization: store.EnvironmentSetup{Commands: commands[1:]}},
 			failure{fail: "setup", err: sandbox.ErrCommandUnconfirmed},
 			"Failed to provision environment: initialization did not complete", []string{"configure", "setup"}},
-		{"output instead of a receipt", store.CreateSessionInput{Initialization: store.EnvironmentSetup{Commands: commands[1:]}},
-			failure{fail: "setup", result: sandbox.CommandResult{ExitCode: 3, Stdout: hostedFailureCanary, Stderr: hostedFailureCanary}},
+		{"invalid failure code", store.CreateSessionInput{Initialization: store.EnvironmentSetup{Commands: commands[1:]}},
+			failure{fail: "setup", result: proto.RuntimePrepareResultPayload{Outcome: "failed", ErrorCode: hostedFailureCanary}},
 			"Failed to provision environment: initialization did not complete", []string{"configure", "setup"}},
 		{"initial file", store.CreateSessionInput{InitialFiles: []store.InitialFile{{Type: "inline", Path: "/workspace/a", Data: []byte(hostedFailureCanary)}}},
-			failure{fail: "file", result: sandbox.CommandResult{Stdout: `{"version":1,"outcome":"failed","error":"write_failed","detail":"` + hostedFailureCanary + `"}`}},
+			failure{fail: "file", result: failedInitialization(0)},
 			"Failed to provision environment: initial file installation failed", []string{"file"}},
 		{"Skill", store.CreateSessionInput{Initialization: store.EnvironmentSetup{Skills: []store.EnvironmentSkill{hostedFailureSkill(t)}, Commands: commands[2:]}},
-			failure{fail: "skill", result: leakyReceipt("")},
+			failure{fail: "skill", result: failedInitialization(0)},
 			"Failed to provision environment: Skill installation failed", []string{"configure", "skill"}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -182,7 +186,7 @@ func TestHostedInitializationFailureRecordsSafeSessionFailure(t *testing.T) {
 			p := &hostedFailureProvider{lifecycleProvider: lifecycleProvider{resources: map[string]sandbox.Info{}},
 				fail: test.p.fail, skip: test.p.skip, result: test.p.result, err: test.p.err}
 			failHostedInitialization(t, s, tenant, environment, p)
-			if !reflect.DeepEqual(p.steps, test.steps) || p.kills != 1 {
+			if !reflect.DeepEqual(p.steps, test.steps) || p.kills != 1 || p.commandCalls.Load() != 0 {
 				t.Fatal("failed initialization continued or was not reclaimed", p.steps, p.kills)
 			}
 
@@ -243,7 +247,7 @@ func TestHostedInitializationFailureSettlesPendingInitialInput(t *testing.T) {
 		InitialInputs:  []store.Input{{Kind: "message", Payload: json.RawMessage(`{"text":"initial"}`)}},
 	})
 	p := &hostedFailureProvider{lifecycleProvider: lifecycleProvider{resources: map[string]sandbox.Info{}}, fail: "setup",
-		result: sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":3}`}}
+		result: failedInitialization(3)}
 	failHostedInitialization(t, s, tenant, environment, p)
 	read, err := s.GetSession(t.Context(), tenant, session.ID)
 	if err != nil || read.PendingInput || read.EnvironmentInputActivity == nil || read.EnvironmentInputActivity.Status != "failed" ||
@@ -277,8 +281,8 @@ func TestHostedInitializationFailurePublicHTTP(t *testing.T) {
 		Metadata:       map[string]string{"case": "setup-exit3"},
 	})
 	key := uuid.NewString()
-	// The failed receipt carries canary output in fields Core must never read.
-	p := &hostedFailureProvider{lifecycleProvider: lifecycleProvider{resources: map[string]sandbox.Info{}}, fail: "setup", result: leakyReceipt(`"exit_code":3,`)}
+	// A failed typed Runtime receipt exposes only a safe status.
+	p := &hostedFailureProvider{lifecycleProvider: lifecycleProvider{resources: map[string]sandbox.Info{}}, fail: "setup", result: failedInitialization(3)}
 	logs := &lockedBuffer{}
 	previous := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})))

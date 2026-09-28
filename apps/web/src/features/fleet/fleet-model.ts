@@ -13,6 +13,11 @@ export function nodeHealth(node: SandboxNode): NodeHealth {
   return node.provider_ready && !node.diagnostic ? "available" : "degraded";
 }
 
+/** Live provider evidence is independent of target preparation and durable serving pins. */
+export function nodeServingReady(node: SandboxNode): boolean {
+  return node.online && node.provider_ready;
+}
+
 export interface CapacitySummary {
   nodes: number;
   online: number;
@@ -55,14 +60,13 @@ export function capacitySummary(nodes: readonly SandboxNode[]): CapacitySummary 
 }
 
 /**
- * Core itself, as far as the console can tell: whether the Web API answers
- * and whether the sandbox deployment is in maintenance. Core reports no CPU or
- * memory figures of its own yet.
+ * Core reachability is independent of a sandbox reset. Reset progress comes
+ * from the deployment read and does not imply a Core health failure.
  */
-export type CoreStatus = "checking" | "running" | "maintenance" | "unreachable";
+export type CoreStatus = "checking" | "running" | "unreachable";
 
-export function coreStatus(input: { webApiReachable: boolean | null; maintenance: boolean | null }): CoreStatus {
+export function coreStatus(input: { webApiReachable: boolean | null }): CoreStatus {
   if (input.webApiReachable === false) return "unreachable";
   if (input.webApiReachable === null) return "checking";
-  return input.maintenance ? "maintenance" : "running";
+  return "running";
 }

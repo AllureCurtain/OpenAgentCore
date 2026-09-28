@@ -1,0 +1,4 @@
+.sandbox-reset-choice { display: flex; align-items: center; gap: 8px; }
+.sandbox-reset-options .sandbox-reset-choice label { display: inline-flex; align-items: center; gap: 10px; margin: 0; }
+.sandbox-reset-options .field { margin-top: 8px; }
+.sandbox-reset-options .field input { max-width: 220px; }

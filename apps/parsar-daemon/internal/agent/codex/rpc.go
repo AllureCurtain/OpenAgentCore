@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent/clirunner"
+
 	obslog "github.com/MiniMax-AI-Dev/parsar/internal/obs/log"
 )
 
@@ -79,10 +81,11 @@ type JSONRPCConfig struct {
 type JSONRPCClient struct {
 	cfg JSONRPCConfig
 
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout io.ReadCloser
-	stderr io.ReadCloser
+	process *clirunner.Process
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	stdout  io.ReadCloser
+	stderr  io.ReadCloser
 
 	mu       sync.Mutex
 	alive    bool
@@ -91,11 +94,13 @@ type JSONRPCClient struct {
 	pendingMu sync.Mutex
 	pending   map[string]*pendingRequest
 
+	handlerWork       sync.WaitGroup
 	handlersMu        sync.RWMutex
 	notifHandlers     map[string][]NotificationHandler
 	serverReqHandlers map[string]ServerRequestHandler
 	anyNotifHandler   NotificationHandler
 
+	readers   sync.WaitGroup
 	closeOnce sync.Once
 	doneCh    chan struct{}
 }
@@ -176,38 +181,23 @@ func (c *JSONRPCClient) Start(ctx context.Context, init InitializeParams) (Initi
 		args = append(args, "--disable", f)
 	}
 
-	cmd := exec.CommandContext(ctx, c.cfg.Binary, args...)
-	cmd.Dir = c.cfg.Cwd
-	if len(c.cfg.Env) > 0 {
-		cmd.Env = append([]string{}, c.cfg.Env...)
-	}
-
-	stdin, err := cmd.StdinPipe()
+	process, err := clirunner.Start(clirunner.StartOptions{
+		Parent: ctx, Binary: c.cfg.Binary, Args: args, Dir: c.cfg.Cwd, Env: c.cfg.Env,
+		NeedStdin: true, OwnProcessGroup: true, KillTimeout: 250 * time.Millisecond,
+	})
 	if err != nil {
-		return InitializeResult{}, fmt.Errorf("codex rpc: stdin pipe: %w", err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return InitializeResult{}, fmt.Errorf("codex rpc: stdout pipe: %w", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return InitializeResult{}, fmt.Errorf("codex rpc: stderr pipe: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
 		return InitializeResult{}, fmt.Errorf("codex rpc: spawn %q: %w", c.cfg.Binary, err)
 	}
-
-	c.cmd = cmd
-	c.stdin = stdin
-	c.stdout = stdout
-	c.stderr = stderr
 	c.mu.Lock()
+	c.process = process
+	c.cmd = process.Cmd
+	c.stdin, c.stdout, c.stderr = process.Stdin, process.Stdout, process.Stderr
 	c.alive = true
 	c.mu.Unlock()
 
-	go c.readStdoutLoop()
-	go c.pumpStderr()
+	c.readers.Add(2)
+	go func() { defer c.readers.Done(); c.readStdoutLoop() }()
+	go func() { defer c.readers.Done(); c.pumpStderr() }()
 	go c.waitChild()
 
 	initCtx, cancel := context.WithTimeout(ctx, rpcInitTimeout)
@@ -415,7 +405,13 @@ func (c *JSONRPCClient) handleNotification(method string, rawFrame []byte) {
 	c.handlersMu.RLock()
 	handlers := append([]NotificationHandler{}, c.notifHandlers[method]...)
 	any := c.anyNotifHandler
+	if len(handlers) > 0 || any != nil {
+		c.handlerWork.Add(1)
+	}
 	c.handlersMu.RUnlock()
+	if len(handlers) > 0 || any != nil {
+		defer c.handlerWork.Done()
+	}
 	if len(handlers) == 0 && any == nil {
 		c.cfg.Logger.Debug("codex rpc unhandled notification", "tag", c.cfg.LogTag, "method", method)
 		return
@@ -438,6 +434,9 @@ func (c *JSONRPCClient) handleServerRequest(rawFrame []byte, rawID json.RawMessa
 
 	c.handlersMu.RLock()
 	h, ok := c.serverReqHandlers[method]
+	if ok {
+		c.handlerWork.Add(1)
+	}
 	c.handlersMu.RUnlock()
 	if !ok {
 		// Method-not-found per JSON-RPC 2.0 — codex hangs if we drop it.
@@ -445,6 +444,7 @@ func (c *JSONRPCClient) handleServerRequest(rawFrame []byte, rawID json.RawMessa
 		return
 	}
 	go func() {
+		defer c.handlerWork.Done()
 		defer func() {
 			if r := recover(); r != nil {
 				_ = c.SendServerError(id, -32603, fmt.Sprintf("panic in %s handler: %v", method, r), nil)
@@ -474,7 +474,10 @@ func (c *JSONRPCClient) pumpStderr() {
 
 func (c *JSONRPCClient) waitChild() {
 	defer close(c.doneCh)
-	err := c.cmd.Wait()
+	// The common owner reaps the leader and terminates its descendants independently.
+	// Drain complete RPC frames before Wait closes the owned output handles.
+	c.readers.Wait()
+	err := c.process.Wait()
 	c.mu.Lock()
 	c.alive = false
 	if c.cmd.ProcessState != nil {
@@ -524,4 +527,26 @@ func truncate(b []byte, n int) []byte {
 		return b
 	}
 	return b[:n]
+}
+
+// detachHandlers fences registration before joining captured callbacks, including
+// asynchronous server replies. New notifications have no Turn destination.
+func (c *JSONRPCClient) detachHandlers() {
+	c.handlersMu.Lock()
+	clear(c.notifHandlers)
+	clear(c.serverReqHandlers)
+	c.anyNotifHandler = nil
+	c.handlersMu.Unlock()
+	c.handlerWork.Wait()
+}
+
+func (c *JSONRPCClient) awaitReaders(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() { c.readers.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

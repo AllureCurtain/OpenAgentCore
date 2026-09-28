@@ -429,41 +429,18 @@ include real MiniMax execution through built API/daemon/Codex and Claude SDK,
 function success/error, cancellation and native continuation. Controlled fixtures
 remain useful but do not replace real-provider acceptance for execution changes.
 
-## Upgrading archived Item history
+## Historical Item storage
 
-Migration 15 retires private journal-to-Item backfilling. It preserves existing
-public Items and source journals, and refuses to apply if any Turn still has
-`items_indexed=false`. Do not set this marker manually or replay native execution.
+Migration 15 records the retirement of private journal-to-Item backfilling. It
+preserves public Items and source journals and refuses unindexed historical Turns.
+This is historical schema evidence, not a supported upgrade procedure. Do not set
+index markers manually, replay native execution, or run an older service to convert
+a database for the current release.
 
-For installations with pre-Items history:
-
-1. Back up the execution database and stop new execution/submission. Drain active
-   Turns before switching versions. Product storage is independent.
-2. Run the previous service release `906069e` against the execution database with
-   its worker disabled (omit `AGENTS_API_DAEMON_WS_URL`). Using each tenant's API
-   credential, list every Session and request its Items once. The old service
-   prepares the complete index under the Session lock, even with `limit=1`.
-3. Verify `SELECT count(*) FROM turns WHERE NOT items_indexed` returns zero.
-   A failed preparation must be resolved before upgrade; legacy journals cannot
-   recover fields they never recorded. Stop the previous service.
-4. Upgrade the daemon first so it advertises `tool_observations`, then apply the
-   migrations and start the new service. No old/new service overlap is supported
-   across this migration. Devices without this capability are not dispatched.
-
-For step 2, use the pinned Python SDK and the usual private endpoint/key settings,
-repeating with each existing Project and an authorized API key:
-
-```python
-from openai import OpenAI
-
-client = OpenAI()  # OPENAI_BASE_URL and OPENAI_API_KEY
-for session in client.beta.agents.sessions.list():
-    client.beta.agents.sessions.items.list(session.id, limit=1)
-```
-
-Fresh installations and already indexed history need no backfill. Recovery reads
-continue to use Session/Turn/Items; this procedure is an upgrade operation, not
-an official SSE replay mechanism.
+Historical installations are unsupported. Preserve their database and execution
+history, and install the current release separately. Fresh database initialization
+continues through the ordinary migration runner. Current recovery reads use
+Session/Turn/Items; they do not provide SSE replay.
 
 ## User-managed Runtime enrollment
 
@@ -640,4 +617,4 @@ not changes to the pinned official protocol.
 The release includes `oac-node` for local and remote hosts. Add nodes with
 Web's one-command flow in the [nodes guide](../../docs/getting-started/nodes.md); the
 [operator reference](HOSTED-SANDBOX-MANAGER.md) covers provider selection, manual
-registration, administrator credentials, fixed Session placement and maintenance.
+registration, administrator credentials, fixed Session placement and reset.

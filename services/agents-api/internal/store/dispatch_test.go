@@ -22,6 +22,8 @@ import (
 )
 
 type dispatchHarness struct {
+	writeMu      sync.Mutex
+	admissions   map[string]fixtureAdmission
 	t            *testing.T
 	s            *store.Store
 	d            *execution.Dispatcher
@@ -92,7 +94,7 @@ func newDispatchHarnessForSession(t *testing.T, configuration []byte, local bool
 		t.Fatal("device connection failed")
 	}
 	t.Cleanup(func() { h.conn.Close() })
-	h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{SupportedAgentKinds: []proto.SupportedAgentKind{{Kind: "codex", Available: true, Capabilities: proto.AgentKindCapabilities{Streaming: true, Steering: true, Resume: true, DurableTurns: true, DurableInputReceipts: true, WebSearchControl: true, TextVerbosity: true, ExecutionControls: true, SubagentControl: true, SubagentObservations: true, ToolObservations: true, NativeSessionRecovery: true}}}})
+	h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{SupportedAgentKinds: []proto.SupportedAgentKind{{Kind: "codex", Available: true, Capabilities: proto.AgentKindCapabilities{Streaming: true, Steering: true, Resume: true, DurableTurns: true, DurableInputReceipts: true, WebSearchControl: true, TextVerbosity: true, ExecutionControls: true, SubagentControl: true, SubagentObservations: true, ToolObservations: true, NativeSessionRecovery: true, Preparation: true}}}})
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		peer, e := h.registry.LookupDevice(h.device.ID)
@@ -122,6 +124,12 @@ func (h *dispatchHarness) message(key, text string) store.InputReceipt {
 
 func (h *dispatchHarness) write(run, kind string, payload any) {
 	h.t.Helper()
+	h.writeMu.Lock()
+	defer h.writeMu.Unlock()
+	if status, ok := payload.(proto.PreparationStatusPayload); ok && status.Handle != "" && status.ExecutorID == "" {
+		status.ExecutorID = "executor-" + status.Handle
+		payload = status
+	}
 	env, err := proto.NewEnvelope(kind, run, payload)
 	if err != nil {
 		h.t.Fatal(err)
@@ -138,6 +146,13 @@ func (h *dispatchHarness) read(kind string) proto.Envelope {
 		var env proto.Envelope
 		if err := h.conn.ReadJSON(&env); err != nil {
 			h.t.Fatal(err)
+		}
+		if kind == testExecutionRequest {
+			var keep bool
+			env, keep = h.executionFrame(env)
+			if !keep {
+				continue
+			}
 		}
 		if env.Type == kind {
 			return env
@@ -175,7 +190,7 @@ func TestExecutionDispatchSteeringAndNativeContinuity(t *testing.T) {
 	ctx := context.Background()
 	first := h.message("first", "Initial input")
 	result := h.run(ctx, first.TurnID)
-	request := h.read(proto.TypePromptRequest)
+	request := h.read(testExecutionRequest)
 	var prompt proto.PromptRequestPayload
 	_ = request.DecodePayload(&prompt)
 	if inputTextForTest(t, prompt.Input) != "Initial input" || prompt.ConversationID != h.session.ID || prompt.AgentOptions["model"] != "test-model" || prompt.AgentOptions["system_prompt"] != "Keep this instruction." {
@@ -217,7 +232,7 @@ func TestExecutionDispatchSteeringAndNativeContinuity(t *testing.T) {
 	}
 	next := h.message("third", "Continue the session")
 	result = h.run(ctx, next.TurnID)
-	request = h.read(proto.TypePromptRequest)
+	request = h.read(testExecutionRequest)
 	_ = request.DecodePayload(&prompt)
 	if prompt.AgentSessionID != "native-thread-1" || prompt.AgentStateKey != "agents-api-"+h.session.ID {
 		t.Fatal("native continuity lost")
@@ -232,7 +247,7 @@ func TestExecutionCancellationRequiresReceiptAndSurvivesContextEnd(t *testing.T)
 			h := newDispatchHarness(t)
 			first := h.message("first", "Run")
 			result := h.run(context.Background(), first.TurnID)
-			h.read(proto.TypePromptRequest)
+			h.read(testExecutionRequest)
 			_, err := h.s.RequestCancel(context.Background(), h.tenant, h.session.ID, "cancel")
 			if err != nil {
 				t.Fatal(err)
@@ -255,7 +270,7 @@ func TestExecutionCancellationRequiresReceiptAndSurvivesContextEnd(t *testing.T)
 			h.finished(result, store.TurnCancelled)
 			next := h.message("next", "Continue after cancellation")
 			result = h.run(context.Background(), next.TurnID)
-			env = h.read(proto.TypePromptRequest)
+			env = h.read(testExecutionRequest)
 			var prompt proto.PromptRequestPayload
 			_ = env.DecodePayload(&prompt)
 			if prompt.AgentSessionID != "cancelled-native" {
@@ -269,7 +284,7 @@ func TestExecutionCancellationRequiresReceiptAndSurvivesContextEnd(t *testing.T)
 	first := h.message("first", "Run")
 	ctx, cancel := context.WithCancel(context.Background())
 	result := h.run(ctx, first.TurnID)
-	h.read(proto.TypePromptRequest)
+	h.read(testExecutionRequest)
 	cancel()
 	done := h.finished(result, store.TurnFailed)
 	var outcome execution.Result
@@ -285,7 +300,7 @@ func TestExecutionFailureDoesNotBecomeSuccessOrReplay(t *testing.T) {
 			h := newDispatchHarness(t)
 			first := h.message("first", "Run")
 			result := h.run(context.Background(), first.TurnID)
-			h.read(proto.TypePromptRequest)
+			h.read(testExecutionRequest)
 			switch kind {
 			case "disconnect":
 				h.conn.Close()

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -15,7 +16,10 @@ import (
 // we want.
 func withTempHome(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("OAC_RUNTIME_HOME", dir)
 	return dir
 }
@@ -29,7 +33,7 @@ func TestValidateProfile(t *testing.T) {
 	}
 	bad := []string{
 		"",
-		"../escape",
+		"../escape", ".", "..", "profile.", "CON", "nul.json", "com1", "LPT9",
 		"with/slash",
 		"with\\backslash",
 		"with space",
@@ -102,7 +106,7 @@ func TestEnsureProfileDirCreates0700(t *testing.T) {
 	if !info.IsDir() {
 		t.Fatalf("EnsureProfileDir returned %q which is not a directory", dir)
 	}
-	if mode := info.Mode().Perm(); mode != 0o700 {
+	if mode := info.Mode().Perm(); runtime.GOOS != "windows" && mode != 0o700 {
 		t.Errorf("EnsureProfileDir mode = %o, want 0700", mode)
 	}
 
@@ -126,5 +130,12 @@ func TestInvalidProfileShortCircuits(t *testing.T) {
 	}
 	if _, err := paths.EnsureProfileDir("bad/profile"); err == nil {
 		t.Fatal("EnsureProfileDir accepted invalid profile name")
+	}
+}
+
+func TestRootRejectsRelativeOverride(t *testing.T) {
+	t.Setenv("OAC_RUNTIME_HOME", "relative")
+	if _, err := paths.Root(); err == nil {
+		t.Fatal("relative private home accepted")
 	}
 }

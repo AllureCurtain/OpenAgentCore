@@ -2,6 +2,7 @@ package store_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http/httptest"
@@ -112,6 +113,16 @@ func TestDeploymentModelProvidersHTTP(t *testing.T) {
 	}
 
 	saved := call("PUT", path, coreKey, codexDefault, 200)
+	for _, field := range []string{"last_used_at", "last_error_code", "last_error_at"} {
+		if string(saved[field]) != "null" {
+			t.Fatal("new Core observation field is not null", field)
+		}
+	}
+	for _, field := range []string{"revision", "recovery_pending"} {
+		if _, ok := saved[field]; ok {
+			t.Fatal("private observation field exposed", field)
+		}
+	}
 	if text(saved["object"]) != "core.model_provider" || text(saved["harness"]) != "codex" || text(saved["base_url"]) != "https://deployment.example/v1" || string(saved["api_key_configured"]) != "true" || text(saved["updated_at"]) == "" {
 		t.Fatalf("unexpected provider view: %v", saved)
 	}
@@ -261,6 +272,10 @@ func TestNoneSessionRetryAfterDeploymentDefaultChanges(t *testing.T) {
 		return session.ID
 	}
 	setDefault("first-default-key")
+	snapshot, err := st.DeploymentModelProvider(t.Context(), "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
 	key := uuid.NewString()
 	original := create(key)
 	if provider, err := st.SessionModelExecution(t.Context(), tenant, original); err != nil || provider.APIKey != "first-default-key" {
@@ -278,5 +293,85 @@ func TestNoneSessionRetryAfterDeploymentDefaultChanges(t *testing.T) {
 	}
 	if provider, err := st.SessionModelExecution(t.Context(), tenant, original); err != nil || provider.APIKey != "first-default-key" {
 		t.Fatal("retry changed the frozen provider", err)
+	}
+	var revision uuid.UUID
+	if err := pool.QueryRow(t.Context(), "SELECT deployment_provider_revision FROM session_execution_configuration WHERE session_id=$1", original).Scan(&revision); err != nil || revision != snapshot.Revision {
+		t.Fatal("API retry changed frozen revision", err)
+	}
+}
+
+func TestDeploymentProviderResolutionPairsRevisionDuringReplacement(t *testing.T) {
+	st, pool := store.NewManagedTestStore(t)
+	tenant, token := uuid.NewString(), uuid.NewString()
+	auth, err := newTestAuthenticator([]testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "tuple-test", TokenSHA256: device.HashCredential(token), TenantID: tenant}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	admin := adminaudit.WithSource(t.Context(), adminaudit.Source{CredentialID: "fixture-admin", RequestID: uuid.NewString(), TraceID: uuid.NewString()})
+	provider := v1.ModelProviderInput{Protocol: "responses", BaseURL: "https://original.example/v1", APIKey: "original-fixture-key"}
+	if _, err = st.SetDeploymentModelProvider(admin, "codex", provider); err != nil {
+		t.Fatal(err)
+	}
+	original, err := st.DeploymentModelProvider(t.Context(), "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Replacement after the atomic tuple read but before API resolution returns
+	// must never pair the old ciphertext with the replacement's revision.
+	resolver := func(ctx context.Context, harness string) (*store.DeploymentModelProviderSnapshot, error) {
+		snapshot, err := st.DeploymentModelProvider(ctx, harness)
+		if err != nil {
+			return nil, err
+		}
+		replacement := provider
+		replacement.APIKey = "replacement-fixture-key"
+		_, err = st.SetDeploymentModelProvider(admin, harness, replacement)
+		return snapshot, err
+	}
+	handler, err := api.NewHandler(st, auth, "codex", api.WithExecution(st), api.WithModelProviderDefaults(resolver))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("POST", "/v1/agents/sessions", strings.NewReader(`{"agent":{"model":"m"},"environment":{"type":"none"},"input":"hello"}`))
+	r.Header.Set("Authorization", "Bearer "+token)
+	r.Header.Set("OpenAI-Beta", "agents=v1")
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, r)
+	var session struct{ ID string }
+	if w.Code != 201 || json.Unmarshal(w.Body.Bytes(), &session) != nil {
+		t.Fatalf("creation failed: %d %s", w.Code, w.Body)
+	}
+	var revision uuid.UUID
+	if err = pool.QueryRow(t.Context(), "SELECT deployment_provider_revision FROM session_execution_configuration WHERE session_id=$1", session.ID).Scan(&revision); err != nil || revision != original.Revision {
+		t.Fatal("tuple revision changed", err)
+	}
+	frozen, err := st.SessionModelExecution(t.Context(), tenant, session.ID)
+	if err != nil || frozen == nil || *frozen != provider {
+		t.Fatal("tuple bundle changed", err)
+	}
+	for _, private := range []string{"original-fixture-key", "replacement-fixture-key", revision.String(), "deployment_provider_revision"} {
+		if strings.Contains(w.Body.String(), private) {
+			t.Fatal("private snapshot entered public response")
+		}
+	}
+}
+
+// The official-client job starts a fresh server with an independent encryption
+// key after the Go suite. Deployment-wide fixtures must leave its database intact.
+func TestDeploymentProviderResolutionFixtureIsolation(t *testing.T) {
+	_, shared := store.NewTestStore(t)
+	revisions := func() string {
+		t.Helper()
+		var value string
+		if err := shared.QueryRow(t.Context(), "SELECT COALESCE(jsonb_object_agg(harness, revision), '{}'::jsonb)::text FROM deployment_model_providers").Scan(&value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	before := revisions()
+	t.Run("resolution", TestDeploymentProviderResolutionPairsRevisionDuringReplacement)
+	if revisions() != before {
+		t.Fatal("deployment provider fixture changed the shared test database")
 	}
 }

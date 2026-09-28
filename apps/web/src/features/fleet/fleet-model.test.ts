@@ -19,10 +19,9 @@ describe("fleet model", () => {
     expect(nodeHealth(node("a", { online: false }))).toBe("offline");
   });
 
-  it("derives Core's own status from the Web API and maintenance", () => {
-    expect(coreStatus({ webApiReachable: null, maintenance: null })).toBe("checking");
-    expect(coreStatus({ webApiReachable: false, maintenance: false })).toBe("unreachable");
-    expect(coreStatus({ webApiReachable: true, maintenance: null })).toBe("running");
-    expect(coreStatus({ webApiReachable: true, maintenance: true })).toBe("maintenance");
+  it("reports Core reachability independently of sandbox operations", () => {
+    expect(coreStatus({ webApiReachable: null })).toBe("checking");
+    expect(coreStatus({ webApiReachable: false })).toBe("unreachable");
+    expect(coreStatus({ webApiReachable: true })).toBe("running");
   });
 });

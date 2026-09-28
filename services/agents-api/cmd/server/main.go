@@ -224,6 +224,9 @@ func run() error {
 		defer runtime.CloseConnections(registry)
 		options = append(options, api.WithEnvironmentRemoteURL(wsURL))
 	}
+	options = append(options, api.WithExecutorConnections(func(ctx context.Context, environment, digest string) (bool, error) {
+		return runtimeenrollment.RuntimeConnected(ctx, executionStore, registry, environment, digest)
+	}))
 	if registry != nil {
 		dispatcher := &execution.Dispatcher{Store: executionStore, Registry: registry,
 			ManagedRuntimes: managed, MaxConcurrentExecutions: concurrency}
@@ -233,7 +236,7 @@ func run() error {
 			return err
 		}
 		if managedNodes != nil && managedNodes.setup != nil {
-			options = append(options, api.WithSandboxDeploymentSetup(worker.InitializeSandboxDeployment), api.WithSandboxDeploymentChanges(worker.UpdateSandboxDeployment, worker.SetSandboxMaintenance))
+			options = append(options, api.WithSandboxDeploymentSetup(worker.InitializeSandboxDeployment), api.WithSandboxDeploymentChanges(worker.UpdateSandboxDeployment, worker.StartSandboxReset, worker.CancelSandboxReset))
 		}
 		workerDone = make(chan error, 1)
 		go func() { workerDone <- worker.Run(ctx) }()

@@ -2,8 +2,8 @@ import { AgentCoreError, projectRuntimeObservation, projectSavedAgentConfigurati
 import { projectTokenUsage } from "./usage-projection";
 import { safeProvider } from "./execution-configuration-projection";
 import { canonicalUuid, exactFields, isNonnegativeInteger, isRecord, onlyFields, sameResourceId } from "./response-projection";
-import type { CoreHarness, CoreHarnessKind, HarnessModelProvider, ListPage, SavedAgent } from "./types";
-import type { AdminAPIKey, AdminProject, AdminAuditPage, AdminSummary, AdminRuntimeObservation, RuntimeDiskObservation, AdminKeyProvenance, AdminResourceOwner, AdminWriteOperationPage, AdminAuditResultID, AdminDeleted, AdminIssuedAPIKey, AdminPage, AdminSessionArchive, SessionArtifact, Skill, SkillVersion, ExecutorCredential, IssuedExecutorCredential, CoreInstallation, CoreInstallationSetting } from "./admin-types";
+import type { CoreHarness, CoreHarnessKind, HarnessModelProvider, ProviderObservationErrorCode, ListPage, SavedAgent } from "./types";
+import type { AdminAPIKey, AdminProject, AdminAuditPage, AdminSummary, AdminRuntimeObservation, RuntimeDiskObservation, AdminKeyProvenance, AdminResourceOwner, AdminWriteOperationPage, AdminAuditResultID, AdminDeleted, AdminIssuedAPIKey, AdminPage, AdminSessionArchive, SessionArtifact, Skill, SkillVersion, ExecutorCredentialList, ExecutorConnection, IssuedExecutorCredential, CoreInstallation, CoreInstallationSetting } from "./admin-types";
 
 export function invalidAdminResponse(): never {
   throw new AgentCoreError("Core returned an invalid administration response.", 502, "invalid_admin_response");
@@ -198,10 +198,17 @@ export function projectAdminAudit(value: unknown): AdminAuditPage {
   });
   return { data, has_more: page.has_more, next_cursor: page.next_cursor } as AdminAuditPage;
 }
-export function projectExecutorCredentials(value: unknown): { data: ExecutorCredential[] } {
-  const page = record(value, ["data"]);
+export function projectExecutorCredentials(value: unknown): ExecutorCredentialList {
+  const page = record(value, ["data", "connection"]);
   if (!Array.isArray(page.data)) return invalidAdminResponse();
-  return { data: page.data.map((entry) => {
+  const connection = record(page.connection, ["status", "bound_key_id", "enrolled_at", "last_seen_at"]);
+  if (!["never_enrolled", "connected", "disconnected"].includes(connection.status as string) ||
+      !(connection.bound_key_id === null || (typeof connection.bound_key_id === "string" && connection.bound_key_id.length > 0)) ||
+      !date(connection.enrolled_at) || !date(connection.last_seen_at)) return invalidAdminResponse();
+  if (connection.status === "never_enrolled" && [connection.bound_key_id, connection.enrolled_at, connection.last_seen_at].some(value => value !== null)) return invalidAdminResponse();
+  if (connection.status !== "never_enrolled" && connection.enrolled_at === null) return invalidAdminResponse();
+  if (connection.status === "connected" && connection.bound_key_id === null) return invalidAdminResponse();
+  return { connection: { ...connection } as unknown as ExecutorConnection, data: page.data.map((entry) => {
     const credential = record(entry, ["key_id", "created_at", "revoked_at"]);
     if (typeof credential.key_id !== "string" || typeof credential.created_at !== "string" || !date(credential.created_at) || !date(credential.revoked_at)) return invalidAdminResponse();
     return { key_id: credential.key_id, created_at: credential.created_at, revoked_at: credential.revoked_at as string | null };
@@ -216,16 +223,21 @@ export function projectIssuedExecutorCredential(value: unknown, keyId: string, e
   return { key_id: issued.key_id, environment_id: issued.environment_id, executor_token: issued.executor_token };
 }
 
+const providerObservationErrors = new Set<string>(["authentication_error", "connection_failed", "rate_limit_exceeded", "usage_limit_exceeded", "server_overloaded", "server_error", "resource_not_found", "request_timeout", "invalid_request"]);
 const harnessKinds = new Set<string>(["claude_sdk", "codex", "mcode"]);
 /** A deployment default model provider: exactly the safe view, never `api_key`. */
 export function projectHarnessModelProvider(value: unknown, harness?: CoreHarnessKind): HarnessModelProvider {
-  if (!isRecord(value) || !onlyFields(value, new Set(["object", "harness", "updated_at", "protocol", "base_url", "context_window", "max_output_tokens", "api_key_configured"]))) return invalidAdminResponse();
-  const { object, harness: kind, updated_at, ...view } = value;
+  if (!isRecord(value) || !onlyFields(value, new Set(["object", "harness", "updated_at", "last_used_at", "last_error_code", "last_error_at", "protocol", "base_url", "context_window", "max_output_tokens", "api_key_configured"]))) return invalidAdminResponse();
+  const { object, harness: kind, updated_at, last_used_at, last_error_code, last_error_at, ...view } = value;
+  if ((last_used_at !== null && (typeof last_used_at !== "string" || !date(last_used_at))) ||
+    (last_error_at !== null && (typeof last_error_at !== "string" || !date(last_error_at))) ||
+    (last_error_code !== null && (typeof last_error_code !== "string" || !providerObservationErrors.has(last_error_code))) ||
+    ((last_error_code === null) !== (last_error_at === null))) return invalidAdminResponse();
   if (object !== "core.model_provider" || typeof kind !== "string" || !harnessKinds.has(kind) || (harness !== undefined && kind !== harness) ||
     typeof updated_at !== "string" || !date(updated_at)) return invalidAdminResponse();
   const provider = safeProvider(view, invalidAdminResponse);
   if (!provider.api_key_configured) return invalidAdminResponse();
-  return { object, harness: kind as CoreHarnessKind, ...provider, updated_at };
+  return { object, harness: kind as CoreHarnessKind, ...provider, updated_at, last_used_at, last_error_at, last_error_code: last_error_code as ProviderObservationErrorCode | null };
 }
 export function projectCoreHarnessList(value: unknown): { object: "list"; data: CoreHarness[] } {
   const page = record(value, ["object", "data"]);

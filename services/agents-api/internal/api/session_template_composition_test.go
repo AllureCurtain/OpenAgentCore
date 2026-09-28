@@ -41,7 +41,7 @@ func compositionFixture() *compositionTemplateStore {
 		template: store.EnvironmentTemplate{NetworkAccess: "enabled", Initialization: store.EnvironmentSetup{
 			Env:      map[string]string{"TEMPLATE": "private-template-env", "SHARED": "private-old-value"},
 			Commands: []store.SetupCommand{{Command: "printf private-template-command"}},
-			Packages: v1.EnvironmentPackages{NPM: []string{"semver@7.7.2"}, Python: []string{"packaging==25.0"}, System: []string{"jq"}},
+			Packages: v1.EnvironmentPackages{NPM: []string{"semver@7.7.2"}, Python: []string{"packaging==25.0"}},
 		}},
 		files: []store.InitialFile{{Type: "inline", Path: "/workspace/template", Data: []byte("private-template-bytes")}},
 	}
@@ -55,8 +55,8 @@ func TestTemplateInlineCompositionRules(t *testing.T) {
 		{name: "omitted"},
 		{name: "null", fields: `,"env":null,"setup_commands":null,"files":null,"packages":null`},
 		{name: "empty objects", fields: `,"env":{},"packages":{}`},
-		{name: "manager null", fields: `,"packages":{"npm":null,"python": null ,"system":null}`},
-		{name: "clear lists", fields: `,"setup_commands":[],"files":[],"packages":{"npm":[],"python":[],"system":[]}`, change: func(s *store.EnvironmentSetup, f *[]store.InitialFile) {
+		{name: "manager null", fields: `,"packages":{"npm":null,"python": null }`},
+		{name: "clear lists", fields: `,"setup_commands":[],"files":[],"packages":{"npm":[],"python":[]}`, change: func(s *store.EnvironmentSetup, f *[]store.InitialFile) {
 			s.Commands, *f = nil, nil
 			s.Packages = v1.EnvironmentPackages{}
 		}},
@@ -66,8 +66,8 @@ func TestTemplateInlineCompositionRules(t *testing.T) {
 			*f = []store.InitialFile{{Type: "inline", Path: "/workspace/inline", Data: []byte("private-inline-bytes")}}
 			s.Packages.NPM, s.Packages.Python = nil, []string{"idna==3.10"}
 		}},
-		{name: "mixed managers", fields: `,"packages":{"npm":null,"system":[],"python":["idna==3.10"]}`, change: func(s *store.EnvironmentSetup, _ *[]store.InitialFile) {
-			s.Packages.Python, s.Packages.System = []string{"idna==3.10"}, nil
+		{name: "mixed managers", fields: `,"packages":{"npm":null,"python":["idna==3.10"]}`, change: func(s *store.EnvironmentSetup, _ *[]store.InitialFile) {
+			s.Packages.Python = []string{"idna==3.10"}
 		}},
 		{name: "overlapping path replaces whole list", fields: `,"files":[{"type":"inline","path":"/workspace/template","data":"bmV3"}]`, change: func(_ *store.EnvironmentSetup, f *[]store.InitialFile) {
 			*f = []store.InitialFile{{Type: "inline", Path: "/workspace/template", Data: []byte("new")}}

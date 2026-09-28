@@ -3,7 +3,10 @@
 This assessment covers the fixed [Python SDK contract](upstream.json), with partial
 coverage. Core-managed Docker runs the three qualified native harnesses. V1
 user-managed `self_hosted` enrollment uses the same colocated Runtime for Codex,
-Claude SDK and MiniMax at `/workspace`; see its [real deployment qualification](user-managed-runtime-v1.md).
+Claude SDK and MiniMax. `/workspace` names the packaged workspace; a self-hosted
+Session may instead select its exact canonical physical directory. The
+[recorded deployment qualification](user-managed-runtime-v1.md) retains its historical
+source, paths and tested capability scope.
 For hosted compute, the deployment selects E2B, Docker or microsandbox through
 [Hosted Sandbox Manager](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md).
 For the separate caller-managed E2B path, the user owns allocation, renewal and
@@ -33,7 +36,8 @@ See the [enrollment guide](../../services/agents-api/README.md#user-managed-runt
 
 An explicitly configured default managed Docker provider enables `type=openai_hosted`
 for the qualified Codex, Claude Code and MiniMax Code profiles. Each uses the same
-Runtime lifecycle and workspace interfaces with its own native adapter/isolation.
+Runtime lifecycle and workspace interfaces with its native adapter. The outer
+Environment provides managed isolation; the daemon adds no inner sandbox.
 See the [engine profile guides](README.md#public-engine-profiles) for setup and limits.
 The standalone [operator configuration](../../services/agents-api/deploy/codex/README.md#standalone-operator-configuration)
 selects the qualified immutable Runtime image; advertised capabilities alone do
@@ -42,10 +46,19 @@ and retry identity before the existing leased Worker provisions its allocation.
 A committed creation interrupted before bootstrap is recovered without replaying
 an existing allocation's Create.
 
-Omitted/null network defaults to enabled. Enabled, disabled and exact-host restricted
-policies use the same qualified image with adapter-selected immutable native policy.
+Omitted/null network defaults to enabled. The daemon does not enforce disabled
+or restricted networking. An execution combination must reject unless its outer
+Environment implements and qualifies the requested behavior.
 Templates and inline configuration share initial files, env, packages, ordered setup
-and inline or tenant-owned referenced Skills through the hosted initializer.
+and inline or tenant-owned referenced Skills through ordered managed initialization.
+The same authenticated daemon handles initial files, tool configuration, packages,
+setup, Skill/Plugin import and directory snapshot finalization through
+`runtime_prepare`. Providers place, create, bootstrap, inspect, renew and reclaim
+compute. npm/Python installation and setup use the host's existing network and
+starting account. System dependencies must be preinstalled; `packages.system`
+rejects explicitly, including null and empty lists, and never invokes apt, sudo
+or elevated execution. Package responses include the official required
+`system: []` field as empty metadata; it does not enable installation.
 Unsupported hostname forms and installation combinations reject explicitly; see
 the [Template coverage and limits](environment-templates.md). Empty/null installation
 defaults produce safe empty metadata, not a live workspace inventory. Service-origin
@@ -78,7 +91,8 @@ Current deployment-managed E2B is a separate hosted configuration in the manager
 ## Initial public self-hosted profile
 
 Create a Session with `environment.type=self_hosted`,
-`workspace_directory: "/workspace"` and omitted/null/empty `capability_directories`. Creation
+a clean absolute `workspace_directory` and optional absolute local
+`capability_directories`. `/workspace` maps to the Runtime-bound workspace. Creation
 accepts initial text as a string or ordered user-message array. Omitted/null input
 creates no Turn or connection action. Configured execution, an enabled harness and
 the exact local profile are validated
@@ -122,9 +136,15 @@ existing function parser and remain fixed through native preparation and continu
 output/error field presence and ordered content keep their existing semantics.
 Retries retain the original call, including during later work. New results cannot
 bypass pending input. Function callbacks do not populate Environment installations.
-Mixed events, non-text input and nonempty capability directories remain unsupported.
-The public field types are unchanged; `/workspace` is the V1 deployment limit, not
-an upstream schema change. `remote_url` is the configured daemon WebSocket URL,
+Mixed events and non-text input remain unsupported. Local capability directories
+use the same Runtime parser and installed snapshot as managed Skills and Plugins;
+preparation must finish before native execution. Reconnect reuses installed bytes,
+while new Sessions capture their own sources. Directory aliases and protected Runtime
+state are rejected. The current implementation uses the packaged Linux Runtime
+layout; cross-platform installation and isolation are not part of this profile.
+The public field types are unchanged. Enrollment must match either the `/workspace`
+logical alias or the exact canonical directory bound by the Runtime; selecting an
+arbitrary path does not grant access. `remote_url` is the configured daemon WebSocket URL,
 returned unchanged. This is our private connection contract and does not claim
 stock `exec-server` compatibility. Service-origin HTTP MCP is explicitly rejected
 on `self_hosted`; `none` MCP and hosted Template Plugin MCP retain their own scope.
@@ -134,6 +154,50 @@ do not establish real public qualification. Before claiming that qualification,
 exercise fixed SDK/raw HTTP creation/input, actual native tools, Files/Artifacts,
 second-Turn history, Core/Runtime restart, cancellation and credential rotation/
 revocation/deletion on each declared deployment.
+
+## Runtime capability preparation
+
+Core freezes resource versions, metadata and source selections. Managed initialization
+keeps initial files and tool configuration before Runtime Skill/Plugin import,
+then runs packages and ordered setup before Runtime snapshots local capability
+directories. All steps use the common `runtime_prepare` protocol; Providers do
+not execute Core initialization commands. The common runner depends on neutral
+Environment/Session identity and a Runtime peer, not Provider, deployment or OS. Self-hosted input
+accepts only local `capability_directories` with `workspace_directory`, not managed
+Skill/Plugin archive fields or a hosted Template. Local directory discovery does not
+populate the public API-managed `skills` or `plugins` installation arrays.
+
+Both origins use the common Runtime parser and `installed.json` on Linux, macOS
+and Windows. The operator selects the capability root; the native installer
+uses `capabilities` under `OAC_RUNTIME_HOME` by default. Core and public requests
+cannot select that destination. Read-only snapshot modes are integrity hints,
+not protection from the launching user. The manifest binds one
+Session and Environment to the source-selection digest. The admitted asynchronous
+preparation owner verifies or creates it before native execution, including for an
+empty selection. Reconnect and replacement executors reuse installed contents;
+source edits are observed only by a new Session with its own Environment and fresh
+snapshot. A private completion record retains only the operator installation root,
+so loss of a completed snapshot cannot trigger source recapture. Missing, partial or
+conflicting snapshots fail without automatic repair or replay. Adapters receive only the resulting Runtime-owned Skill paths and MCP
+declarations. Files access retains its separate readiness and authorization.
+
+Resource management owns allocation and Environment creation, renewal and reclamation.
+Executor close, Turn cancellation and transport loss preserve the installed snapshot,
+workspace and allocation. Reclamation is an explicit operation coordinated with active
+work; a disconnected socket is not proof that native effects have stopped.
+
+Source selections accept portable absolute Unix, Windows drive and UNC paths;
+Core does not resolve these paths on its own host. The daemon applies its local
+path and access checks. Initial files and setup working directories use logical
+`/workspace` paths. Harness differences remain in adapters.
+
+The protocol and Go preparation implementation are shared by all three native
+platforms. Resource directories are operator settings, not deployment branches.
+Managed Providers remain Linux-only. The daemon does not sandbox tools, files or
+network access; tools use the starting account's permissions. Native installation
+and current validation limits are in the [native guide](../../docs/self-hosted-native.md).
+Historical deployment acceptance does not qualify later platform or capability changes. See the
+[canonical preparation rules](../../CONTRIBUTING.md#shared-runtime-capability-preparation).
 
 ## Contract inventory
 

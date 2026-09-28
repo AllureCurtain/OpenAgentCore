@@ -101,7 +101,7 @@ func NewHandler(cfg HandlerConfig) *Handler {
 
 // WS is the websocket upgrade entry point. Errors before the upgrade
 // return JSON 4xx; errors during the WS read loop fall to Session.Close
-// which fans synthetic error/done to every active subscriber.
+// which closes subscriptions with a transport error, without execution events.
 //
 //	@Summary	Agent-daemon WebSocket upgrade
 //	@Description	Long-lived duplex channel for daemon runtimes. Authenticated by the runner bearer in the HTTP Authorization header before upgrade.

@@ -34,10 +34,16 @@ import uuid
 
 import distribution
 import node_spec
+import node_generations
+import node_update
 
 
 class InstallError(Exception):
     pass
+
+
+class RuntimeDownloadError(InstallError):
+    """A fixed private helper exit category for transfer/provenance failures."""
 
 
 COMMON = ("native/bin/oac-node", "runtime/seccomp.json")
@@ -188,16 +194,16 @@ def fetch(source, name):
             with open_request(source + "/node-install/" + name) as response:
                 raw = response.read(1024 * 1024 + 1)
             if len(raw) > 1024 * 1024:
-                raise InstallError("Node bootstrap metadata is too large: " + name)
+                raise RuntimeDownloadError("Node bootstrap metadata is too large: " + name)
             return io.BytesIO(raw)
         except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead) as error:
             if not transient(error) or attempt == 2:
                 status = " (HTTP " + str(error.code) + ")" if isinstance(error, urllib.error.HTTPError) else ""
-                raise InstallError("Cannot download node metadata " + name + status + "; check the console URL, TLS and network, then rerun") from None
+                raise RuntimeDownloadError("Cannot download node metadata " + name + status + "; check the console URL, TLS and network, then rerun") from None
             time.sleep(attempt + 1)
 
 
-def metadata(source, bundle=None):
+def metadata(source, bundle=None, prefix=""):
     if bundle is not None:
         def read(name):
             path = bundle / name
@@ -205,30 +211,36 @@ def metadata(source, bundle=None):
                 raise InstallError("Invalid local distribution metadata")
             return path.open("rb")
     else:
-        read = lambda name: fetch(source, name)
+        read = lambda name: fetch(source, prefix + name)
     with read("SHA256SUMS") as response:
         raw = response.read(1024 * 1024 + 1)
     if len(raw) > 1024 * 1024:
-        raise InstallError("Invalid distribution checksum list")
+        raise RuntimeDownloadError("Invalid distribution checksum list")
     sums = {}
-    for line in raw.decode().splitlines():
-        checksum, name = line.split("  ", 1)
-        if name in sums or not re.fullmatch(r"[0-9a-f]{64}", checksum):
-            raise InstallError("Invalid distribution checksum entry")
-        sums[name] = checksum
+    try:
+        for line in raw.decode().splitlines():
+            checksum, name = line.split("  ", 1)
+            if name in sums or not re.fullmatch(r"[0-9a-f]{64}", checksum):
+                raise RuntimeDownloadError("Invalid distribution checksum entry")
+            sums[name] = checksum
+    except ValueError:
+        raise RuntimeDownloadError("Invalid distribution checksum list") from None
     with read("manifest.json") as response:
         raw = response.read(1024 * 1024 + 1)
     if len(raw) > 1024 * 1024 or hashlib.sha256(raw).hexdigest() != sums.get("manifest.json"):
-        raise InstallError("Distribution manifest checksum mismatch")
-    manifest = json.loads(raw)
-    if (manifest.get("platform") != "linux/amd64" or not re.fullmatch(r"[0-9a-f]{40}", manifest.get("source_commit", ""))
+        raise RuntimeDownloadError("Distribution manifest checksum mismatch")
+    try:
+        manifest = json.loads(raw)
+    except (ValueError, TypeError):
+        raise RuntimeDownloadError("Invalid distribution manifest") from None
+    if (not isinstance(manifest, dict) or manifest.get("platform") != "linux/amd64" or not re.fullmatch(r"[0-9a-f]{40}", manifest.get("source_commit", ""))
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", manifest.get("images", {}).get("runtime", ""))):
-        raise InstallError("Unsupported node distribution")
+        raise RuntimeDownloadError("Unsupported node distribution")
     distribution.image_identities(manifest, "runtime")
     for name in (COMMON[0], "images/runtime.tar.gz") + MICRO:
         distribution.artifact(manifest, name)
     # Nodes download only from their console, never from a release URL the build recorded.
-    manifest["artifact_base_url"] = source + "/node-install/artifacts" if source else ""
+    manifest["artifact_base_url"] = source + "/node-install/releases/" + manifest["source_commit"] + "/artifacts" if source else ""
     return manifest, sums
 
 
@@ -271,20 +283,20 @@ def file_digest(path):
     return result.hexdigest()
 
 
-def download(source, name, root, expected):
+def download(source, name, root, expected, prefix=""):
     target = root / name
     safe_directory(target.parent)
     if existing_file(target):
         if file_digest(target) != expected:
-            raise InstallError("Installed node payload differs; refusing to overwrite it")
+            raise RuntimeDownloadError("Installed node payload differs; refusing to overwrite it")
         return
     descriptor, temporary = tempfile.mkstemp(prefix=".download-", dir=target.parent)
     try:
-        with os.fdopen(descriptor, "wb") as output, fetch(source, name) as response:
+        with os.fdopen(descriptor, "wb") as output, fetch(source, prefix + name) as response:
             for block in iter(lambda: response.read(1024 * 1024), b""):
                 output.write(block)
         if file_digest(Path(temporary)) != expected:
-            raise InstallError("Node payload checksum mismatch: " + name)
+            raise RuntimeDownloadError("Node payload checksum mismatch: " + name)
         os.replace(temporary, target)
     finally:
         if os.path.exists(temporary):
@@ -315,7 +327,7 @@ def provider_config(root, args, manifest, runtime_image):
         result["microsandbox"] = {
             "helper_path": str(root / MICRO[0]), "runtime_path": str(root / MICRO[1]), "firmware_path": str(root / MICRO[2]),
             "runtime_sha256": manifest["microsandbox"]["runtime_sha256"], "firmware_sha256": manifest["microsandbox"]["firmware_sha256"],
-            "runtime_home": str(micro_home(args.installation_id)), "image": manifest["runtime_ref"],
+            "runtime_home": str(getattr(args, "runtime_home", micro_home(args.installation_id))), "image": manifest["runtime_ref"],
             **args.configuration["specification"]["resources"],
             "network": {"default_egress": "deny", "default_ingress": "deny", "rules": core_rules + [
                 {"action": "allow", "direction": "egress", "destination": "public"},
@@ -342,7 +354,7 @@ def prepare_runtime(root, args, manifest):
             output = result.stdout.decode()
             if "not found" in output or (result.returncode and "statically linked" not in output and "not a dynamic executable" not in output):
                 raise InstallError("Install the microsandbox host shared-library prerequisites")
-        env = dict(os.environ, MSB_BACKEND="local", MSB_HOME=str(micro_home(args.installation_id)),
+        env = dict(os.environ, MSB_BACKEND="local", MSB_HOME=str(getattr(args, "runtime_home", micro_home(args.installation_id))),
                    MSB_PATH=str(root / MICRO[1]), MSB_LIBKRUNFW_PATH=str(root / MICRO[2]))
         inspect = [str(root / MICRO[1]), "image", "inspect", manifest["runtime_ref"], "--format", "json"]
         def matches():
@@ -413,8 +425,15 @@ def install_lock(root):
 def register_node(root, args, token):
     """Download and verify the payload, prepare the Runtime and register; not the service."""
     print("Downloading and verifying node files...", flush=True)
-    manifest, sums = metadata(args.source_url, getattr(args, "bundle", None))
+    program_manifest, program_sums = metadata(args.source_url, getattr(args, "bundle", None))
+    selected = args.configuration["specification"]["runtime"]
+    manifest, sums = program_manifest, program_sums
+    if selected["source_commit"] != program_manifest["source_commit"]:
+        if getattr(args, "bundle", None) is not None:
+            raise InstallError("This bundle does not contain Core's selected Runtime; install through the console --source-url that retains its release")
+        manifest, sums = metadata(args.source_url, prefix="releases/" + selected["source_commit"] + "/")
     node_spec.verify_release(args.configuration, manifest)
+    runtime_prefix = "releases/" + manifest["source_commit"] + "/"
     names = COMMON + (MICRO if args.provider == "microsandbox" else ())
     if "runtime/seccomp.json" not in sums:
         raise InstallError("The distribution is missing required node checksums")
@@ -422,10 +441,11 @@ def register_node(root, args, token):
              "source_commit": manifest["source_commit"], "generation": args.configuration["generation"],
              "specification_digest": args.configuration["specification_digest"]}
     write_once(root / "installation.json", json_text(state))
+    node_generations.record_root_runtime(root, args, manifest, sums, sys.modules[__name__])
     for name in names:
         if name == "runtime/seccomp.json":
             if getattr(args, "bundle", None) is None:
-                download(args.source_url, name, root, sums[name])
+                download(args.source_url, name, root, sums[name], prefix=runtime_prefix)
             else:
                 source = args.bundle / name
                 if source.is_symlink() or file_digest(source) != sums[name]:
@@ -436,9 +456,15 @@ def register_node(root, args, token):
             target = root / name
             safe_directory(target.parent)
             existing_file(target)
-            distribution.obtain_artifact(manifest, name, target, getattr(args, "bundle", None))
+            distribution.obtain_artifact(program_manifest if name == COMMON[0] else manifest, name, target, getattr(args, "bundle", None))
             os.chmod(target, 0o700)
+    node_generations.install_helper(root, args, sys.modules[__name__])
     safe_directory(root / "state/node")
+    lease_identity = {"installation_id": args.installation_id, "generation": args.configuration["generation"],
+                      "specification_digest": args.configuration["specification_digest"]}
+    with node_generations.collection_lease(root, args.configuration["generation"], sys.modules[__name__], lease_identity,
+                                           initialize=not (root / "provider.json").exists()):
+        pass
     print("Checking the sandbox runtime...", flush=True)
     runtime_image = prepare_runtime(root, args, manifest)
     # Retain the original network policy when recovering a partial installation.
@@ -1425,6 +1451,10 @@ def main(argv=None):
     parser.add_argument("--provider", choices=("docker", "microsandbox"), help="Optional assertion; Core owns provider selection")
     parser.add_argument("--installation-id", required=True)
     parser.add_argument("--enrollment-token-stdin", action="store_true", help="Read the one-time enrollment token from standard input")
+    parser.add_argument("--generation-action", choices=("prepare", "collect"), help=argparse.SUPPRESS)
+    parser.add_argument("--generation", type=int, help=argparse.SUPPRESS)
+    parser.add_argument("--specification-digest", help=argparse.SUPPRESS)
+    parser.add_argument("--update", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--uninstall", action="store_true", help="Remove this host's node after it was removed on the Nodes page")
     parser.add_argument("--force", action="store_true", help="With --uninstall: skip the Core check, for a Core that no longer exists")
     args = parser.parse_args(argv)
@@ -1433,6 +1463,18 @@ def main(argv=None):
                        "--enrollment-token-stdin.\n")
     if str(uuid.UUID(args.installation_id)) != args.installation_id:
         raise InstallError("Installation ID must be a canonical UUID")
+    if args.update:
+        raise InstallError("Node version updates are not supported; preserve the existing state and reinstall "
+                           "separately. Nothing was changed.")
+    if args.generation_action:
+        if args.generation is None or not 1 <= args.generation <= 9223372036854775807 or not re.fullmatch(r"[0-9a-f]{64}", args.specification_digest or ""):
+            parser.error("Invalid generation authorization")
+        try:
+            (node_generations.prepare if args.generation_action == "prepare" else node_generations.collect)(args, sys.modules[__name__])
+        except (RuntimeDownloadError, distribution.ArtifactError):
+            print("Runtime artifact transfer or verification failed", file=sys.stderr)
+            raise SystemExit(65) from None
+        return
     if args.uninstall:
         if args.source_url or args.bundle or args.core_url or args.provider or args.enrollment_token_stdin:
             parser.error("--uninstall takes only --installation-id and --force")

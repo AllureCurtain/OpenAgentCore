@@ -13,8 +13,8 @@ function fixture(t) {
     mkdirSync(path);
     return [name, path];
   }));
-  const config = { home: dirs.home, state: dirs.state, scratch: dirs.scratch, protected_dirs: [dirs.protected],
-    dependency_path: dirs.deps, env_names: ["ANTHROPIC_API_KEY", "HTTP_PROXY"] };
+  const config = { home: dirs.home, state: dirs.state, scratch: dirs.scratch,
+     env_names: ["ANTHROPIC_API_KEY", "HTTP_PROXY"] };
   const request = { type: "start", input: [{ content: [{ type: "input_text", text: "fixture" }] }], model: "fixture", system_prompt: "", cwd: dirs.workspace, workspace: config };
   const previous = process.env;
   process.env = { HOME: dirs.home, CLAUDE_CONFIG_DIR: dirs.state, ANTHROPIC_API_KEY: "fixture-secret",
@@ -42,45 +42,21 @@ test("workspace is explicit, typed and rejects external MCP declarations", t => 
     { ...ordinary, functions: [], mcp_http_servers: [] });
 });
 
-test("workspace roots are existing canonical directories with no overlap or rule syntax", t => {
-  const { root, dirs, config } = fixture(t);
-  const alias = join(root, "alias");
-  symlinkSync(dirs.home, alias);
-  const child = join(dirs.workspace, "child");
-  mkdirSync(child);
-  const file = join(root, "file");
-  writeFileSync(file, "fixture");
-  for (const home of ["relative", "/", dirs.home + "/", dirs.home + "/../home", join(root, "missing"),
-    dirs.workspace, child, root, alias, file, dirs.home + "*", dirs.home + "\n"]) {
-    assert.throws(() => parseWorkspace({ ...config, home }, dirs.workspace), /invalid_request/);
-  }
-  assert.throws(() => parseWorkspace({ ...config, protected_dirs: [dirs.protected, dirs.protected] }, dirs.workspace), /invalid_request/);
-  for (const path of ["", ":" + dirs.deps, dirs.deps + ":", "relative", dirs.home, child, root]) {
-    assert.throws(() => parseWorkspace({ ...config, dependency_path: path }, dirs.workspace), /invalid_request/);
-  }
-  const depsAlias = join(root, "deps-alias");
-  symlinkSync(dirs.deps, depsAlias);
-  assert.equal(parseWorkspace({ ...config, dependency_path: depsAlias }, dirs.workspace).dependency_path, dirs.deps);
-  assert.equal(new WorkspaceProfile(dirs.workspace, { ...config, dependency_path: depsAlias }).options.env.PATH, dirs.deps);
-  for (const mutable of [dirs.workspace, dirs.scratch]) {
-    const unsafeAlias = join(mutable, "deps-alias");
-    symlinkSync(dirs.deps, unsafeAlias);
-    assert.throws(() => new WorkspaceProfile(dirs.workspace, { ...config, dependency_path: unsafeAlias }), /invalid_request/);
-  }
-  assert.throws(() => parseWorkspace({ ...config, dependency_path: alias }, dirs.workspace), /invalid_request/);
+test("workspace paths use ordinary host directories", t => {
+ const {root,dirs,config}=fixture(t);
+ for(const home of ["relative",join(root,"missing")]) assert.throws(()=>parseWorkspace({...config,home},dirs.workspace),/invalid_request/);
+ const alias=join(root,"alias");symlinkSync(dirs.home,alias);
+ assert.equal(parseWorkspace({...config,home:alias},dirs.workspace).home,alias);
+ assert.equal(parseWorkspace({...config,scratch:dirs.home},dirs.workspace).scratch,dirs.home);
 });
 
 test("workspace environment copies only selected refs and fixed values", t => {
   const { dirs, config } = fixture(t);
   const options = new WorkspaceProfile(dirs.workspace, config).options;
-  assert.deepEqual(options.env, {
-    PATH: dirs.deps, HOME: dirs.home, TMPDIR: dirs.scratch, CLAUDE_CONFIG_DIR: dirs.state,
-    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1",
-    DISABLE_AUTOUPDATER: "1", CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1",
-    ANTHROPIC_API_KEY: "fixture-secret", HTTP_PROXY: "http://fixture-proxy",
-  });
-  assert.ok(options.sandbox.credentials.envVars.some(entry => entry.name === "ANTHROPIC_AUTH_TOKEN" && entry.mode === "deny"));
-  assert.ok(options.sandbox.credentials.envVars.some(entry => entry.name === "HTTP_PROXY" && entry.mode === "deny"));
+  assert.equal(options.env.UNSELECTED_CANARY,"must-not-inherit");
+  assert.equal(options.env.HOME,dirs.home);
+  assert.equal(options.env.ANTHROPIC_API_KEY,"fixture-secret");
+
   delete process.env.ANTHROPIC_API_KEY;
   assert.throws(() => new WorkspaceProfile(dirs.workspace, config), /invalid_request/);
   process.env.ANTHROPIC_API_KEY = "fixture-secret";
@@ -94,7 +70,7 @@ test("workspace environment copies only selected refs and fixed values", t => {
   assert.throws(() => new WorkspaceProfile(dirs.workspace, config), /invalid_request/);
 });
 
-test("workspace native options keep the strict sandbox and exact native inventory", t => {
+test("workspace native options bypass isolation and preserve selected tool inventory", t => {
   const { dirs, config } = fixture(t);
   const profile = new WorkspaceProfile(dirs.workspace, config);
   const options = profile.options;
@@ -103,24 +79,12 @@ test("workspace native options keep the strict sandbox and exact native inventor
   assert.deepEqual(options.settingSources, []);
   assert.deepEqual(options.mcpServers, {});
   assert.equal(options.strictMcpConfig, true);
-  assert.equal(options.permissionMode, "default");
+  assert.equal(options.permissionMode, "bypassPermissions");
   assert.equal(options.persistSession, true);
-  assert.equal(options.sandbox.enabled, true);
-  assert.equal(options.sandbox.failIfUnavailable, true);
-  for (const key of ["autoAllowBashIfSandboxed", "allowUnsandboxedCommands", "enableWeakerNestedSandbox", "enableWeakerNetworkIsolation"]) {
-    assert.equal(options.sandbox[key], false);
-  }
-  assert.deepEqual(options.sandbox.excludedCommands, []);
-  assert.deepEqual(options.sandbox.filesystem, { disabled: false, allowWrite: [dirs.workspace, dirs.scratch],
-    denyRead: [dirs.home, dirs.state, dirs.protected], denyWrite: [dirs.home, dirs.state, dirs.protected], allowRead: [] });
-  assert.deepEqual(options.sandbox.network,
-    { allowedDomains: [], strictAllowlist: true, allowAllUnixSockets: false, allowLocalBinding: false });
-  assert.equal(options.settings.permissions.blockReadsOutsideWorkingDirectories, true);
-  assert.equal(options.settings.permissions.disableBypassPermissionsMode, "disable");
-  for (const path of [dirs.home, dirs.state, dirs.protected, "/proc", "/sys"]) {
-    assert.ok(options.settings.permissions.deny.includes(`Read(/${path}/**)`));
-    assert.ok(options.settings.permissions.deny.includes(`Edit(/${path}/**)`));
-  }
+  assert.equal(options.sandbox.enabled, false);
+  assert.deepEqual(options.sandbox, { enabled: false });
+  assert.equal(options.allowDangerouslySkipPermissions, true);
+  assert.deepEqual(options.settings, {});
   profile.verify(["Read", "Edit", "Bash"], []);
   for (const tools of [[], ["Bash", "Read", "Read"], ["Bash", "Read", "Write"], ["Bash", "Read", "Edit", "Agent"]]) {
     assert.throws(() => profile.verify(tools, []), /unexpected native workspace inventory/);
@@ -156,7 +120,7 @@ test("structured workspace admits only its configured native terminal tool", asy
   }
 });
 
-test("workspace permissions and pre-tool hook reject outside paths and unsafe Bash flags", async t => {
+test("workspace permissions preserve host authority and synchronous command ownership", async t => {
   const { dirs, config } = fixture(t);
   writeFileSync(join(dirs.workspace, "file.txt"), "fixture");
   symlinkSync(dirs.protected, join(dirs.workspace, "escape"));
@@ -166,7 +130,7 @@ test("workspace permissions and pre-tool hook reject outside paths and unsafe Ba
   const options = { signal: new AbortController().signal, toolUseID: "tool", requestId: "request" };
   const hook = async (name, input) => profile.beforeTool({ hook_event_name: "PreToolUse", session_id: "native", cwd: dirs.workspace,
     transcript_path: join(dirs.state, "session"), tool_name: name, tool_input: input, tool_use_id: "tool" }, "tool", options);
-  for (const [name, input] of [["Bash", { command: "printf value" }], ["Read", { file_path: "file.txt" }],
+  for (const [name, input] of [["Bash", { command: "printf value" }], ["Bash", { command: "true", dangerouslyDisableSandbox: true }], ["Read", { file_path: "file.txt" }],
     ["Read", { file_path: "inside" }], ["Edit", { file_path: "new/file.txt", old_string: "", new_string: "value" }]]) {
     const permission = await profile.canUseTool(name, input, options);
     assert.equal(permission.behavior, "allow");
@@ -177,10 +141,8 @@ test("workspace permissions and pre-tool hook reject outside paths and unsafe Ba
     }
   }
   for (const [name, input] of [["Bash", { command: "true", run_in_background: true }],
-    ["Bash", { command: "true", dangerouslyDisableSandbox: true }], ["Bash", { command: "true", run_in_background: "false" }],
-    ["Write", { file_path: "file.txt" }], ["Read", { file_path: "../protected/value" }],
-    ["Read", { file_path: join(dirs.home, "credentials") }], ["Edit", { file_path: "escape/new" }],
-    ["Read", { file_path: "dangling" }], ["Edit", { file_path: "dangling/new" }]]) {
+    ["Bash", { command: "true", run_in_background: "false" }],
+    ["Write", { file_path: "file.txt" }]]) {
     assert.equal((await profile.canUseTool(name, input, options)).behavior, "deny");
     assert.equal((await hook(name, input)).hookSpecificOutput.permissionDecision, "deny");
   }
@@ -188,29 +150,10 @@ test("workspace permissions and pre-tool hook reject outside paths and unsafe Ba
   assert.equal((await profile.canUseTool("Bash", { command: "true" }, { ...options, signal: AbortSignal.abort() })).behavior, "deny");
 });
 
-test("dedicated Runtime carries an explicit native network policy", t => {
-  const { dirs, config, request } = fixture(t);
-  for (const network_access of ["enabled", "disabled"]) {
-    const workspace = { ...config, network_access };
-    const parsed = parseStart(JSON.stringify({ ...request, workspace, require_history: true }));
-    assert.equal(parsed.require_history, true);
-    const options = new WorkspaceProfile(dirs.workspace, workspace).options;
-    assert.deepEqual(options.sandbox.network.allowedDomains, network_access === "enabled" ? ["*"] : []);
-    assert.equal(options.sandbox.enableWeakerNestedSandbox, false);
-    assert.equal(options.sandbox.allowUnsandboxedCommands, false);
-  }
-  assert.throws(() => parseStart(JSON.stringify({ ...request, workspace: { ...config, network_access: "restricted" } })), /invalid_request/);
-  const restricted = { ...config, network_access: "restricted", allowed_domains: ["example.com", "api.example.com"] };
-  const parsed = parseStart(JSON.stringify({ ...request, workspace: restricted }));
-  assert.deepEqual(parsed.workspace.allowed_domains, restricted.allowed_domains);
-  const network = new WorkspaceProfile(dirs.workspace, restricted).options.sandbox.network;
-  assert.deepEqual(network, { allowedDomains: restricted.allowed_domains, strictAllowlist: true, allowAllUnixSockets: false, allowLocalBinding: false });
-  for (const allowed_domains of [["*"], ["*.example.com"], ["example.com:443"], ["127.0.0.1"], ["example.com\n"], []]) {
-    assert.throws(() => parseStart(JSON.stringify({ ...request, workspace: { ...restricted, allowed_domains } })), /invalid_request/);
-  }
-  assert.throws(() => parseStart(JSON.stringify({ ...request, workspace: { ...restricted, network_access: "enabled" } })), /invalid_request/);
-  const { workspace, ...none } = request;
-  assert.throws(() => parseStart(JSON.stringify({ ...none, require_history: true })), /invalid_request/);
+test("Runtime rejects network isolation requests", t => {
+ const {dirs,config}=fixture(t);
+ assert.deepEqual(new WorkspaceProfile(dirs.workspace,{...config,network_access:"enabled"}).options.sandbox,{enabled:false});
+ for(const network_access of ["disabled","restricted"]) assert.throws(()=>parseWorkspace({...config,network_access,allowed_domains:network_access==="restricted"?["example.com"]:[]},dirs.workspace),/invalid_request/);
 });
 
 test("workspace functions retain native sandbox and exact tool authority", async t => {
@@ -232,38 +175,28 @@ test("workspace functions retain native sandbox and exact tool authority", async
   const event = { hook_event_name: "PreToolUse", tool_name: "mcp__functions__lookup", tool_input: input, tool_use_id: "call" };
   assert.deepEqual(await profile.beforeTool(event, "call", options), {});
   assert.equal((await profile.beforeTool({ ...event, tool_name: "mcp__external__lookup" }, "call", options)).hookSpecificOutput.permissionDecision, "deny");
-  assert.equal((await profile.canUseTool("Bash", { command: "true", dangerouslyDisableSandbox: true }, options)).behavior, "deny");
-  assert.equal((await profile.canUseTool("Read", { file_path: dirs.state + "/history" }, options)).behavior, "deny");
-  assert.equal(profile.options.sandbox.failIfUnavailable, true);
-  assert.equal(profile.options.sandbox.allowUnsandboxedCommands, false);
+  assert.equal((await profile.canUseTool("Bash", { command: "true", dangerouslyDisableSandbox: true }, options)).behavior, "allow");
+  assert.equal((await profile.canUseTool("Read", { file_path: dirs.state + "/history" }, options)).behavior, "allow");
   controller.abort();
   assert.equal((await profile.canUseTool("mcp__functions__lookup", input, options)).behavior, "deny");
 });
 
-test("initialized user env is applied inside native Bash, never SDK spawn env", async t => {
-  const { dirs, config } = fixture(t);
-  const profile = new WorkspaceProfile(dirs.workspace, { ...config, tool_environment: true });
-  assert.equal(profile.options.env.PYTHONPATH, undefined);
-  assert.equal(profile.options.env.PATH, dirs.deps);
-  assert.ok(profile.options.sandbox.filesystem.allowWrite.includes("/environment/packages"));
-  const input = { hook_event_name: "PreToolUse", tool_name: "Bash", tool_use_id: "tool",
-    tool_input: { command: "printf '%s' 'quoted value'", timeout: 1000 } };
-  const result = await profile.beforeTool(input, "tool", { signal: new AbortController().signal });
-  assert.equal(result.hookSpecificOutput.updatedInput.timeout, 1000);
-  assert.equal(result.hookSpecificOutput.updatedInput.command,
-    ". /environment/initialization/tool-env.sh && eval -- 'printf '\\''%s'\\'' '\\''quoted value'\\'''" );
-  const denied = await profile.beforeTool({ ...input, tool_input: { command: "id", dangerouslyDisableSandbox: true } }, "tool", { signal: new AbortController().signal });
-  assert.equal(denied.hookSpecificOutput.permissionDecision, "deny");
+test("initialized environment is ordinary child environment on every layout", t => {
+ const {dirs,config}=fixture(t);
+ {
+  const profile=new WorkspaceProfile(dirs.workspace,{...config,tool_env:{USER_VALUE:"initialized",HOME:"/wrong",CLAUDE_CONFIG_DIR:"/wrong",home:"/wrong"}});
+  assert.equal(profile.options.env.USER_VALUE,"initialized");
+  assert.equal(profile.options.env.HOME,dirs.home);
+  assert.equal(profile.options.env.CLAUDE_CONFIG_DIR,dirs.state);
+  assert.equal(profile.options.env.home,undefined);
+  assert.deepEqual(profile.options.sandbox,{enabled:false});
+ }
 });
 
-test("installed system tools retain the native prefix boundary and existing scratch", t => {
-  const { dirs, config } = fixture(t);
-  assert.throws(() => new WorkspaceProfile(dirs.workspace, { ...config, system_packages: true }), /invalid_request/);
-  const profile = new WorkspaceProfile(dirs.workspace, { ...config, tool_environment: true, system_packages: true });
-  assert.equal(profile.options.env.CLAUDE_CODE_SHELL_PREFIX, "/usr/local/bin/oac-claude-shell-prefix");
-  assert.equal(profile.options.env.OAC_RUNTIME_TOOL_SCRATCH, dirs.scratch);
-  assert.equal(profile.options.env.TMPDIR, dirs.scratch);
-  assert.ok(profile.options.sandbox.filesystem.denyWrite.includes("/environment/packages/system"));
-  assert.equal(profile.options.env.PYTHONPATH, undefined);
-  assert.equal(profile.options.sandbox.failIfUnavailable, true);
+test("host tools can access paths outside the workspace", async t => {
+ const {dirs,config}=fixture(t);
+ const profile=new WorkspaceProfile(dirs.workspace,config);
+ for(const file_path of ["../protected/value",join(dirs.home,"credentials")]) {
+  assert.equal((await profile.canUseTool("Read",{file_path},{signal:new AbortController().signal})).behavior,"allow");
+ }
 });

@@ -1,23 +1,27 @@
-# Feature integration follow-up
+# Documentation integration status
 
-This candidate documents the actual maintenance and drain model at source
-`75bf4484ba957344ae374354858bbdfe104f5c4f`. It is not final documentation for design 50.
-The Core error-envelope foundation is included; the later configuration validators and
-diagnostic endpoints are not. Do not replace current procedures with the planned
-behavior before the features land.
+The current repository implements durable reset, retained deployment generations,
+same-team E2B online changes and Docker/microsandbox online size and Runtime targets
+(design 50, including #178). Node target preparation, qualified serving generations,
+retained ownership and generation GC coexist; target changes require neither an
+execution drain nor node reenrollment. Core error details, configuration validators
+and Session diagnostics are also present in the current source.
 
-| Feature dependency | Site pages to reconcile | Source and verification work |
-| --- | --- | --- |
-| Reset replaces maintenance (design 50 PR-R) | configure, hosted-providers, troubleshooting, admin-api, observability, API reference/core | Regenerate the canonical guides and management contract; describe reset admission, cleanup, failures, archive preconditions and offline-node limits from merged code. Remove retired maintenance instructions only after their replacement exists. |
-| Online generations and E2B changes (design 50 PR-G) | configure, hosted-providers, troubleshooting, execution-model, API reference/core | Document actual generation/rollout states, the supported change matrix and existing-sandbox behavior. Verify PUT examples against the final contract. |
-| Node update protocol (design 50 PR-N) | hosted-providers, troubleshooting, API reference/machine | Explain the implemented update command, old-node handling and ownership preservation. Do not claim an update command now. |
-| Later configuration/error changes (design 40 and remaining installer work) | install, configure, troubleshooting, quickstart | Regenerate current configuration fields and revise diagnostics against merged code; keep secrets out of examples. |
-| Final feature assembly | every Chinese reading note, execution-model diagram, all generated references | Review translations against regenerated English, verify source provenance and links, run contract/route/copy/fact checks, typecheck/build, local browser review and the repository gate. |
+These are repository implementation facts, not evidence that a release was published
+or deployed. Use the merged source revision and its matching bundle for an installed
+release. A proposal or an unmerged implementation must stay labelled as such until
+integration and the requested acceptance have completed.
+
+| Remaining requirement | Documentation boundary |
+| --- | --- |
+| Unified Runtime capability preparation | Future design: keep resource allocation, Environment creation and reclamation separate from Runtime prepare/execute/recover. Closing an executor must not destroy its Environment, delete its workspace or release its allocation. Define a platform-neutral protocol with Linux as the first implementation; do not claim it exists today. |
+| Agent metrics backend aggregation (BE8) | Still a proposal. Current browser fan-out is not a deployment-wide backend aggregation service; preserve coverage and missing-data limits. |
+| Release qualification and publication | Reconcile the final merged source, generated references and reading notes, and record the requested checks. Source implementation alone does not establish published-release or live-deployment readiness. |
 
 English guides are rendered from repository sources. Chinese pages are explicitly
-labelled reading notes, not complete translations; expand them only against the final
-source procedures. API tag pages use the default-language fallback. Release publication,
-remote deployment and preview replacement are outside this reconciliation task.
+labelled reading notes, not complete translations. Review them when the canonical
+procedures change. API tag pages use the default-language fallback. Remote deployment
+and preview replacement are outside this documentation reconciliation.
 
 The source Web guide still carries a pre-rename screenshot. This site copies the
 approved current Web onboarding Monitor image instead, with its own source hash;

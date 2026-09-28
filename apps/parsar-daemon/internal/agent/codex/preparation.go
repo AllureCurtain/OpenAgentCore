@@ -83,17 +83,11 @@ func newPreparation(parent context.Context, req proto.PromptRequestPayload, cfg 
 	for _, kv := range plan.ExtraConfig {
 		rpcCfg.ExtraArgs = append(rpcCfg.ExtraArgs, "-c", kv[0]+"="+kv[1])
 	}
-	if err := configureManagedNetworkProcess(&rpcCfg, plan.managedRequirements); err != nil {
-		cancelFn()
-		plan.Cleanup()
-		return nil, err
-	}
 
 	rpc := NewJSONRPCClient(rpcCfg)
 
 	s := &Session{
 		nativeHome:                nativeHomeFromPlan(plan),
-		toolEnvironment:           req.LocalEnvironment != nil && req.LocalEnvironment.ToolEnvironment,
 		functions:                 functions,
 		observeMessages:           req.ObserveMessages,
 		observeTools:              req.ObserveTools,
@@ -130,10 +124,7 @@ func newPreparation(parent context.Context, req proto.PromptRequestPayload, cfg 
 	}
 	if req.DisableExecutionEnvironment {
 		if err := verifyNoExecutionEnvironment(cancelCtx, rpc); err != nil {
-			cancelFn()
-			_ = rpc.Close()
-			plan.Cleanup()
-			return nil, err
+			return p.preparationFailed(err)
 		}
 	}
 	if s.observeSubagentIdentities {
@@ -141,25 +132,15 @@ func newPreparation(parent context.Context, req proto.PromptRequestPayload, cfg 
 			return p.preparationFailed(err)
 		}
 	}
-	if s.toolEnvironment {
-		if err := verifyToolEnvironmentHook(cancelCtx, rpc, plan.Cwd); err != nil {
-			return p.preparationFailed(err)
-		}
-	}
+
 	if plan.mcpServers != nil {
 		if err := verifyMCPConfig(cancelCtx, rpc, plan); err != nil {
-			cancelFn()
-			_ = rpc.Close()
-			plan.Cleanup()
-			return nil, err
+			return p.preparationFailed(err)
 		}
 	}
 	if len(skillRoots) > 0 {
 		if err := setSkillExtraRoots(cancelCtx, rpc, skillRoots); err != nil {
-			cancelFn()
-			_ = rpc.Close()
-			plan.Cleanup()
-			return nil, fmt.Errorf("codex: register skill root: %w", err)
+			return p.preparationFailed(fmt.Errorf("codex: register skill root: %w", err))
 		}
 	}
 
@@ -168,6 +149,8 @@ func newPreparation(parent context.Context, req proto.PromptRequestPayload, cfg 
 }
 
 func (p *Prepared) preparationFailed(cause error) (*Prepared, error) {
-	_ = p.Close()
+	if err := p.Close(); err != nil {
+		return p, errors.Join(cause, err)
+	}
 	return nil, cause
 }

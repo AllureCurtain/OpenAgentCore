@@ -7,7 +7,7 @@ import (
 )
 
 // Provider options are transient operator input, never public Agent fields or
-// native tool environment. The workspace sandbox removes these variables.
+// native process environment. Isolation is the outer environment's responsibility.
 func providerEnvironment(value any) ([]string, error) {
 	fail := func() ([]string, error) { return nil, fmt.Errorf("claudesdk: invalid provider configuration") }
 	options, ok := value.(map[string]any)

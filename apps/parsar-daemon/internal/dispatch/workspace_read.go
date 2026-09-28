@@ -68,6 +68,9 @@ func (r *Router) workspaceResourceLocked(request proto.WorkspaceReadPayload) (an
 			return nil, "resource_unavailable"
 		}
 		resource = p.prepared
+		if p.executor != nil {
+			resource = p.executor.native
+		}
 	} else {
 		s := r.sessions[request.RunID]
 		if s == nil || s.environmentID != request.EnvironmentID || s.session == nil ||

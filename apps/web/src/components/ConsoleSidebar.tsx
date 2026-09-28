@@ -1,7 +1,6 @@
 import {
   Activity,
   Bot,
-  Cloud,
   Cpu,
   FileText,
   FolderKanban,
@@ -20,7 +19,6 @@ import * as m from "motion/react-m";
 import { useTranslation } from "react-i18next";
 
 import { consoleNavGroups, type ConsoleView } from "../lib/console-routes";
-import { useSandboxProvider } from "../features/sandbox/sandbox-queries";
 import { AppearanceMenu } from "./AppearanceMenu";
 import { ConsoleAccountMenu } from "../features/first-run/ConsoleAccess";
 
@@ -55,7 +53,6 @@ export function ConsoleSidebar({
   onGettingStarted: () => void;
 }) {
   const { t } = useTranslation("navigation");
-  const provider = useSandboxProvider();
   return (
     <aside className="app-sidebar">
       <div className="brand-lockup">
@@ -74,10 +71,8 @@ export function ConsoleSidebar({
               {t(`groups.${group.id}`)}
             </p>
             {group.views.map((view) => {
-              // An E2B deployment has no machines: its Nodes entry is the sandbox backend.
-              const cloud = view === "nodes" && provider === "e2b";
-              const Icon = cloud ? Cloud : viewIcons[view];
-              const label = cloud ? t("views.sandboxBackend") : t(`views.${view}`);
+              const Icon = viewIcons[view];
+              const label = t(`views.${view}`);
               return (
                 <button
                   type="button"

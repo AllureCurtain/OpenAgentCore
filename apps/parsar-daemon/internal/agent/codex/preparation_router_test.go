@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
-	"github.com/MiniMax-AI-Dev/parsar/internal/agentnetwork"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 	"github.com/google/uuid"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -30,16 +31,20 @@ func TestPreparationRouterRetainsActualNativeChild(t *testing.T) {
 	for _, start := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disconnect-before-start", true: "transfer-and-cancel"}[start], func(t *testing.T) {
 			req, cfg, root := preparationFixture(t)
+			if err := os.Chmod(root, 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("OAC_RUNTIME_CAPABILITY_DIRECTORY", filepath.Join(t.TempDir(), "capabilities"))
+			t.Setenv("OAC_TEST_EXECUTOR_MODE", "complete")
 			environment, session := uuid.NewString(), uuid.NewString()
 			if err := os.MkdirAll(req.WorkDir, 0700); err != nil {
 				t.Fatal(err)
 			}
 			for key, value := range map[string]string{
-				"OAC_RUNTIME_ENVIRONMENT_ID":   environment,
-				"OAC_RUNTIME_SESSION_ID":       session,
-				"OAC_RUNTIME_WORKSPACE":        req.WorkDir,
-				"OAC_RUNTIME_DIRECTORY_HELPER": cfg.codexBinary,
-				"OAC_RUNTIME_NETWORK_ACCESS":   "enabled",
+				"OAC_RUNTIME_ENVIRONMENT_ID": environment,
+				"OAC_RUNTIME_SESSION_ID":     session,
+				"OAC_RUNTIME_WORKSPACE":      req.WorkDir,
+				"OAC_RUNTIME_NETWORK_ACCESS": "enabled",
 			} {
 				t.Setenv(key, value)
 			}
@@ -50,21 +55,19 @@ func TestPreparationRouterRetainsActualNativeChild(t *testing.T) {
 			req.WorkDir = ""
 			req.AgentStateKey = "agents-api-" + session
 			req.DisableExecutionEnvironment = false
-			req.LocalEnvironment = &proto.LocalEnvironment{ID: environment, NetworkAccess: "enabled"}
-			cfg.permissionProfile = "managed-workspace"
-			cfg.runtimeNetwork = agentnetwork.Policy{Access: "enabled"}
+			req.LocalEnvironment = &proto.LocalEnvironment{ID: environment, WorkspaceDirectory: "/workspace", NetworkAccess: "enabled", CapabilitySources: &agentcapabilities.Input{}}
 			registry := agent.NewRegistry()
 			registry.RegisterKind(proto.SupportedAgentKind{Kind: "codex", Available: true, Capabilities: proto.AgentKindCapabilities{LocalEnvironment: true, FunctionTools: true}}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
 				return nil, errors.New("ordinary Factory must not run")
 			})
 			prepared := make(chan *Prepared, 1)
-			registry.RegisterPreparation("codex", false, func(ctx context.Context, req proto.PromptRequestPayload) (agent.Prepared, error) {
-				p, err := newPreparation(ctx, req, cfg)
+			registry.RegisterExecutor("codex", func(ctx context.Context, req proto.PromptRequestPayload) (agent.Executor, error) {
+				e, err := newExecutor(ctx, req, cfg)
 				if err != nil {
 					return nil, err
 				}
-				prepared <- p
-				return p, nil
+				prepared <- e.prepared
+				return e, nil
 			})
 			sender := make(preparationWireSender, 64)
 			r, err := dispatch.New(dispatch.Config{Registry: registry, Sender: sender, LocalWorkspace: binding})
@@ -110,7 +113,7 @@ func TestPreparationRouterRetainsActualNativeChild(t *testing.T) {
 					}
 				}
 			}
-			send(proto.TypeExecutionPrepare, "prepare-request", proto.ExecutionPreparePayload{Configuration: req})
+			send(proto.TypeExecutionPrepare, "prepare-request", proto.ExecutionPreparePayload{SessionID: session, Configuration: req})
 			ready := await("ready")
 			p := <-prepared
 			assertPreparationOnly(t, root)
@@ -119,7 +122,7 @@ func TestPreparationRouterRetainsActualNativeChild(t *testing.T) {
 				t.Fatal("preparation became a Run")
 			}
 			if start {
-				input := proto.ExecutionStartPayload{Handle: ready.Handle, RunID: "actual-run", Input: proto.TextInput("actual input")}
+				input := proto.ExecutionStartPayload{ExecutorID: ready.ExecutorID, Handle: ready.Handle, RunID: "actual-run", Input: proto.TextInput("hold")}
 				send(proto.TypeExecutionStart, "prepare-request", input)
 				await("started")
 				frames := waitPreparationMethod(t, root, "turn/start")

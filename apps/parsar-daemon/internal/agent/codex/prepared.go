@@ -88,7 +88,9 @@ func (p *Prepared) Close() error {
 	p.mu.Unlock()
 	p.session.cancelFn()
 	err := p.session.rpc.Close()
-	p.plan.Cleanup()
+	if err == nil {
+		p.plan.Cleanup()
+	}
 	return err
 }
 

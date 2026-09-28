@@ -1,7 +1,6 @@
 package sandbox
 
 import (
-	"context"
 	"errors"
 )
 
@@ -55,20 +54,4 @@ type ResumeRequest struct {
 	Target      Compute
 	// Recovery observes the previous target and never starts a new restore.
 	ObserveOnly bool
-}
-
-// CheckpointProvider is optional. It supplements the existing provider with
-// exact-incarnation operations; Worker and Store remain the lifecycle owner.
-type CheckpointProvider interface {
-	Provider
-	Initial(context.Context, Reference) (Compute, error)
-	NewCompute(context.Context, Reference, uint64, *SnapshotIdentity) (Compute, error)
-	GetCompute(context.Context, Reference, Compute) (ComputeState, error)
-	Suspend(context.Context, SuspendRequest) (ComputeState, error)
-	Resume(context.Context, ResumeRequest) (ComputeState, error)
-	KillCompute(context.Context, Reference, Compute) error
-	DeleteSnapshot(context.Context, Reference, SnapshotIdentity) error
-	RunCommandCompute(context.Context, Reference, Compute, Command) (CommandResult, error)
-	// ResumeCompute thaws only the same resident instance after an aborted pause.
-	ResumeCompute(context.Context, Reference, Compute) (ComputeState, error)
 }

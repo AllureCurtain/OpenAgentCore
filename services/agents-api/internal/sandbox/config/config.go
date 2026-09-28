@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"os"
@@ -64,7 +65,7 @@ func Load(file string) (Config, error) {
 
 type Built struct {
 	SpecificationDigest                string
-	Provider                           sandbox.Provider
+	Provider                           sandbox.SandboxProvider
 	InstallationID, BackendFingerprint string
 	Probe                              func(context.Context) error
 }
@@ -95,8 +96,11 @@ func Build(config Config) (*Built, func(), error) {
 			return nil, closeProvider, errors.New("managed Docker host must be an explicit canonical unix socket")
 		}
 		seccomp, err := os.ReadFile(entry.SeccompFile)
-		if err != nil || !json.Valid(seccomp) {
-			return nil, closeProvider, errors.New("cannot read managed Docker seccomp JSON")
+		if err != nil {
+			return nil, closeProvider, fmt.Errorf("cannot read managed Docker seccomp JSON: %w", err)
+		}
+		if !json.Valid(seccomp) {
+			return nil, closeProvider, errors.New("invalid managed Docker seccomp JSON")
 		}
 		c, err := client.New(client.WithHost(entry.Host))
 		if err != nil {

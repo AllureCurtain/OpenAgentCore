@@ -4,13 +4,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 )
 
 func TestSpawnReExecsWithSentinelAndPIDFile(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateTempDir(t)
 	logPath := filepath.Join(dir, "child.log")
 	pidPath := filepath.Join(dir, "child.pid")
 
@@ -29,7 +28,11 @@ func TestSpawnReExecsWithSentinelAndPIDFile(t *testing.T) {
 		t.Fatalf("Spawn: %v", err)
 	}
 	defer func() {
-		_ = syscall.Kill(pid, syscall.SIGTERM)
+		p, _ := os.FindProcess(pid)
+		if p != nil {
+			_ = p.Kill()
+			_, _ = p.Wait()
+		}
 	}()
 
 	if pid <= 0 {
@@ -63,9 +66,9 @@ func TestSpawnReExecsWithSentinelAndPIDFile(t *testing.T) {
 		t.Errorf("log missing stderr marker; got %q", string(logBody))
 	}
 
-	// SignalAndWait should now drop the child cleanly.
-	if err := SignalAndWait(pid, 2*time.Second); err != nil {
-		t.Fatalf("SignalAndWait: %v", err)
+	// StopPIDFile should now drop the child cleanly.
+	if err := StopPIDFile(pidPath, 2*time.Second); err != nil {
+		t.Fatalf("StopPIDFile: %v", err)
 	}
 }
 

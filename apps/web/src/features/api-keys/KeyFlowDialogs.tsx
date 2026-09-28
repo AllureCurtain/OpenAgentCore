@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { useTranslation } from "react-i18next";
 
+import { coreError, coreFieldError } from "../../lib/core-error";
 import { HelpTip } from "../../components/console-ui";
 import { Modal } from "../../components/Modal";
 import { isUsableName, keyNameProblem, normalizeName, type FlowError, type KeyFlow, type NameProblem } from "./key-flows";
@@ -10,13 +11,14 @@ import type { KeyFlowControls } from "./use-key-flow";
 
 export function FlowErrorMessage({ error, name }: { error: FlowError | null; name?: string }) {
   const { t } = useTranslation("keys");
-  if (!error) return null;
-  const text = error.kind === "uncertain" ? t("errors.uncertain") : t("errors.rejected", { message: error.message });
+  const { t: tCommon } = useTranslation("common");
+  if (!error || (name !== undefined && error.kind === "rejected" && coreFieldError(error.cause, "name", tCommon))) return null;
+  const text = error.kind === "uncertain" ? t("errors.uncertain") : t("errors.rejected", { message: error.cause ? coreError(error.cause, tCommon) : error.message });
   return <p className="key-flow-error" role="alert">{text}</p>;
 }
 
 /** A labelled name input with its rules behind a help tip and its problem underneath. */
-export function NameField({ label, help, value, onChange, problem, problemText, placeholder, disabled = false, autoFocus = false, name }: {
+export function NameField({ label, help, value, onChange, problem, problemText, placeholder, disabled = false, autoFocus = false, name, serverError }: {
   label: string;
   help: string;
   value: string;
@@ -27,8 +29,12 @@ export function NameField({ label, help, value, onChange, problem, problemText, 
   disabled?: boolean;
   autoFocus?: boolean;
   name: string;
+  serverError?: FlowError | null;
 }) {
   const id = useId();
+  const { t: tCommon } = useTranslation("common");
+  const remoteProblem = serverError?.kind === "rejected" ? coreFieldError(serverError.cause, "name", tCommon) : null;
+  const visibleProblem = problem ? problemText : remoteProblem;
   return (
     // The label names the input explicitly: it also holds the help tip's button,
     // which would otherwise become the control it labels.
@@ -44,10 +50,10 @@ export function NameField({ label, help, value, onChange, problem, problemText, 
         spellCheck={false}
         autoFocus={autoFocus}
         disabled={disabled}
-        aria-invalid={problem ? true : undefined}
-        aria-describedby={`${id}-help${problem ? ` ${id}-problem` : ""}`}
+        aria-invalid={visibleProblem ? true : undefined}
+        aria-describedby={`${id}-help${visibleProblem ? ` ${id}-problem` : ""}`}
       />
-      {problem ? <span id={`${id}-problem`} className="field-error" role="alert">{problemText}</span> : null}
+      {visibleProblem ? <span id={`${id}-problem`} className="field-error" role="alert">{visibleProblem}</span> : null}
     </label>
   );
 }
@@ -64,6 +70,7 @@ export function KeyNameField({ flow, controls, taken, autoFocus = false }: {
   return (
     <NameField
       name="key-name"
+      serverError={flow.error}
       label={t("issueDialog.name")}
       help={t("issueDialog.nameHelp")}
       value={flow.name}

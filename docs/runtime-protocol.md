@@ -1,0 +1,226 @@
+# Core–Runtime protocol
+
+This is the integration entry point for a Runtime that executes work for Core.
+The wire definitions live once in
+[`internal/agentdaemon/proto`](../internal/agentdaemon/proto);
+Core's [gateway](../internal/agentdaemon/gateway) and the reference Runtime's
+[dispatcher](../apps/parsar-daemon/internal/dispatch) both use them.
+The [machine HTTP API](../contracts/agents-api/runtime.openapi.yaml) describes
+registration and connection endpoints. This document defines the meaning and
+ordering of the messages after connection; it does not replace the typed payloads.
+
+Use this protocol for hosted and self-hosted Runtime implementations. A new
+Harness implements the [adapter contract](../contracts/agents-api/harness-onboarding.md)
+behind the Runtime registry. Do not add a Core orchestration branch named after
+the Harness, operating system or Sandbox Provider.
+
+## Ownership and connection
+
+Core owns durable Session, Turn, input and Environment records, scheduling and
+reconciliation. Runtime owns native Executors, active Turns, transfer state and
+cleanup until settlement. A Sandbox Provider owns placement and the surrounding
+compute lifecycle. Releasing an execution admission or closing an Executor does
+not delete, suspend or reclaim a sandbox.
+
+An installed daemon runs with the authority of the user who starts it. The
+protocol does not make the daemon a tool, filesystem or network isolation
+boundary. Core-managed Docker, E2B or other sandboxes provide the outer isolation.
+A logical workspace, native tool configuration, advertised capability or successful
+preparation is not proof of containment.
+
+1. Obtain the appropriate machine credential using the documented registration
+   flow. Applications use Project API keys; operators use Core keys. Neither is
+   a Runtime connection credential.
+2. Bootstrap through `/api/v1/agent-daemon/bootstrap` with an Authorization Bearer
+   header and device identity. Use its authenticated connection URL.
+3. Dial the reverse WebSocket at `/api/v1/agent-daemon/ws`, supplying `device_id`
+   and `version` query parameters and the Bearer header. Never put credentials
+   in a URL, payload log or trace.
+4. Send an immediate heartbeat, then continue at the configured interval.
+   Declare `supported_agent_kinds`, availability and capabilities explicitly.
+   An absent first heartbeat means capabilities are unknown; an omitted kind in
+   a received heartbeat means it is not advertised. Neither permits inference.
+5. Dispatch ordered JSON envelopes over the connection. Heartbeats establish
+   liveness only, not execution progress or a receipt for earlier messages.
+
+The wire version is [`proto.Version`](../internal/agentdaemon/proto/version.go),
+independent of the Runtime build version reported in heartbeats. Core accepts
+only an exact match, including the patch component. A mismatch returns HTTP 426
+`incompatible_version` before dispatch; the daemon treats it as permanent and
+stops reconnecting. Deploy matching peers together. Removed fields, inferred
+Claude availability and old interaction shapes have no compatibility path.
+
+Each physical connection has fresh routing, admission handles and transfer state.
+A newer connection replaces the previous device connection. Core fences owner
+leases and evicts old Run/interaction routes; the new connection does not inherit
+them. A valid credential and connection are not authority to choose another
+Session or Environment binding.
+
+## Envelope and identity
+
+Every data frame is one JSON
+[`Envelope`](../internal/agentdaemon/proto/envelope.go):
+`type`, type-dependent `id`, typed `payload`, and optional W3C `trace`.
+Trace is diagnostic correlation only; missing or invalid trace data creates a
+local trace and never changes ownership. Do not use a trace ID as a request ID.
+
+| Identity | Scope and meaning |
+| --- | --- |
+| Device ID and connection | Authenticated Runtime routing and connection ownership |
+| Session ID / Environment ID | Core-owned configuration and workspace binding; canonical UUIDs where required by the payload validator |
+| Executor ID | Runtime-owned native resource, potentially retained across settled Turns with identical configuration |
+| Preparation request ID | `Envelope.id` for prepare/start/release/status; distinct from a Run |
+| Admission handle | Runtime-generated reservation, valid only on its accepting connection |
+| Run ID | Execution attempt; `Envelope.id` for output, cancellation, active input and functions |
+| Interaction ID | `permission_request.payload.request_id` or `prompt_for_user_choice.payload.ask_id`; these request envelopes still carry the Run ID |
+| Delivery ID / input ID / call ID | Resolve attempt, active-input receipt and native function identity respectively; never interchangeable |
+| Transfer ID / suspension ID | Connection-local transfer correlation / persisted suspension-attempt fencing |
+
+Decision and permission-cancel envelopes use the interaction ID. Cancellation and
+function-result acknowledgements use the Run ID. All application decision
+receipts additionally match the delivery ID. A reply without the required
+correlation cannot establish acceptance.
+
+## Message families
+
+Use the linked source definitions for required fields, validators, limits and
+finite error categories. There is no parallel payload schema to keep in sync.
+
+| Core → Runtime | Runtime → Core | Definition |
+| --- | --- | --- |
+| `runtime_prepare` | `runtime_prepare_result` | [Initialization and capability transfer](../internal/agentdaemon/proto/runtime_prepare.go) |
+| `execution_prepare`, `execution_start`, `execution_release` | `preparation_status` | [Execution admission](../internal/agentdaemon/proto/preparation.go) |
+| `prompt_request`, `prompt_cancel`, `device_shutdown` | `delta`, `thinking`, `output_message`, `tool_call`, `usage`, `error`, `done`, `heartbeat` | [Requests](../internal/agentdaemon/proto/outbound.go), [events and capabilities](../internal/agentdaemon/proto/inbound.go) |
+| `permission_decision`, `prompt_for_user_choice_decision` | `permission_request`, `permission_cancel`, `prompt_for_user_choice`, `interaction_decision_ack` | [Requests](../internal/agentdaemon/proto/outbound.go), [interactions](../internal/agentdaemon/proto/inbound.go) |
+| `prompt_steer` | `prompt_steer_ack` | [Active input receipts](../internal/agentdaemon/proto/steering.go) |
+| `function_result` | `function_call`, `interaction_decision_ack` | [Function calls](../internal/agentdaemon/proto/functions.go) |
+| `workspace_read`, `workspace_write`, `workspace_export` | Matching `*_result` | [Read](../internal/agentdaemon/proto/workspace_read.go), [write](../internal/agentdaemon/proto/workspace_write.go), [export](../internal/agentdaemon/proto/workspace_export.go) |
+| `environment_quiesce`, `environment_resume` | `environment_quiesced`, `environment_resumed` | [Suspension fencing](../internal/agentdaemon/proto/suspend.go) |
+
+Initial and active input share [ordered MessageInput](../internal/agentdaemon/proto/message_input.go).
+Adapters preserve message/content order and explicitly reject unsupported content.
+Usage frames and the final usage snapshot replace earlier cumulative snapshots;
+do not add them. An absent measurement is unknown, not zero.
+
+## Preparation and execution order
+
+Hosted and self-hosted execution use the same preparation semantics. Placement
+selects a connection and Runtime-owned workspace; Harness adapters perform native
+configuration. The existing `prompt_request` message remains a direct execution
+operation, not a fallback after failed prepared execution.
+
+Environment initialization uses `runtime_prepare`. For files or archives, send
+`begin`, wait for `ready`, send ordered chunks and await matching `received`
+offsets, then `commit` and await `completed`. Initialization and finalization
+have typed headers without file data. Validate the expected outcome, offset,
+size and finite error code with the shared validator. Only one transfer is
+allowed per connection. A chunk receipt confirms staged bytes, not installation.
+A completed commit confirms that operation, not that a future Turn has executed.
+
+For an execution Turn:
+
+1. Subscribe to preparation status before sending `execution_prepare` with
+   immutable Session configuration and no Run input.
+2. `preparing` means the Runtime owns preparation; `ready` supplies the Executor
+   ID, admission handle, revision and expiry. Neither submits user input.
+3. Subscribe to the Run before sending `execution_start` with that Executor,
+   handle, Run ID and ordered input. A valid start transfers the reservation
+   once. `started` confirms transfer to the Turn, not Turn completion; output
+   can race status delivery and must already have a subscriber.
+4. Consume Run events until a native terminal outcome or loss of observation.
+   An execution error is followed by `done` to close that execution stream.
+   `done` closes the stream; preceding errors remain part of its outcome.
+5. On abandonment before start, send `execution_release`. After ownership
+   transfers to a Run, use `prompt_cancel`; releasing the old handle cannot
+   cancel its successor.
+
+Preparation observations use monotonically increasing revisions per handle.
+Ignore older or repeated revisions; do not apply a status for a different handle.
+Typical transitions are `preparing → ready → starting → started`, or termination
+by `released`, `expired`, or `failed`. A `rejected` control operation has an
+`operation` and error code but does not replace the resource's current revision.
+Read-only workspace preparation cannot start a Turn. Expiry does not remove the
+Runtime's obligation to settle cleanup.
+
+## What each acknowledgement proves
+
+| Observation | Proven fact |
+| --- | --- |
+| Core gateway `Send` returns nil | Envelope entered the local send queue |
+| Runtime transport `Send` returns nil | WebSocket write completed locally |
+| Transfer `received`, active-input `written` | Defined receive/write phase occurred; native execution or consumption is unconfirmed |
+| Preparation `preparing` / `ready` | Preparation accepted / reservation ready, with no submitted Run input |
+| Preparation `started` | Admission transferred to the identified Turn |
+| Active-input `accepted` | Adapter confirmed native consumption under its declared receipt semantics |
+| `interaction_decision_ack.applied=true` | Identified operation settled; cancellation additionally requires native settlement |
+| `done` and preceding execution events | Execution stream completed with its observed outcome |
+
+There is no generic receipt for every envelope. A successful send is not proof
+that the peer received, accepted or completed a request. Process exit, a stop
+signal and a canceled local context do not prove successful cancellation.
+A `done` frame may also close a settled cancellation stream; it does not
+override the cancellation receipt or imply successful execution. Cancellation
+receipts may retain partial content, native identity and usage in `outcome`
+even when no `done` is published. Failure to obtain settlement must
+remain failed or unknown; it cannot become `applied=true`.
+
+## Failures, retries and cleanup
+
+Transport and execution outcomes are separate. Core's only Run subscription
+entry point is `SubscribeDurable`; inspect `Subscription.Err()` when its event
+channel closes. Disconnection and subscriber overflow close it with an explicit
+observation error, without fabricating `error` or `done`. Core retains durable
+truth and reconciles from confirmed facts. Runtime retains cleanup ownership
+until native work, input receipts, interactions and child work have settled.
+
+The public Turn status is a separate, existing projection:
+[`execution/delivery.go`](../services/agents-api/internal/execution/delivery.go)
+records an unsuccessful orchestration attempt as `failed`, including
+`delivery_unknown` after an unconfirmed send and `event_stream_incomplete`
+after subscription failure. A closed subscription can replace the send reason
+with `event_stream_incomplete`; both retain an unknown native effect.
+This public `failed` status is not proof that the Harness failed, that no side
+effect occurred or that cleanup completed. Native error classification comes
+only from observed Runtime error frames. Consumers must keep the observation
+reason and any native evidence distinct; this contract does not add a public
+`unknown` status or change the existing Turn state machine.
+
+| Condition | Required responsibility |
+| --- | --- |
+| Unsupported capability or invalid binding | Reject explicitly before starting the unsupported operation; do not select another Harness |
+| Confirmed preparation/execution failure | Preserve the finite error category and any observed result; Runtime settles its resources |
+| Deadline or connection loss after dispatch | Caller has an unknown effect unless an application receipt proves otherwise; do not convert it to execution failure |
+| Reconnection | Reestablish transport and capability advertisement; do not replay input, initialization, transfers or unresolved mutations |
+| Duplicate preparation/start | Existing connection-local identity and fingerprint rules apply; a conflicting request rejects and an old handle cannot start replacement work |
+| Duplicate input/function/decision | Use that family's existing receipt identity and conflict rules; no transport-wide deduplication or exactly-once promise exists |
+| Cleanup failure | Retain resource ownership and report unconfirmed cleanup; a resource is not reusable merely because a waiter timed out |
+| Lost cancellation receipt | Cancellation may have happened; lack of receipt cannot establish success or authorize another execution |
+
+Only retry operations whose own contract establishes that retry is safe. Retired
+preparation request IDs may eventually allocate a new handle, so they are not
+durable idempotency keys. Native-session resume is an explicit operation with
+verified identity, not a response to a socket failure. A transient connection
+error permits reconnecting the channel; authentication/version rejection requires
+operator correction. Cleanup of an Executor remains separate from the Sandbox
+Provider's confirmed reclamation of compute.
+
+## Contract verification
+
+Run `make check-runtime-contract` from the repository root. It exercises the
+shared wire validators, gateway, transport and dispatcher, plus
+[real WebSocket contract scenarios](../apps/parsar-daemon/internal/contracttest/wire_test.go)
+using a controlled Harness adapter, plus the [observation-result regression](../services/agents-api/internal/execution/runtime_protocol_test.go). It requires no model credentials or external
+sandbox. These tests are also included in `make check` through `check-go` and
+`check-agents-api`.
+
+The suite checks incompatible versions, preparation failure, cancellation
+settlement, connection loss without invented terminal events, reconnect without
+replay, stale/duplicate handles and receipts, cleanup failures, bounded transfer
+validation and resource ownership after timeout. Existing detailed fault
+injection remains next to the owning gateway/dispatcher implementation.
+
+For another Runtime or Harness, reuse these protocol sequences and assertions,
+then run its own native acceptance for the capabilities it advertises. A passing
+controlled-adapter test establishes the transport contract, not native Harness
+behavior, OS support, provider authentication or sandbox isolation. Update the
+shared types, this guide and the contract checks together when semantics change.

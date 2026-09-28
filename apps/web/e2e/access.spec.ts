@@ -128,7 +128,8 @@ test("shows every page empty on a fresh install, and Getting started hides, come
   await openConsole(page, request, "overview", { fresh: true, sandbox: "none", nodes: "none" });
   // What each page shows once its reads are done: an empty state, Core's own figures, or sandbox setup.
   const loaded = (view: string) => view === "core-metrics" ? page.locator(".kpi-strip").first()
-    : view === "nodes" ? page.getByRole("heading", { name: "Where should sandboxes run?" })
+    : view === "nodes" ? page.getByText("Set up sandbox hosting in System before adding nodes.")
+    : view === "system" ? page.getByRole("button", { name: "Manage sandbox configuration" })
     : page.locator(".console-empty").first();
   for (const view of ["core-metrics", "agent-metrics", "sandbox-metrics", "sessions", "agents", "templates", "skills", "files", "vaults", "projects", "nodes", "system", "overview"]) {
     await page.goto(`/#${view}`);
@@ -150,6 +151,7 @@ test("shows every page empty on a fresh install, and Getting started hides, come
   const step = checklist.getByRole("listitem").filter({ hasText: "Get sandboxes ready" });
   await expect(step).toContainText("To do");
   await step.getByRole("button", { name: "Set up sandboxes" }).click();
+  await expect(page).toHaveURL(/#system\?id=sandbox$/);
   await expect(page.getByRole("heading", { name: "Where should sandboxes run?" })).toBeVisible();
 });
 

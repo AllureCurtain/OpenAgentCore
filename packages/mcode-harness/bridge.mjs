@@ -7,13 +7,14 @@ import { ToolExecutor } from './tool-executor.mjs';
 
 const profile = process.argv[2];
 if (!profile || !isAbsolute(profile)) throw new Error('Private workspace profile is required');
+const workspace = JSON.parse(readFileSync(profile, 'utf8')).workspace;
 const definitions = JSON.parse(readFileSync(new URL('./dist/tools.json', import.meta.url), 'utf8'));
 const tools = new Map(definitions.map(tool => ['workspace_' + tool.name, tool]));
 const executor = new ToolExecutor(profile);
 const server = new Server({ name: 'oac-workspace', version: '1' }, { capabilities: { tools: {} } });
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [...tools].map(([name, tool]) => ({ ...tool, name,
-    description: 'Bound working directory: /workspace. ' + tool.description })),
+    description: 'Bound working directory: ' + workspace + '. ' + tool.description })),
 }));
 server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
   const tool = tools.get(request.params.name);

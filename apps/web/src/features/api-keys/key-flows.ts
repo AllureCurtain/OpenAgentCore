@@ -67,12 +67,12 @@ export function isArchiveConfirmed(name: string, activeKeys: number, typed: stri
  * ("uncertain": check the list first; never retried automatically).
  */
 export type FlowError =
-  | { kind: "rejected"; status: number; message: string }
+  | { kind: "rejected"; status: number; message: string; cause?: AgentCoreError }
   | { kind: "uncertain" };
 
 export function flowError(error: unknown): FlowError {
   if (error instanceof AgentCoreError) {
-    if (error.status >= 400 && error.status < 500 && error.status !== 408) return { kind: "rejected", status: error.status, message: error.message };
+    if (error.status >= 400 && error.status < 500 && error.status !== 408) return { kind: "rejected", status: error.status, message: error.message, ...(error.code || error.param ? { cause: error } : {}) };
     return { kind: "uncertain" };
   }
   // The client validates names before sending; nothing reached Core.

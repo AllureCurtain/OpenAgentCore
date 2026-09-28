@@ -5,16 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
-	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
-	"github.com/MiniMax-AI-Dev/parsar/internal/agentnetwork"
 	obslog "github.com/MiniMax-AI-Dev/parsar/internal/obs/log"
 )
 
@@ -26,20 +23,14 @@ const terminalSendTimeout = 2 * time.Second
 // sessionConfig is the cross-cutting knob bag — production callers go
 // through Factory which uses defaults.
 type sessionConfig struct {
-	codexBinary         string
-	permissionProfile   string
-	runtimeNetwork      agentnetwork.Policy
-	runtimeNetworkError error
-	logger              *slog.Logger
-	killTimeout         time.Duration
+	codexBinary string
+	logger      *slog.Logger
+	killTimeout time.Duration
 }
 
 func defaultSessionConfig() sessionConfig {
-	policy, err := localworkspace.RuntimeNetworkPolicy()
 	return sessionConfig{
-		codexBinary:       defaultBinary(),
-		permissionProfile: os.Getenv("OAC_RUNTIME_CODEX_PERMISSION_PROFILE"),
-		runtimeNetwork:    policy, runtimeNetworkError: err,
+		codexBinary: defaultBinary(),
 		logger:      obslog.Bg(),
 		killTimeout: rpcKillTimeout,
 	}
@@ -63,7 +54,16 @@ func Factory(ctx context.Context, req proto.PromptRequestPayload, out chan<- pro
 //  5. turn/completed emits TypeDone + closes out. Cancel can short-cut
 //     this by killing the child early.
 type Session struct {
-	toolEnvironment           bool
+	retiredTurns              map[string]bool
+	executor                  *Executor
+	outputDone                chan struct{}
+	nativeSettled             atomic.Bool
+	settlement                agent.TurnSettlement
+	settlementErr             error
+	terminalCleanupMu         sync.Mutex
+	operationMu               sync.Mutex
+	operations                sync.WaitGroup
+	operationsClosed          bool
 	nativeHome                string
 	subagents                 *subagentObservations
 	observeSubagentIdentities bool
@@ -150,16 +150,15 @@ func (s *Session) registerHandlers() {
 	rpc.OnNotification("item/reasoning/summaryTextDelta", s.onReasoningDelta)
 	rpc.OnNotification("thread/tokenUsage/updated", s.onUsageUpdated)
 	rpc.OnNotification("error", s.onErrorNotif)
-	rpc.OnNotification("hook/completed", s.onToolEnvironmentHook)
 
-	rpc.OnServerRequest("item/commandExecution/requestApproval", s.handleCodexCommandApproval)
-	rpc.OnServerRequest("item/fileChange/requestApproval", s.handleCodexFileApproval)
-	rpc.OnServerRequest("item/permissions/requestApproval", s.handleCodexPermissionsApproval)
+	s.onServerRequest("item/commandExecution/requestApproval", s.handleCodexCommandApproval)
+	s.onServerRequest("item/fileChange/requestApproval", s.handleCodexFileApproval)
+	s.onServerRequest("item/permissions/requestApproval", s.handleCodexPermissionsApproval)
 	// Older app-server releases used this unseparated method name.
-	rpc.OnServerRequest("item/permissionsRequestApproval", s.handleCodexPermissionsApproval)
-	rpc.OnServerRequest("item/tool/requestUserInput", s.handleCodexUserInput)
-	rpc.OnServerRequest("item/tool/call", s.handleFunctionCall)
-	rpc.OnServerRequest("mcpServer/elicitation/request", s.handleCodexMCPElicitation)
+	s.onServerRequest("item/permissionsRequestApproval", s.handleCodexPermissionsApproval)
+	s.onServerRequest("item/tool/requestUserInput", s.handleCodexUserInput)
+	s.onServerRequest("item/tool/call", s.handleFunctionCall)
+	s.onServerRequest("mcpServer/elicitation/request", s.handleCodexMCPElicitation)
 }
 
 func (s *Session) onTurnStarted(raw json.RawMessage) {
@@ -193,6 +192,7 @@ func (s *Session) onTurnCompleted(raw json.RawMessage) {
 	if json.Unmarshal(raw, &p) != nil || !s.isRootTurn(p.ThreadID, p.Turn.ID) {
 		return
 	}
+	s.nativeSettled.Store(true)
 	s.stopSteering()
 
 	usage := p.Turn.Usage
@@ -242,7 +242,7 @@ func (s *Session) onTurnCompleted(raw json.RawMessage) {
 		if errText != "" {
 			body = appendOnNewline(body, errText)
 		}
-		s.emitTerminal(body, true)
+		s.emitTerminalFailure(body, true, classifyTurnError(p.Turn.Error))
 		s.finishAfterTerminal()
 		return
 	}
@@ -392,6 +392,13 @@ func (s *Session) emitUsage(u TurnUsage) {
 }
 
 func (s *Session) emitTerminal(message string, asError bool) {
+	s.emitTerminalFailure(message, asError, proto.ErrorPayload{})
+}
+
+func (s *Session) emitTerminalFailure(message string, asError bool, failure proto.ErrorPayload) {
+	if s.executor != nil {
+		defer s.finishAfterTerminal()
+	}
 	if !s.terminal.CompareAndSwap(false, true) {
 		return
 	}
@@ -414,7 +421,8 @@ func (s *Session) emitTerminal(message string, asError bool) {
 	}
 	var events []proto.Envelope
 	if asError {
-		env, err := proto.NewEnvelope(proto.TypeError, s.runID, proto.ErrorPayload{Error: message})
+		failure.Error = message
+		env, err := proto.NewEnvelope(proto.TypeError, s.runID, failure)
 		if err == nil {
 			events = append(events, env)
 		}
@@ -442,6 +450,9 @@ func (s *Session) closeOut() {
 		s.outMu.Lock()
 		s.outClosed = true
 		close(s.out)
+		if s.outputDone != nil {
+			close(s.outputDone)
+		}
 		s.outMu.Unlock()
 	})
 }

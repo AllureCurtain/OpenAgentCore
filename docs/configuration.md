@@ -5,7 +5,7 @@ Every setting of a Core installation has exactly one home. There are two kinds:
 | Kind | Examples | Home | Change it with | Takes effect |
 | --- | --- | --- | --- | --- |
 | [Process settings](#process-settings-configjson) | Public URL, ports, logging, harnesses, execution concurrency, audit retention, OAuth origins, database pool, Runtime history export | `config.json` in the installation directory (default `~/.oac/core`) | Edit the file, then run `oac apply` | `oac apply` restarts the services that read the changed settings |
-| [Runtime settings](#runtime-settings-web) | Sandbox backend and size, nodes, Projects and keys, default models, executor credentials | Core's PostgreSQL database | Web, or the Core API (`/core/v1`) with the Core key | At once, without a restart |
+| [Runtime settings](#runtime-settings-web) | Sandbox backend and size, nodes, Projects and keys, default models, executor credentials | Core's PostgreSQL database | Web, or the Core API (`/core/v1`) with the Core key | Saved without a Core restart; node Runtime changes prepare asynchronously |
 
 Web's **System** page shows both: the installation's addresses, the process settings
 read-only under **Startup settings** with the path of `config.json` and the apply
@@ -81,7 +81,7 @@ output or in Core's settings snapshot. Model providers are not process settings;
 | Key | Type | Default | Modes | Change | Restarts | Meaning |
 | --- | --- | --- | --- | --- | --- | --- |
 | `$schema` | string | none | all | any time | none | Editor hint that points at the installed copy of this schema. Ignored. |
-| `format` | `1` | none | all | fixed | none | Configuration format. Only an upgrade changes it. |
+| `format` | `1` | none | all | fixed | none | Configuration format for this release. Fixed after installation. |
 | `mode` | `"all"` \| `"core-only"` \| `"web-only"` | `"all"` | all | fixed | none | Which services this installation runs. Install flag: `--core-only` or `--web-only`. |
 | `native_core` | boolean | `false` | `all`, `core-only` | fixed | none | Run Core as a systemd user service instead of a container. Install flag: `--native-core`. |
 | `public_url` | string or null (canonical origin; HTTP only on loopback) | `null` | all | `oac apply` | core, web | Public origin of Core and Web behind your TLS reverse proxy, such as https://core.example. Nodes, sandboxes and self-hosted executors use it. null means local access only through http://127.0.0.1. Install flag: `--public-url`. |
@@ -125,9 +125,9 @@ Core API with the Core key.
 
 | Setting | Where in Web | Core API | Notes |
 | --- | --- | --- | --- |
-| Sandbox backend: Docker, microsandbox or E2B | **Nodes** (**Sandbox backend** with E2B): the setup wizard, ending with **Save configuration** | `/core/v1/sandbox/deployment` | One backend per deployment. `install.sh --sandbox` saves the first choice. To change it, see the Nodes page; that flow will change in a coming release |
-| Sandbox size and Runtime release | **Nodes**: the setup wizard | `/core/v1/sandbox/deployment` | Every sandbox gets the same size. See [Sandbox deployment](#sandbox-deployment) |
-| E2B API key and template build | **Nodes**: the setup wizard's **E2B cloud** (the page is then called **Sandbox backend**) | `/core/v1/sandbox/deployment` | The key is write-only and encrypted |
+| Sandbox backend: Docker, microsandbox or E2B | **System** → **Sandbox backend**: the setup wizard, ending with **Save configuration** | `/core/v1/sandbox/deployment` | One backend per deployment. `install.sh --sandbox` saves the first choice. Changing backend requires explicit reset and a new setup at the resulting generation |
+| Sandbox size and Runtime release | **System** → **Sandbox backend**: **Change resources** | `/core/v1/sandbox/deployment` | New targets use the saved size; retained generations keep their original specification. See [Sandbox deployment](#sandbox-deployment) |
+| E2B API key and template build | **System** → **Sandbox backend**: the setup wizard's **E2B cloud** | `/core/v1/sandbox/deployment` | The key is write-only and encrypted |
 | Nodes and their capacity | **Nodes**: **Add node**, **Edit node**, **Remove node** on a node's page (**Remove** in its list row) | `/core/v1/sandbox/enrollment-tokens`, `/core/v1/sandbox/nodes` | See [Node capacity](#node-capacity) and the [nodes guide](getting-started/nodes.md) |
 | Projects and API keys | **Projects and keys**: **Create project**, **Rename**, **Issue key**, **Revoke**, **Archive** | `/core/v1/projects` | Keys are shown once; Core stores digests |
 | Default model per harness | **System**: **Default model** | `/core/v1/harnesses/{harness}/model-provider` | See [Default models](#default-models) |
@@ -158,12 +158,30 @@ E2B takes no `runtime`, and Web sends no resources for it: Core adopts the CPU a
 memory of the ready template build `template-id:build-uuid`, and supplied values must
 match it. Docker has no separate disk quota.
 
-Changing the provider, the size or the Runtime applies to the whole deployment; see the
-**Nodes** page, and note that this flow will change in a coming release. A successful
-change retires the old nodes and enrollment commands; history stays, and existing
-Sessions never move between providers. See the
-[operator reference](../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-maintenance)
-and the [deployment contract](../contracts/agents-api/sandbox-deployment.md).
+Changing backend type or E2B team requires an explicit reset and a new setup.
+Same-team E2B template, resource and key changes apply online through the Core API:
+new allocations use the new generation, while existing sandboxes retain their
+original specification. Omit the key to preserve it; explicitly submitting a key,
+even the same value, verifies the replacement and advances the generation. Keep the
+old key valid until the update succeeds. Initial setup requires a team-owned template;
+a legacy public-template configuration or an already revoked old key requires reset
+when Core cannot verify the committed ownership anchor.
+
+Docker and microsandbox size/Runtime edits advance the target generation online.
+They require neither zero held resources nor node retirement or reenrollment.
+Version 2 nodes prepare the target independently, while existing allocations and
+suspended VMs retain their original generation. A qualified older serving generation
+can still accept new Sessions when it has capacity, including while the target is
+preparing or has failed. Target rollout and serving readiness are separate facts.
+Use **System** → **Sandbox backend** → **Change resources** to edit the target;
+**Nodes** owns node management and readiness.
+
+Current Runtime generation coexistence and ownership-scoped garbage collection
+remain supported. They do not upgrade the installed node program or convert an old
+installation. History stays, and existing Sessions never move between providers.
+See the [nodes guide](getting-started/nodes.md#change-the-sandbox-backend-or-size),
+[operator reference](../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
+and [deployment contract](../contracts/agents-api/sandbox-deployment.md).
 
 ### Node capacity
 
@@ -193,7 +211,7 @@ provider is refused with 400 `model_provider_required`. See
 [model execution contract](../contracts/agents-api/model-execution.md#deployment-defaults).
 
 The operator file `AGENTS_API_EXECUTION_OPTIONS_FILE` is retired; see
-[Upgrade notes](getting-started/operations.md#upgrade-notes).
+[installation version policy](getting-started/operations.md#installation-version-policy).
 
 ## Secrets and identity
 

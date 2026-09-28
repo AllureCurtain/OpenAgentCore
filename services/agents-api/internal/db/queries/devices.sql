@@ -12,7 +12,7 @@ LEFT JOIN runtime_allocations a ON a.device_id = d.id
 WHERE d.id = $1;
 
 -- name: RevokeDevice :execrows
-UPDATE devices SET revoked_at = COALESCE(revoked_at, clock_timestamp())
+UPDATE devices SET revoked_at = COALESCE(revoked_at, clock_timestamp()), archive_cancel_turn_id = NULL
 WHERE tenant_id = $1 AND id = $2;
 
 -- name: TouchDevice :execrows

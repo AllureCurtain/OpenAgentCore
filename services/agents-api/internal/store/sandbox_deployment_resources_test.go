@@ -38,12 +38,19 @@ func TestSandboxDeploymentMutationViewsIncludeActualResources(t *testing.T) {
 	}
 	want := SandboxDeploymentResources{Allocations: 1, Pending: 1}
 	// Replaying setup must report the current resources rather than initial zeros.
+	selection.ExpectedGeneration = 1
 	replay, err := w.InitializeSandboxDeployment(t.Context(), installation, selection)
 	if err != nil || replay.Resources != want {
 		t.Fatalf("setup replay resources = %+v, error = %v", replay.Resources, err)
 	}
 	for _, maintenance := range []bool{true, false} {
-		response, err := w.SetSandboxMaintenance(t.Context(), installation, SandboxMaintenanceRequest{Maintenance: maintenance, ExpectedGeneration: 1})
+		var response RuntimeDeploymentView
+		var err error
+		if maintenance {
+			response, err = w.StartSandboxReset(SandboxResetTestContext(t.Context()), installation, SandboxResetRequest{ExpectedGeneration: 1, Clear: "auto"})
+		} else {
+			response, err = w.CancelSandboxReset(SandboxResetTestContext(t.Context()), installation, 1)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -51,7 +58,7 @@ func TestSandboxDeploymentMutationViewsIncludeActualResources(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if response.Maintenance != maintenance || response.Resources != want || response.Resources != current.Resources {
+		if (response.Reset != nil) != maintenance || response.Resources != want || response.Resources != current.Resources {
 			t.Fatalf("maintenance %v response = %+v, current resources = %+v", maintenance, response, current.Resources)
 		}
 	}

@@ -16,14 +16,14 @@ func TestExecutionNegotiatesAndPersistsMessageObservations(t *testing.T) {
 	first := h.message("legacy", "legacy observation policy")
 	result := h.run(ctx, first.TurnID)
 	var request proto.PromptRequestPayload
-	env := h.read(proto.TypePromptRequest)
+	env := h.read(testExecutionRequest)
 	_ = env.DecodePayload(&request)
 	if request.ObserveMessages {
 		t.Fatal("unadvertised observation capability requested")
 	}
 	h.write(first.TurnID, proto.TypeDone, proto.DonePayload{})
 	h.finished(result, store.TurnCompleted)
-	h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{SupportedAgentKinds: []proto.SupportedAgentKind{{Kind: "codex", Available: true, Capabilities: proto.AgentKindCapabilities{Streaming: true, Steering: true, Resume: true, DurableTurns: true, DurableInputReceipts: true, WebSearchControl: true, TextVerbosity: true, ExecutionControls: true, SubagentControl: true, ToolObservations: true, MessageItems: true, NativeSessionRecovery: true}}}})
+	h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{SupportedAgentKinds: []proto.SupportedAgentKind{{Kind: "codex", Available: true, Capabilities: proto.AgentKindCapabilities{Streaming: true, Steering: true, Resume: true, DurableTurns: true, DurableInputReceipts: true, WebSearchControl: true, TextVerbosity: true, ExecutionControls: true, SubagentControl: true, ToolObservations: true, MessageItems: true, NativeSessionRecovery: true, Preparation: true}}}})
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		peer, err := h.registry.LookupDevice(h.device.ID)
@@ -41,7 +41,7 @@ func TestExecutionNegotiatesAndPersistsMessageObservations(t *testing.T) {
 	}
 	input := h.message("observed", "stream separate messages")
 	result = h.run(ctx, input.TurnID)
-	env = h.read(proto.TypePromptRequest)
+	env = h.read(testExecutionRequest)
 	_ = env.DecodePayload(&request)
 	if !request.ObserveMessages {
 		t.Fatal("advertised capability was not requested")

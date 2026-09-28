@@ -15,7 +15,7 @@ const claimRuntimeInitialization = `-- name: ClaimRuntimeInitialization :one
 UPDATE runtime_allocations SET initialization = 'running'
 WHERE id = $1 AND initialization = 'pending' AND state = 'running' AND create_settled
 AND (node_id IS NOT NULL OR (SELECT mode FROM runtime_deployment) = 'direct' OR kept_at > clock_timestamp() - interval '1 hour')
-RETURNING id, environment_id, device_id, provider_key, state, create_settled, created_at, kept_at, released_at, initialization, compute_phase, compute_revision, compute_state, compute_activity_at, compute_wake_requested, compute_retained_until, node_id, observation_error, compute_phase_changed_at
+RETURNING id, environment_id, device_id, provider_key, state, create_settled, created_at, kept_at, released_at, initialization, compute_phase, compute_revision, compute_state, compute_activity_at, compute_wake_requested, compute_retained_until, node_id, observation_error, compute_phase_changed_at, deployment_generation
 `
 
 func (q *Queries) ClaimRuntimeInitialization(ctx context.Context, id pgtype.UUID) (RuntimeAllocation, error) {
@@ -41,6 +41,7 @@ func (q *Queries) ClaimRuntimeInitialization(ctx context.Context, id pgtype.UUID
 		&i.NodeID,
 		&i.ObservationError,
 		&i.ComputePhaseChangedAt,
+		&i.DeploymentGeneration,
 	)
 	return i, err
 }
@@ -49,7 +50,7 @@ const completeRuntimeInitialization = `-- name: CompleteRuntimeInitialization :o
 UPDATE runtime_allocations SET initialization = 'complete'
 WHERE id = $1 AND initialization = 'running' AND state = 'running' AND create_settled
 AND (node_id IS NOT NULL OR (SELECT mode FROM runtime_deployment) = 'direct' OR kept_at > clock_timestamp() - interval '1 hour')
-RETURNING id, environment_id, device_id, provider_key, state, create_settled, created_at, kept_at, released_at, initialization, compute_phase, compute_revision, compute_state, compute_activity_at, compute_wake_requested, compute_retained_until, node_id, observation_error, compute_phase_changed_at
+RETURNING id, environment_id, device_id, provider_key, state, create_settled, created_at, kept_at, released_at, initialization, compute_phase, compute_revision, compute_state, compute_activity_at, compute_wake_requested, compute_retained_until, node_id, observation_error, compute_phase_changed_at, deployment_generation
 `
 
 func (q *Queries) CompleteRuntimeInitialization(ctx context.Context, id pgtype.UUID) (RuntimeAllocation, error) {
@@ -75,6 +76,7 @@ func (q *Queries) CompleteRuntimeInitialization(ctx context.Context, id pgtype.U
 		&i.NodeID,
 		&i.ObservationError,
 		&i.ComputePhaseChangedAt,
+		&i.DeploymentGeneration,
 	)
 	return i, err
 }

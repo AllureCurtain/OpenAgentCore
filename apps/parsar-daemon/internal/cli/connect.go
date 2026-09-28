@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
@@ -259,21 +257,8 @@ func mainLoopRemote(rc *runContext, profile string, prof auth.Profile, agentCLIs
 		Out:    rc.stderr,
 	})
 
-	rootCtx, cancel := context.WithCancel(context.Background())
+	rootCtx, cancel := daemonize.NotifyContext(context.Background())
 	defer cancel()
-
-	// Honour SIGINT / SIGTERM as graceful shutdown.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		select {
-		case sig := <-sigCh:
-			obslog.Bg().Info("received signal, shutting down", "signal", sig.String())
-			cancel()
-		case <-rootCtx.Done():
-		}
-		signal.Stop(sigCh)
-	}()
 
 	bootCtx, bootCancel := context.WithTimeout(rootCtx, bootstrapTimeout)
 	var boot *transport.BootstrapResponse
@@ -309,7 +294,7 @@ func mainLoopRemote(rc *runContext, profile string, prof auth.Profile, agentCLIs
 			DeviceID:   boot.DeviceID,
 			Credential: prof.RunnerCredential,
 			// DaemonVersion is the WIRE-PROTOCOL version, not the build
-			// tag. proto.VersionCompatible is a strict major.minor
+			// tag. proto.VersionCompatible requires an exact version
 			// match against proto.Version. Build-tag reporting goes
 			// in heartbeat's DaemonVersion field.
 			DaemonVersion: proto.Version,
@@ -387,8 +372,8 @@ func mainLoopRemote(rc *runContext, profile string, prof auth.Profile, agentCLIs
 
 // pumpConn runs the per-connection workload: a dispatch.Router fed by
 // conn.Recv(), heartbeats every boot.HeartbeatInterval(), and a
-// graceful router.Shutdown on exit so any in-flight subprocesses get
-// SIGTERM.
+// confirmed router.Shutdown before returning ownership to the reconnect loop.
+// Failed cleanup keeps this exact Router alive, including after a shutdown signal.
 func pumpConn(parentCtx context.Context, conn *transport.Conn, registry *agent.Registry, boot *transport.BootstrapResponse, agentCLIs agentCLIDiscovery) error {
 	local, err := localworkspace.Load()
 	if err != nil {
@@ -406,9 +391,8 @@ func pumpConn(parentCtx context.Context, conn *transport.Conn, registry *agent.R
 		return fmt.Errorf("router init: %w", err)
 	}
 	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = router.Shutdown(shutdownCtx)
-		cancel()
+		_ = conn.Close()
+		shutdownRouterUntilConfirmed(router.Shutdown, time.Second)
 	}()
 
 	conn.StartHeartbeats(parentCtx, boot.HeartbeatInterval(), func() proto.HeartbeatPayload {
@@ -421,7 +405,6 @@ func pumpConn(parentCtx context.Context, conn *transport.Conn, registry *agent.R
 			Timestamp:           time.Now().Unix(),
 			ActiveRequests:      router.ActiveRuns(),
 			DaemonVersion:       Version,
-			ClaudeAvailable:     agentCLIs.ClaudeCode.Available, // legacy server compatibility
 			SupportedAgentKinds: kinds,
 		}
 	}, obslog.Bg().With("component", "heartbeat"))

@@ -33,6 +33,9 @@ func (s *Store) ConnectRuntimeNode(ctx context.Context, nodeID, connectionID str
 	})
 }
 func (s *Store) HeartbeatRuntimeNode(ctx context.Context, nodeID, connectionID string, epoch uint64, health RuntimeNodeHealth) error {
+	return s.heartbeatRuntimeNode(ctx, nodeID, connectionID, epoch, health, nil, 1)
+}
+func (s *Store) heartbeatRuntimeNode(ctx context.Context, nodeID, connectionID string, epoch uint64, health RuntimeNodeHealth, statuses []sandbox.GenerationStatus, protocol int32) error {
 	id, err := parseConnectionGeneration(nodeID)
 	if err != nil {
 		return err
@@ -59,11 +62,31 @@ func (s *Store) HeartbeatRuntimeNode(ctx context.Context, nodeID, connectionID s
 	if err != nil {
 		return err
 	}
-	changed, err := s.queries.HeartbeatRuntimeNode(ctx, sqlc.HeartbeatRuntimeNodeParams{ID: id, ConnectionID: connection, OwnerEpoch: int64(epoch), ProviderReady: health.ProviderReady, Health: raw})
-	if err == nil && changed != 1 {
-		return ErrRuntimeNodeCredential
-	}
-	return err
+	return s.runtimeDeploymentTransaction(ctx, func(q *sqlc.Queries, d sqlc.RuntimeDeployment) error {
+		n, err := nodeConnection(ctx, q, d, nodeID, connectionID, epoch)
+		if err != nil {
+			return err
+		}
+		changed, err := q.HeartbeatRuntimeNode(ctx, sqlc.HeartbeatRuntimeNodeParams{ID: id, ConnectionID: connection, OwnerEpoch: int64(epoch), ProviderReady: health.ProviderReady, Health: raw})
+		if err != nil {
+			return err
+		}
+		if changed != 1 {
+			return ErrRuntimeNodeCredential
+		}
+		if protocol == 1 {
+			// Unspecified legacy nodes keep cleanup connectivity without inventing a generation.
+			if n.DeploymentGeneration == 0 {
+				return nil
+			}
+			state := "failed"
+			if health.ProviderReady {
+				state = "ready"
+			}
+			statuses = []sandbox.GenerationStatus{{Generation: uint64(n.DeploymentGeneration), SpecificationDigest: n.SpecificationDigest, State: state, Diagnostic: health.Diagnostic}}
+		}
+		return recordNodeGenerations(ctx, q, d, n, statuses, protocol)
+	})
 }
 func (s *Store) DisconnectRuntimeNode(ctx context.Context, nodeID, connectionID string, epoch uint64) error {
 	id, err := parseConnectionGeneration(nodeID)

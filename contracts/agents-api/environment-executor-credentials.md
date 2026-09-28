@@ -18,13 +18,36 @@ type, missing Environment or deleted Session returns 404.
 
 | Operation | Request | Result |
 | --- | --- | --- |
-| List | `GET …/executor-credentials` | `{"data":[{"key_id","created_at","revoked_at"}]}` |
+| List | `GET …/executor-credentials` | Credential metadata in `data`, plus required `connection` observation |
 | Issue or rotate | `POST …/executor-credentials` with `{"key_id":"UUID","rotate":false}` | 201 credential file, returned once |
 | Revoke | `DELETE …/executor-credentials/{key_id}` | 204 |
 
 The list holds metadata only, oldest first, for the credentials restricted to this
 Environment; `revoked_at` is null while a credential is active. It never contains
 a secret.
+
+The required `connection` object contains `status` (`never_enrolled`, `connected`,
+or `disconnected`), `bound_key_id`, `enrolled_at`, and `last_seen_at`. All three
+binding fields are null before enrollment. Once enrolled, the bound key and
+enrollment time describe the existing device; a null `last_seen_at` means no
+authenticated heartbeat has been recorded. Issuing another key does not change
+the binding. Rotation/revocation can make the binding disconnected while its
+history remains visible. Expired Environments remain readable under the existing
+list rules but cannot have current executor authority.
+
+Connected means the Environment is connected, its device and executor key still
+have current Core authority, and the process-local gateway has an open peer
+that authenticated with that current key. Core rechecks authority after observing
+the peer. A former key's live socket, a device timestamp, or a ready-looking
+Environment alone is insufficient; without a gateway, Core never returns
+connected. These facts are an observation, not a reservation of connectivity or
+native/model readiness. `last_seen_at` may lag by a heartbeat interval.
+
+List metadata and binding facts use one read-only database snapshot. That snapshot
+ends before the live authority checks, so a committed rotation/revocation is not
+hidden by snapshot isolation. Known authority loss projects as disconnected;
+observation/storage failures remain errors. Device IDs and credential digests are
+internal and never serialized. The public `/v1` Environment shape is unchanged.
 
 `key_id` is a canonical nonzero UUID chosen and retained before the request.
 `rotate` is optional and defaults to false. The 201 response is the daemon
@@ -78,8 +101,10 @@ apply to `self_hosted` Sessions, and creation without a provider fails with 400
 `model_provider_required`. Core freezes the bundle in the Session's encrypted
 snapshot and sends it only over the connection of the executor enrolled for this
 Environment with a current credential of the Session creator's principal. The
-executor keeps it in the Runtime's native harness home, which tools and public
-Files cannot read; the executor host's owner can. Revocation does not erase a
+executor keeps it in the Runtime's native harness home. Public Files remains
+scoped to the authorized workspace, but native tools and the host owner can read
+whatever the starting account can access. The daemon provides no same-user
+credential isolation. Revocation does not erase a
 bundle already delivered. A saved Agent's provider key is delivered to the
 executor of every `self_hosted` Session created with that Agent in the Project, so
 anyone who can create `self_hosted` Sessions in the Project and run an executor

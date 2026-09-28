@@ -16,7 +16,7 @@ type EnvironmentRun struct {
 	Turn        store.Turn
 }
 
-// RunEnvironmentInput owns a private preparation through its first admitted Run.
+// RunEnvironmentInput reserves a Turn on the Session-owned Runtime Executor.
 func (d *Dispatcher) RunEnvironmentInput(ctx context.Context, tenantID, sessionID, reservationID string) (run EnvironmentRun, err error) {
 	if err = d.Store.CheckExecutionOwnership(ctx); err != nil {
 		return run, err
@@ -81,7 +81,7 @@ func (d *Dispatcher) RunEnvironmentInput(ctx context.Context, tenantID, sessionI
 		return run, err
 	}
 	defer prepared.close()
-	if err = send(owner, peer, proto.TypeExecutionPrepare, prepared.requestID, proto.ExecutionPreparePayload{Configuration: req}); err != nil {
+	if err = send(owner, peer, proto.TypeExecutionPrepare, prepared.requestID, proto.ExecutionPreparePayload{SessionID: sessionID, Configuration: req}); err != nil {
 		return run, err
 	}
 	run.Reservation, err = d.awaitPreparation(owner, tenantID, sessionID, run.Reservation, prepared)
@@ -96,6 +96,9 @@ func (d *Dispatcher) RunEnvironmentInput(ctx context.Context, tenantID, sessionI
 		// A rejected claim leaves the reservation pending for a later attempt.
 		return run, err
 	}
+	if err == nil {
+		d.notifications.notify(tenantID, sessionID)
+	}
 	run.Reservation = promoted
 	if err != nil || run.Reservation.State != store.EnvironmentInputAdmitted {
 		return run, err
@@ -106,6 +109,12 @@ func (d *Dispatcher) RunEnvironmentInput(ctx context.Context, tenantID, sessionI
 	req.RunID = run.Reservation.Receipts[0].TurnID
 	req.Input = messages
 	through := run.Reservation.Receipts[len(run.Reservation.Receipts)-1].Sequence
+	releaseDelivery, err := peer.TrackExecutionDelivery(req.RunID)
+	if err != nil {
+		run.Turn, err = d.finishRun(tenantID, sessionID, req.RunID, snapshot.Agent.Model, Result{ErrorCode: "delivery_unknown", AppliedThrough: through}, store.TurnFailed)
+		return run, err
+	}
+	defer releaseDelivery()
 	result, status := d.deliver(owner, tenantID, sessionID, peer, req, through, prepared)
 	result, status = d.captureCompletedArtifacts(owner, peer, session, environment, bound.Device, req.RunID, result, status)
 	run.Turn, err = d.finishRun(tenantID, sessionID, req.RunID, snapshot.Agent.Model, result, status)

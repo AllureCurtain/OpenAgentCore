@@ -1,6 +1,6 @@
 # 管理员指标：后端需求
 
-状态：待与 Core 负责人讨论的提案。除文中注明已存在的 Web API 路由外，其余内容均未实现。[English](admin-metrics-backend-requirements.md)
+状态核对于 2026-09-28：P0 Agent/工具聚合（BE-8）仍是未实现提案。Core 进程指标与节点主机历史已经通过下文链接的独立契约落地。其余 P1/P2 是待讨论设想，不代表已接受的开发清单，也不意味着现有观测能力全部缺失。[English](admin-metrics-backend-requirements.md)
 
 控制台是管理工具，以监控为先：概览、Agent 监控、沙箱监控、Session 日志。它只读取 Web API（`/core/v1/**`，包括 `/core/v1/sandbox/**` 下的沙箱管理路由），从不调用 `/v1`。部分数字来自 Web API 的汇总，其余仍由浏览器对各项目做有上限的读取后自行汇总。本文说明这样做的代价、哪里不完整，以及哪些 Web API 接口可以替代浏览器端的计算。
 
@@ -15,7 +15,7 @@
 | --- | --- | --- |
 | 概览 | `GET /summary`（按项目：资产数量、各状态 Session 数、用量、覆盖率、最近活跃）；`/core/v1/sandbox` 的部署与节点；读取各项目的 Session 列表，用于 24 小时活动图和需要处理的 Session | Session 列表读过 24 小时窗口、并找到汇总所计的全部需要处理的 Session 后即停止，每个项目最多 1,000 个；窗口开始前就不再活跃的项目不读取 |
 | Agent 监控 | 用 `GET /summary` 跳过不活跃的项目；读取各项目的 Session 列表，再经项目作用域读取最近活跃 Session 的 Turn 与 Item；按 API 密钥的用量来自 `GET /summary?group_by=key` | 每个项目最多列出 2,000 个 Session；每次最多读取 200 个 Session，每个 Session 最多 10 页 Turn、5 页 Item，每个 Session 限时 15 秒、每次加载 45 秒 |
-| 沙箱监控 | `/core/v1/sandbox` 的节点与分配；`GET /core/v1/sandbox/runtime-observations`（全部项目）；经所属项目按 ID 读取每个托管 Session；按托管 Session 读取运行时历史 | 每次刷新最多读取 100 个托管 Session；历史最多覆盖 24 个托管 Session；主机指标只有可用内存/磁盘和 CPU 核数 |
+| 沙箱监控 | `/core/v1/sandbox` 的节点与分配；`GET /core/v1/sandbox/runtime-observations`（全部项目）；经所属项目按 ID 读取每个托管 Session；按托管 Session 读取运行时历史 | 每次刷新最多读取 100 个托管 Session；历史最多覆盖 24 个托管 Session；节点主机观测与历史通过下文的节点详情契约提供 |
 
 控制台在问号提示和告警中说明的后果：
 
@@ -51,17 +51,9 @@
 
 按时间桶和工具（`function` 名称、MCP 的 `server_label` 加名称、Shell 命令、网页搜索、子 Agent）返回调用数、失败数，以及 Item 上报时的耗时。它可以替代逐 Session 读取 Item。
 
-### P1：Core 进程与主机状态
+### 已实现：Core 进程指标
 
-概览在沙箱宿主机旁边单独显示 Core 本身。Core 不运行沙箱，因此没有槽位；负责人要求改为显示它的 CPU 和内存。目前没有任何接口上报这些数据，所以控制台只显示 Web API 是否可访问、是否处于维护模式，CPU 和内存显示“未报告”。
-
-`GET /core/v1/core-status`
-
-- Core 版本和进程运行时长。
-- 进程 CPU 利用率（以一个核为单位，按短时间窗口平均），以及主机的 CPU 核数和利用率。
-- 进程常驻内存，主机内存总量和可用量。
-- 数据库是否可达，以及连接池使用情况。
-- 平台读不到的数字（例如受限容器内）返回 `null`，绝不返回 0。
+`GET /core/v1/metrics?range=1h|6h|24h|7d` 提供 Core 进程 CPU/RSS 与限额、执行队列与槽位、PostgreSQL 和后台任务观测。单位、空值和保留范围以 [Core 指标契约](../../contracts/agents-api/core-metrics.md) 为准。原提议的 `/core/v1/core-status` 路由未采用。整机 CPU 不等于 Core 进程指标；其他主机字段是独立设想，不属于 BE-8 的缺失项。
 
 ### P1：Session 活动与需要处理的 Session
 
@@ -76,10 +68,9 @@
 
 由 API 路由中间件记录：按路由族（Session、事件流、Turn、Item、文件等）统计请求数、4xx/5xx 数和延迟分位数。这就是托管平台控制台里的“请求数”和“错误率”。建议参照运行时历史，把汇总写入现有 PostgreSQL 并设保留期，可选 OTLP 导出作为第二去向。
 
-### P1：节点利用率与历史
+### 已实现：节点主机观测与历史
 
-- 在 `GET /core/v1/sandbox/nodes` 中增加：主机 CPU 利用率、内存已用与总量、磁盘已用与总量、节点软件版本、进程运行时长。
-- `GET /core/v1/sandbox/nodes/{id}/history?start=&end=&step=`：活跃、保留、预留沙箱数和主机利用率随时间的变化。
+`GET /core/v1/sandbox/nodes/{node_id}?range=1h|6h|24h` 提供节点主机历史。字段、空值、新鲜度和聚合规则以 [节点主机历史契约](../../contracts/agents-api/node-host-history.md) 为准。原提议的 `/nodes/{id}/history` 路由未采用。进一步扩展列表字段或分配数量的时间序列，需要单独确定范围，不是 BE-8 的前置条件。
 
 ### P2：托管运行时连同 Session 信息
 

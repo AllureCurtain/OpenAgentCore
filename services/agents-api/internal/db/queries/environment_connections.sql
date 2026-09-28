@@ -13,7 +13,7 @@ UPDATE environment_connections SET revision = $2 WHERE environment_id = $1;
 UPDATE environments SET status = $2 WHERE id = $1;
 
 -- name: RecordEnvironmentFailure :one
-UPDATE environments SET status = 'failed', failure_reason = $2, failed_at = clock_timestamp()
+UPDATE environments SET status = 'failed', failure_reason = $2, failure_detail = $3, failed_at = clock_timestamp()
 WHERE id = $1 AND status NOT IN ('failed', 'expired')
 RETURNING failed_at;
 

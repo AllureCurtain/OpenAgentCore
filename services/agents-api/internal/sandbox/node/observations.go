@@ -39,7 +39,7 @@ func (p *provider) Observe(ctx context.Context, target runtimeobs.Target) (runti
 	return *out.Sample, nil
 }
 
-func observeProvider(ctx context.Context, provider sandbox.Provider, target runtimeobs.Target) (runtimeobs.Sample, error) {
+func observeProvider(ctx context.Context, provider sandbox.SandboxProvider, target runtimeobs.Target) (runtimeobs.Sample, error) {
 	source, ok := provider.(runtimeobs.Source)
 	if !ok {
 		return runtimeobs.Sample{}, runtimeobs.ErrUnavailable

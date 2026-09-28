@@ -108,3 +108,59 @@ func TestConsoleReportsServableNodeProviders(t *testing.T) {
 		t.Fatal("a console without a node payload did not report an empty list:", body)
 	}
 }
+
+func TestRetainedPayloadsRemainHTTPReachableAfterPublication(t *testing.T) {
+	root := t.TempDir()
+	write := func(name, body string) {
+		t.Helper()
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a, b := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	for _, revision := range []string{a, b} {
+		prefix := "releases/" + revision + "/"
+		write(prefix+"manifest.json", `{"source_commit":"`+revision+`","artifacts":{"native/bin/oac-node":{"filename":"node"},"private/key":{"filename":"key"}}}`)
+		write(prefix+"node-install.pyz", "installer-"+revision)
+		write(prefix+"artifacts/node", "binary-"+revision)
+		write(prefix+"artifacts/key", "secret-must-not-be-served")
+	}
+	payload, err := os.OpenRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer payload.Close()
+	h := &console{nodePayload: payload}
+	request := func(path string) (int, string) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		h.serveNodePayload(w, httptest.NewRequest("GET", "/node-install/"+path, nil))
+		return w.Code, w.Body.String()
+	}
+	for _, revision := range []string{a, b} {
+		write("active.json", `{"source_commit":"`+revision+`"}`)
+		if code, body := request("node-install.pyz"); code != 200 || body != "installer-"+revision {
+			t.Fatal("active release not served", code, body)
+		}
+		if code, body := request("releases/" + a + "/artifacts/node"); code != 200 || body != "binary-"+a {
+			t.Fatal("retained release unreachable", code, body)
+		}
+		for _, name := range []string{"active.json", "releases/" + a + "/artifacts/key", "releases/" + a + "/secrets/core.key", "releases/../../node-install.pyz"} {
+			if code, _ := request(name); code != 404 {
+				t.Fatal("non-public file exposed", name, code)
+			}
+		}
+	}
+	write("releases/"+a+"/manifest.json", `{"source_commit":"`+b+`"}`)
+	if code, _ := request("releases/" + a + "/node-install.pyz"); code != 404 {
+		t.Fatal("mismatched release identity was served")
+	}
+	write("active.json", `{"source_commit":"../../"}`)
+	if code, _ := request("node-install.pyz"); code != 404 {
+		t.Fatal("invalid pointer did not fail closed")
+	}
+}

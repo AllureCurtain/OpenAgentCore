@@ -18,7 +18,7 @@ func workspaceFixture(t *testing.T) (WorkspaceConfig, proto.PromptRequestPayload
 	r := executionRequest(t)
 	r.RunID, r.Input, r.ConversationID = "", nil, ""
 	r.DisableExecutionEnvironment = false
-	r.LocalEnvironment = &proto.LocalEnvironment{ID: "environment", NetworkAccess: "disabled"}
+	r.LocalEnvironment = &proto.LocalEnvironment{ID: "environment", NetworkAccess: "enabled"}
 	r.WorkDir = t.TempDir()
 	record := filepath.Join(t.TempDir(), "calls")
 	exe, err := os.Executable()
@@ -31,7 +31,7 @@ func workspaceFixture(t *testing.T) (WorkspaceConfig, proto.PromptRequestPayload
 	if err := os.WriteFile(binary, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	return WorkspaceConfig{Binary: binary, Node: "/usr/bin/node", Bridge: "/opt/bridge.mjs", Directory: r.WorkDir, Network: "disabled", Scratch: t.TempDir(), ProtectedDirs: []string{os.Getenv("OAC_RUNTIME_HOME")}}, r, record
+	return WorkspaceConfig{Binary: binary, Node: "/usr/bin/node", Bridge: "/opt/bridge.mjs", Directory: r.WorkDir, Network: "enabled", Scratch: t.TempDir()}, r, record
 }
 
 func TestPreparedWorkspaceHasOneInputAndOutputOwner(t *testing.T) {
@@ -88,8 +88,8 @@ func TestPreparedWorkspaceHasOneInputAndOutputOwner(t *testing.T) {
 			done++
 			select {
 			case <-p.session.exited:
+				t.Fatal("successful Turn disposed the reusable native owner")
 			default:
-				t.Fatal("Done before native settlement")
 			}
 			var d proto.DonePayload
 			_ = json.Unmarshal(e.Payload, &d)

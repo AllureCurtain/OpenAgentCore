@@ -25,7 +25,7 @@ test("shows the deployment's health on Overview and each monitor page", async ({
   await page.getByRole("button", { name: "Sandbox metrics" }).click();
   await expect(page.getByRole("table").first()).toContainText("core-01");
   // A degraded node names why its provider is not ready.
-  await expect(page.getByRole("button", { name: "Docker limits unsupported" })).toBeVisible();
+  await expect(page.locator(".status-with-help").filter({ hasText: /^Provider not ready/ }).getByRole("button", { name: "Docker limits unsupported", exact: true })).toBeVisible();
 });
 
 test("opens a Session's conversation from the Session log, read-only", async ({ page, request }) => {
@@ -37,7 +37,7 @@ test("opens a Session's conversation from the Session log, read-only", async ({ 
 });
 
 test("keeps a failed Session's reason in sight in the Session log and on its page", async ({ page, request }) => {
-  const reasons = /Sandbox allocation failed: node unavailable\.|Model provider returned 429 Too Many Requests\.|Tool call timed out after 300 s\./;
+  const reasons = /Execution could not complete\. No specific cause was reported\./;
   await page.setViewportSize({ width: 1280, height: 800 });
   await openConsole(page, request, "sessions");
   await page.getByRole("radio", { name: /^Failed/ }).click();
@@ -182,7 +182,7 @@ test("issues a new executor credential after the unanswered one was rotated from
   await page.unroute("**/executor-credentials");
 
   // The page's refresh lists it; the administrator rotates it from its row.
-  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByRole("button", { name: "Refresh", exact: true }).first().click();
   const credentials = section.getByRole("table", { name: "Executor credentials" });
   await credentials.getByRole("button", { name: /^Rotate credential / }).click();
   // Rotating an active credential disconnects its host until the command is rerun with the new one.
@@ -222,6 +222,7 @@ test("shows E2B's cloud instead of machines", async ({ page, request }) => {
   await expect(page.getByRole("button", { name: "Add node" })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: "Node", exact: true })).toHaveCount(0);
 
-  await page.getByRole("navigation").getByRole("button", { name: "Sandbox backend" }).click();
-  await expect(page.getByRole("heading", { name: "Sandbox backend", level: 1 })).toBeVisible();
+  await page.getByRole("navigation").getByRole("button", { name: "Nodes", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Nodes", level: 1 })).toBeVisible();
+  await expect(page.getByText("E2B runs sandboxes in its cloud. There are no nodes to manage.")).toBeVisible();
 });

@@ -34,7 +34,6 @@ test "$(node "$native/cli.js" --version)" = 0.4.12
   cd "$context"
   npm ci --no-audit --no-fund
   MCODE_SOURCE="$context/upstream" node build.mjs
-  MCODE_SOURCE="$context/upstream" node build-sandbox.mjs
   node dist/worker.mjs /workspace --describe > dist/tools.json
   npm prune --omit=dev --no-audit --no-fund
 )
@@ -48,7 +47,6 @@ cp -R "$context/upstream/dist/." "$artifact/native/"
 cp -R "$native/node_modules" "$artifact/native/"
 cp "$context/upstream/.oac-native-patch.json" "$artifact/native-patch.json"
 cp "$context/upstream/LICENSE" "$artifact/UPSTREAM_LICENSE"
-cp "$context/upstream/third_party/sandbox-runtime/LICENSE" "$artifact/SANDBOX_LICENSE"
 cp "$context/upstream/third_party/pi-mono/LICENSE" "$artifact/PI_LICENSE"
 python3 - "$artifact" "$package" <<'PY'
 import hashlib,json,pathlib,sys

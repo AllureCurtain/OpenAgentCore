@@ -102,7 +102,7 @@ func TestLocalMCPRejectsBeforePreparationFactory(t *testing.T) {
 				t.Error("ordinary factory called")
 				return nil, errors.New("unexpected")
 			})
-			h.reg.RegisterPreparation("prepared", false, func(context.Context, proto.PromptRequestPayload) (agent.Prepared, error) {
+			h.reg.RegisterExecutor("prepared", func(context.Context, proto.PromptRequestPayload) (agent.Executor, error) {
 				entered <- struct{}{}
 				return nil, errors.New("controlled stop")
 			})

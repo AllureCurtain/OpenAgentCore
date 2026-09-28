@@ -25,6 +25,8 @@ import type {
   SessionItem,
 } from "@agents-core-web/agents-client";
 
+import { TraceTimingPanel } from "./TraceTimingPanel";
+import { TurnFailure } from "../session-diagnostics";
 import { HelpTip } from "../../../components/console-ui";
 import { MessageMarkdown } from "../../../components/MessageMarkdown";
 import { StatusIcon, type StatusKind } from "../../../components/StatusIcon";
@@ -268,23 +270,6 @@ function TracePreviewPanel({ row }: { row: TraceRow }) {
   return <pre className="trace-detail-text">{row.text.value}</pre>;
 }
 
-function TraceTimingPanel({ row, group }: { row: TraceRow; group: TraceGroup }) {
-  const { t, i18n } = useTranslation("sessions");
-  const translate = t as Translate;
-  const locale = i18n.resolvedLanguage || "en";
-  return (
-    <div className="trace-detail-timing">
-      <dl>
-        <div><dt>{t("trace.turnStarted")}</dt><dd>{formatTimestamp(group.turn?.started_at, locale, t("common.unknown"))}</dd></div>
-        <div><dt>{t("trace.turnCompleted")}</dt><dd>{formatTimestamp(group.turn?.completed_at, locale, t("common.unknown"))}</dd></div>
-        <div><dt>{t("trace.turnWallClock")}</dt><dd>{valueLabel(group.turnWallClockDurationMs, translate, (value) => formatDuration(value, locale))}</dd></div>
-        <div><dt className="trace-dt-help">{t("trace.itemStarted")}<HelpTip>{t("trace.timingBoundary")}</HelpTip></dt><dd>{t("trace.notProvidedByCore")}</dd></div>
-        <div><dt>{t("trace.itemCompleted")}</dt><dd>{t("trace.notProvidedByCore")}</dd></div>
-        <div><dt>{t("trace.toolReportedDuration")}</dt><dd>{durationDetailLabel(row.durationMs, translate, locale)}</dd></div>
-      </dl>
-    </div>
-  );
-}
 
 function ApplyPatchPreview({ row }: { row: TraceRow }) {
   const item = applyPatchItem(row);
@@ -470,6 +455,7 @@ export function TraceView({
                   <span className="trace-group-duration" title={t("trace.turnWallClockDuration")}>{turnDurationLabel(group.turnWallClockDurationMs, translate, locale)}</span>
                 ) : null}
               </header>
+              {group.turn ? <TurnFailure turn={group.turn} /> : null}
               {group.rows.length ? (
                 <ol>
                   {group.rows.map((row) => {

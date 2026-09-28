@@ -197,7 +197,7 @@ test("gives the host's uninstall command even when the installation must be read
 });
 
 test("sets up own-machine sandboxes page by page, with the Runtime from the distribution", async ({ page, request }) => {
-  await openConsole(page, request, "nodes", { sandbox: "none" });
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "none" });
   await expect(page.getByRole("heading", { name: "Where should sandboxes run?" })).toBeVisible();
   await page.getByRole("button", { name: "Own machines" }).click();
   await page.getByRole("button", { name: "microsandbox Recommended" }).click();
@@ -205,8 +205,6 @@ test("sets up own-machine sandboxes page by page, with the Runtime from the dist
   await expect(page.getByRole("heading", { name: "Review and save" })).toBeVisible();
   await page.getByRole("button", { name: "Save configuration" }).click();
 
-  // The saved specification carries the Runtime read from the console's manifest.
-  await expect(page.getByText("c0ffee000000")).toBeVisible();
   // Own machines continue straight to adding the first node, at its limits: no command is issued yet.
   await expect(page.getByRole("dialog", { name: "Add node" }).getByLabel("Sandboxes at once")).toBeVisible();
   const add = page.getByRole("dialog", { name: "Add node" });
@@ -216,10 +214,16 @@ test("sets up own-machine sandboxes page by page, with the Runtime from the dist
   const tokenRequested = await page.waitForRequest((sent) => sent.url().endsWith("/core/v1/sandbox/enrollment-tokens"), { timeout: 1000 }).then(() => true, () => false);
   expect(tokenRequested).toBe(false);
   expect(await writes(request)).toEqual(["POST /core/v1/sandbox/deployment"]);
+  await add.getByRole("button", { name: "Close dialog" }).click();
+  await page.getByRole("button", { name: "System", exact: true }).click();
+  await page.getByRole("button", { name: "Manage sandbox configuration", exact: true }).click();
+  // The saved specification carries the Runtime read from the console's manifest.
+  await page.getByRole("button", { name: "Configuration details", exact: true }).click();
+  await expect(page.locator(".help-tip-popover").getByText("c0ffee000000", { exact: true })).toBeVisible();
 });
 
 test("preselects microsandbox and asks once before switching to Docker", async ({ page, request }) => {
-  await openConsole(page, request, "nodes", { sandbox: "none" });
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "none" });
   await page.getByRole("button", { name: "Own machines" }).click();
   const microsandbox = page.getByRole("button", { name: "microsandbox Recommended" });
   const docker = page.getByRole("button", { name: "Docker", exact: true });
@@ -239,7 +243,7 @@ test("preselects microsandbox and asks once before switching to Docker", async (
   await docker.click();
   await confirm.getByRole("button", { name: "Use Docker" }).click();
   await expect(sizeStep).toBeVisible();
-  await page.getByRole("button", { name: "Back" }).click();
+  await page.getByRole("button", { name: "Back", exact: true }).click();
   await expect(docker).toHaveAttribute("aria-pressed", "true");
   await docker.click();
   await expect(sizeStep).toBeVisible();
@@ -247,85 +251,44 @@ test("preselects microsandbox and asks once before switching to Docker", async (
 });
 
 test("saves E2B without opening Add node, as it has no machines", async ({ page, request }) => {
-  await openConsole(page, request, "nodes", { sandbox: "none" });
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "none" });
   await page.getByRole("button", { name: "E2B cloud" }).click();
   await page.getByLabel("E2B API key").fill("fixture-private-key");
   await page.getByLabel("Template build").fill("template:94be54a1-138c-4f30-bc87-b13686272dbe");
   await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Save configuration" }).click();
-  await expect(page.getByRole("heading", { name: "Sandbox backend", level: 1 })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Sandbox configuration", level: 1 })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
 });
 
-test("keeps the saved size and Runtime for the same backend, and starts another from its defaults", async ({ page, request }) => {
+test("edits only the saved backend, preserving a custom size and Runtime", async ({ page, request }) => {
   const runtime = { source_commit: "0".repeat(40), image_id: `sha256:${"a".repeat(64)}`, image_manifest_digest: `sha256:${"b".repeat(64)}`,
     microsandbox_ref: `oac-runtime@sha256:${"b".repeat(64)}`, runtime_sha256: "c".repeat(64), firmware_sha256: "d".repeat(64) };
   const current = { resources: { cpus: 7, memory_mib: 8192 }, runtime };
-  const deployment = { installation_id: "94be54a1-138c-4f30-bc87-b13686272dbe", provider: "docker", core_url: "https://core.example", maintenance: true,
+  let deployment = { installation_id: "94be54a1-138c-4f30-bc87-b13686272dbe", provider: "docker", core_url: "https://core.example", reset: null, rollout: { state: "settled", previous_generation_sandboxes: 0, nodes: { ready: 0, preparing: 0, failed: 0, update_required: 0, unknown: 0 } },
     owner_epoch: 1, generation: 1, mode: "nodes", resources: { allocations: 0, pending: 0 }, specification: current, specification_digest: "e".repeat(64),
     suspension: null };
   let submitted: Record<string, unknown> | null = null;
   await page.route("**/core/v1/sandbox/deployment", async (route) => {
-    if (route.request().method() === "PUT") submitted = route.request().postDataJSON() as Record<string, unknown>;
+    if (route.request().method() === "PUT") {
+      submitted = route.request().postDataJSON() as Record<string, unknown>;
+      deployment = { ...deployment, generation: 2 };
+    }
     await route.fulfill({ json: deployment });
   });
   await page.route("**/core/v1/sandbox/nodes", (route) => route.fulfill({ json: { data: [] } }));
-  await openConsole(page, request, "nodes");
-  const save = page.getByRole("button", { name: "Save and stay in maintenance" });
-  const back = page.getByRole("button", { name: "Back" });
-
-  // The same backend keeps its saved size and Runtime.
-  await page.getByRole("button", { name: "Change provider or resources" }).click();
-  await page.getByRole("button", { name: "Own machines" }).click();
-  await page.getByRole("button", { name: "Docker" }).click();
+  await openConsole(page, request, "system?id=sandbox");
+  await page.getByRole("button", { name: "Change resources" }).click();
+  await expect(page.getByRole("button", { name: "Own machines" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "E2B cloud" })).toHaveCount(0);
   await page.getByRole("button", { name: /^Current/ }).click();
-  await save.click();
-  await expect.poll(() => submitted?.resources).toEqual(current.resources);
-  expect(submitted?.runtime).toEqual(runtime);
-  // Core's address is config.json's public_url: a change never sends it.
+  await page.getByRole("button", { name: "Save configuration" }).click();
+  await expect.poll(() => submitted).toMatchObject({ provider: "docker", expected_generation: 1, resources: current.resources, runtime });
   expect(submitted).not.toHaveProperty("core_url");
-
-  // Another backend starts from its own size, with disks, and this console's Runtime.
-  await back.click();
-  await back.click();
-  await page.getByRole("button", { name: "microsandbox" }).click();
-  await page.getByRole("button", { name: /^Standard/ }).click();
-  await save.click();
-  await expect.poll(() => submitted?.provider).toBe("microsandbox");
-  expect(submitted?.resources).toEqual({ cpus: 2, memory_mib: 4096, root_disk_mib: 8192, environment_disk_mib: 8192 });
-  expect(submitted?.runtime).toMatchObject({ source_commit: "c0ffee".padEnd(40, "0") });
-
-  // E2B needs its key again and takes its size from the template build: no size, Runtime or disks.
-  await back.click();
-  await back.click();
-  await back.click();
-  await page.getByRole("button", { name: "E2B cloud" }).click();
-  await page.getByLabel("E2B API key").fill("fixture-private-key");
-  await page.getByLabel("Template build").fill("template:94be54a1-138c-4f30-bc87-b13686272dbe");
-  await page.getByRole("button", { name: "Next" }).click();
-  await save.click();
-  await expect.poll(() => submitted?.provider).toBe("e2b");
-  expect(submitted?.resources).toBeUndefined();
-  expect(submitted?.runtime).toBeUndefined();
-});
-
-test("reports a failed sandbox change in a dialog, then reads the state again", async ({ page, request }) => {
-  await openConsole(page, request, "nodes");
-  // Core's answer is lost, so the change may have been saved.
-  await page.route("**/core/v1/sandbox/deployment/maintenance", (route) => route.fulfill({
-    status: 503,
-    contentType: "application/json",
-    body: JSON.stringify({ error: { message: "Unavailable.", type: "server_error", code: null, param: null } }),
-  }));
-  await page.getByRole("button", { name: "Enter maintenance to change provider" }).click();
-  const failed = page.getByRole("dialog", { name: "Couldn't confirm the sandbox change" });
-  await failed.getByRole("button", { name: "Refresh sandbox state" }).click();
-  await expect(failed).toBeHidden();
-  await expect(page.getByRole("button", { name: "Enter maintenance to change provider" })).toBeEnabled();
 });
 
 test("keeps the page usable when Core refuses a sandbox change, and shows Core's reason", async ({ page, request }) => {
-  await openConsole(page, request, "nodes", { sandbox: "none" });
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "none" });
   await failNext(request, { method: "POST", path: "/sandbox/deployment", status: 403, message: "This console is read-only." });
   await page.getByRole("button", { name: "Own machines" }).click();
   await page.getByRole("button", { name: "microsandbox Recommended" }).click();
@@ -341,7 +304,13 @@ test("keeps the page usable when Core refuses a sandbox change, and shows Core's
   await expect(page.getByText("Another administrator changed the deployment; it is now at generation 2.")).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await save.click();
-  await expect(page.getByText("c0ffee000000")).toBeVisible();
+  const added = page.getByRole("dialog", { name: "Add node" });
+  await expect(added).toBeVisible();
+  await added.getByRole("button", { name: "Close dialog" }).click();
+  await page.getByRole("button", { name: "System", exact: true }).click();
+  await page.getByRole("button", { name: "Manage sandbox configuration", exact: true }).click();
+  await page.getByRole("button", { name: "Configuration details", exact: true }).click();
+  await expect(page.locator(".help-tip-popover").getByText("c0ffee000000", { exact: true })).toBeVisible();
 });
 
 test("renames a node and sets how many sandboxes run on it at once", async ({ page, request }) => {

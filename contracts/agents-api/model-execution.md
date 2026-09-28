@@ -129,8 +129,11 @@ options only over the daemon connection bound to the Session. For `self_hosted`,
 that is the executor enrolled for the Session's own Environment with a current
 executor credential of the Session creator's principal; rotation or revocation
 closes the socket before further dispatch. The executor host stores the bundle in
-its native harness home, as hosted Runtimes do; tools and public Files cannot reach
-that home. Revocation does not erase a bundle already delivered.
+its native harness home, as hosted Runtimes do. Public Files remains scoped to the
+bound workspace, but native tools use the starting account's permissions and can
+access whatever that user can read. The daemon does not isolate its local
+credentials from same-user tools. Revocation does not erase an already delivered
+bundle.
 
 ## Deployment defaults
 
@@ -158,27 +161,48 @@ default never reaches existing Sessions, so a Session's first and later Turns al
 use the same provider. The execution-configuration read shows the frozen safe view
 with source `deployment`.
 
-The former `AGENTS_API_EXECUTION_OPTIONS_FILE` is retired: setting it stops Core at
-startup with the replacement named; remove it and set the deployment defaults
-in Web (System) or with `PUT /core/v1/harnesses/{harness}/model-provider`. Only its provider identity (endpoint, key,
-protocol and MiniMax Code limits) has a home in the deployment default; its other
-native options (headers, query parameters, environment, MCP servers, feature and
-permission settings) are dropped. Sessions frozen from that file keep their
-complete private snapshot. Historical `openai_hosted` and `self_hosted` Sessions
-created without any snapshot cannot start new work: message input returns 400
-`model_provider_required`, while cancellation and history reads keep working.
-Input they reserved before the upgrade settles as failed with that reason, and the
-Session reports it, instead of waiting for its deadline. A retry of a Session that
-carried its own provider key, first sent before this release, conflicts once after
-the upgrade, because its retry hash now holds a keyed fingerprint instead of the
-key. Key-bearing retries likewise conflict after a credential key change, which is
-not supported anyway.
-Recreate them with a bundle. Run `deploy/install/model_provider_sessions.py`
-against an installation before upgrading to count them; it only reads. Historical
-`none` Sessions that relied on the retired options file now run with the device's
-own environment, and the check does not count them.
+The former `AGENTS_API_EXECUTION_OPTIONS_FILE` is rejected at startup. Configure
+a fresh installation through Web (System) or
+`PUT /core/v1/harnesses/{harness}/model-provider`; deployment defaults contain only
+provider identity (endpoint, key, protocol and MiniMax Code limits). They do not
+accept native headers, query parameters, environment, MCP servers, feature or
+permission settings.
+
+Historical installations and Session snapshots have no supported conversion or
+cross-version continuation procedure. Preserve their database, credentials and
+history, and install the current release separately. Do not run a historical
+pre-upgrade utility to make old Sessions eligible for the current release. Current
+hosted and self-hosted Sessions require a provider bundle at creation, and credential
+key replacement is unsupported.
 
 Parsar manages its own workspace catalog and encrypted keys, sends this extension
 only on the first Core Session request, and retains a private encrypted snapshot
 for uncertain creation retries. Catalog updates and deletion affect new Sessions;
 existing Sessions retain their original model, endpoint and key.
+
+### Deployment default observations
+
+The Core-only harness/default-provider reads include nullable `last_used_at`,
+`last_error_code` and `last_error_at`. PUT resets all three, even for the same bundle.
+Completed root Turns contribute use observations only when their Session froze
+that exact current default revision. Failed root Turns contribute only the fixed
+native provider codes `authentication_error`, `connection_failed`,
+`rate_limit_exceeded`, `usage_limit_exceeded`, `server_overloaded`, `server_error`,
+`resource_not_found`, `request_timeout` and `invalid_request`. Input-policy,
+Core/runtime, cancelled and waiting outcomes do not contribute. Successful use
+retains the earlier error; comparing timestamps is only a display convention.
+
+These are best-effort Core receipt times after terminal commit, not provider health
+or remote completion times. Private revision identity is independent of timestamps;
+old, explicit-provider and historical Sessions cannot update a replacement default.
+No public Session/Turn fields or retry identity change. The observation has a
+one-second budget including pool/row-lock acquisition and cannot change the committed
+Turn. A crash, failure or throttle can omit the last observation indefinitely.
+
+Errors throttle for 30 seconds regardless of code. Ordinary successful writes
+throttle for 30 seconds; the first success after an accepted error records recovery
+immediately. For an unchanged revision this allows at most three effective metadata
+writes in any half-open 30-second interval of nondecreasing DB-clock time. Equal or
+backwards clock readings are preserved and can make timestamp-based display
+ambiguous; recovery does not impose a total order. No readiness probe, automatic
+refresh, observation history or credential/raw-error read is provided.

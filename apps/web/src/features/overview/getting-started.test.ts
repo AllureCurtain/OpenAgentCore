@@ -6,18 +6,47 @@ import { checklistStorageKey, checklistView, gettingStartedSteps, nextStepAfterN
 import { node, project } from "./test-fixtures";
 
 const deployment = (overrides: Partial<SandboxDeployment> = {}): SandboxDeployment => ({
-  installation_id: "i", provider: "docker", core_url: "http://core", maintenance: false, owner_epoch: 1, generation: 1, mode: "nodes",
+  rollout: { state: "settled", previous_generation_sandboxes: 0, nodes: { ready: 1, preparing: 0, failed: 0, update_required: 0, unknown: 0 } }, installation_id: "i", provider: "docker", core_url: "http://core", reset: null, owner_epoch: 1, generation: 1, mode: "nodes",
   resources: { allocations: 0, pending: 0 }, suspension: null, ...overrides,
 });
-const fleet = (value: SandboxDeployment, nodes = [node("n1")]): FleetState => ({ status: "ready", snapshot: { deployment: value, nodes, allocations: [], loadedAt: 0 }, refreshing: false, error: null });
-const sandboxes = (state: FleetState) => gettingStartedSteps({ fleet: state, localOnly: false, projects: [], sessions: 0, harnesses: [] }).sandboxes;
-const provider = { object: "core.model_provider", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, updated_at: "2026-09-25T00:00:00Z" } as const;
+const fleet = (value: SandboxDeployment, nodes = [node("n1")]): FleetState => ({ status: "ready", snapshot: { deployment: value, nodes, allocations: [], loadedAt: 0 }, targetGeneration: value.generation, refreshing: false, error: null });
+const sandboxes = (state: FleetState) => gettingStartedSteps({ sandboxReset: false, fleet: state, localOnly: false, projects: [], sessions: 0, harnesses: [] }).sandboxes;
+const provider = { object: "core.model_provider", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, last_used_at: null, last_error_code: null, last_error_at: null, updated_at: "2026-09-25T00:00:00Z" } as const;
 const harness = (id: CoreHarness["id"], fields: Partial<CoreHarness> = {}): CoreHarness => ({ object: "core.harness", id, enabled: true, default: false, model_provider: null, ...fields });
 
 describe("Getting started steps", () => {
+  it("uses live provider readiness independently of target state or a durable pin", () => {
+    for (const state of ["preparing", "failed", "update_required", "unknown"] as const) {
+      const serving = node("n1", { rollout: { state, ready_generation: 1 } });
+      expect(sandboxes(fleet(deployment({ generation: 2 }), [serving])).state).toBe("done");
+      expect(sandboxes(fleet(deployment({ generation: 2 }), [{ ...serving, provider_ready: false }])).state).toBe("todo");
+    }
+    expect(sandboxes(fleet(deployment(), [node("n1", { online: false, rollout: { state: "unknown", ready_generation: 1 } })])).state).toBe("todo");
+    expect(sandboxes(fleet(deployment(), [node("n1", { rollout: { state: "unknown", ready_generation: 1 } })])).state).toBe("done");
+    expect(sandboxes(fleet(deployment(), [node("n1", { provider_ready: false, rollout: { state: "preparing", ready_generation: null } })])).state).toBe("todo");
+  });
+
+  it("does not report ready during reset or an unreadable deployment, even with ready nodes", () => {
+    for (const backend of ["docker", "e2b"] as const) {
+      const input = { fleet: fleet(deployment({ provider: backend })), localOnly: false, projects: [project("p")], sessions: 1,
+        harnesses: [harness("codex", { default: true, model_provider: { ...provider, harness: "codex" } })] };
+      for (const sandboxReset of [true, "failed", undefined] as const) {
+        const steps = gettingStartedSteps({ ...input, sandboxReset });
+        expect(steps.sandboxes).toMatchObject({ state: sandboxReset === true ? "todo" : sandboxReset === "failed" ? "unknown" : null, action: "nodes" });
+        expect(checklistView([steps.sandboxes.state, steps.model, steps.key.state, steps.session.state], "open")).not.toBe("complete");
+      }
+      expect(gettingStartedSteps({ ...input, sandboxReset: false }).sandboxes.state).toBe("done");
+    }
+  });
+
+  it("keeps stale fleet readiness unknown after a failed refresh", () => {
+    const stale = { ...fleet(deployment()), error: new Error("node read failed") } as FleetState;
+    expect(sandboxes(stale).state).toBe("unknown");
+  });
+
   it("cannot complete onboarding while the installation read is pending or failed", () => {
     for (const localOnly of [undefined, "failed"] as const) {
-      const steps = gettingStartedSteps({ localOnly, fleet: fleet(deployment()), projects: [project("p")], sessions: 1,
+      const steps = gettingStartedSteps({ sandboxReset: false, localOnly, fleet: fleet(deployment()), projects: [project("p")], sessions: 1,
         harnesses: [harness("codex", { default: true, model_provider: { ...provider, harness: "codex" } })] });
       expect(steps.sandboxes.state).toBe(localOnly === "failed" ? "unknown" : null);
       expect(checklistView([steps.sandboxes.state, steps.model, steps.key.state, steps.session.state], "open")).toBe("full");
@@ -25,7 +54,7 @@ describe("Getting started steps", () => {
   });
   it("keeps local-only installations to do even with a ready node or cloud deployment", () => {
     for (const provider of ["docker", "e2b"] as const) {
-      const steps = gettingStartedSteps({ fleet: fleet(deployment({ provider })), projects: [], sessions: 1, harnesses: [], localOnly: true });
+      const steps = gettingStartedSteps({ sandboxReset: false, fleet: fleet(deployment({ provider })), projects: [], sessions: 1, harnesses: [], localOnly: true });
       expect(steps.sandboxes).toMatchObject({ state: "todo", action: "nodes", cloud: provider === "e2b" });
     }
   });
@@ -44,7 +73,7 @@ describe("Getting started steps", () => {
   });
 
   it("needs an active project with an active key, and any Session", () => {
-    const steps = (projects: Parameters<typeof gettingStartedSteps>[0]["projects"], sessions: number | "failed" | null = 0) => gettingStartedSteps({ fleet: { status: "loading" }, projects, sessions, harnesses: undefined });
+    const steps = (projects: Parameters<typeof gettingStartedSteps>[0]["projects"], sessions: number | "failed" | null = 0) => gettingStartedSteps({ sandboxReset: false, fleet: { status: "loading" }, projects, sessions, harnesses: undefined });
     expect(steps([]).key).toEqual({ state: "todo", project: null });
     const older = project("p1", { active_key_count: 0, created_at: 1 });
     const newer = project("p2", { active_key_count: 0, created_at: 2 });
@@ -56,7 +85,7 @@ describe("Getting started steps", () => {
   });
 
   it("opens the call samples of the newest active project with a key, else of the newest active project", () => {
-    const call = (projects: Parameters<typeof gettingStartedSteps>[0]["projects"]) => gettingStartedSteps({ fleet: { status: "loading" }, projects, sessions: 0, harnesses: undefined }).session.project;
+    const call = (projects: Parameters<typeof gettingStartedSteps>[0]["projects"]) => gettingStartedSteps({ sandboxReset: false, fleet: { status: "loading" }, projects, sessions: 0, harnesses: undefined }).session.project;
     const keyed = project("p1", { created_at: 1 });
     const newer = project("p2", { active_key_count: 0, created_at: 2 });
     const archived = project("p3", { status: "archived", active_key_count: 0, created_at: 3 });
@@ -66,7 +95,7 @@ describe("Getting started steps", () => {
   });
 
   it("needs a default model on the default harness, or on any enabled harness when none is default", () => {
-    const model = (harnesses: Parameters<typeof gettingStartedSteps>[0]["harnesses"]) => gettingStartedSteps({ fleet: { status: "loading" }, projects: undefined, sessions: null, harnesses }).model;
+    const model = (harnesses: Parameters<typeof gettingStartedSteps>[0]["harnesses"]) => gettingStartedSteps({ sandboxReset: false, fleet: { status: "loading" }, projects: undefined, sessions: null, harnesses }).model;
     const on = (id: CoreHarness["id"]) => ({ ...provider, harness: id });
     expect(model([harness("codex", { default: true }), harness("claude_sdk", { model_provider: on("claude_sdk") })])).toBe("todo");
     expect(model([harness("codex", { default: true, model_provider: on("codex") })])).toBe("done");

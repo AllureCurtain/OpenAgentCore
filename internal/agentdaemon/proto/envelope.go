@@ -1,6 +1,7 @@
 // Package proto defines the JSON wire format spoken by oac-daemon over
 // the reverse WebSocket tunnel to the OpenAgentCore server. Both ends import
-// this package; adding an event means editing one file here and both
+// this package. See docs/runtime-protocol.md for the integration contract.
+// Adding an event means updating the shared definition and both
 // sides at once.
 //
 // Topology: daemon dials OUT (firewall-friendly). Every frame is one
@@ -13,8 +14,11 @@
 // Envelope.ID correlation:
 //   - prompt_request / prompt_cancel: ID = RunID.
 //   - delta / tool_call / usage / error / done: ID = originating RunID.
-//   - permission_request: ID = daemon-minted "perm_<8hex>"; the matching
-//     downstream permission_decision echoes it back.
+//   - permission_request: ID = RunID; payload.request_id is the interaction ID.
+//   - permission_decision / permission_cancel: ID = interaction ID.
+//   - execution_prepare / execution_start / execution_release and
+//     preparation_status: ID = preparation request ID, never RunID.
+//   - runtime_prepare / runtime_prepare_result: ID = connection-local transfer ID.
 //   - heartbeats carry no ID.
 package proto
 
@@ -42,7 +46,7 @@ type Envelope struct {
 	// ("00-{32hex trace_id}-{16hex span_id}-{2hex flags}") for the
 	// logical request. Server-issued envelopes carry the gateway's
 	// ctx carrier; daemon-issued envelopes carry the daemon's. Omitted
-	// when no trace is in scope (heartbeats, legacy clients).
+	// when no trace is in scope (for example, heartbeats).
 	// Receivers MUST tolerate missing/unparseable values — both mean
 	// "mint a fresh trace locally", never reject.
 	Trace string `json:"trace,omitempty"`

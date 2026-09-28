@@ -18,7 +18,7 @@ compute cleanup remains Core's responsibility.
 
 Select E2B in Core's hosted deployment setup and supply the account key and an
 immutable `templateID:build_UUID`. One deployment uses one managed Provider;
-E2B needs no physical node enrollment. Switching Providers requires maintenance
+E2B needs no physical node enrollment. Changing backend requires explicit reset
 and confirmed cleanup of every owned allocation, pending creation and snapshot.
 Do not infer execution readiness from saved configuration or running compute.
 
@@ -65,6 +65,12 @@ private workspace layout. Its `template` output is an immutable
 `templateID:build_UUID`; use that exact value. The build must qualify every harness it advertises; a combined Runtime image
 can include several harnesses. No E2B account key, executor key or model credential belongs in a
 build, template environment, metadata, command argument or log.
+
+System dependencies must be installed when building the template. The builder may
+use root during image construction, but the running daemon remains UID/GID 1000
+with no automatic apt, sudo or privilege escalation. Runtime `system_packages`
+is unsupported; missing dependencies fail their consuming operation. The template
+no longer installs bubblewrap or socat for inner sandboxing.
 
 ## Application-managed: start an existing self-hosted Environment
 
@@ -158,9 +164,11 @@ the daemon's argv or inherited environment. Enrollment and immutable local bindi
 remain daemon responsibilities; startup does not invent device/Session IDs.
 
 E2B clears `/run` at boot, so startup records live under `/root/.oac/e2b`.
-Native sandboxing remains mandatory. Each actual template must verify private
-credential/history isolation, protected binary/config ownership, privilege denial
-and stopped descendant effects, rather than infer safety from file modes alone.
+The E2B VM is the outer isolation boundary. The daemon and native harness add no
+inner filesystem, permission or network sandbox; tools have UID 1000's access to
+Runtime state. Verify the actual outer boundary, process cleanup and native
+execution for each template. Prior private-file denial results describe the old
+inner sandbox and do not qualify the current behavior.
 The one-shot receipt cannot be reused to replace the daemon or overwrite history.
 
 ## Verification scope
@@ -175,7 +183,7 @@ These are controlled startup-contract tests: input binding, protected key output
 unchanged URL, no secret in argv/environment/record, one-shot claim, and retained
 provider ID on unknown outcomes. They do not create billable resources or qualify
 E2B security, enrollment or model execution. The [qualification record](../../../../contracts/agents-api/user-managed-runtime-v1.md)
-identifies actual three-harness deployment results and their verification limits,
+records historical three-harness deployment results and their verification limits,
 including shared Core credential lifecycle checks and explicit application-owned
 cleanup. `tests/official_user_runtime.py` supplies the shared
 public execution checks. The former Core-managed `official_e2b_v1.py` fixture is

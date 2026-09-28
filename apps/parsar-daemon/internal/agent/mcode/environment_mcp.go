@@ -31,7 +31,7 @@ func environmentMCP(local *proto.LocalEnvironment) ([]map[string]any, error) {
 		}
 		command, args := localworkspace.MCPStdioCommand(item)
 		// The fixed launcher resolves the declaration and selected user variables
-		// inside the sandbox. Native process variables are never tool input.
+		// from the installed snapshot in the shared Runtime launcher.
 		servers = append(servers, map[string]any{"name": name, "command": command, "args": args, "env": []map[string]string{}})
 	}
 	return servers, nil

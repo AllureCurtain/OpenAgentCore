@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"strings"
 	"time"
 
@@ -34,8 +35,14 @@ func retainedLimit(provider string, active, retained int) int {
 	return retained
 }
 func validateRuntimeNode(name string, active, retained int) error {
-	if strings.TrimSpace(name) == "" || len(name) > 128 || strings.ContainsAny(name, "\x00\r\n") || active < 1 || retained < active || retained > 1000000 {
-		return ErrInvalidInput
+	if strings.TrimSpace(name) == "" || len(name) > 128 || strings.ContainsAny(name, "\x00\r\n") {
+		return &AdminValidationError{Code: "invalid_name", Param: "name", MaxLength: 128, message: ErrInvalidInput.Error()}
+	}
+	if active < 1 || active > 1000000 {
+		return &AdminValidationError{Code: "invalid_node_capacity", Param: "max_active", message: ErrInvalidInput.Error()}
+	}
+	if retained < active || retained > 1000000 {
+		return &AdminValidationError{Code: "invalid_node_capacity", Param: "max_retained", message: ErrInvalidInput.Error()}
 	}
 	return nil
 }
@@ -71,18 +78,27 @@ func (s *Store) GetRuntimeDeployment(ctx context.Context) (RuntimeDeploymentView
 
 // deploymentView reports the public URL as the deployment's read-only core_url.
 func (s *Store) deploymentView(ctx context.Context, q *sqlc.Queries) (RuntimeDeploymentView, error) {
-	d, err := q.GetRuntimeDeployment(ctx)
+	row, err := q.GetSandboxDeploymentSnapshot(ctx)
 	if err != nil {
 		return RuntimeDeploymentView{}, err
 	}
-	resources, err := q.CountRuntimeDeploymentResources(ctx)
-	if err != nil {
-		return RuntimeDeploymentView{}, err
-	}
+	d := row.RuntimeDeployment
 	result := runtimeDeploymentView(d, s.publicURL)
-	result.Resources = SandboxDeploymentResources{Allocations: resources.Allocations, Pending: resources.Pending}
+	if err := json.Unmarshal(row.Rollout, &result.Rollout); err != nil {
+		return RuntimeDeploymentView{}, err
+	}
+	result.Resources = SandboxDeploymentResources{Allocations: row.Allocations, Pending: row.Pending}
+	if d.ResetClear.Valid {
+		remaining := SandboxResetRemaining{}
+		if err := json.Unmarshal(row.Remaining, &remaining); err != nil {
+			return RuntimeDeploymentView{}, err
+		}
+		result.Reset = &SandboxResetView{Clear: d.ResetClear.String, RequestedAt: d.ResetRequestedAt.Time,
+			DeadlineAt: resetTimestamp(d.ResetDeadlineAt), ForcedAt: resetTimestamp(d.ResetForcedAt), Remaining: remaining}
+	}
 	return result, nil
 }
+
 func (s *Store) RuntimeOwnerEpoch(ctx context.Context) (uint64, error) {
 	d, err := s.queries.GetRuntimeDeployment(ctx)
 	return uint64(d.OwnerEpoch), err
@@ -121,8 +137,8 @@ func runtimeNodeViews(rows []sqlc.ListRuntimeNodesRow) ([]RuntimeNode, error) {
 		if err := json.Unmarshal(n.Health, &health); err != nil {
 			return nil, err
 		}
-		health.ProviderReady = n.ProviderReady
-		out = append(out, RuntimeNode{RuntimeNodeHealth: health, Running: n.Running, Snapshots: n.Snapshots, ID: runtimeUUID(n.ID), Name: n.Name, CoreURL: n.CoreUrl, EnrollmentID: optionalUUID(n.EnrollmentID), Provider: n.ProviderKind, Online: n.Online, LastSeenAt: seen, MaxActive: int(n.MaxActive), MaxRetained: retainedLimit(n.ProviderKind, int(n.MaxActive), int(n.MaxRetained)), Active: n.Active, Reserved: n.Reserved, Retained: n.Retained, CleanupPending: n.CleanupPending, CreatedAt: n.CreatedAt.Time})
+		health.ProviderReady = n.Online && n.ServingReady
+		out = append(out, RuntimeNode{Rollout: nodeRollout(n), RuntimeNodeHealth: health, Running: n.Running, Snapshots: n.Snapshots, ID: runtimeUUID(n.ID), Name: n.Name, CoreURL: n.CoreUrl, EnrollmentID: optionalUUID(n.EnrollmentID), Provider: n.ProviderKind, Online: n.Online, LastSeenAt: seen, MaxActive: int(n.MaxActive), MaxRetained: retainedLimit(n.ProviderKind, int(n.MaxActive), int(n.MaxRetained)), Active: n.Active, Reserved: n.Reserved, Retained: n.Retained, CleanupPending: n.CleanupPending, CreatedAt: n.CreatedAt.Time})
 	}
 	return out, nil
 }
@@ -145,7 +161,10 @@ func (s *Store) CreateRuntimeEnrollment(ctx context.Context, capacity RuntimeNod
 		if err := validateRuntimeNode("enrollment", capacity.MaxActive, capacity.MaxRetained); err != nil {
 			return err
 		}
-		if d.Mode != "nodes" || d.Maintenance || unspecifiedNodeDeployment(d) {
+		if d.ResetClear.Valid {
+			return ErrSandboxResetInProgress
+		}
+		if d.Mode != "nodes" || d.AdmissionPaused || unspecifiedNodeDeployment(d) {
 			return ErrSandboxDeploymentConflict
 		}
 		if err := q.CreateRuntimeEnrollment(ctx, sqlc.CreateRuntimeEnrollmentParams{ID: pgtype.UUID{Bytes: id, Valid: true}, TokenSha256: runtimeTokenDigest(result.Token), InstallationID: d.InstallationID, MaxActive: int32(capacity.MaxActive), MaxRetained: int32(capacity.MaxRetained)}); err != nil {
@@ -183,7 +202,10 @@ func (s *Store) EnrollRuntimeNode(ctx context.Context, token string, input Runti
 		if !runtimeDeploymentInitialized(d) {
 			return ErrRuntimeNodeUnavailable
 		}
-		if d.Mode != "nodes" || d.Maintenance || input.Provider != d.ProviderKind {
+		if d.ResetClear.Valid {
+			return ErrSandboxResetInProgress
+		}
+		if d.Mode != "nodes" || d.AdmissionPaused || input.Provider != d.ProviderKind {
 			return ErrInvalidInput
 		}
 		spec, err := deploymentSpecification(d)
@@ -248,8 +270,13 @@ func (s *Store) AuthenticateRuntimeNode(ctx context.Context, nodeID, credential 
 		}
 		return nodeIdentity(n, d.ProviderKind), nil
 	}
-	spec, err := deploymentSpecification(d)
-	if err != nil || n.SpecificationDigest != spec.Digest(d.ProviderKind) || n.DeploymentGeneration != d.Generation {
+	if err := validateNodeEnrollmentIdentity(ctx, s.queries, d, n); err != nil {
+		return RuntimeNodeIdentity{}, err
+	}
+	// Reset retires nodes before another backend lineage can be selected.
+	// Enrollment generation and digest remain immutable identity history; the
+	// current target and per-generation readiness do not replace that history.
+	if n.DeploymentGeneration <= 0 || !validRuntimeDigest(n.SpecificationDigest) {
 		return RuntimeNodeIdentity{}, ErrRuntimeSpecificationMismatch
 	}
 	return nodeIdentity(n, d.ProviderKind), nil
@@ -328,7 +355,30 @@ func (s *Store) ListNodeRuntimeAllocations(ctx context.Context, nodeID string) (
 			value := a.ComputePhaseChangedAt.Time
 			phaseChanged = &value
 		}
-		out = append(out, RuntimeNodeAllocation{Diagnostic: a.ObservationError, ID: runtimeUUID(a.ID), NodeID: runtimeUUID(a.NodeID), TenantID: runtimeUUID(a.TenantID), SessionID: runtimeUUID(a.SessionID), EnvironmentID: runtimeUUID(a.EnvironmentID), State: a.State, ComputePhase: a.ComputePhase, ComputePhaseChangedAt: phaseChanged, Initialization: a.Initialization, CreatedAt: a.CreatedAt.Time})
+		out = append(out, RuntimeNodeAllocation{DeploymentGeneration: uint64(a.DeploymentGeneration.Int64), Diagnostic: a.ObservationError, ID: runtimeUUID(a.ID), NodeID: runtimeUUID(a.NodeID), TenantID: runtimeUUID(a.TenantID), SessionID: runtimeUUID(a.SessionID), EnvironmentID: runtimeUUID(a.EnvironmentID), State: a.State, ComputePhase: a.ComputePhase, ComputePhaseChangedAt: phaseChanged, Initialization: a.Initialization, CreatedAt: a.CreatedAt.Time})
 	}
 	return out, nil
+}
+
+func nodeRollout(n sqlc.ListRuntimeNodesRow) SandboxNodeRollout {
+	out := SandboxNodeRollout{State: "unknown"}
+	if n.ReadyGeneration.Valid {
+		generation := uint64(n.ReadyGeneration.Int64)
+		out.ReadyGeneration = &generation
+	}
+	if !n.Online {
+		return out
+	}
+	if n.ProtocolVersion == 1 && n.DeploymentGeneration != n.TargetGeneration {
+		out.State = "update_required"
+		return out
+	}
+	switch n.TargetState {
+	case "ready", "preparing", "failed":
+		out.State = n.TargetState
+	}
+	if out.State == "failed" && n.TargetDiagnostic != "" {
+		out.Diagnostic = sandbox.NormalizeNodeDiagnostic(n.TargetDiagnostic)
+	}
+	return out
 }

@@ -96,12 +96,8 @@ func (h *Handler) resolveTemplateEnvironment(ctx context.Context, tenant string,
 	if templateFieldOverride(managers, "python") {
 		setup.Packages.Python = input.initialization.Packages.Python
 	}
-	if templateFieldOverride(managers, "system") {
-		setup.Packages.System = input.initialization.Packages.System
-	}
 	setup.Packages.NPM = slices.Clone(setup.Packages.NPM)
 	setup.Packages.Python = slices.Clone(setup.Packages.Python)
-	setup.Packages.System = slices.Clone(setup.Packages.System)
 	setup.Skills, setup.Plugins, setup.CapabilityDirectories = skills, plugins, directories
 	if err := setup.Validate(); err != nil {
 		return err

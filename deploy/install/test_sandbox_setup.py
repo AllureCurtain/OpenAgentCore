@@ -41,6 +41,22 @@ class SandboxSetupTests(unittest.TestCase):
         with self.assertRaisesRegex(sandbox_setup.SandboxSetupError, "different installation"):
             self.initialize(dict(current, installation_id="other", provider=""), docker)
 
+    def test_initialization_uses_observed_generation_once(self):
+        for generation in (0, 8):
+            with self.subTest(generation=generation):
+                current = {"installation_id": INSTALLATION, "provider": "", "generation": generation, "reset": None}
+                selection = {"provider": "docker", "resources": {"cpus": 2, "memory_mib": 2048}, "runtime": {}}
+                writes = []
+                def send(req):
+                    if req.get_method() == "POST":
+                        writes.append(json.loads(req.data))
+                        return 409, b'{"error":{"code":"generation_stale","message":"Deployment generation changed"}}'
+                    return 200, json.dumps(current).encode()
+                with mock.patch.object(sandbox_setup, "send", side_effect=send), self.assertRaises(sandbox_setup.SandboxSetupError):
+                    sandbox_setup.initialize(self.root, self.config, self.state, selection)
+                self.assertEqual(writes, [dict(selection, expected_generation=generation)])
+                self.assertNotIn("expected_generation", selection)
+
     def test_e2b_template_is_an_exact_build(self):
         build = "0f6c1e8e-7d3a-4b8e-9a51-2b7f7f0c9d11"
         for value in ("base:" + build, "my_template-2:" + build):

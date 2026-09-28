@@ -62,7 +62,10 @@ test("an aborted submitted result never becomes a native application receipt", {
   bridge.submit(JSON.stringify(result("a", false)));
   await waiting;
   abort.abort();
-  await bridge.consume(native(result("a", false)), "native");
+  bridge.cancelUnanswered();
+  assert.throws(() => bridge.assertComplete(), /unconfirmed/);
+  await bridge.consume(native(result("a", false)), "native", true);
+  assert.throws(() => bridge.assertComplete(), /unconfirmed/);
   assert.deepEqual(events.map(event => event.type), ["function_call"]);
 });
 
@@ -111,4 +114,29 @@ test("native error-image rejection leaves the pending call available for a suppo
   assert.equal((await waiting).isError, true);
   await bridge.consume(native(result("error", false)), "native");
   bridge.assertComplete();
+});
+
+for (const terminal of ["tool_result", "result"]) test(`native cancellation ${terminal} settles unanswered callbacks without application`, async () => {
+  const events = [];
+  const bridge = new FunctionBridge(async event => { events.push(event); });
+  const waiting = bridge.invoke(call("a"), new AbortController().signal);
+  const rejected = assert.rejects(waiting, /cancelled/);
+  if (terminal === "tool_result") {
+    const cancellation = native(result("a", false), "Interrupted");
+    await assert.rejects(bridge.consume(cancellation, "native"), /preceded/);
+    await bridge.consume(cancellation, "native", true);
+  } else bridge.cancelUnanswered();
+  await rejected;
+  bridge.assertComplete();
+  assert.deepEqual(events.map(event => event.type), ["function_call"]);
+});
+
+test("native cancellation preserves a submitted result's missing receipt", async () => {
+  const bridge = new FunctionBridge(async () => {});
+  const waiting = bridge.invoke(call("a"), new AbortController().signal);
+  bridge.submit(JSON.stringify(result("a")));
+  await waiting;
+  bridge.cancelUnanswered();
+  assert.throws(() => bridge.assertComplete(), /unconfirmed/);
+  bridge.close();
 });

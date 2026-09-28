@@ -84,9 +84,9 @@ export function buildDemo(now = Math.floor(Date.now() / 1000), publicUrl = "http
   });
   sessions.sort((a, b) => b.created_at - a.created_at);
   const nodes = [
-    { id: "node-local", name: "core-01", provider: "docker", online: true, provider_ready: true, cpu_count: 16, available_memory_bytes: 38 * 2 ** 30, available_disk_bytes: 410 * 2 ** 30, running: 5, snapshots: 2, last_seen_at: new Date((now - 8) * 1000).toISOString(), max_active: 8, max_retained: 16, active: 5, reserved: 1, retained: 2, cleanup_pending: 0, created_at: new Date((now - 86400 * 30) * 1000).toISOString() },
-    { id: "node-gpu", name: "gpu-worker-02", provider: "docker", online: true, provider_ready: false, diagnostic: "docker_limits_unsupported", cpu_count: 32, available_memory_bytes: 12 * 2 ** 30, available_disk_bytes: 96 * 2 ** 30, running: 7, snapshots: 5, last_seen_at: new Date((now - 12) * 1000).toISOString(), max_active: 8, max_retained: 16, active: 7, reserved: 0, retained: 5, cleanup_pending: 1, created_at: new Date((now - 86400 * 12) * 1000).toISOString() },
-    { id: "node-edge", name: "edge-03", provider: "docker", online: false, provider_ready: false, cpu_count: 8, available_memory_bytes: null, available_disk_bytes: null, running: 0, snapshots: 0, last_seen_at: new Date((now - 5400) * 1000).toISOString(), max_active: 4, max_retained: 8, active: 0, reserved: 0, retained: 0, cleanup_pending: 0, created_at: new Date((now - 86400 * 3) * 1000).toISOString() },
+    { rollout: { state: "ready", ready_generation: 1 }, id: "node-local", name: "core-01", provider: "docker", online: true, provider_ready: true, cpu_count: 16, available_memory_bytes: 38 * 2 ** 30, available_disk_bytes: 410 * 2 ** 30, running: 5, snapshots: 2, last_seen_at: new Date((now - 8) * 1000).toISOString(), max_active: 8, max_retained: 16, active: 5, reserved: 1, retained: 2, cleanup_pending: 0, created_at: new Date((now - 86400 * 30) * 1000).toISOString() },
+    { rollout: { state: "failed", ready_generation: null, diagnostic: "docker_limits_unsupported" }, id: "node-gpu", name: "gpu-worker-02", provider: "docker", online: true, provider_ready: false, diagnostic: "docker_limits_unsupported", cpu_count: 32, available_memory_bytes: 12 * 2 ** 30, available_disk_bytes: 96 * 2 ** 30, running: 7, snapshots: 5, last_seen_at: new Date((now - 12) * 1000).toISOString(), max_active: 8, max_retained: 16, active: 7, reserved: 0, retained: 5, cleanup_pending: 1, created_at: new Date((now - 86400 * 12) * 1000).toISOString() },
+    { rollout: { state: "unknown", ready_generation: 1 }, id: "node-edge", name: "edge-03", provider: "docker", online: false, provider_ready: false, cpu_count: 8, available_memory_bytes: null, available_disk_bytes: null, running: 0, snapshots: 0, last_seen_at: new Date((now - 5400) * 1000).toISOString(), max_active: 4, max_retained: 8, active: 0, reserved: 0, retained: 0, cleanup_pending: 0, created_at: new Date((now - 86400 * 3) * 1000).toISOString() },
   ];
   const hosted = sessions.filter((session) => session.environment.type === "openai_hosted");
   const allocations = hosted.map((session, index) => {
@@ -94,7 +94,7 @@ export function buildDemo(now = Math.floor(Date.now() / 1000), publicUrl = "http
     // Running since creation; suspended two hours ago, or at creation when that is later.
     const changed = suspended ? Math.max(session.created_at, now - 7_200) : session.created_at;
     return {
-      id: uuid(), node_id: index % 2 ? "node-gpu" : "node-local", tenant_id: "project", session_id: session.id, environment_id: session.environment.id,
+      deployment_generation: 1, id: uuid(), node_id: index % 2 ? "node-gpu" : "node-local", tenant_id: "project", session_id: session.id, environment_id: session.environment.id,
       state: "active", compute_phase: suspended ? "suspended" : "running", compute_phase_changed_at: new Date(changed * 1000).toISOString(),
       diagnostic: "", initialization: "ready", created_at: new Date(session.created_at * 1000).toISOString(),
     };

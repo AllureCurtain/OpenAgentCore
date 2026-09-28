@@ -5,8 +5,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 runtime_root="${OAC_DEV_HOME:-$HOME/.oac}"
 output_dir="${AGENTS_RUNTIME_BUILD_DIR:-$runtime_root/build/claude-runtime}"
 sdk_dir="${CLAUDE_SDK_BUILD_DIR:-$runtime_root/build/claude-sdk-runtime}"
-helpers_dir="${AGENTS_EXECUTOR_BUILD_DIR:-$runtime_root/build/agents-executor}"
-for directory in "$runtime_root" "$output_dir" "$sdk_dir" "$helpers_dir"; do
+for directory in "$runtime_root" "$output_dir" "$sdk_dir"; do
   [[ "$directory" == /* ]] || { printf 'Expected absolute build directory: %s\n' "$directory" >&2; exit 1; }
 done
 mkdir -p "$runtime_root/cache/oac-runtime-builds"
@@ -22,14 +21,7 @@ node "$repo_root/scripts/check-claude-sdk-runtime.mjs" "$context/claude-sdk"
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=readonly -trimpath \
     -o "$context/oac-daemon" ./apps/parsar-daemon/cmd/parsar-daemon
 )
-for helper in oac-codex-directory oac-codex-write oac-workspace-export; do
-  test -x "$helpers_dir/$helper"
-  cp "$helpers_dir/$helper" "$context/"
-done
 cp "$repo_root/services/agents-api/deploy/claude/Dockerfile" "$context/Dockerfile"
-cp "$repo_root/services/agents-api/deploy/runtime/initialize.py" "$context/runtime-initialize.py"
-cp "$repo_root/services/agents-api/deploy/runtime/build-system-seed.py" "$repo_root/services/agents-api/deploy/runtime/tool-root.py" "$context/"
-cp "$repo_root/services/agents-api/deploy/claude/shell-prefix.py" "$context/"
 mkdir -p "$output_dir"
 cp -R "$context/." "$output_dir/"
 printf 'Claude Runtime image context: %s\n' "$output_dir"

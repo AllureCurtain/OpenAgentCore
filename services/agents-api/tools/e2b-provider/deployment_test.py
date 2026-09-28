@@ -42,9 +42,10 @@ class ManagedResourcesTest(ProviderTest):
         self.assertEqual(self.call('inspect')['ErrorCode'], 'invalid')
 
     def test_candidate_validation_never_opens_allocation_receipt(self):
-        with patch('provider.validate_deployment') as validate, patch('provider.Receipt') as receipt:
+        with patch('provider.verify_team_template') as ownership, patch('provider.validate_deployment') as validate, patch('provider.Receipt') as receipt:
             result = self.call('validate_deployment')
         self.assertTrue(result['DeploymentValid'])
+        ownership.assert_called_once()
         validate.assert_called_once()
         receipt.assert_not_called()
         self.assertEqual(list(Path(self.temporary.name).iterdir()), [])

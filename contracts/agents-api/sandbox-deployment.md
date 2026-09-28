@@ -21,8 +21,9 @@ for the operator workflow. Generated schemas cover the
 | --- | --- | --- |
 | `GET /core/v1/sandbox/deployment` | Core key | Read the safe active configuration and retained-resource counts |
 | `POST /core/v1/sandbox/deployment` | Core key | Select the initial provider, resources and Runtime |
-| `PUT /core/v1/sandbox/deployment` | Core key | Replace a fully drained selection while maintenance is enabled |
-| `PATCH /core/v1/sandbox/deployment/maintenance` | Core key | Pause or resume fresh hosted admission at the expected generation |
+| `PUT /core/v1/sandbox/deployment` | Core key | Advance the same-provider target online while retaining existing ownership |
+| `POST /core/v1/sandbox/deployment/reset` | Core key | Start or escalate a durable hosted clear |
+| `DELETE /core/v1/sandbox/deployment/reset?expected_generation=N` | Core key | Cancel the remaining clear without restoring archived work |
 | `GET /api/v1/sandbox-node/configuration` | Enrollment token or retained node credential | Read the active node installation configuration without consuming enrollment |
 
 The paired console injects the Core key server-side on every signed-in `/core/v1`
@@ -62,15 +63,18 @@ retention, tells roughly when Core reclaims it.
 
 ## Selection request
 
-POST and PUT take the same complete selection. PUT also requires a nonzero
-`expected_generation` read from the current deployment.
+POST and PUT take the same complete selection and require `expected_generation`
+from a preceding GET. Zero is valid for the initial unconfigured deployment;
+omitted or null is invalid. A stale generation is checked before reset, provider,
+resource and same-selection conditions, including an identical old request body.
 
 | Field | Meaning |
 | --- | --- |
+| `expected_generation` | Required nonnegative integer from GET; never automatically refresh and replay |
 | `provider` | Exactly one of `docker`, `microsandbox`, `e2b` |
 | `resources` | Per-sandbox resource limits described below; required for Docker/microsandbox, optional for E2B |
 | `runtime` | Required immutable distribution identity for Docker/microsandbox; absent for E2B |
-| `e2b` | Required only for E2B: write-only `api_key` and immutable `template` build selector |
+| `e2b` | Required only for E2B: immutable `template` build selector; write-only `api_key` required on POST, optional on same-provider PUT |
 
 The request has no Core address. Core derives the deployment's `core_url` from the
 installation public URL (`public_url` in `config.json`, `OAC_PUBLIC_URL` for
@@ -144,14 +148,14 @@ before registration and retains the exact local image identity it imports.
 E2B instead uses `e2b.template` in `template-id:build-uuid` form. The build UUID must
 be canonical and nonzero; a mutable template alias alone is insufficient. Omit
 `runtime`. The API key is encrypted in PostgreSQL and never returned in a safe
-view, bootstrap configuration, command argument or log. Replacing the key or
-build uses the same drained maintenance transition as changing resources.
+view, bootstrap configuration, command argument or log. Same-team key or build
+changes apply online while old sandboxes retain their original specification.
 
 ## Safe response
 
 GET and successful mutations return `installation_id`, `provider`, `core_url`
 (read-only: the installation public URL, present before configuration), `mode`,
-`generation`, `owner_epoch`, `maintenance`, `suspension` and resource
+`generation`, `owner_epoch`, `reset`, `rollout`, `suspension` and resource
 accounting. A configured deployment also returns `specification` and
 `specification_digest`. E2B returns only `e2b.template`,
 `e2b.credential_configured` and `e2b.template_build`; the `e2b` object is absent
@@ -164,7 +168,8 @@ the values describe the immutable build at selection time. Validation admits onl
 a `ready` build whose CPU count and memory equal the selected `cpus` and
 `memory_mib`. `root_disk_mib` is the build's native disk size, which Core does not
 enforce separately. Unknown values are null, including every value of a selection
-saved before Core recorded them; re-saving the selection records them.
+saved before Core recorded them; a verified write records them. An omitted-key
+identical PUT is a no-op and does not refresh provider metadata.
 
 `suspension` is `{idle_seconds, retention_seconds}` for microsandbox, the only
 provider Core suspends (currently 300 and 86400). Docker, E2B and unconfigured
@@ -190,56 +195,181 @@ or a wrong type, rejects the whole response with a 502 `invalid_admin_response`
 error. A node's `diagnostic` is absent or a code, never empty; the client reads
 an unknown code as `provider_unavailable`.
 
-## Initialization and changes
+## Initialization, same-provider changes and reset
 
-POST validates the candidate before persistence and creates no compute, Session
-or model request. An exact retry returns the existing generation. A different
-selection conflicts once initialization has succeeded. Missing provider
-prerequisites or failed candidate validation leave the previous selection intact.
+POST validates a candidate before persistence and creates no compute, Session or
+model request. At the current generation an identical selection is a no-op; an
+obsolete generation returns 409 `sandbox_generation_stale`, even for the same body.
+Missing prerequisites or failed preparation leave the committed provider intact.
+A different backend, or an old node selection without a specification, requires
+reset first. POST also initializes after a completed reset, using its new generation.
 
-For a replacement:
+PUT accepts the same provider and no active reset. Send the observed generation
+once; never replay an uncertain mutation automatically. E2B changes apply online:
+new allocations use the newly committed specification and existing allocations
+retain their immutable deployment generation. No node, token or owner epoch is
+retired by a same-provider update. Docker/microsandbox advance only the target;
+each node prepares it independently while continuing to serve its qualified old
+pin. No execution drain or reenrollment accompanies a target change.
 
-1. Read the deployment and PATCH `{"maintenance":true,"expected_generation":N}`.
-   Maintenance blocks new hosted Sessions and fresh allocations while preserving
-   admitted work, reads, receipt retries and explicit cleanup.
-2. Verify both response counts are zero before replacing the selection. Stopped
-   compute, snapshots, uncertain operations, pending cleanup and unallocated
-   hosted Environments remain blockers. Use the explicit Session archive flow below.
-3. PUT the complete replacement selection with `expected_generation: N`, without
-   `core_url` (a request that contains it gets 400). Core checks the generation and resources, prepares and
-   validates the candidate, then drains the existing manager calls. A short Store
-   transaction repeats the guards and commits a changed selection, increments
-   its generation and retires old nodes and unused enrollment tokens together.
-   The existing manager publishes the prevalidated configuration after commit.
-4. Read the returned generation and explicitly PATCH maintenance to `false`.
-   Resume requires the committed generation to be active.
+For E2B PUT, omit `e2b.api_key` to preserve the current key. Omitted-key identical
+selection is a no-op. Explicit nonempty key submission, including the same key,
+always verifies and advances generation. Null or empty keys are invalid. A key-only
+change uses the same full DTO: provider, existing template, optional resources and
+expected_generation, plus the new api_key. It has no separate route or implicit reset.
 
-To release a retained hosted Session, explicitly POST
-`/core/v1/projects/{project_id}/sessions/{session_id}/archive` with
-`{"expected_generation": N}` while maintenance is enabled. Poll GET on the same
-path until its resource state is `released`, then recheck the deployment counts.
-The [administrator archive contract](admin-api.md#administrative-session-archive)
-preserves public history and persisted Files/Artifacts, but discards unpersisted
-workspace contents and prevents the original Session from resuming. An active
-Turn may still be finalizing after resources are released. Ordinary Session
-deletion remains separate. Maintenance and PUT do not clear resources; snapshots,
-pending Environments and unknown cleanup remain blockers until the existing
-lifecycle confirms release.
+Initial setup requires the selected template to appear in the credential's team-owned
+template listing; public readability alone is insufficient. Before an online change,
+Core verifies that the committed key owns the current template, then requires the
+candidate key to own that exact template as a shared ownership anchor. It also reads
+the candidate and every retained build with the candidate key and confirms each
+settled live receipt in the installation-labelled sandbox listing.
 
-Provider validation, cancellation and draining hold no database transaction or
-manager map mutex. One mutation gate, the existing execution lease and the Store
-checks serialize changes; there is no second configuration owner. A rejected
-candidate does not replace the previous provider or drain its workers. A later
-commit failure leaves maintenance enabled and the previous selection retained.
-After an interrupted drain, retries and resume must wait for that drain to finish.
+A legacy public-template selection without this ownership anchor, or a committed key
+that no longer authenticates, requires `409 sandbox_reset_required`; Core cannot
+establish a safe online replacement from that state. Keep the old key valid until the
+successful response. A candidate outside the verified team gives `409 e2b_team_mismatch`;
+explicitly reset before initializing another team. Candidate-key 401/403 gives
+`400 e2b_api_key_invalid`; an invalid candidate build gives
+`400 e2b_template_build_invalid`. Missing or unsettled receipts and unconfirmed reads
+fail closed with `503 e2b_request_unconfirmed`. No provider text or credential is
+returned. The write and `change` or `replace_credential` audit share one transaction.
 
-An exact PUT retry at the still-current generation is a no-op when the clean
-maintenance guards hold. A successful changed PUT makes the old expected
-generation stale. After an uncertain write response, GET the deployment before
-choosing another mutation; do not automatically replay writes. No step deletes
-compute automatically, migrates an existing Session or rewrites historical
-allocation ownership. Revoking an E2B key before cleanup can leave unverifiable
-resources that block replacement.
+A credential replacement briefly fences provider calls, waits for actual helper
+process completion even after caller cancellation, and repeats verification before
+commit. Helper exit is not evidence that remote Create settled. The fence and reads
+are bounded; failure preserves the old key and lifecycles. After the successful
+response, all retained-generation management uses the committed key. Only then
+revoke the previous key in E2B. Template/resource changes do not drain lifecycles.
+
+### Generation ownership and rollout
+
+`runtime_deployment` owns the current specification. Superseded rows contain only
+immutable specification/build metadata, never another E2B credential. An E2B
+allocation binds its generation at reservation. Node placements bind at Session
+admission and allocations copy that generation, even after repeated updates.
+Inspection, renewal, command execution and cleanup route the allocation's original
+specification with the current credential; a missing generation never falls back
+to the current specification. Released historical generation identifiers remain.
+
+Retain a generation while it is current, referenced by an unreleased allocation or
+placement, or pinned by a nonremoved node. The durable node serving pin survives
+offline state and zero resources; it is separate from current connection readiness.
+Collection shares the deployment lock with updates and admission and deletes at
+most 32 eligible generation rows per pass. Reset retires pins and clears superseded
+rows only after confirmed resource release. Downgrade refuses ownership or serving
+pins that still need generation routing.
+
+Every deployment response includes:
+
+```json
+"rollout": {"state":"settled", "previous_generation_sandboxes":3,
+            "nodes":null}
+```
+
+The previous count uses the same snapshot as resource totals: old-generation
+unreleased allocations plus old-generation pending placements without allocations,
+never counting one resource twice. E2B and unconfigured deployments return null
+nodes. A node deployment returns counts `{ready,preparing,failed,update_required,unknown}`.
+Every nonremoved node belongs to exactly one bucket. Offline current connections
+are `unknown` first; an online v1 node enrolled at an older target is
+`update_required`. Otherwise the exact target observation on the current
+connection and owner epoch supplies `ready`, `preparing` or `failed`; missing
+observations are `unknown`. The existing 45-second heartbeat predicate defines
+online. Pins alone never imply readiness. Target rollout is independent of serving
+readiness: unknown/preparing/failed/update_required does not erase an independently
+confirmed old serving provider. `provider_ready` requires online presence and an
+exact serving-generation observation on that connection and epoch. A v1 heartbeat
+qualifies only its enrolled provider.
+
+Each node adds `rollout: {state, ready_generation, diagnostic?}`. ready_generation is
+the nullable durable serving pin. Diagnostic is a fixed node reason; unknown values
+project as `provider_unavailable`. Allocation items add `deployment_generation`.
+`rollout.state` is the authoritative high-frequency polling signal: poll every five
+seconds only while it is `preparing` or reset is nonnull. Old Sessions, failed,
+update-required and offline nodes alone do not keep polling active. New admission
+filters online, exact serving-generation readiness, address and shared capacity
+before choosing the newest qualifying pin. A full newest node does not hide a free
+older node. No candidate creates no provisional Session or placement. An online
+node actually preparing with available capacity returns 503 `sandbox_nodes_preparing`;
+a full or offline fleet returns `runtime_node_unavailable`.
+
+To change backend, explicitly start reset:
+
+```json
+{"expected_generation": 7, "clear": "auto", "deadline_seconds": 3600}
+```
+
+`clear` is required: `auto` or `force`. Auto's `deadline_seconds` defaults to 3600
+and accepts 300–86400; force must omit it. Core persists an absolute deadline and
+requester audit provenance before closing fresh hosted admission. The existing
+execution owner advances the clear after the request ends and across restarts.
+Auto archives idle hosted Sessions, including queued or pending work and suspended
+sandboxes, but waits for root/subagent Turns in progress or waiting and pending
+file writes. It rechecks this condition under the Session lock. At the persisted
+deadline it durably escalates to force; force uses the ordinary archive cancellation
+and cleanup path for all eligible hosted Sessions. Self-hosted Sessions are excluded.
+
+Repeated start at the current generation/mode keeps the original deadline. Auto
+can escalate to force, but force cannot downgrade to auto. DELETE with the current
+`expected_generation` cancels remaining reset work and reopens admission; it does
+not undo archives, revive expired Environments or cancel cleanup already requested.
+DELETE with no active reset is idempotent. Stale requests still return 409.
+
+Every deployment response includes `reset: null` when inactive, or:
+
+```json
+{"clear":"auto","requested_at":"2026-09-27T12:00:00Z",
+ "deadline_at":"2026-09-27T13:00:00Z","forced_at":null,
+ "remaining":{"busy":2,"idle":1,"cleanup":3,"on_offline_nodes":2,
+              "offline_nodes":[{"node_id":"node-uuid","name":"worker","resources":2}]}}
+```
+
+Timestamps are explicit nullable fields where applicable. A single database snapshot
+partitions every unreleased allocation and every pending hosted Environment with
+no allocation into cleanup first, then busy or idle.
+`busy + idle + cleanup == resources.allocations + resources.pending`. Deleted or
+expired Sessions with unreleased receipts still count as cleanup. `offline_nodes`
+is the untruncated, ID-sorted subset attributed to receipt or active-placement node
+identity; its resource sum equals `on_offline_nodes`. Presence uses the current
+owner epoch, connection and a heartbeat within 45 seconds, not provider readiness.
+Direct E2B resources have no node and do not enter that subset. Offline resources
+remain blockers until actual cleanup confirms release.
+
+Only after both held counts reach zero does the owner drain and atomically clear
+provider/mode/specification, E2B credential/template/build metadata and provider
+policy, retire nodes and unused enrollment tokens, increment generation and owner
+epoch, and record `reset_complete`. Installation identity and history survive.
+The manager publishes an unconfigured state immediately; its cache keeps the new
+generation even with no provider, preventing delayed old loads from reviving it.
+Configure again with POST using the returned generation; no restart is necessary.
+
+Fresh hosted admission returns 503 `sandbox_reset_in_progress` and leaves no
+provisional Session rows. Existing live input, receipt retries, restoration and
+cleanup continue. Management writes and new enrollment/configuration return 409
+`sandbox_reset_in_progress`; retained matching nodes can recover for cleanup.
+Explicit per-Session archive requires the current generation and remains available
+without reset. It preserves history and persisted Files/Artifacts but discards
+unpersisted workspace and prevents that Session from resuming. Poll its archive
+GET for actual release. Reset never manufactures a release receipt.
+
+A force archive fences credentials and new work immediately. If its original
+hosted delivery is still connected, Core preserves only that delivery's native
+cancellation/terminal receipt path until terminal commit or a fixed 20-second
+bound from the original cancellation request. Done does not end this bound while
+a cancellation acknowledgment or terminal commit is pending. This internal drain
+never authorizes reconnect, workspace/MCP access or renewed execution. Explicit
+credential revocation ends the exception; repeats do not extend it. Missing or
+failed receipts retain honest failure outcomes, and disconnected, expired or
+restarted owners fall back to ordinary provider cleanup. There is no new public
+state, request field or model/tool timeout.
+
+One mutation gate serializes setup, PUT, reset, cancel and finalization. Archive
+locks Session before deployment; finalization never reverses that order or waits
+for itself inside counted manager work. Candidates bind to the reset request time,
+so cancel followed by a new reset at the same generation cannot reuse old work.
+Never automatically replay a rejected or uncertain write: read current state and
+make a new explicit decision. Do not revoke old E2B credentials before cleanup.
 
 ## Node configuration and enrollment
 
@@ -249,13 +379,15 @@ by its replacement: `400 invalid_request`, with the message
 
 For a new node, send `Authorization: Bearer <enrollment-token>` to the configuration
 GET without `X-OAC-Node-ID`. The token must be valid, unexpired, unconsumed and
-belong to this installation. This read does not consume it. Maintenance prevents
+belong to this installation. This read does not consume it. An active reset prevents
 new enrollment configuration reads.
 
 An already registered node sends its durable node credential as Bearer and its
-UUID in `X-OAC-Node-ID`. Its installation, saved generation and specification
-digest must match the active deployment. This read remains available in
-maintenance so the retained node can recover its exact configuration. The old
+UUID in `X-OAC-Node-ID`. Its original enrollment identity and installation remain
+valid across same-provider target changes. Omitted `generation` reads the current
+target; `?generation=N` reads only that node's exact current, serving-pinned or
+unreleased-allocation/placement generation. Unknown or unkept history is refused.
+This read remains available during reset for owned recovery. The old
 enrollment token cannot replace a registered node's credential.
 
 The response contains `installation_id`, `provider`, `core_url` (the installation
@@ -269,9 +401,10 @@ and network policy. Enrollment at `POST /api/v1/sandbox-node/enroll` includes
 node stores. A specification mismatch rejects with 409
 `sandbox_specification_mismatch` and a `core_url` other than the installation public
 URL with 409 `sandbox_node_address_mismatch`, both before token consumption. A
-missing `core_url` gets 400 `invalid_request_error` with `param: "core_url"`. Retained node authentication checks the same generation and
-digest. A changed local resource setting, Runtime or generation must fail rather
-than rewrite the retained identity or silently use a local default.
+missing `core_url` gets 400 `invalid_request_error` with `param: "core_url"`.
+The original enrollment identity remains immutable. New generation preparation
+uses separate exact configurations, never rewrites that identity or silently
+substitutes a local default. See [node generation protocol](node-generation-protocol.md).
 
 ## What each field means per sandbox provider
 
@@ -300,11 +433,13 @@ fields from the administrator node routes; runtime fields from the
 | Runtime observation `lifecycle_state: sleeping` | Never | Never | While suspended |
 | Runtime history CPU | Mean of the utilization ratios E2B reported in each bucket | Derived from cumulative CPU time | Derived from cumulative CPU time |
 
-## Failure and upgrade boundaries
+## Failure and version boundaries
 
 Malformed selections return 400; validated configuration diagnostics use
-`invalid_sandbox_configuration`. Stale generations, retained resources or an
-incompatible deployment return 409 `sandbox_deployment_conflict`. A node
+`invalid_sandbox_configuration`. Stale generation returns 409 `sandbox_generation_stale` with safe `current_generation`;
+A different backend returns 409 `sandbox_reset_required` with provider names.
+Unconfigured mutations return 409 `sandbox_not_configured`. Other incompatible
+deployments return 409 `sandbox_deployment_conflict`. A node
 configuration mismatch returns 409 `sandbox_specification_mismatch`; rejected
 node credentials return 401 `invalid_node_credential`. Node machine routes check
 the credential before any deployment state, so a missing or rejected credential,
@@ -319,50 +454,44 @@ evidence of cleanup.
 
 The administrator node list and node detail report an unready provider with one
 fixed `diagnostic` code: `docker_unavailable`, `docker_limits_unsupported`,
-`runtime_image_unavailable`, `kvm_unavailable`,
+`runtime_download_failed`, `runtime_image_unavailable`, `kvm_unavailable`,
 `microsandbox_artifacts_unavailable`, `capacity_insufficient` or
 `provider_unavailable`. It is absent while the provider is ready. The node
 classifies the first failed readiness check and sends only the code; Core stores
 any other value as `provider_unavailable` and never stores or returns probe error
-text or host paths. Older nodes remain compatible, but an older Core rejects the
-new codes, so upgrade Core first. See
+text or host paths. Core and nodes must use the same distribution; unknown-code
+handling does not establish cross-version compatibility. See
 [Node readiness diagnostics](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#node-readiness-diagnostics)
 for causes, precedence and operator actions.
 
 Core rejects `AGENTS_API_MANAGED_RUNTIMES_FILE`. A node provider file remains an
 installed copy of the database selection, not a Core startup configuration source.
-For an older file-managed deployment, use the previous release and original
-backend to settle work and confirm cleanup before retiring its file configuration.
-Preserve identities, provider receipts, history and storage. This version does not
-automatically adopt the old database or delete its resources; removing an
-environment variable alone does not complete that migration.
+Historical file-managed deployments and selections without a complete specification
+are unsupported. Preserve their database, identities, provider receipts, Runtime
+resources and history; install the current release separately. Do not clear state,
+run a historical service to convert it, or treat removal of an environment variable
+as a transfer of ownership. See the
+[installation version policy](../../docs/getting-started/operations.md#installation-version-policy).
 
-A Web-managed Docker or microsandbox selection saved before specifications has
-the empty migration default. Core loads it for draining only. GET omits
-`specification` and `specification_digest`. Fresh hosted sandboxes are refused
-with the same error as during maintenance. Enrollment tokens return 409
-`sandbox_deployment_conflict`; node configuration reads and enrollment are refused.
-Retained nodes without a recorded digest or generation authenticate while the
-deployment is in this state, but those nodes use the removed `/core/v1/sandbox`
-node paths. They can reach only a Core that has this drain mode (pull request
-#114) and still serves those paths. No such release is published: build one from
-main commit `7b66be236a627246c85658722314285e6b39d9b8`, or another commit with
-#114 but without `/api/v1/sandbox-node`. Run the maintenance and archive steps there. On this
-release, the drain mode matters only for the PUT that records a specification after
-draining elsewhere; that PUT retires those nodes. See the
-[operator upgrade notes](../../docs/getting-started/operations.md#data-and-upgrades).
+Landed migrations and their refusal conditions remain historical schema evidence.
+They do not establish an operator upgrade, downgrade or conversion procedure.
+Fresh database initialization uses the ordinary migration runner.
 
 Unit tests, database tests and provider inspection are separate from live
 execution acceptance. This contract does not assert that every resource profile,
 provider deployment or host-reboot recovery path has been qualified.
 
 
-### OpenAgentCore Runtime rename
+### Current Runtime identity
 
 The immutable microsandbox reference is `oac-runtime@sha256:<64 lowercase hex>`.
-Before upgrading from the former names, drain the deployment with the previous
-release and remove its nodes. The database migration refuses any allocation with
-no `released_at`, including retained snapshots and uncertain cleanup, then rewrites
-only the former `parsar-core-runtime@` reference prefix. The specification digest
-changes, requiring new node enrollment. Historical Session data remains unchanged.
-Old E2B templates must be rebuilt with the matching Runtime release.
+Build new E2B templates with the matching current Runtime release. Historical
+Runtime names and installations have no supported upgrade, downgrade or conversion
+path; preserve their data and resources and install separately. Current Runtime
+generation rollout, coexistence and ownership-scoped garbage collection remain
+supported and are independent of installed program version changes. See
+[generation ownership and rollout](#generation-ownership-and-rollout).
+
+`runtime_download_failed` means the exact Runtime artifacts could not be transferred
+or verified. It is distinct from provider probe and image availability failures;
+the diagnostic never contains artifact URLs, credentials or transport output.

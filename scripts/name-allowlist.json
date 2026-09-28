@@ -180,16 +180,6 @@
     "reason": "This persisted model-provider key fingerprint purpose remains stable across upgrade and request replay."
   },
   {
-    "path": "packages/codex-executor/Cargo.toml",
-    "regex": "\"agents-api-codex-executor\"",
-    "reason": "The Cargo package identity remains stable; the installed executable is oac-runtime-executor."
-  },
-  {
-    "path": "packages/codex-executor/Cargo.lock",
-    "regex": "\"agents-api-codex-executor\"",
-    "reason": "The Cargo package identity remains stable; the installed executable is oac-runtime-executor."
-  },
-  {
     "path": "package.json",
     "regex": "\"(?:parsar-core|parsar-mcode-harness)\"",
     "reason": "npm package names are deferred package identities, not runtime command names."
@@ -221,6 +211,11 @@
   },
   {
     "path": "apps/parsar-daemon/internal/localworkspace/binding.go",
+    "regex": "\"agents-api-(?:session)?\"",
+    "reason": "AgentStateKey is a persisted daemon/native-session resume identity carried on the existing machine wire contract; changing it would select another session."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/localworkspace/native_binding.go",
     "regex": "\"agents-api-(?:session)?\"",
     "reason": "AgentStateKey is a persisted daemon/native-session resume identity carried on the existing machine wire contract; changing it would select another session."
   },
@@ -562,22 +557,22 @@
   {
     "path": "apps/web/src/features/sessions/items/ItemRenderers.tsx",
     "regex": "parseParsarApplyPatch|Parsar apply_patch",
-    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by \u00a79."
+    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by §9."
   },
   {
     "path": "apps/web/src/features/sessions/items/apply-patch.ts",
     "regex": "parseParsarApplyPatch|Parsar apply_patch",
-    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by \u00a79."
+    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by §9."
   },
   {
     "path": "apps/web/src/features/sessions/items/apply-patch.test.tsx",
     "regex": "parseParsarApplyPatch|Parsar apply_patch",
-    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by \u00a79."
+    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by §9."
   },
   {
     "path": "apps/web/src/features/sessions/trace/TraceView.tsx",
     "regex": "parseParsarApplyPatch|Parsar apply_patch",
-    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by \u00a79."
+    "reason": "The parser identifies the existing product-origin apply_patch event format; renaming private parser symbols is deferred by §9."
   },
   {
     "path": "apps/web/src/features/sandbox/deployment-specification.test.ts",
@@ -853,5 +848,40 @@
     "path": "README.md",
     "regex": "example/parsar(?:/README.md)?",
     "reason": "The explicitly named Parsar application example retains product branding; it does not rename the Core runtime."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/cli/connect_cleanup_test.go",
+    "regex": "\"agents-api-cleanup\"",
+    "reason": "Executor ownership validates the current Core and local-workspace AgentStateKey namespace; this change does not introduce an alternate identity or compatibility path."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/dispatch/executor.go",
+    "regex": "\"agents-api-(?:session)?\"",
+    "reason": "Executor ownership validates the current Core and local-workspace AgentStateKey namespace; this change does not introduce an alternate identity or compatibility path."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/dispatch/executor_handoff_test.go",
+    "regex": "\"agents-api-(?:session)?\"",
+    "reason": "Executor ownership validates the current Core and local-workspace AgentStateKey namespace; this change does not introduce an alternate identity or compatibility path."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/dispatch/executor_test.go",
+    "regex": "\"agents-api-(?:session)?\"",
+    "reason": "Executor ownership validates the current Core and local-workspace AgentStateKey namespace; this change does not introduce an alternate identity or compatibility path."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/localworkspace/capabilities.go",
+    "regex": "\"agents-api-\"",
+    "reason": "AgentStateKey retains the existing daemon/native-session resume identity; capability snapshots bind to the Session UUID carried in that identity."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/localworkspace/capability_preparation_test.go",
+    "regex": "\"agents-api-\"",
+    "reason": "AgentStateKey retains the existing daemon/native-session resume identity; capability snapshots bind to the Session UUID carried in that identity."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/contracttest/wire_test.go",
+    "regex": "agents-api-session",
+    "reason": "The controlled Runtime fixture uses the existing Core Session state-key prefix required by execution admission."
   }
 ]

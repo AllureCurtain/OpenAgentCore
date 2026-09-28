@@ -150,6 +150,10 @@ paths:
           in: header
           name: X-OAC-Node-ID
           type: string
+        - description: Exact kept generation (registered nodes only); omitted reads the current target
+          in: query
+          name: generation
+          type: integer
       produces:
         - application/json
       responses:

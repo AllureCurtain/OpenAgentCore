@@ -144,9 +144,7 @@ func (s *Service) Read(ctx context.Context, name string) (View, error) {
 		view.Execution.OldestQueuedSeconds = latest.OldestQueuedSeconds
 		view.Database.SizeBytes = latest.DatabaseSize
 		view.Process = latest.Process
-		if latest.Maintenance != nil && *latest.Maintenance && view.Service.Status == "running" {
-			view.Service.Status = "maintenance"
-		}
+
 	}
 	for _, id := range jobIDs {
 		j := s.jobs[id]

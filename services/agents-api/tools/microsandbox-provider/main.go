@@ -26,6 +26,12 @@ import (
 )
 
 func main() {
+	// The inherited node generation lease covers this helper's actual lifetime.
+	// Set CLOEXEC before SDK initialization or any possible subprocess spawn so
+	// long-lived VMs and host daemons cannot inherit a local helper reference.
+	if os.Getenv("OAC_NODE_GENERATION_LEASE_FD") == "3" {
+		syscall.CloseOnExec(3)
+	}
 	response := serve(os.Stdin)
 	// Errors and upstream diagnostics can contain secrets: expose only stable codes.
 	_ = json.NewEncoder(os.Stdout).Encode(response)

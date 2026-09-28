@@ -277,19 +277,15 @@ files guide saved beside them. The batch plan is
 
 Decisions:
 
-- The shared `oac-codex-write` helper takes an explicit per-call mode. Only
-  the daemon's local workspace writer, which serves only Files.create, passes
-  `create`. Core's initial Session file installer and the Skill installer keep the
-  four-argument replace mode, which older Runtime images also understand. Plugins
-  use the separate capability installer, and completed recovery, including cold
-  resume, never reinstalls files. Their semantics are unchanged.
+- The daemon's Go workspace writer now serves Files.create on all platforms.
+  It verifies the complete body before creating parents, writes a temporary file,
+  and publishes it with a no-overwrite hard link. Initial Session files use a
+  separate atomic replacement operation. Skills and Plugins use
+  [shared Runtime capability preparation](environments.md#runtime-capability-preparation).
+  Completed recovery, including cold resume, never reinstalls files.
 - Parents are created only after the complete body is verified, so incomplete or
-  corrupt input creates nothing. Each new directory is reopened without following
-  links. The install itself never replaces: `renameat2(RENAME_NOREPLACE)`, or
-  `linkat` where the filesystem lacks that flag (best effort; no test forces that
-  trigger). A normal rejection happens before anything is created and leaves
-  nothing behind. Only a concurrent change, an I/O error or a device mismatch
-  after the parents were created can leave them as empty mode-0700 directories.
+  corrupt input creates nothing. A write failure can leave newly created empty
+  parent directories, but never replaces an existing destination.
 - Core cannot tell a file that an earlier Files.create wrote from any other file.
   Its durable write intent stores a digest of the path, size and content, not a
   path ledger, and a tool can remove and recreate a file afterwards; no cheap,

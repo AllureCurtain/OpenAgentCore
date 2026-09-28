@@ -7,12 +7,13 @@ import (
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
+	"github.com/google/uuid"
 )
 
 // ModelProviderDefaults decrypts the deployment default model provider for a
 // harness at Session creation, before the encrypted Session snapshot is
 // committed. It returns nil when the harness has no default.
-type ModelProviderDefaults func(context.Context, string) (*v1.ModelProviderInput, error)
+type ModelProviderDefaults func(context.Context, string) (*store.DeploymentModelProviderSnapshot, error)
 
 func WithModelProviderDefaults(resolve ModelProviderDefaults) Option {
 	return func(h *Handler) { h.modelProviderDefaults = resolve }
@@ -74,15 +75,16 @@ func modelProviderRequired(environment, engine string) error {
 // resolveSessionExecution applies provider precedence: the Session bundle, the
 // saved Agent bundle, then the deployment default where the environment allows
 // it. Bundles are never merged.
-func (h *Handler) resolveSessionExecution(ctx context.Context, input sessionRequest, inherited *v1.ModelProviderInput, raw json.RawMessage) (string, *v1.ModelProviderInput, string, error) {
+func (h *Handler) resolveSessionExecution(ctx context.Context, input sessionRequest, inherited *v1.ModelProviderInput, raw json.RawMessage) (string, *v1.ModelProviderInput, string, uuid.UUID, error) {
 	engine, err := h.sessionHarness(raw)
 	if err != nil {
-		return "", nil, "", err
+		return "", nil, "", uuid.Nil, err
 	}
+	var revision uuid.UUID
 	provider, source := inherited, v1.ModelProviderSourceAgent
 	if extension := input.XAgentsCore; extension != nil {
 		if extension.ModelProvider == nil && !input.modelProviderNull {
-			return "", nil, "", errors.New("x_agents_core requires an execution option")
+			return "", nil, "", uuid.Nil, errors.New("x_agents_core requires an execution option")
 		}
 		if extension.ModelProvider != nil {
 			provider, source = extension.ModelProvider, v1.ModelProviderSourceSession
@@ -90,23 +92,27 @@ func (h *Handler) resolveSessionExecution(ctx context.Context, input sessionRequ
 	}
 	environment := input.Environment.Type
 	if provider == nil && h.modelProviderDefaults != nil && v1.ModelProviderAllowed(environment, v1.ModelProviderSourceDeployment) {
-		provider, err = h.modelProviderDefaults(ctx, engine)
+		var snapshot *store.DeploymentModelProviderSnapshot
+		snapshot, err = h.modelProviderDefaults(ctx, engine)
 		if err != nil {
-			return "", nil, "", &modelProviderDefaultsError{err}
+			return "", nil, "", uuid.Nil, &modelProviderDefaultsError{err}
+		}
+		if snapshot != nil {
+			provider, revision = snapshot.Provider, snapshot.Revision
 		}
 		source = v1.ModelProviderSourceDeployment
 	}
 	if provider == nil {
 		if v1.ModelProviderRequired(environment) {
-			return "", nil, "", modelProviderRequired(environment, engine)
+			return "", nil, "", uuid.Nil, modelProviderRequired(environment, engine)
 		}
-		return engine, nil, "", nil
+		return engine, nil, "", uuid.Nil, nil
 	}
 	if !v1.ModelProviderAllowed(environment, source) {
-		return "", nil, "", errors.New("caller model credentials require an openai_hosted or self_hosted environment")
+		return "", nil, "", uuid.Nil, errors.New("caller model credentials require an openai_hosted or self_hosted environment")
 	}
 	if err := provider.ValidateHarness(engine); err != nil {
-		return "", nil, "", err
+		return "", nil, "", uuid.Nil, err
 	}
-	return engine, provider, source, nil
+	return engine, provider, source, revision, nil
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -26,38 +27,84 @@ var optionalPayloadFiles = map[string]bool{
 	"images/runtime.tar.gz": true, "runtime/seccomp.json": true,
 }
 
-func (h *console) allowedNodePayload(name string) bool {
-	if nodePayloadFiles[name] {
-		return true
+var payloadRevision = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// activePayloadPrefix reads one atomic pointer per request. Legacy flat payloads
+// remain readable until the installer publishes its first versioned release.
+func activePayloadPrefix(root *os.Root) (string, error) {
+	raw, err := root.ReadFile("active.json")
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
 	}
-	if !strings.HasPrefix(name, "artifacts/") || strings.Contains(strings.TrimPrefix(name, "artifacts/"), "/") {
-		return false
+	if err != nil || len(raw) > 256 {
+		return "", errors.New("invalid active node payload")
 	}
-	f, err := h.nodePayload.Open("manifest.json")
+	var pointer struct {
+		SourceCommit string `json:"source_commit"`
+	}
+	if json.Unmarshal(raw, &pointer) != nil || !payloadRevision.MatchString(pointer.SourceCommit) {
+		return "", errors.New("invalid active node payload")
+	}
+	return "releases/" + pointer.SourceCommit + "/", nil
+}
+
+func (h *console) resolveNodePayload(name string) (string, bool) {
+	prefix := ""
+	if strings.HasPrefix(name, "releases/") {
+		parts := strings.SplitN(name, "/", 3)
+		if len(parts) != 3 || !payloadRevision.MatchString(parts[1]) {
+			return "", false
+		}
+		prefix, name = "releases/"+parts[1]+"/", parts[2]
+	} else {
+		var err error
+		prefix, err = activePayloadPrefix(h.nodePayload)
+		if err != nil {
+			return "", false
+		}
+	}
+	if prefix == "" && nodePayloadFiles[name] {
+		return name, true
+	}
+	if !nodePayloadFiles[name] && (!strings.HasPrefix(name, "artifacts/") || strings.Contains(strings.TrimPrefix(name, "artifacts/"), "/")) {
+		return "", false
+	}
+	f, err := h.nodePayload.Open(prefix + "manifest.json")
 	if err != nil {
-		return false
+		return "", false
 	}
 	defer f.Close()
 	var manifest struct {
-		Artifacts map[string]struct {
+		SourceCommit string `json:"source_commit"`
+		Artifacts    map[string]struct {
 			Filename string `json:"filename"`
 		} `json:"artifacts"`
 	}
 	if json.NewDecoder(io.LimitReader(f, 1024*1024)).Decode(&manifest) != nil {
-		return false
+		return "", false
+	}
+	if prefix != "" && prefix != "releases/"+manifest.SourceCommit+"/" {
+		return "", false
+	}
+	if nodePayloadFiles[name] {
+		return prefix + name, true
 	}
 	for logical, entry := range manifest.Artifacts {
 		if optionalPayloadFiles[logical] && entry.Filename != "" && "artifacts/"+entry.Filename == name {
-			return true
+			return prefix + name, true
 		}
 	}
-	return false
+	return "", false
 }
 
 // installerDigest returns the SHA-256 that Web's install commands verify
 // before running the named installer from the payload.
 func installerDigest(root *os.Root, name string) (string, error) {
-	f, err := root.Open(name)
+	prefix, err := activePayloadPrefix(root)
+	if err != nil {
+		return "", err
+	}
+	f, err := root.Open(prefix + name)
 	if err != nil {
 		return "", errors.New("installer " + name + " is missing from the node installation payload")
 	}
@@ -80,11 +127,12 @@ func (h *console) serveNodePayload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/node-install/")
-	if !h.allowedNodePayload(name) {
+	resolved, allowed := h.resolveNodePayload(name)
+	if !allowed {
 		http.NotFound(w, r)
 		return
 	}
-	f, err := h.nodePayload.Open(name)
+	f, err := h.nodePayload.Open(resolved)
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -116,7 +164,11 @@ func (h *console) nodeArtifacts() []string {
 	if h.nodePayload == nil {
 		return available
 	}
-	f, err := h.nodePayload.Open("manifest.json")
+	prefix, err := activePayloadPrefix(h.nodePayload)
+	if err != nil {
+		return available
+	}
+	f, err := h.nodePayload.Open(prefix + "manifest.json")
 	if err != nil {
 		return available
 	}
@@ -134,7 +186,7 @@ func (h *console) nodeArtifacts() []string {
 		complete := true
 		for _, logical := range providerArtifacts[provider] {
 			entry, ok := manifest.Artifacts[logical]
-			info, err := h.nodePayload.Stat("artifacts/" + entry.Filename)
+			info, err := h.nodePayload.Stat(prefix + "artifacts/" + entry.Filename)
 			if !ok || entry.Filename == "" || strings.Contains(entry.Filename, "/") || err != nil || !info.Mode().IsRegular() || info.Size() != entry.Size {
 				complete = false
 				break

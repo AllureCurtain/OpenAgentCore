@@ -11,18 +11,20 @@ import (
 // Single-host providers pin the helper, runtime, firmware, image and resource
 // limits explicitly. The helper owns local paths; no ambient backend is selected.
 type Microsandbox struct {
-	HelperPath         string  `json:"helper_path"`
-	RuntimeHome        string  `json:"runtime_home"`
-	RuntimePath        string  `json:"runtime_path"`
-	FirmwarePath       string  `json:"firmware_path"`
-	RuntimeSHA256      string  `json:"runtime_sha256"`
-	FirmwareSHA256     string  `json:"firmware_sha256"`
-	Image              string  `json:"image"`
-	MemoryMiB          uint32  `json:"memory_mib"`
-	CPUs               uint8   `json:"cpus"`
-	RootDiskMiB        uint32  `json:"root_disk_mib"`
-	EnvironmentDiskMiB uint32  `json:"environment_disk_mib"`
-	Network            Network `json:"network"`
+	HelperLeaseGeneration uint64  `json:"-"`
+	HelperLeasePath       string  `json:"-"`
+	HelperPath            string  `json:"helper_path"`
+	RuntimeHome           string  `json:"runtime_home"`
+	RuntimePath           string  `json:"runtime_path"`
+	FirmwarePath          string  `json:"firmware_path"`
+	RuntimeSHA256         string  `json:"runtime_sha256"`
+	FirmwareSHA256        string  `json:"firmware_sha256"`
+	Image                 string  `json:"image"`
+	MemoryMiB             uint32  `json:"memory_mib"`
+	CPUs                  uint8   `json:"cpus"`
+	RootDiskMiB           uint32  `json:"root_disk_mib"`
+	EnvironmentDiskMiB    uint32  `json:"environment_disk_mib"`
+	Network               Network `json:"network"`
 }
 
 type Network struct {
@@ -47,11 +49,11 @@ func configureMicrosandbox(entry Microsandbox, resources sandbox.Resources, resu
 	for _, rule := range entry.Network.Rules {
 		network.Rules = append(network.Rules, sandboxmicro.NetworkRule{Action: rule.Action, Direction: rule.Direction, Destination: rule.Destination, Protocol: rule.Protocol, Port: rule.Port})
 	}
-	provider, err := sandboxmicro.New(sandboxmicro.Config{
+	provider, err := sandboxmicro.NewWithCaller(sandboxmicro.Config{
 		InstallationID: result.InstallationID, HelperPath: entry.HelperPath, RuntimeHome: entry.RuntimeHome, RuntimePath: entry.RuntimePath, FirmwarePath: entry.FirmwarePath,
 		RuntimeSHA256: entry.RuntimeSHA256, FirmwareSHA256: entry.FirmwareSHA256, Image: entry.Image,
 		MemoryMiB: entry.MemoryMiB, CPUs: entry.CPUs, RootDiskMiB: entry.RootDiskMiB, EnvironmentDiskMiB: entry.EnvironmentDiskMiB, Network: network,
-	})
+	}, &sandboxmicro.ProcessCaller{LeasePath: entry.HelperLeasePath, LeaseIdentity: sandboxmicro.LeaseIdentity{InstallationID: result.InstallationID, Generation: entry.HelperLeaseGeneration, SpecificationDigest: result.SpecificationDigest}})
 	if err != nil {
 		return errors.New("invalid managed microsandbox provider configuration")
 	}

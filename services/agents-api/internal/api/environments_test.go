@@ -74,7 +74,7 @@ func TestEnvironmentResourceExactProjectionWithoutExecution(t *testing.T) {
 			}
 		})
 	}
-	for _, capabilities := range []string{"", `,"capability_directories":null`, `,"capability_directories":[]`} {
+	for _, capabilities := range []string{"", `,"capability_directories":null`, `,"capability_directories":[]`, `,"capability_directories":["/skills"]`} {
 		_, f := environmentResourceHandler(t)
 		f.environment.Configuration = json.RawMessage(`{"type":"self_hosted","workspace_directory":"/workspace"` + capabilities + `}`)
 		value, err := environmentResponse(f.environment)
@@ -86,15 +86,15 @@ func TestEnvironmentResourceExactProjectionWithoutExecution(t *testing.T) {
 
 func TestEnvironmentResourceRejectsUnknownInventoryAndInvalidState(t *testing.T) {
 	for name, configuration := range map[string]string{
-		"missing":      `{}`,
-		"none":         `{"type":"none"}`,
-		"hosted":       `{"type":"openai_hosted","env":{"SECRET":"private-canary"}}`,
-		"capabilities": `{"type":"self_hosted","workspace_directory":"/workspace","capability_directories":["/skills"]}`,
-		"files":        `{"type":"self_hosted","workspace_directory":"/workspace","files":[{"data":"private-canary"}]}`,
-		"plugins":      `{"type":"self_hosted","workspace_directory":"/workspace","plugins":[]}`,
-		"skills":       `{"type":"self_hosted","workspace_directory":"/workspace","skills":[]}`,
-		"wrong type":   `{"type":"self_hosted","workspace_directory":"/workspace","capability_directories":false}`,
-		"invalid":      `{"type":"self_hosted","workspace_directory":`,
+		"missing":             `{}`,
+		"none":                `{"type":"none"}`,
+		"hosted":              `{"type":"openai_hosted","env":{"SECRET":"private-canary"}}`,
+		"unclean directories": `{"type":"self_hosted","workspace_directory":"/workspace","capability_directories":["/skills/../private"]}`,
+		"files":               `{"type":"self_hosted","workspace_directory":"/workspace","files":[{"data":"private-canary"}]}`,
+		"plugins":             `{"type":"self_hosted","workspace_directory":"/workspace","plugins":[]}`,
+		"skills":              `{"type":"self_hosted","workspace_directory":"/workspace","skills":[]}`,
+		"wrong type":          `{"type":"self_hosted","workspace_directory":"/workspace","capability_directories":false}`,
+		"invalid":             `{"type":"self_hosted","workspace_directory":`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			h, f := environmentResourceHandler(t)

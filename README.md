@@ -54,6 +54,11 @@ Applications then set `OPENAI_BASE_URL` to `https://core.example/v1` and
 - **Your sandboxes.** Core-hosted Sessions run in sandboxes on your nodes (Docker or
   microsandbox microVMs) or on E2B. Applications can also connect their own machines as
   self-hosted executors.
+- **One Runtime path.** The same daemon handles initial files, tool configuration,
+  packages, setup, Skills/Plugins and execution. Providers place and bootstrap
+  compute, then renew or reclaim it. The protocol is platform-neutral; the current
+  packaged implementation and isolation are Linux-only. Harness differences stay
+  in adapters.
 - **A console for administrators.** Web signs in with the Core key, issues Project API
   keys, adds nodes, sets default models and shows metrics and Session history. It
   never runs Agents on anyone's behalf.
@@ -78,8 +83,11 @@ Sessions backed by the public API.
 | [Configuration reference](docs/configuration.md) | Every setting in `config.json` and in Web |
 | [Call the API](docs/getting-started/quickstart.md) | The application developer's quickstart |
 | [API reference](docs/api/README.md) | The `/v1`, `/core/v1` and `/api/v1` namespaces |
-| [Nodes and sandbox backends: operator reference](services/agents-api/HOSTED-SANDBOX-MANAGER.md) | Node protocol, manual registration, placement, maintenance |
+| [Nodes and sandbox backends: operator reference](services/agents-api/HOSTED-SANDBOX-MANAGER.md) | Node protocol, manual registration, placement, reset |
 | [Protocol coverage](contracts/agents-api/README.md) and [harness selection](contracts/agents-api/harness-selection.md) | Supported operations and native differences |
+| [Core–Runtime protocol](docs/runtime-protocol.md) | Runtime integration, messages, receipts, failure ownership and contract checks |
+| [Add a Harness](contracts/agents-api/harness-onboarding.md) | Required adapter interfaces, lifecycle, capabilities, registration and acceptance |
+| [Add a Sandbox Provider](docs/sandbox-provider.md) | Required lifecycle, optional capabilities, registration, ownership and contract tests |
 | [Landing page source](site/index.html) | The public site |
 
 ### Maintainers and advanced deployments

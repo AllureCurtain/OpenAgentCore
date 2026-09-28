@@ -36,7 +36,7 @@ func legacyRuntimeSpecification(t *testing.T, w *Store, provider string) {
 	if _, err := w.pool.Exec(t.Context(), "UPDATE runtime_deployment SET specification=$1", raw); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := w.pool.Exec(t.Context(), "UPDATE runtime_nodes SET deployment_generation=1,specification_digest=$1", spec.Digest(provider)); err != nil {
+	if _, err := w.pool.Exec(t.Context(), "UPDATE runtime_nodes SET deployment_generation=1,ready_generation=1,specification_digest=$1", spec.Digest(provider)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -56,32 +56,32 @@ func TestRuntimeDeploymentRequiresMaintenanceBeforeIdentityChange(t *testing.T) 
 		} else {
 			next.BackendFingerprint = strings.Repeat("b", 64)
 		}
-		next.Maintenance = true
+		next.AdmissionPaused = true
 		if err := w.ConfigureRuntimeDeployment(t.Context(), &next, nil); err == nil || !strings.Contains(err.Error(), "maintenance") {
 			t.Fatal("identity changed before prior maintenance", err)
 		}
 	}
-	old.Maintenance = true
+	old.AdmissionPaused = true
 	deploymentConfigure(t, w, &old)
 	next := old
 	next.BackendFingerprint = strings.Repeat("b", 64)
-	next.Maintenance = false
+	next.AdmissionPaused = false
 	if err := w.ConfigureRuntimeDeployment(t.Context(), &next, nil); err == nil {
 		t.Fatal("switch reopened creation in same operation")
 	}
-	next.Maintenance = true
+	next.AdmissionPaused = true
 	deploymentConfigure(t, w, &next)
 	var id, fingerprint string
 	var maintenance bool
-	if err := pool.QueryRow(t.Context(), "SELECT installation_id::text,backend_fingerprint,maintenance FROM runtime_deployment").Scan(&id, &fingerprint, &maintenance); err != nil || id != next.InstallationID || fingerprint != next.BackendFingerprint || !maintenance {
+	if err := pool.QueryRow(t.Context(), "SELECT installation_id::text,backend_fingerprint,admission_paused FROM runtime_deployment").Scan(&id, &fingerprint, &maintenance); err != nil || id != next.InstallationID || fingerprint != next.BackendFingerprint || !maintenance {
 		t.Fatal("switch identity not durable", id, fingerprint, maintenance, err)
 	}
 	deploymentConfigure(t, w, nil)
 	// Disabling the configured adapter must not forget the old maintenance state.
-	next.Maintenance = false
+	next.AdmissionPaused = false
 	deploymentConfigure(t, w, &next)
 	another := deploymentSelection()
-	another.Maintenance = true
+	another.AdmissionPaused = true
 	if err := w.ConfigureRuntimeDeployment(t.Context(), &another, nil); err == nil {
 		t.Fatal("nil selection erased the maintenance prerequisite")
 	}
@@ -95,10 +95,10 @@ func TestRuntimeDeploymentPendingSessionsCannotMigrate(t *testing.T) {
 	old := deploymentSelection()
 	// First selection is allowed for work that has never had an installation.
 	deploymentConfigure(t, w, &old)
-	old.Maintenance = true
+	old.AdmissionPaused = true
 	deploymentConfigure(t, w, &old)
 	next := deploymentSelection()
-	next.Maintenance = true
+	next.AdmissionPaused = true
 	if err := w.ConfigureRuntimeDeployment(t.Context(), &next, nil); err == nil || !strings.Contains(err.Error(), "1 pending hosted") {
 		t.Fatal("pending Session migrated", err)
 	}
@@ -148,10 +148,10 @@ func TestRuntimeDeploymentUnknownAllocationsBlockAdoptionAndSwitch(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	old.Maintenance = true
+	old.AdmissionPaused = true
 	deploymentConfigure(t, w, &old)
 	next := deploymentSelection()
-	next.Maintenance = true
+	next.AdmissionPaused = true
 	if err := w.ConfigureRuntimeDeployment(t.Context(), &next, nil); err == nil || !strings.Contains(err.Error(), "1 unreleased allocations") {
 		t.Fatal("unknown creation did not block switch", err)
 	}
@@ -178,7 +178,7 @@ func TestRuntimeDeploymentMaintenancePreservesCreationRetriesAndOtherPlacements(
 	if err != nil {
 		t.Fatal(err)
 	}
-	old.Maintenance = true
+	old.AdmissionPaused = true
 	deploymentConfigure(t, w, &old)
 	replay, err := s.CreateSession(t.Context(), tenant, input)
 	if err != nil || replay.ID != existing.ID {
@@ -202,7 +202,7 @@ func TestRuntimeDeploymentMaintenancePreservesCreationRetriesAndOtherPlacements(
 			t.Fatal("maintenance blocked unrelated placement", kind, err)
 		}
 	}
-	old.Maintenance = false
+	old.AdmissionPaused = false
 	deploymentConfigure(t, w, &old)
 	if _, err := w.ReserveRuntimeAllocation(t.Context(), tenant, existing.Environment.ID, uuid.NewString(), device.HashCredential(uuid.NewString())); !errors.Is(err, ErrEnvironmentUnavailable) {
 		t.Fatal("wrong installation reserved resource", err)
@@ -235,7 +235,7 @@ func TestRuntimeDeploymentMaintenanceSerializesHostedCreation(t *testing.T) {
 		done <- err
 	}()
 	runtimeSuspensionWaitBlocked(t, ctx, pool, blocker, done)
-	if _, err := tx.Exec(ctx, "UPDATE runtime_deployment SET maintenance=true"); err != nil {
+	if _, err := tx.Exec(ctx, "UPDATE runtime_deployment SET admission_paused=true"); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -271,7 +271,7 @@ func TestRuntimeDeploymentRetainedResourcesBlockSwitchWithoutMutation(t *testing
 			if err != nil {
 				t.Fatal(err)
 			}
-			old.Maintenance = true
+			old.AdmissionPaused = true
 			deploymentConfigure(t, w, &old)
 			var before, after, oldIdentity, newIdentity string
 			if err := pool.QueryRow(t.Context(), "SELECT to_jsonb(a)::text FROM runtime_allocations a WHERE id=$1", owner.ID).Scan(&before); err != nil {
@@ -281,7 +281,7 @@ func TestRuntimeDeploymentRetainedResourcesBlockSwitchWithoutMutation(t *testing
 				t.Fatal(err)
 			}
 			next := deploymentSelection()
-			next.Maintenance = true
+			next.AdmissionPaused = true
 			if err := w.ConfigureRuntimeDeployment(t.Context(), &next, nil); err == nil || !strings.Contains(err.Error(), "1 unreleased allocations") {
 				t.Fatal("retained resource allowed switch", state, err)
 			}
@@ -324,7 +324,7 @@ func TestRuntimeDeploymentAllocationBeforeMaintenanceRetainsOwnership(t *testing
 	runtimeSuspensionWaitBlocked(t, ctx, pool, blocker, allocated)
 	maintaining := make(chan error, 1)
 	maintenance := config
-	maintenance.Maintenance = true
+	maintenance.AdmissionPaused = true
 	go func() { maintaining <- w.ConfigureRuntimeDeployment(ctx, &maintenance, nil) }()
 	if err := tx.Commit(ctx); err != nil {
 		t.Fatal(err)
@@ -340,7 +340,7 @@ func TestRuntimeDeploymentAllocationBeforeMaintenanceRetainsOwnership(t *testing
 		t.Fatal("maintenance changed uncertain receipt", owner, err)
 	}
 	next := deploymentSelection()
-	next.Maintenance = true
+	next.AdmissionPaused = true
 	if err := w.ConfigureRuntimeDeployment(ctx, &next, nil); err == nil || !strings.Contains(err.Error(), "1 unreleased allocations") {
 		t.Fatal("earlier in-flight allocation omitted from switch guard", err)
 	}

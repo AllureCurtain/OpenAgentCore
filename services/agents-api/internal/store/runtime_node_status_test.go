@@ -24,11 +24,16 @@ func TestRuntimeNodeStatusUsesAuthenticatedFreshPresence(t *testing.T) {
 	if _, err := s.RuntimeNodeStatus(t.Context(), d.LocalNodeID, "different-credential"); !errors.Is(err, ErrRuntimeNodeCredential) {
 		t.Fatal("status admitted another credential", err)
 	}
-	if _, err := s.pool.Exec(t.Context(), "UPDATE runtime_nodes SET provider_ready=false WHERE id=$1", d.LocalNodeID); err != nil {
+	connection := onlineManagerNode(t, s, d.LocalNodeID)
+	if err := s.HeartbeatRuntimeNode(t.Context(), d.LocalNodeID, connection, managerEpoch(t, s), RuntimeNodeHealth{ProviderReady: false}); err != nil {
 		t.Fatal(err)
 	}
 	status(true, false)
-	if _, err := s.pool.Exec(t.Context(), "UPDATE runtime_nodes SET provider_ready=true,last_seen_at=clock_timestamp()-interval '46 seconds' WHERE id=$1", d.LocalNodeID); err != nil {
+	if err := s.HeartbeatRuntimeNode(t.Context(), d.LocalNodeID, connection, managerEpoch(t, s), RuntimeNodeHealth{ProviderReady: true}); err != nil {
+		t.Fatal(err)
+	}
+	status(true, true)
+	if _, err := s.pool.Exec(t.Context(), "UPDATE runtime_nodes SET last_seen_at=clock_timestamp()-interval '46 seconds' WHERE id=$1", d.LocalNodeID); err != nil {
 		t.Fatal(err)
 	}
 	status(false, false)

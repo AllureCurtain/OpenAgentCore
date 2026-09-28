@@ -12,7 +12,7 @@ selection without resources adopts the ready build's CPU and memory. It returns
 the build's status, CPU, memory and reported disk size for Core to record with
 the selection, and creates neither compute nor allocation receipts.
 
-Runtime observation uses a third read-only request, `observe`, for at most 100
+Runtime observation uses a separate read-only request, `observe`, for at most 100
 allocations. It reads each allocation's sandbox ID from its receipt without the
 allocation lock, then runs one `GET /sandboxes/metrics` request and one labelled
 listing of this installation's running sandboxes concurrently, within the
@@ -27,11 +27,24 @@ resource drift still permits ownership-based cleanup. E2B disk capacity is not
 an independently configurable limit. Sandbox inspection does not expose a build
 UUID: build provenance comes from the validated immutable create selector.
 
+Credential replacement uses `verify_credential`, a read-only request with at most
+32 Core allocation references. It verifies the fixed build, the SDK's paginated
+team-owned template listing, and each settled live receipt against the labelled
+sandbox listing. Template and sandbox scans each stop at 100 pages or the caller's
+30-second deadline. Missing/unsettled receipts, repeated template cursors and
+unconfirmed reads never authorize replacement. No receipt is changed. Core scans
+retained generations and allocation pages under one bounded verification context,
+then repeats verification while provider calls are fenced before credential commit.
+Authentication rejection, ownership mismatch and uncertainty remain distinct fixed
+codes. A readable public template is not proof that the key owns it.
+
 The private JSON boundary has version 1. Requests and credentials enter stdin;
 stdout contains one bounded response with sanitized error codes. API keys never
 enter arguments, inherited environment or receipts. The process retains its
 allocation lock when the Core caller times out, until the bounded SDK operation
-returns. Core must serialize lifecycle requests and never replay Create.
+returns. Core tracks actual child exit even after caller timeout. Credential fencing
+waits for those children without killing them; child exit itself never proves remote
+Create settled. Core must serialize lifecycle requests and never replay Create.
 
 `StateDir` must already exist, be owned by the service user and have mode 0700.
 Keep it on durable private storage through Core upgrades/restarts. Its receipts

@@ -28,5 +28,12 @@ type EnvironmentNetworkInput struct {
 type EnvironmentPackages struct {
 	NPM    []string `json:"npm" binding:"required"`
 	Python []string `json:"python" binding:"required"`
+}
+
+// EnvironmentPackagesResponse preserves the official response schema. System is
+// always empty: Runtime system-package requests are unsupported.
+type EnvironmentPackagesResponse struct {
+	NPM    []string `json:"npm" binding:"required"`
+	Python []string `json:"python" binding:"required"`
 	System []string `json:"system" binding:"required"`
 }

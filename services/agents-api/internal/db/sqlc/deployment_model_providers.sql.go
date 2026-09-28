@@ -24,18 +24,23 @@ func (q *Queries) DeleteDeploymentModelProvider(ctx context.Context, harness str
 }
 
 const getDeploymentModelProviderSecret = `-- name: GetDeploymentModelProviderSecret :one
-SELECT encrypted_config FROM deployment_model_providers WHERE harness = $1
+SELECT encrypted_config, revision FROM deployment_model_providers WHERE harness = $1
 `
 
-func (q *Queries) GetDeploymentModelProviderSecret(ctx context.Context, harness string) ([]byte, error) {
+type GetDeploymentModelProviderSecretRow struct {
+	EncryptedConfig []byte      `json:"encrypted_config"`
+	Revision        pgtype.UUID `json:"revision"`
+}
+
+func (q *Queries) GetDeploymentModelProviderSecret(ctx context.Context, harness string) (GetDeploymentModelProviderSecretRow, error) {
 	row := q.db.QueryRow(ctx, getDeploymentModelProviderSecret, harness)
-	var encrypted_config []byte
-	err := row.Scan(&encrypted_config)
-	return encrypted_config, err
+	var i GetDeploymentModelProviderSecretRow
+	err := row.Scan(&i.EncryptedConfig, &i.Revision)
+	return i, err
 }
 
 const listDeploymentModelProviders = `-- name: ListDeploymentModelProviders :many
-SELECT harness, protocol, base_url, context_window, max_output_tokens, updated_at
+SELECT harness, protocol, base_url, context_window, max_output_tokens, updated_at, last_used_at, last_error_code, last_error_at
 FROM deployment_model_providers ORDER BY harness
 `
 
@@ -46,6 +51,9 @@ type ListDeploymentModelProvidersRow struct {
 	ContextWindow   int32              `json:"context_window"`
 	MaxOutputTokens int32              `json:"max_output_tokens"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	LastUsedAt      pgtype.Timestamptz `json:"last_used_at"`
+	LastErrorCode   pgtype.Text        `json:"last_error_code"`
+	LastErrorAt     pgtype.Timestamptz `json:"last_error_at"`
 }
 
 func (q *Queries) ListDeploymentModelProviders(ctx context.Context) ([]ListDeploymentModelProvidersRow, error) {
@@ -64,6 +72,9 @@ func (q *Queries) ListDeploymentModelProviders(ctx context.Context) ([]ListDeplo
 			&i.ContextWindow,
 			&i.MaxOutputTokens,
 			&i.UpdatedAt,
+			&i.LastUsedAt,
+			&i.LastErrorCode,
+			&i.LastErrorAt,
 		); err != nil {
 			return nil, err
 		}
@@ -76,21 +87,23 @@ func (q *Queries) ListDeploymentModelProviders(ctx context.Context) ([]ListDeplo
 }
 
 const upsertDeploymentModelProvider = `-- name: UpsertDeploymentModelProvider :one
-INSERT INTO deployment_model_providers (harness, protocol, base_url, context_window, max_output_tokens, encrypted_config, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, clock_timestamp())
+INSERT INTO deployment_model_providers (harness, protocol, base_url, context_window, max_output_tokens, encrypted_config, revision, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, clock_timestamp())
 ON CONFLICT (harness) DO UPDATE SET protocol = EXCLUDED.protocol, base_url = EXCLUDED.base_url,
     context_window = EXCLUDED.context_window, max_output_tokens = EXCLUDED.max_output_tokens,
-    encrypted_config = EXCLUDED.encrypted_config, updated_at = EXCLUDED.updated_at
-RETURNING harness, protocol, base_url, context_window, max_output_tokens, updated_at
+    encrypted_config = EXCLUDED.encrypted_config, revision = EXCLUDED.revision, updated_at = EXCLUDED.updated_at,
+    last_used_at = NULL, last_error_code = NULL, last_error_at = NULL, recovery_pending = false
+RETURNING harness, protocol, base_url, context_window, max_output_tokens, updated_at, last_used_at, last_error_code, last_error_at
 `
 
 type UpsertDeploymentModelProviderParams struct {
-	Harness         string `json:"harness"`
-	Protocol        string `json:"protocol"`
-	BaseUrl         string `json:"base_url"`
-	ContextWindow   int32  `json:"context_window"`
-	MaxOutputTokens int32  `json:"max_output_tokens"`
-	EncryptedConfig []byte `json:"encrypted_config"`
+	Harness         string      `json:"harness"`
+	Protocol        string      `json:"protocol"`
+	BaseUrl         string      `json:"base_url"`
+	ContextWindow   int32       `json:"context_window"`
+	MaxOutputTokens int32       `json:"max_output_tokens"`
+	EncryptedConfig []byte      `json:"encrypted_config"`
+	Revision        pgtype.UUID `json:"revision"`
 }
 
 type UpsertDeploymentModelProviderRow struct {
@@ -100,6 +113,9 @@ type UpsertDeploymentModelProviderRow struct {
 	ContextWindow   int32              `json:"context_window"`
 	MaxOutputTokens int32              `json:"max_output_tokens"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	LastUsedAt      pgtype.Timestamptz `json:"last_used_at"`
+	LastErrorCode   pgtype.Text        `json:"last_error_code"`
+	LastErrorAt     pgtype.Timestamptz `json:"last_error_at"`
 }
 
 func (q *Queries) UpsertDeploymentModelProvider(ctx context.Context, arg UpsertDeploymentModelProviderParams) (UpsertDeploymentModelProviderRow, error) {
@@ -110,6 +126,7 @@ func (q *Queries) UpsertDeploymentModelProvider(ctx context.Context, arg UpsertD
 		arg.ContextWindow,
 		arg.MaxOutputTokens,
 		arg.EncryptedConfig,
+		arg.Revision,
 	)
 	var i UpsertDeploymentModelProviderRow
 	err := row.Scan(
@@ -119,6 +136,9 @@ func (q *Queries) UpsertDeploymentModelProvider(ctx context.Context, arg UpsertD
 		&i.ContextWindow,
 		&i.MaxOutputTokens,
 		&i.UpdatedAt,
+		&i.LastUsedAt,
+		&i.LastErrorCode,
+		&i.LastErrorAt,
 	)
 	return i, err
 }

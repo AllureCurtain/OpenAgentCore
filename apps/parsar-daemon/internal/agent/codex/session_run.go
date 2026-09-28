@@ -16,15 +16,32 @@ func (s *Session) run(plan SessionPlan, req proto.PromptRequestPayload) {
 	defer s.cleanup()
 	defer s.closeRunOutput()
 
-	if err := s.resolveThread(req, plan); err != nil {
+	if err := s.startNative(s.cancelCtx, plan, req); err != nil {
 		s.emitTerminal(err.Error(), true)
 		return
 	}
 
+	// Block until terminal handlers close the RPC child or cancellation arrives.
+	select {
+	case <-s.rpc.Done():
+		if !s.cancelled.Load() && s.cancelCtx.Err() == nil {
+			s.emitTerminal("codex: connection closed before the run completed", true)
+		}
+	case <-s.cancelCtx.Done():
+		_ = s.rpc.Close()
+	}
+}
+
+func (s *Session) startNative(ctx context.Context, plan SessionPlan, req proto.PromptRequestPayload) error {
+	if s.currentThreadID() == "" {
+		if err := s.resolveThread(req, plan); err != nil {
+			return err
+		}
+	}
+
 	input, err := nativeInput(req.Input)
 	if err != nil {
-		s.emitTerminal("codex: empty prompt", true)
-		return
+		return err
 	}
 	turnParams := TurnStartParams{
 		ThreadID: s.currentThreadID(),
@@ -33,8 +50,7 @@ func (s *Session) run(plan SessionPlan, req proto.PromptRequestPayload) {
 	if plan.CollaborationMode != "" {
 		model := strings.TrimSpace(s.resolvedModel)
 		if model == "" {
-			s.emitTerminal("codex: collaboration mode requires a resolved model", true)
-			return
+			return fmt.Errorf("codex: collaboration mode requires a resolved model")
 		}
 		var developerInstructions *string
 		if plan.SystemPrompt != "" {
@@ -48,22 +64,13 @@ func (s *Session) run(plan SessionPlan, req proto.PromptRequestPayload) {
 			},
 		}
 	}
-	turnCtx, turnCancel := context.WithTimeout(s.cancelCtx, 10*time.Second)
+	turnCtx, turnCancel := context.WithTimeout(ctx, 10*time.Second)
 	_, ackErr := s.rpc.requestWithResult(turnCtx, "turn/start", turnParams, s.bindTurnResult)
 	turnCancel()
 	if ackErr != nil {
 		s.cfg.logger.Warn("codex: turn/start ack failed", "run_id", s.runID, "err", ackErr)
-		s.emitTerminal(fmt.Sprintf("codex: turn/start: %v", ackErr), true)
-		return
+		return fmt.Errorf("codex: turn/start: %w", ackErr)
 	}
 
-	// Block until terminal handlers close the RPC child or cancellation arrives.
-	select {
-	case <-s.rpc.Done():
-		if !s.cancelled.Load() && s.cancelCtx.Err() == nil {
-			s.emitTerminal("codex: connection closed before the run completed", true)
-		}
-	case <-s.cancelCtx.Done():
-		_ = s.rpc.Close()
-	}
+	return nil
 }

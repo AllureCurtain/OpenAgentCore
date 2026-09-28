@@ -121,11 +121,9 @@ func (s *Session) settleSubagents() error {
 					settled = false
 				}
 			}
-			if session.ID != snapshot.Root {
-				for _, turn := range session.Turns {
-					if turn.Status == "accepted" {
-						settled = false
-					}
+			for _, turn := range session.Turns {
+				if turn.Status == "accepted" {
+					settled = false
 				}
 			}
 		}

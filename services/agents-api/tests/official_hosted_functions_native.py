@@ -83,7 +83,7 @@ def verify_hosted_functions(client, foreign, http, model, restart, evidence):
             raise RuntimeError(private_error)
 
         _, result = invoke("Call lookup exactly once with key failure. If it fails, do not retry. Then reply with the exact string returned by lookup in our first turn, using conversation history and no file tools.", "function-failure", failure)
-        assert result["error"] == "Tool handler failed." and "output" not in result
+        assert result["error"] == "Tool handler failed." and "output" in result and result["output"] is None
         messages = [i for i in items() if i["type"] == "message" and i["role"] == "assistant"]
         assert marker in "\n".join(p.get("text", "") for p in messages[-1]["content"])
         assert len(calls) == 2

@@ -54,6 +54,45 @@ func (q *Queries) ExecutorProjectScopeExists(ctx context.Context, arg ExecutorPr
 	return exists, err
 }
 
+const getEnvironmentExecutorConnection = `-- name: GetEnvironmentExecutorConnection :one
+SELECT d.id AS device_id, d.executor_key_id, d.created_at AS enrolled_at,
+    d.last_seen_at, a.credential_hash, e.status AS environment_status
+FROM environments e
+JOIN sessions s ON s.id = e.session_id
+LEFT JOIN devices d ON d.environment_id = e.id AND d.tenant_id = s.tenant_id
+LEFT JOIN runtime_device_authority a ON a.id = d.id
+WHERE e.id = $1 AND s.tenant_id = $2
+    AND s.deleted_at IS NULL AND s.configuration->'environment'->>'type' = 'self_hosted'
+`
+
+type GetEnvironmentExecutorConnectionParams struct {
+	EnvironmentID pgtype.UUID `json:"environment_id"`
+	TenantID      pgtype.UUID `json:"tenant_id"`
+}
+
+type GetEnvironmentExecutorConnectionRow struct {
+	DeviceID          pgtype.UUID        `json:"device_id"`
+	ExecutorKeyID     pgtype.UUID        `json:"executor_key_id"`
+	EnrolledAt        pgtype.Timestamptz `json:"enrolled_at"`
+	LastSeenAt        pgtype.Timestamptz `json:"last_seen_at"`
+	CredentialHash    pgtype.Text        `json:"credential_hash"`
+	EnvironmentStatus string             `json:"environment_status"`
+}
+
+func (q *Queries) GetEnvironmentExecutorConnection(ctx context.Context, arg GetEnvironmentExecutorConnectionParams) (GetEnvironmentExecutorConnectionRow, error) {
+	row := q.db.QueryRow(ctx, getEnvironmentExecutorConnection, arg.EnvironmentID, arg.TenantID)
+	var i GetEnvironmentExecutorConnectionRow
+	err := row.Scan(
+		&i.DeviceID,
+		&i.ExecutorKeyID,
+		&i.EnrolledAt,
+		&i.LastSeenAt,
+		&i.CredentialHash,
+		&i.EnvironmentStatus,
+	)
+	return i, err
+}
+
 const getExecutorCredentialForPrincipal = `-- name: GetExecutorCredentialForPrincipal :one
 SELECT c.environment_id
 FROM environment_executor_credentials c
