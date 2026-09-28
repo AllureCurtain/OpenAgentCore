@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentnetwork"
 	"github.com/google/uuid"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -30,6 +32,10 @@ func TestPreparationRouterRetainsActualNativeChild(t *testing.T) {
 	for _, start := range []bool{false, true} {
 		t.Run(map[bool]string{false: "disconnect-before-start", true: "transfer-and-cancel"}[start], func(t *testing.T) {
 			req, cfg, root := preparationFixture(t)
+			if err := os.Chmod(root, 0700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("OAC_RUNTIME_CAPABILITY_DIRECTORY", filepath.Join(t.TempDir(), "capabilities"))
 			t.Setenv("OAC_TEST_EXECUTOR_MODE", "complete")
 			environment, session := uuid.NewString(), uuid.NewString()
 			if err := os.MkdirAll(req.WorkDir, 0700); err != nil {
@@ -51,7 +57,7 @@ func TestPreparationRouterRetainsActualNativeChild(t *testing.T) {
 			req.WorkDir = ""
 			req.AgentStateKey = "agents-api-" + session
 			req.DisableExecutionEnvironment = false
-			req.LocalEnvironment = &proto.LocalEnvironment{ID: environment, NetworkAccess: "enabled"}
+			req.LocalEnvironment = &proto.LocalEnvironment{ID: environment, WorkspaceDirectory: "/workspace", NetworkAccess: "enabled", CapabilitySources: &agentcapabilities.Input{}}
 			cfg.permissionProfile = "managed-workspace"
 			cfg.runtimeNetwork = agentnetwork.Policy{Access: "enabled"}
 			registry := agent.NewRegistry()
