@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -42,8 +43,7 @@ func (p *initializationPeer) connect(b sandbox.Bootstrap) error {
 	}
 	p.t.Cleanup(func() { _ = c.Close() })
 	go func() {
-		var request proto.RuntimePreparePayload
-		var data []byte
+		transfer := initializationTransfer{peer: p}
 		for {
 			var env proto.Envelope
 			if c.ReadJSON(&env) != nil {
@@ -52,41 +52,12 @@ func (p *initializationPeer) connect(b sandbox.Bootstrap) error {
 			if env.Type != proto.TypeRuntimePrepare {
 				continue
 			}
-			var frame proto.RuntimePreparePayload
-			if env.DecodePayload(&frame) != nil || !proto.ValidRuntimePrepareRequest(frame) {
-				p.t.Error("invalid Runtime frame")
+			reply, err := transfer.receive(env)
+			if err != nil {
+				p.t.Error(err)
 				return
 			}
-			result := proto.RuntimePrepareResultPayload{}
-			switch frame.Step {
-			case "begin":
-				request = frame
-				data = nil
-				result.Outcome = "ready"
-			case "chunk":
-				if frame.Offset != len(data) {
-					p.t.Error("unordered initialization bytes")
-					return
-				}
-				data = append(data, frame.Data...)
-				result.Outcome = "received"
-				result.Offset = len(data)
-			case "commit":
-				if request.Action == "file" || request.Action == "skill" || request.Action == "plugin" {
-					sum := sha256.Sum256(data)
-					if request.SizeBytes != len(data) || request.SHA256 != hex.EncodeToString(sum[:]) {
-						p.t.Error("initialization digest changed")
-						return
-					}
-				}
-				result = p.apply(request, data)
-				p.writes.Add(1)
-				if result.Outcome == "completed" {
-					result.SizeBytes = len(data)
-				}
-			}
-			reply, err := proto.NewEnvelope(proto.TypeRuntimePrepareResult, env.ID, result)
-			if err != nil || c.WriteJSON(reply) != nil {
+			if c.WriteJSON(reply) != nil {
 				return
 			}
 		}
@@ -106,4 +77,43 @@ func (p *initializationPeer) RunCommand(context.Context, sandbox.Reference, sand
 }
 func completedInitialization(proto.RuntimePreparePayload, []byte) proto.RuntimePrepareResultPayload {
 	return proto.RuntimePrepareResultPayload{Outcome: "completed"}
+}
+
+// Each authenticated socket owns its own bounded preparation transfer.
+type initializationTransfer struct {
+	peer    *initializationPeer
+	request proto.RuntimePreparePayload
+	data    []byte
+}
+
+func (x *initializationTransfer) receive(env proto.Envelope) (proto.Envelope, error) {
+	var frame proto.RuntimePreparePayload
+	if env.DecodePayload(&frame) != nil || !proto.ValidRuntimePrepareRequest(frame) {
+		return proto.Envelope{}, errors.New("invalid Runtime frame")
+	}
+	result := proto.RuntimePrepareResultPayload{}
+	switch frame.Step {
+	case "begin":
+		x.request, x.data = frame, nil
+		result.Outcome = "ready"
+	case "chunk":
+		if frame.Offset != len(x.data) {
+			return proto.Envelope{}, errors.New("unordered initialization bytes")
+		}
+		x.data = append(x.data, frame.Data...)
+		result.Outcome, result.Offset = "received", len(x.data)
+	case "commit":
+		if x.request.Action == "file" || x.request.Action == "skill" || x.request.Action == "plugin" {
+			sum := sha256.Sum256(x.data)
+			if x.request.SizeBytes != len(x.data) || x.request.SHA256 != hex.EncodeToString(sum[:]) {
+				return proto.Envelope{}, errors.New("initialization digest changed")
+			}
+		}
+		result = x.peer.apply(x.request, x.data)
+		x.peer.writes.Add(1)
+		if result.Outcome == "completed" {
+			result.SizeBytes = len(x.data)
+		}
+	}
+	return proto.NewEnvelope(proto.TypeRuntimePrepareResult, env.ID, result)
 }
