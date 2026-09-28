@@ -15,7 +15,7 @@ the administrator API are defined by the [administrator API contract](../../cont
 
 | Interface | Paths | Authentication | Console use |
 | --- | --- | --- | --- |
-| Console server | `/console/auth`, `/console/auth/{login,logout}`, `/console/config` | Core key at sign-in, then the console session cookie | Sign-in with the Core key and sign-out; the node installer (`node_installer`, `node_installer_sha256`), the self-hosted executor installer (`self_hosted_installer`, `self_hosted_installer_sha256`) and the providers whose node assets it holds (`node_artifacts`) |
+| Console server | `/console/auth`, `/console/auth/{login,logout}`, `/console/config` | Core key at sign-in, then the console session cookie | Sign-in with the Core key and sign-out; the node installer (`node_installer`, `node_installer_sha256`) and the providers whose node assets it holds (`node_artifacts`) |
 | Administrator API | `/core/v1/**` outside `/core/v1/sandbox` | Core key, added by the console server | Projects, keys, resource reads and deletion, executor credentials, provenance, summaries, Core metrics, the installation |
 | Sandbox administration | `/core/v1/sandbox/**` | Core key, added by the console server | Nodes page; fleet and capacity figures on Overview and Sandbox metrics; Runtime observations of every project |
 | Agents API | `/v1/**` | Project API key | Not used. Wherever a new key is shown, and without any key on an active project's page, the console gives shell exports of `OPENAI_BASE_URL` (the installation's `api_base_url`) and `OPENAI_API_KEY` (the new key, or a placeholder for a key of the project) with `curl` and Python examples for `GET /v1/agents` and `POST /v1/agents/sessions`, and sends none of them; when the installation is `local_only` it says the API is reachable only on the Core machine, and without an `api_base_url` it says to set `public_url` |
@@ -102,19 +102,16 @@ allows.
 | Operation | Route | Console use |
 | --- | --- | --- |
 | List credentials | `GET /core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials` | The section's table, through the query cache: each credential's short `key_id` with its copy button, creation time (`created_at`, which rotation does not change) and status (Active, or Revoked with its time), active first. The credential itself is never listed |
-| Issue or rotate | `POST /core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials` with `{"key_id", "rotate"}` | **Issue credential** generates `key_id` (`crypto.randomUUID()`) and keeps it before sending `rotate: false`. **Rotate**, confirmed (the old credential stops working immediately), sends an active credential's `key_id` with `rotate: true`. On a revoked row, **Rotate** is the only action: Core restores the credential with a new secret (`201`), and the dialog says to rerun the install command on the host and paste it, since the installer reconnects only with the same `key_id`. Core returns the credential once (`201`, `Cache-Control: no-store`); the console shows it once in a dialog, after the Connect a host command when that is available (run it first, then paste), as one line of JSON (`{key_id, environment_id, executor_token}`, which pastes cleanly in any terminal) to copy (the primary action, pasted at the self-hosted installer's hidden prompt) or download for `--credential-file` (`executor-credential-<first 8 of environment_id>.json`, the same line with a trailing newline), keeps it only in the section's state (never in browser storage or the query cache) and forgets it when the administrator presses **Done**; dismissing the dialog keeps it on the page until then. An existing `key_id` without `rotate: true` returns 409 `executor_credential_exists`. Other rejections show Core's reason in an error toast (issue) or in the confirmation dialog (rotate) |
-| Revoke | `DELETE /core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials/{key_id}` | **Revoke**, confirmed (the executor disconnects and won't retry; its container keeps running until stopped), then the list is read again and shows the credential as Revoked; revoking again returns 204 |
+| Issue or rotate | `POST /core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials` with `{"key_id", "rotate"}` | Issue retains the generated key ID before submission. Rotation confirms that the old credential stops working. The private JSON is shown once for download or copy, never stored in browser storage or the query cache, and forgotten on Done. Save it as the credential file. Rotation keeps the same key ID: stop the daemon, replace that file, then start again. An existing key without rotation returns 409 `executor_credential_exists` |
+| Revoke | `DELETE /core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials/{key_id}` | **Revoke**, confirmed (the executor disconnects and won't retry; its daemon remains parked until the operator stops it), then the list is read again and shows the credential as Revoked; revoking again returns 204 |
 
-When `/console/config` offers the self-hosted installer (`self_hosted_installer`
-with a 64-hex `self_hosted_installer_sha256`), the section ends with **Connect a
-host**: a command that downloads `<public_url>/node-install/self-hosted-install.pyz`
-(`public_url` from `GET /core/v1/installation`), checks it against the digest and
-runs it with `--source-url <public_url> --environment-id <environment.id> --remote
-<environment.remote_url>`, every value shell-quoted. It holds no secret: the
-installer asks for the credential at a hidden prompt or reads `--credential-file`.
-Without a `public_url`, with a `local_only` one (loopback: no host reaches it), or
-with a `remote_url` that is not `wss://`, a note replaces the command. A console
-without the installer shows no Connect a host.
+**Connect a host** offers Linux/macOS or PowerShell commands for the native
+installer, prefilled with the Session's Environment ID, remote URL and workspace.
+It links the native installation guide rather than inventing a release URL.
+The command contains no credential: download the one-time JSON and supply its
+absolute path to the installer. `wss` and loopback `ws` are accepted; missing or
+invalid connection facts suppress the command. Installation does not start the
+daemon; use the installed `bin/oac-daemon start` afterward.
 
 ## Provenance and monitoring
 
@@ -123,7 +120,7 @@ without the installer shows no Connect a host.
 | Resource owners | `GET /core/v1/projects/{project_id}/resource-owners` | The Creator column of every resource list and the creator fact of detail pages, in batches of up to 100 IDs. An asset an administrator copied in an earlier release shows **Admin copy**; a resource without a record shows **Unknown** |
 | Write operations | `GET /core/v1/projects/{project_id}/write-operations` | A project's write history, newest first, filtered by key and resource type, 50 per page |
 | Summary | `GET /core/v1/summary` | Overview (per project), the Agents list (`group_by=agent`), a project's page (per project and `group_by=key`), Agent metrics (to skip idle projects, and usage by creating key since the start of the range), the Projects list (last activity) |
-| Installation | `GET /core/v1/installation` | System's Installation facts (`public_url`, `api_base_url`, `installation_id`, `source_commit`) and read-only Startup settings (`configuration.settings` under its `path`, `apply_command` and `applied_at`; a sensitive setting shows only whether it is `configured`); `api_base_url` in the how-to-call samples under a new key and on an active project's page; `public_url` in a self-hosted Session's Connect a host command and as the download origin and `--source-url` of the node install and uninstall commands (and the install command's `--core-url`) (the reverse proxy sends `<public_url>/node-install/*` to the console); `local_only`, or a `public_url` that is not an HTTPS origin, stops Add node from issuing a command and Clean up the host from giving one; `path` and `apply_command` beside a sandbox configuration Core rejected. Overview, Nodes and System show a visible `local_only` warning with those repair instructions as copyable values; when `configuration` is null, they state that the path and command are unavailable. Nodes disables Add node with a visible reason, and Getting started leaves its sandbox step to do. A sensitive setting with a value, or an unknown member, fails the read; `configuration: null` shows a note |
+| Installation | `GET /core/v1/installation` | System's Installation facts (`public_url`, `api_base_url`, `installation_id`, `source_commit`) and read-only Startup settings (`configuration.settings` under its `path`, `apply_command` and `applied_at`; a sensitive setting shows only whether it is `configured`); `api_base_url` in the how-to-call samples under a new key and on an active project's page; `public_url` as the download origin and `--source-url` of the node install and uninstall commands (and the install command's `--core-url`) (the reverse proxy sends `<public_url>/node-install/*` to the console); `local_only`, or a `public_url` that is not an HTTPS origin, stops Add node from issuing a command and Clean up the host from giving one; `path` and `apply_command` beside a sandbox configuration Core rejected. Overview, Nodes and System show a visible `local_only` warning with those repair instructions as copyable values; when `configuration` is null, they state that the path and command are unavailable. Nodes disables Add node with a visible reason, and Getting started leaves its sandbox step to do. A sensitive setting with a value, or an unknown member, fails the read; `configuration: null` shows a note |
 | Core metrics | `GET /core/v1/metrics?range=` | Core metrics page; the Core popover on Overview. A Core without the route (404) is shown as not reporting; the popover then shows only Core's status. Measurements are defined in the [Core metrics contract](../../contracts/agents-api/core-metrics.md); the Process section's CPU and resident memory are a [requested extension](core-process-metrics-requirements.md) and show as missing until Core reports them |
 
 Summary figures are cumulative per Session and are not billing records. Sessions
@@ -158,8 +155,7 @@ consumed; the list carries each provider.
 | Runtime observations | `GET /core/v1/sandbox/runtime-observations` | Sandbox metrics: hosted Runtimes of every project, each labelled with its project; an E2B sandbox's dialog adds its `observation.disk` as used / limit (null elsewhere) |
 
 Signing in grants administration, so `/console/config` reports only the node
-installer (`node_installer`, `node_installer_sha256`), the self-hosted executor
-installer (`self_hosted_installer`, `self_hosted_installer_sha256`) and the providers
+installer (`node_installer`, `node_installer_sha256`) and the providers
 whose node assets the console holds (`node_artifacts`). These pages appear unless
 the console has no `/console/config` (404) or reports `sandbox_admin: false`. An E2B
 deployment has no nodes; its API key is write-only. The Runtime release sent for

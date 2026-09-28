@@ -2250,13 +2250,11 @@ uninstall with the previous release before adding it again. The machine
 configuration route rejects `X-Parsar-Node-ID` with `400 invalid_request`; only
 `X-OAC-Node-ID` identifies a retained node credential.
 
-Self-hosted installations use `oac-selfhost` and `~/.oac/self-hosted/<environment-id>`.
-The installer refuses an existing `~/.parsar/self-hosted/<environment-id>` for the
-same Environment, even with a custom new install directory. Old executors keep
-running with their own image and history; operators explicitly stop and remove
-them before replacing them. New installation never adopts their native history.
-Credential replacement for a new installer-owned executor retains its existing
-container and ownership checks.
+User-managed hosts use the native daemon installer on Linux, macOS and Windows.
+It does not select a supplier or create compute resources. The retired Docker
+self-hosted installer/launcher and console payload are not retained as fallback.
+Existing environments, credentials, workspaces and native history are never
+automatically deleted or adopted by a new installation.
 
 One Runtime image contains the existing daemon, shared helpers and three native
 harness packages. Their differences remain in the adapters. Core keeps exclusive
@@ -3851,8 +3849,8 @@ and use its absolute `dist/main.js` as the private factory entrypoint. Validate
 relocation and real provider cancellation/continuation before accepting an
 artifact. Linux x64/glibc with Node22 is the currently exercised platform;
 other hosts require their own native acceptance. Do not reuse a bundle across
-platforms or libc variants. Automatic Node installation, managed activation and
-release publication remain separate work. Operator-configured daemon discovery/registration is supported as
+platforms or libc variants. Standalone Claude archives require operator-supplied Node. The native installer
+bundles Node and owns user-managed activation; release publication remains separate. Operator-configured daemon discovery/registration is supported as
 specified above.
 
 The exported `dist/runtime_check.js` companion is the local readiness contract.
@@ -3866,7 +3864,7 @@ with shared process-group ownership, bounded output and a 15-second deadline
 plus bounded cleanup. Both native and bridge probes have five-second limits.
 Return unavailable on failed or malformed probes; never forward native diagnostics
 or treat local readiness as provider authentication, public capability acceptance
-or filesystem isolation. Automatic installation remains separate.
+or filesystem isolation. The native installer reuses this readiness check after copying its release components.
 
 
 ### Harness selection and Agent defaults
@@ -4052,3 +4050,38 @@ terminal transaction: event/input receipt for normal terminal projections, one
 post-lock database wall-clock sample for forced incomplete Items. Preserve
 historical terminal nulls and public native completion times. See the
 [diagnostics contract](contracts/agents-api/session-diagnostics.md).
+
+## Native daemon and Harness installation
+
+`oac-daemon install` owns interactive selection and CLI-only installation through
+one options/validation path. No installation-options file input is supported.
+Persisted installation state and explicitly supplied credential/tool-variable
+files serve runtime operation, not a second installer configuration language.
+The release bundles pinned Node/npm, native Harnesses and required adapter assets;
+registration lives in CLI and native activation/readiness in each adapter's optional
+`agent.Installation` descriptor. Core never selects native paths or OS-specific
+installation steps. See [native installation](docs/self-hosted-native.md).
+
+All mutations use the installation directory lock. Publish complete checksum-verified
+components from staging, then commit configuration after native readiness passes.
+Re-running with the same connection settings adds selected Harnesses and validates
+existing contents. Never overwrite, upgrade, auto-repair or migrate installed
+components. Missing, modified, wrong-platform or incompatible content is an explicit
+error. A partial addition must preserve the old configuration and allow reuse of
+complete components; it must not remove previous files or data.
+
+Installers run as the current user in writable directories. Native subprocess
+diagnostics must not expose sensitive parameters or environment values. Readiness,
+authenticated connection and model configuration are separate reported facts.
+Starting execution must not download or install Harnesses. Ordinary stop/reconnect
+must preserve capability snapshots and native Session state.
+
+`scripts/build-native-installer.mjs` packages native inputs, validates pins/startup
+and hashes every component file. It uses contained regular files and rejects
+escaping links. Claude's dedicated frozen `pnpm deploy` export is reified with
+the hoisted linker for this distribution before contained links are flattened;
+the original standalone Claude archive contract remains unchanged. The native
+installer workflow builds and tests on Linux, macOS and Windows, including actual
+installation, addition/reuse, missing arguments and unsupported Windows MiniMax.
+Native CI startup checks do not replace real model execution evidence or claim
+manual Windows acceptance. Heavy builds belong on remote servers or CI.

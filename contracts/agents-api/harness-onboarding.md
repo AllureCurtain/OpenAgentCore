@@ -35,8 +35,8 @@ Runtime: Executor preparation, reuse, idle expiry, recovery
 An Environment supplies execution resources. Managed Docker, E2B and user-managed
 machines differ in provisioning and connection; their connected Runtime uses this
 same contract. Operating-system support belongs in the implementation and its
-qualification. The current implementation is Linux; a platform-neutral interface
-alone does not qualify another platform. Resource management owns machine selection, allocation and Environment creation
+qualification. The native daemon supports Linux, macOS and Windows; each adapter declares its
+qualified platform scope. Managed Providers remain Linux-only. Resource management owns machine selection, allocation and Environment creation
 and reclamation. Executor close does not release that allocation or delete the
 workspace. Environment reclamation is an explicit resource-management action that
 coordinates with execution. Runtime connection, installed capability snapshot,
@@ -242,3 +242,14 @@ the authenticated Run, then qualifies those facts with real execution. It does
 not add routes, storage branches or a harness-specific Core scheduler. Report
 unsupported native facts explicitly; completing a child task is not closing its
 Subagent. Native background work must remain owned through settlement and cancel.
+
+## Native installer participation
+
+An adapter may supply `agent.Installation` from `installation.go` in its own
+package: pinned version, supported platforms, activation environment and a bounded
+readiness probe. Register it in `cli/native_harness.go` and add its pinned component
+to the native distribution builder. This optional contract does not change
+Executor/Turn semantics. Runtime owns checksums, copying, locks and additive
+installation; adapters own native layout and probes. Validate installation and
+actual execution on each advertised platform. Missing or incompatible native
+content must fail, never install itself during a Turn.
