@@ -68,20 +68,18 @@ function seconds(value: string | null): number | null {
  * administrator rotates it (issued, secret lost) or issues it again (not
  * issued). A kept key ID that is listed is never sent again: its row's actions
  * own it. Rotating a revoked credential restores it with a new secret, which
- * is how a host whose credential was revoked reconnects: its installer accepts
- * only the same key ID. An archived project's credentials are listed and
+ * is how a host whose credential was revoked reconnects: Core retains
+ * the bound key ID. An archived project's credentials are listed and
  * revoked but neither issued nor rotated. Below the list, Connect a host gives
  * the command that installs the executor with one of these credentials.
  */
-export function ExecutorCredentialsSection({ projectId, sessionId, environmentId, remoteUrl }: { projectId: string; sessionId: string; environmentId: string; remoteUrl: string }) {
+export function ExecutorCredentialsSection({ projectId, sessionId, environmentId, remoteUrl, workspaceDirectory = "" }: { projectId: string; sessionId: string; environmentId: string; remoteUrl: string; workspaceDirectory?: string }) {
   const { t, i18n } = useTranslation("sessions");
   const locale = i18n.resolvedLanguage;
   const toast = useToast();
   const { byId, refresh: refreshProjects } = useProjects();
   const archived = byId.get(projectId)?.status === "archived";
-  const install = useExecutorInstall(environmentId, remoteUrl);
-  // The one-time dialog repeats the command, so it is copied and run before the credential is pasted.
-  const command = install.kind === "ready" ? install.command : null;
+  const install = useExecutorInstall(environmentId, remoteUrl, workspaceDirectory);
   const query = useQuery(executorConnectionQuery(projectId, sessionId, environmentId));
   const credentials = query.data?.data ?? null;
   const connectionStale = failedLast(query) || query.isStale;
@@ -296,7 +294,7 @@ export function ExecutorCredentialsSection({ projectId, sessionId, environmentId
       {archived ? <p className="coverage-note">{t("executor.archived")}</p> : null}
       {shown && !shown.open && !shown.done ? (
         <section className="executor-credential-pending" aria-label={t("executor.issued.title")}>
-          <CredentialFile credential={shown.credential} next={command ? "panel" : "save"} />
+          <CredentialFile credential={shown.credential} />
           <div><button className="button outline" type="button" onClick={finishShown}>{t("executor.issued.done")}</button></div>
         </section>
       ) : null}
@@ -309,7 +307,7 @@ export function ExecutorCredentialsSection({ projectId, sessionId, environmentId
         onClose={dismissShown}
         footer={<button className="button outline" type="button" onClick={finishShown}>{t("executor.issued.done")}</button>}
       >
-        {shown ? <CredentialFile credential={shown.credential} next={command ? "inline" : "save"} command={command} /> : null}
+        {shown ? <CredentialFile credential={shown.credential} /> : null}
       </Modal>
       <ErrorDialog
         open={uncertain?.open ?? false}
@@ -334,8 +332,8 @@ export function ExecutorCredentialsSection({ projectId, sessionId, environmentId
           <>
             <p>{t(`executor.rotateDialog.${rotation.reason}`, { id: shortId(rotation.keyId) })}</p>
             {rotation.reason === "revoked" ? null : <p>{t("executor.rotateDialog.consequence")}</p>}
-            {/* A connected host needs the command again; the text names it only when it is shown here. */}
-            {rotation.reason === "lost" ? null : <p>{t(`executor.rotateDialog.${rotation.reason === "revoked" ? "reconnect" : "disconnect"}.${command ? "command" : "installer"}`)}</p>}
+            {/* Reconnection uses the installed daemon and the replacement credential file. */}
+            {rotation.reason === "lost" ? null : <p>{t(`executor.rotateDialog.${rotation.reason === "revoked" ? "reconnect" : "disconnect"}`)}</p>}
           </>
         ) : null}
       </ConfirmDialog>

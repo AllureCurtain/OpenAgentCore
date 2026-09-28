@@ -49,19 +49,6 @@ export function nodeUninstallCommand({ sourceUrl, installationId, scriptDigest, 
 }
 
 /**
- * Installs a self-hosted executor for one Environment from this Core's
- * public address. It carries no secret: the installer asks for the executor
- * credential at a hidden prompt (or reads `--credential-file`), and rerunning
- * it resumes the same installation.
- */
-export function selfHostedInstallCommand({ publicUrl, digest, environmentId, remoteUrl }: { publicUrl: string; digest: string; environmentId: string; remoteUrl: string }): string {
-  return `(umask 077; d=$(mktemp -d) || exit; trap 'rm -rf "$d"' EXIT
-curl -fsS --max-time 30 --max-filesize 1048576 ${quote(publicUrl + "/node-install/self-hosted-install.pyz")} -o "$d/install.pyz" &&
-printf '%s  %s\\n' ${quote(digest)} "$d/install.pyz" | sha256sum -c --status &&
-python3 "$d/install.pyz" --source-url ${quote(publicUrl)} --environment-id ${quote(environmentId)} --remote ${quote(remoteUrl)})`;
-}
-
-/**
  * The node service's journal. The installer names the unit after the
  * installation (node_install.py `unit_name`): a system unit in sudo mode, a user
  * unit of the node's user otherwise.

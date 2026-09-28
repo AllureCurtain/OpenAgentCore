@@ -5,9 +5,6 @@ export interface SandboxConsoleConfig {
   sandbox_admin: boolean;
   node_installer: boolean;
   node_installer_sha256: string;
-  /** The self-hosted executor installer (`/node-install/self-hosted-install.pyz`); false without a verified digest. */
-  self_hosted_installer: boolean;
-  self_hosted_installer_sha256: string;
   /**
    * The providers whose node files this console serves. Absent when the console
    * does not report them (an older console), which blocks nothing; a reported
@@ -20,8 +17,7 @@ const SHA256 = /^[a-f0-9]{64}$/;
 
 /**
  * The console's capability flags. Signing in with the Core key grants
- * administration, so Core reports only its installers (node and self-hosted
- * executor, each with its digest) and the providers it has node files for;
+ * administration, so Core reports only its node installer and digest and the providers it has node files for;
  * sandbox administration is available
  * unless the console says `sandbox_admin: false`. An installer is offered only
  * with a well-formed SHA-256 digest.
@@ -38,8 +34,6 @@ export async function sandboxConsoleConfig(signal: AbortSignal): Promise<Sandbox
     sandbox_admin: config.sandbox_admin !== false,
     node_installer: config.node_installer === true && SHA256.test(config.node_installer_sha256 ?? ""),
     node_installer_sha256: config.node_installer_sha256 ?? "",
-    self_hosted_installer: config.self_hosted_installer === true && SHA256.test(config.self_hosted_installer_sha256 ?? ""),
-    self_hosted_installer_sha256: config.self_hosted_installer_sha256 ?? "",
     ...(config.node_artifacts === undefined ? {} : { node_artifacts: nodeArtifacts(config.node_artifacts) }),
   };
 }

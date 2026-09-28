@@ -495,16 +495,16 @@ Every resource list, the Session log and the project list share one grammar:
   page body to the next failed Turn and focuses it.
 - An active project's page ends its keys with a **How to call** section (see
   Dialogs) before its write operations.
-- A self-hosted Session's **Executor credentials** section ends with a **Connect
-  a host** card when the console serves the self-hosted installer: a 13px/600
-  title with a help tip (what revoke and rotate do to the host, how to reconnect,
-  how to remove the Runtime), one Graphite line with the steps (run the command,
-  paste a credential at its hidden prompt, safe to rerun), the command in a
-  Margin Gray Terminal block with an icon copy button, and the host requirements
-  on one dot-separated line. The command wraps rather than scrolls. Without a
-  public address, with a loopback one, or with a Session address that is not
-  `wss://`, one Graphite note takes the command's place; an archived project
-  keeps the command and says the host still needs a credential.
+- A self-hosted Session's **Executor credentials** section ends with **Connect
+  a host**, independent of console installer assets. Keep native distribution
+  guidance, a Linux/macOS or PowerShell selector and one copyable command here.
+  The command pre-fills the Session remote URL, Environment ID and workspace;
+  interactive installation asks for a privately saved credential file and local
+  installation choices. Link the native guide instead of inventing a release
+  download URL. Requirements and reconnection details belong in the title help.
+  Installation does not start the daemon; connection status comes only from Core.
+  Missing connection facts show a note instead of a command. Loopback ws is valid
+  for native local connections. Archived projects require an existing credential.
 
 ### Dialogs
 Dialogs are 448px Paper cards with 8px corners, a 48px header and a 52px footer
@@ -526,15 +526,12 @@ request runs.
   red underneath. The issued key appears in a read-only field with a copy button,
   under a notice that it is shown once; only "I've saved this key" dismisses it.
   Closing the dialog moves the key into a pending notice card on the page.
-- **Executor credential dialog** (640px): the shown-once notice, then one line
-  saying what to do in order. With Connect a host available, the install
-  command's Terminal block comes first, so it is copied and run before the
-  credential is pasted and Done pressed. Then the credential as one line of JSON
-  (wrapped, never pretty-printed), Copy credential (primary: it is pasted at the
-  installer's hidden prompt) and Download credential file (outline), with a
-  Graphite hint for automation (`chmod 600`, `--credential-file`). Done is
-  outline and forgets the credential; closing the dialog keeps it in a pending
-  card, which points to the Connect a host command below.
+- **Executor credential dialog** (640px): the shown-once notice, then a prompt
+  to save the JSON privately before Done. Download credential file is primary;
+  Copy credential is secondary. Installation commands are not repeated here.
+  Done forgets the credential; closing preserves it in the pending card. The
+  native installer reads the unchanged JSON file through its interactive prompt
+  or `--credential-file`; tokens never enter command arguments.
 - **Add node**: the sandbox limits first, then the one-time command in a Terminal
   block (expiry countdown and Copy command in its header), the three progress
   steps, and, once the installer's minute passes, an amber card with the reason
