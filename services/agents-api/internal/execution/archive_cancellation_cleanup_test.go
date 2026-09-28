@@ -25,7 +25,7 @@ import (
 // Provider callbacks inspect the real database at the instant destructive
 // cleanup is invoked. They do not create containers or claim native evidence.
 type waitingCleanupProvider struct {
-	sandbox.Provider
+	sandbox.SandboxProvider
 	beforeKill func()
 }
 

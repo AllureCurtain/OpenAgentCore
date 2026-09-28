@@ -133,7 +133,7 @@ func (s *managedSetup) configuration(setup store.SandboxSetup) (execution.Prepar
 	}
 	selected := &execution.RuntimeProvider{InstallationID: setup.InstallationID, ProviderKind: setup.Provider, Generation: setup.Generation, Mode: setup.Mode, AdmissionPaused: setup.AdmissionPaused,
 		CoreURL: s.publicURL + "/api/v1", BackendFingerprint: setup.BackendFingerprint, Provider: provider}
-	if setup.Provider == "microsandbox" {
+	if _, supportsCheckpoint := provider.(sandbox.CheckpointProvider); supportsCheckpoint {
 		selected.Suspension = &execution.RuntimeSuspensionPolicy{IdleTimeout: time.Duration(setup.IdleSeconds) * time.Second,
 			Retention: time.Duration(setup.RetentionSeconds) * time.Second, MaxActive: 4, MaxRetained: 16}
 	}
@@ -176,7 +176,7 @@ func (s *managedSetup) Observe(ctx context.Context, target runtimeobs.Target) (r
 	return source.Observe(ctx, target)
 }
 
-func (s *managedSetup) provider(setup store.SandboxSetup) (sandbox.Provider, error) {
+func (s *managedSetup) provider(setup store.SandboxSetup) (sandbox.SandboxProvider, error) {
 	switch setup.Provider {
 	case "docker", "microsandbox":
 		if s.hub == nil {

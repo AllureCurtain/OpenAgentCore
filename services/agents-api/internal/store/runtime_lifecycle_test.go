@@ -71,12 +71,12 @@ func (p *lifecycleProvider) RunCommand(context.Context, sandbox.Reference, sandb
 	return sandbox.CommandResult{}, errors.New("not used")
 }
 
-func managedWorker(t *testing.T, s *store.Store, key string, p sandbox.Provider) (*execution.Worker, func()) {
+func managedWorker(t *testing.T, s *store.Store, key string, p sandbox.SandboxProvider) (*execution.Worker, func()) {
 	t.Helper()
 	return managedWorkerMode(t, s, key, p, false)
 }
 
-func managedWorkerMode(t *testing.T, s *store.Store, key string, p sandbox.Provider, maintenance bool) (*execution.Worker, func()) {
+func managedWorkerMode(t *testing.T, s *store.Store, key string, p sandbox.SandboxProvider, maintenance bool) (*execution.Worker, func()) {
 	t.Helper()
 	registry := gateway.NewRegistry()
 	if peer, ok := p.(interface {

@@ -35,7 +35,7 @@ type RuntimeProvider struct {
 	CoreURL                          string
 	InstallationID                   string
 	BackendFingerprint               string
-	Provider                         sandbox.Provider
+	Provider                         sandbox.SandboxProvider
 	AdmissionPaused                  bool
 	Suspension                       *RuntimeSuspensionPolicy
 }
@@ -95,7 +95,7 @@ func validatedRuntimeProvider(config *RuntimeProvider, registry *gateway.Registr
 	if copied.Mode != "" && copied.Mode != "nodes" && copied.Mode != "direct" {
 		return RuntimeProvider{}, sandbox.ErrInvalid
 	}
-	if copied.Mode == "direct" && (copied.ProviderKind != "e2b" || copied.LocalNodeID != "" || copied.Suspension != nil) {
+	if copied.Mode == "direct" && (copied.ProviderKind == "" || copied.LocalNodeID != "" || copied.Suspension != nil) {
 		return RuntimeProvider{}, sandbox.ErrInvalid
 	}
 	if config.Suspension != nil {

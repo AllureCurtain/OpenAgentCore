@@ -82,6 +82,7 @@ native differences.
 | [Nodes and sandbox backends: operator reference](services/agents-api/HOSTED-SANDBOX-MANAGER.md) | Node protocol, manual registration, placement, reset |
 | [Protocol coverage](contracts/agents-api/README.md) and [harness selection](contracts/agents-api/harness-selection.md) | Supported operations and native differences |
 | [Add a Harness](contracts/agents-api/harness-onboarding.md) | Required adapter interfaces, lifecycle, capabilities, registration and acceptance |
+| [Add a Sandbox Provider](docs/sandbox-provider.md) | Required lifecycle, optional capabilities, registration, ownership and contract tests |
 | [Landing page source](site/index.html) | The public site |
 
 ### Maintainers and advanced deployments

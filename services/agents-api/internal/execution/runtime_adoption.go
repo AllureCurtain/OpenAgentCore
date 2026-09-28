@@ -11,7 +11,7 @@ import (
 
 // VerifyLegacyRuntimeOwnership uses only positive, read-only Provider observations.
 // It runs before node placement and never becomes an execution fallback route.
-func VerifyLegacyRuntimeOwnership(ctx context.Context, p sandbox.Provider, allocation store.RuntimeAllocation) (err error) {
+func VerifyLegacyRuntimeOwnership(ctx context.Context, p sandbox.SandboxProvider, allocation store.RuntimeAllocation) (err error) {
 	failure := "resource_unconfirmed"
 	defer func() {
 		if err == nil {
