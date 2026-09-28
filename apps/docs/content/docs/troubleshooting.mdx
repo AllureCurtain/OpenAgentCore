@@ -123,7 +123,7 @@ refuses. `rotate-core-key` refuses to run on a Web-only installation.
 ## Projects and API keys
 
 Create Projects and issue their keys in Web, on **Projects and keys**, or with the
-[Core API](https://github.com/MiniMax-AI/parsar-core/blob/cd6a32c3de31d26b73ab92d21ba2aa7b067ba226/contracts/agents-api/admin-api.md) under `/core/v1/projects`. A key's
+[Core API](https://github.com/MiniMax-AI/parsar-core/blob/f9c46331224d589fc823ff69c2bc0fdc21525aec/contracts/agents-api/admin-api.md) under `/core/v1/projects`. A key's
 plaintext is shown once; Core stores only its digest. All keys of a Project share its
 assets and execution principal, and each write records the key that made it.
 
@@ -241,9 +241,9 @@ Core records which key made each public resource write, for the console. Set
 `core.write_audit_retention` in `config.json` (Go duration, at least `1h`, default
 `2160h`) to control how long non-creation history is kept; creation ownership is kept
 for good. Removing keys or resources does not delete these records. See the
-[query contract](https://github.com/MiniMax-AI/parsar-core/blob/cd6a32c3de31d26b73ab92d21ba2aa7b067ba226/contracts/agents-api/write-audit.md); administrator mutations
+[query contract](https://github.com/MiniMax-AI/parsar-core/blob/f9c46331224d589fc823ff69c2bc0fdc21525aec/contracts/agents-api/write-audit.md); administrator mutations
 have a separate
-[audit log](https://github.com/MiniMax-AI/parsar-core/blob/cd6a32c3de31d26b73ab92d21ba2aa7b067ba226/contracts/agents-api/admin-api.md#monitoring-and-audit). Neither
+[audit log](https://github.com/MiniMax-AI/parsar-core/blob/f9c46331224d589fc823ff69c2bc0fdc21525aec/contracts/agents-api/admin-api.md#monitoring-and-audit). Neither
 logs bodies or secrets.
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/cd6a32c3de31d26b73ab92d21ba2aa7b067ba226/docs/getting-started/operations.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f9c46331224d589fc823ff69c2bc0fdc21525aec/docs/getting-started/operations.md)

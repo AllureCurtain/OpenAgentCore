@@ -3939,7 +3939,11 @@ parser writes `installed.json` below the operator-owned capability directory
 private Runtime state and is never a public input. All adapters consume the same
 resolved installation root. The manifest
 binds Session/Environment identities and the ordered source-selection digest.
-Filesystem locking prevents overlapping installation. A partial, invalid or foreign
+A private completion receipt records only the installation root outside the
+installed tree, so a deleted snapshot cannot be mistaken for first preparation.
+It is written durably before execution, contains no capability configuration and
+is never exposed as a second inventory. Filesystem locking prevents overlapping
+installation. A partial, invalid or foreign
 snapshot fails closed without deleting files or silently reinstalling. Directory
 sources are copied only during first preparation; reconnect loads protected installed
 contents and validates the selection without rereading source directories. A new
