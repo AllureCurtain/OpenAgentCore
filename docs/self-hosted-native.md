@@ -173,3 +173,7 @@ this does not change the preparation protocol or account permissions. npm and
 Python dependencies use user-writable prefix/target directories. Setup uses Bash,
 including Git Bash on Windows. `packages.system` is rejected even when empty or
 null; managed images/templates must include system dependencies before launch.
+
+On Windows, stdio MCP commands named npm or npx (including explicit .cmd
+paths) run through the selected installation's JavaScript entrypoint with Node.
+Other batch wrappers require an explicit cmd.exe command and its arguments.

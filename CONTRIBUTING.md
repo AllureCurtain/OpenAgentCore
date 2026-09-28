@@ -284,8 +284,7 @@ Run `make check` before completion. The standalone gate includes all daemon/shar
 Go tests, Core contract/client/service tests, Core Web and TypeScript client
 checks (including fixture-only Playwright acceptance), a real dedicated PostgreSQL test
 database, byte-for-byte sqlc regeneration checks, standalone API builds, Claude SDK
-tests and packaging, MiniMax companion checks, and Rust filesystem-helper
-tests/format/Clippy. It intentionally has no product Web/server/installer gates. The full gate fails when the database variable is missing. The test database role
+tests and packaging, MiniMax companion checks, and native daemon filesystem tests. It intentionally has no product Web/server/installer gates. The full gate fails when the database variable is missing. The test database role
 needs CREATE DATABASE permission: managed-provider tests create and drop isolated
 `oac_*_tests` databases because provider identity is deployment-wide.
 Set `OAC_TEST_DATABASE_URL` to that dedicated database and `OAC_TEST_OFFICIAL_SDK_PYTHON`
@@ -293,8 +292,7 @@ to the pinned SDK interpreter. `PARSAR_AGENTS_API_TEST_DATABASE_URL` is retired;
 `make check-database` reports its replacement when only the old name is set.
 Tests must not bypass the production provider-switch guard.
 
-Use Go from `go.mod`, Node 22, pnpm 10.30.3, Python 3.9+, Rust 1.95.0 with rustfmt
-and Clippy, and Linux OpenSSL development libraries. `make sqlc-generate` owns only
+Use Go from `go.mod`, Node 22, pnpm 10.30.3 and Python 3.9+. `make sqlc-generate` owns only
 `services/agents-api/internal/db/sqlc` (sqlc v1.29.0). Do not rewrite landed
 migrations. The public protocol schema is `contracts/agents-api/openapi.yaml`;
 there is no product swaggo contract in this repository. Preserve its pinned types,
@@ -3379,7 +3377,10 @@ scratch remain under `OAC_RUNTIME_HOME/runtime/claude-sdk` for session ownership
 without restricting tools. Authentication remains under `OAC_RUNTIME_HOME/daemon`.
 The daemon requires neither nested sandbox privileges nor host security changes.
 
-The adapter advertises `local_runtime_v1` after checking the installed bridge and
+The `local_runtime_v2` capability identifies the current workspace and direct MCP
+launcher contract. Reject earlier workspace bundles; matching SDK versions alone
+do not establish adapter compatibility.
+The adapter advertises `local_runtime_v2` after checking the installed bridge and
 native binary. Windows additionally needs Git Bash for its Bash tool. Registration
 combines that check with the local binding; Core consumes the same readiness
 contract on every platform. The profile supports Bash/Read/Edit, preparation,

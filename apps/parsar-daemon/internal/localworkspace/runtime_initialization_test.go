@@ -48,6 +48,12 @@ func TestRuntimeInitializationPackageTargets(t *testing.T) {
 		suffix = ".exe"
 	}
 	for _, name := range []string{"node", "npm", "python3"} {
+		if name == "npm" && runtime.GOOS == "windows" {
+			if err = os.WriteFile(filepath.Join(bin, "npm.cmd"), []byte("@exit /b 99\r\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
 		if err = os.WriteFile(filepath.Join(bin, name+suffix), source, 0700); err != nil {
 			t.Fatal(err)
 		}
@@ -78,6 +84,12 @@ func TestRuntimeInitializationPackageTargets(t *testing.T) {
 		var args []string
 		if json.Unmarshal(raw, &args) != nil {
 			t.Fatal("invalid fixture receipt")
+		}
+		if action == "npm" && runtime.GOOS == "windows" {
+			cli := filepath.Join(bin, "node_modules", "npm", "bin", "npm-cli.js")
+			if len(args) == 0 || args[0] != cli {
+				t.Fatal("initializer bypassed the shared npm shim resolver", args)
+			}
 		}
 		flag, target := "--prefix", filepath.Join(packages, "npm")
 		if action == "python" {

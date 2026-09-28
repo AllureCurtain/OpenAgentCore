@@ -177,4 +177,8 @@ Python dependencies use user-writable prefix/target directories. Setup uses Bash
 including Git Bash on Windows. `packages.system` is rejected even when empty or
 null; managed images/templates must include system dependencies before launch.
 
+On Windows, stdio MCP commands named npm or npx (including explicit .cmd
+paths) run through the selected installation's JavaScript entrypoint with Node.
+Other batch wrappers require an explicit cmd.exe command and its arguments.
+
 [Repository source](https://github.com/MiniMax-AI/parsar-core/blob/281f243aa785ea25512a6157daa1d44197b9723e/docs/self-hosted-native.md)
