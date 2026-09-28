@@ -42,6 +42,10 @@ class InstallError(Exception):
     pass
 
 
+class RuntimeDownloadError(InstallError):
+    """A fixed private helper exit category for transfer/provenance failures."""
+
+
 COMMON = ("native/bin/oac-node", "runtime/seccomp.json")
 MICRO = ("native/bin/oac-microsandbox-provider", "native/microsandbox/msb",
          "native/microsandbox/libkrunfw.so.5.6.1")
@@ -190,12 +194,12 @@ def fetch(source, name):
             with open_request(source + "/node-install/" + name) as response:
                 raw = response.read(1024 * 1024 + 1)
             if len(raw) > 1024 * 1024:
-                raise InstallError("Node bootstrap metadata is too large: " + name)
+                raise RuntimeDownloadError("Node bootstrap metadata is too large: " + name)
             return io.BytesIO(raw)
         except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead) as error:
             if not transient(error) or attempt == 2:
                 status = " (HTTP " + str(error.code) + ")" if isinstance(error, urllib.error.HTTPError) else ""
-                raise InstallError("Cannot download node metadata " + name + status + "; check the console URL, TLS and network, then rerun") from None
+                raise RuntimeDownloadError("Cannot download node metadata " + name + status + "; check the console URL, TLS and network, then rerun") from None
             time.sleep(attempt + 1)
 
 
@@ -211,21 +215,27 @@ def metadata(source, bundle=None, prefix=""):
     with read("SHA256SUMS") as response:
         raw = response.read(1024 * 1024 + 1)
     if len(raw) > 1024 * 1024:
-        raise InstallError("Invalid distribution checksum list")
+        raise RuntimeDownloadError("Invalid distribution checksum list")
     sums = {}
-    for line in raw.decode().splitlines():
-        checksum, name = line.split("  ", 1)
-        if name in sums or not re.fullmatch(r"[0-9a-f]{64}", checksum):
-            raise InstallError("Invalid distribution checksum entry")
-        sums[name] = checksum
+    try:
+        for line in raw.decode().splitlines():
+            checksum, name = line.split("  ", 1)
+            if name in sums or not re.fullmatch(r"[0-9a-f]{64}", checksum):
+                raise RuntimeDownloadError("Invalid distribution checksum entry")
+            sums[name] = checksum
+    except ValueError:
+        raise RuntimeDownloadError("Invalid distribution checksum list") from None
     with read("manifest.json") as response:
         raw = response.read(1024 * 1024 + 1)
     if len(raw) > 1024 * 1024 or hashlib.sha256(raw).hexdigest() != sums.get("manifest.json"):
-        raise InstallError("Distribution manifest checksum mismatch")
-    manifest = json.loads(raw)
-    if (manifest.get("platform") != "linux/amd64" or not re.fullmatch(r"[0-9a-f]{40}", manifest.get("source_commit", ""))
+        raise RuntimeDownloadError("Distribution manifest checksum mismatch")
+    try:
+        manifest = json.loads(raw)
+    except (ValueError, TypeError):
+        raise RuntimeDownloadError("Invalid distribution manifest") from None
+    if (not isinstance(manifest, dict) or manifest.get("platform") != "linux/amd64" or not re.fullmatch(r"[0-9a-f]{40}", manifest.get("source_commit", ""))
             or not re.fullmatch(r"sha256:[0-9a-f]{64}", manifest.get("images", {}).get("runtime", ""))):
-        raise InstallError("Unsupported node distribution")
+        raise RuntimeDownloadError("Unsupported node distribution")
     distribution.image_identities(manifest, "runtime")
     for name in (COMMON[0], "images/runtime.tar.gz") + MICRO:
         distribution.artifact(manifest, name)
@@ -278,7 +288,7 @@ def download(source, name, root, expected, prefix=""):
     safe_directory(target.parent)
     if existing_file(target):
         if file_digest(target) != expected:
-            raise InstallError("Installed node payload differs; refusing to overwrite it")
+            raise RuntimeDownloadError("Installed node payload differs; refusing to overwrite it")
         return
     descriptor, temporary = tempfile.mkstemp(prefix=".download-", dir=target.parent)
     try:
@@ -286,7 +296,7 @@ def download(source, name, root, expected, prefix=""):
             for block in iter(lambda: response.read(1024 * 1024), b""):
                 output.write(block)
         if file_digest(Path(temporary)) != expected:
-            raise InstallError("Node payload checksum mismatch: " + name)
+            raise RuntimeDownloadError("Node payload checksum mismatch: " + name)
         os.replace(temporary, target)
     finally:
         if os.path.exists(temporary):
@@ -450,6 +460,11 @@ def register_node(root, args, token):
             os.chmod(target, 0o700)
     node_generations.install_helper(root, args, sys.modules[__name__])
     safe_directory(root / "state/node")
+    lease_identity = {"installation_id": args.installation_id, "generation": args.configuration["generation"],
+                      "specification_digest": args.configuration["specification_digest"]}
+    with node_generations.collection_lease(root, args.configuration["generation"], sys.modules[__name__], lease_identity,
+                                           initialize=not (root / "provider.json").exists()):
+        pass
     print("Checking the sandbox runtime...", flush=True)
     runtime_image = prepare_runtime(root, args, manifest)
     # Retain the original network policy when recovering a partial installation.
@@ -1481,6 +1496,9 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         main()
+    except (RuntimeDownloadError, distribution.ArtifactError):
+        print("Runtime artifact transfer or verification failed", file=sys.stderr)
+        sys.exit(65)
     except ChildFailed as failure:
         if str(failure):
             print(str(failure), file=sys.stderr)

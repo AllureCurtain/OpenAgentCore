@@ -811,7 +811,14 @@ immutable allocation/placement generation. V1 keeps its qualified enrolled fallb
 Use sparse v2 control batches of at most eight entries with no lifetime cap. Omitted
 facts never authorize deletion. Correlate whole retention grants to connection,
 epoch, sequence, generation and digest; recheck queued/inflight/helper references.
-Permanent generation flock files survive updates and GC. Retained Runtime bytes and
+Permanent generation flock files survive updates and GC. Before any helper starts,
+the installer durably binds the original inode to installation/generation/specification
+identity; Python and Go openers verify it after every restart and never adopt a
+replacement or missing record. Preparation plans stay distinct from write-once final
+provider configurations: pending-only entries may recover or collect under Core
+authority, never serve. Resolve Docker's supported local image ID before publication.
+Only transfer/checksum/provenance errors report runtime_download_failed; preserve
+other fixed causes without parsing native error text. Retained Runtime bytes and
 the console's exact-release HTTP allowlist must agree. See
 `contracts/agents-api/node-generation-protocol.md` for recovery, immutable artifacts
 and the conservative v1 legacy-helper retention boundary.

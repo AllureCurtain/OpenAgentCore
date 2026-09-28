@@ -263,14 +263,36 @@ WebSocket doesn't pass the reverse proxy.
 
 ## Change the sandbox backend or size
 
-Changing backend type requires an explicit reset. Docker and microsandbox size or
-Runtime edits currently require zero held resources; node online updates are not
-available yet. These changes retire every node. Retired nodes drop out of the list, so there is nothing to
-remove in Web: on each host, run the [uninstall command](#remove-a-node) (Core no longer
-accepts the node, so it needs no `--force`), then add the host again with a new command.
+Changing backend type requires an explicit reset. Same-provider Docker and
+microsandbox size or Runtime edits advance the target generation without retiring
+nodes or moving existing Sessions. Version 2 nodes prepare the target independently;
+existing allocations and suspended VMs keep their original generation. A qualified
+older serving generation can still accept new Sessions when it has capacity,
+including while a newer target is preparing or has failed.
+
+Version 1 nodes report `update_required` for a newer target while retaining their
+qualified original serving generation. Run the verified current installer with
+`--update`, the same installation ID, Core/source URLs and original installation
+user (or sudo mode); do not provide another enrollment token. The update preserves
+node identity, retained Runtime files and running VMs. Its original v1 generation
+is conservatively retained locally because old helpers were not protected by the
+new generation lock. This retained disk usage is not reported as completed GC.
+
+Fresh v2 preparation keeps a private recovery plan until the actual provider image
+identity is resolved and its final configuration is published. Restart does not
+serve a pending or partly collected generation. Generation lock identity is durable:
+if a lease or its identity record is missing or replaced, preserve the installation
+for inspection. Do not delete records, recreate lock files or re-enroll to bypass
+that refusal; a process restart does not prove that older helpers have stopped.
+
+Automatic Docker generation GC removes only installation-owned generation/release
+files. Shared daemon images remain; a host administrator may remove them only after
+confirming no installation still needs them. Microsandbox image cleanup remains
+scoped to the installation's private native store and verified ownership receipts.
+
 The [operator reference](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
-describes today's procedure and API. Same-team E2B edits have a separate online
-Core API path and do not involve node installation.
+describes reset and API behavior. Same-team E2B edits have a separate online Core
+API path and do not involve node installation.
 
 
 ## Remove a node added before the rename

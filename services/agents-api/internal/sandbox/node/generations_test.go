@@ -369,3 +369,25 @@ func TestInterruptedCollectionNeverPreparesOrServesAfterRestart(t *testing.T) {
 		t.Fatal("cleanup did not settle")
 	}
 }
+
+func TestPreparationDiagnosticPreservesTypedCause(t *testing.T) {
+	for _, cause := range []error{sandbox.ErrRuntimeDownloadFailed, sandbox.ErrDockerUnavailable, sandbox.ErrKVMUnavailable, sandbox.ErrOwnership, context.Canceled, errors.New("raw secret provider text")} {
+		t.Run(sandbox.NodeDiagnostic(cause)+cause.Error(), func(t *testing.T) {
+			m, err := NewGenerationManager(t.Context(), GenerationManagerOptions{
+				Prepare: func(context.Context, uint64, string) (GenerationProvider, error) { return GenerationProvider{}, cause },
+				Remove:  func(context.Context, GenerationProvider) error { return nil },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer m.Close()
+			if err := m.Deployment(sandbox.NodeDeployment{Generation: 1, SpecificationDigest: strings.Repeat("a", 64)}); err != nil {
+				t.Fatal(err)
+			}
+			wait(t, func() bool { s := m.Statuses(); return len(s) == 1 && s[0].State == "failed" })
+			if got := m.Statuses()[0].Diagnostic; got != sandbox.NodeDiagnostic(cause) {
+				t.Fatal("wrong fixed diagnostic", got)
+			}
+		})
+	}
+}

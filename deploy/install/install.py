@@ -346,10 +346,47 @@ def prepare_node_payload(root, state, bundle, replace=False):
             raise InstallError("Installed node payload differs; preserve it and inspect the distribution")
         target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if target.exists():
-            for name in names:
+            # Validate the complete published metadata and every existing declared
+            # artifact before filling any absence. Existing bytes are immutable.
+            for name in names[:5]:
                 previous = target / name
-                if previous.is_symlink() or not previous.is_file() or digest(previous) != digest(source / name):
+                if (previous.parent.is_symlink() or previous.is_symlink() or not previous.is_file()
+                        or digest(previous) != digest(source / name)):
                     raise InstallError("Installed node payload differs; preserve it and inspect the distribution")
+            artifacts = target / "artifacts"
+            if artifacts.is_symlink() or artifacts.exists() and not artifacts.is_dir():
+                raise InstallError("Installed node artifact directory differs")
+            missing = []
+            for logical in manifest.get("artifacts", {}):
+                entry = artifact(manifest, logical)
+                name = "artifacts/" + entry["filename"]
+                previous = target / name
+                if previous.is_symlink() or previous.exists() and (not previous.is_file()
+                        or previous.stat().st_size != entry["size"] or digest(previous) != entry["sha256"]):
+                    raise InstallError("Installed node artifact differs; refusing repair")
+                if not previous.exists() and name in names:
+                    missing.append((name, entry))
+            if missing:
+                artifacts.mkdir(mode=0o700, exist_ok=True)
+                for name, entry in missing:
+                    descriptor, temporary = tempfile.mkstemp(prefix=".payload-", dir=artifacts)
+                    try:
+                        with os.fdopen(descriptor, "wb") as outgoing, (source / name).open("rb") as incoming:
+                            shutil.copyfileobj(incoming, outgoing)
+                            outgoing.flush()
+                            os.fsync(outgoing.fileno())
+                        if Path(temporary).stat().st_size != entry["size"] or digest(Path(temporary)) != entry["sha256"]:
+                            raise InstallError("Node artifact changed during repair")
+                        # Publish without replacing bytes introduced concurrently.
+                        os.link(temporary, target / name)
+                    finally:
+                        os.unlink(temporary)
+                for directory in (artifacts, target):
+                    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                    try:
+                        os.fsync(descriptor)
+                    finally:
+                        os.close(descriptor)
             return revision
         with tempfile.TemporaryDirectory(prefix=".payload-", dir=target.parent) as temporary:
             stage = Path(temporary) / "release"

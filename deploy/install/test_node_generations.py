@@ -29,10 +29,16 @@ class CollectionTests(unittest.TestCase):
         self.release.mkdir(parents=True)
         (self.release / "artifact").write_bytes(b"immutable bytes")
         node_generations.atomic_json(self.root / "provider.json", self.value)
+        self.initialize_lease()
         for patch in (mock.patch.object(node_generations, "owned_root", return_value=(self.root, {})),
                       mock.patch.object(installer, "checked", return_value="")):
             patch.start()
             self.addCleanup(patch.stop)
+
+    def initialize_lease(self):
+        with node_generations.collection_lease(self.root, self.args.generation, installer,
+                                               node_generations.marker_identity(self.args), initialize=True):
+            pass
 
     def test_busy_helper_refuses_all_mutations_then_same_inode_collects(self):
         lease = self.directory / "1.lease"
@@ -73,6 +79,7 @@ class CollectionTests(unittest.TestCase):
         foreign = self.root / "foreign"
         foreign.write_bytes(b"")
         foreign.chmod(0o600)
+        lease.unlink()
         for link in (os.symlink, os.link):
             link(foreign, lease)
             try:
@@ -145,6 +152,7 @@ class CollectionTests(unittest.TestCase):
         installer.checked.assert_not_called()
         self.assertTrue((self.release / "artifact").exists())
         self.args.generation = 2
+        self.initialize_lease()
         node_generations.collect(self.args, installer)
         self.assertFalse(self.release.exists())
 
@@ -177,6 +185,10 @@ class CollectionTests(unittest.TestCase):
         self.value["microsandbox"] = {"helper_path": str(self.release / "helper"), "runtime_home": str(home), "runtime_path": str(runtime), "firmware_path": str(self.release / "firmware"), "runtime_sha256": hashlib.sha256(runtime.read_bytes()).hexdigest(), "image": image}
         self.args.specification_digest = node_spec.digest("microsandbox", self.value["specification"])
         node_generations.atomic_json(self.root / "provider.json", self.value)
+        # This fixture changes provider before any helper exists.
+        for suffix in (".lease", ".lease-identity"):
+            (self.directory / ("1" + suffix)).unlink()
+        self.initialize_lease()
         return runtime, image, home
 
     def test_micro_interrupted_native_removal_and_missing_runtime_fail_closed(self):

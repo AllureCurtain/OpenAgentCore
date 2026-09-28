@@ -47,13 +47,39 @@ func managerSessionInput(key string) CreateSessionInput {
 // stays provider-ready while the Session is created.
 func createSessionOnNode(t *testing.T, s *Store, tenant string, input CreateSessionInput, node string) (Session, error) {
 	t.Helper()
-	var others []string
-	if err := s.pool.QueryRow(t.Context(), "WITH changed AS (UPDATE runtime_nodes SET provider_ready=false WHERE provider_ready AND id<>$1 RETURNING id) SELECT coalesce(array_agg(id::text),'{}') FROM changed", node).Scan(&others); err != nil {
+	// Use the same authenticated readiness observations as the scheduler. The
+	// compatibility provider_ready column alone is not admission authority.
+	type presence struct {
+		id, connection string
+		epoch          uint64
+	}
+	rows, err := s.pool.Query(t.Context(), "SELECT id::text, connection_id::text, connected_epoch FROM runtime_nodes WHERE provider_ready AND id<>$1 AND connection_id IS NOT NULL AND removed_at IS NULL", node)
+	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() {
-		if _, err := s.pool.Exec(context.WithoutCancel(t.Context()), "UPDATE runtime_nodes SET provider_ready=true WHERE id::text=ANY($1)", others); err != nil {
+	var others []presence
+	for rows.Next() {
+		var value presence
+		if err := rows.Scan(&value.id, &value.connection, &value.epoch); err != nil {
+			rows.Close()
 			t.Fatal(err)
+		}
+		others = append(others, value)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	for _, value := range others {
+		if err := s.HeartbeatRuntimeNode(t.Context(), value.id, value.connection, value.epoch, RuntimeNodeHealth{ProviderReady: false}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	defer func() {
+		for _, value := range others {
+			if err := s.HeartbeatRuntimeNode(context.WithoutCancel(t.Context()), value.id, value.connection, value.epoch, RuntimeNodeHealth{ProviderReady: true}); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}()
 	return s.CreateSession(t.Context(), tenant, input)

@@ -170,14 +170,39 @@ func (f *nodeIsolationFixture) session(node string, initialize bool) (string, st
 	if initialize {
 		input.InitialFiles = []store.InitialFile{{Type: "inline", Path: "/workspace/seed", Data: []byte("retained")}}
 	}
-	// Placement is automatic: only node stays provider-ready while it is created.
-	var others []string
-	if err := f.pool.QueryRow(f.t.Context(), "WITH changed AS (UPDATE runtime_nodes SET provider_ready=false WHERE provider_ready AND id<>$1 RETURNING id) SELECT coalesce(array_agg(id::text),'{}') FROM changed", node).Scan(&others); err != nil {
+	// Placement is automatic and generation readiness is current-connection
+	// authority. Do not merely change the legacy provider_ready projection.
+	type presence struct {
+		id, connection string
+		epoch          uint64
+	}
+	rows, err := f.pool.Query(f.t.Context(), "SELECT id::text, connection_id::text, connected_epoch FROM runtime_nodes WHERE provider_ready AND id<>$1 AND connection_id IS NOT NULL AND removed_at IS NULL", node)
+	if err != nil {
 		f.t.Fatal(err)
 	}
+	var others []presence
+	for rows.Next() {
+		var value presence
+		if err := rows.Scan(&value.id, &value.connection, &value.epoch); err != nil {
+			rows.Close()
+			f.t.Fatal(err)
+		}
+		others = append(others, value)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		f.t.Fatal(err)
+	}
+	for _, value := range others {
+		if err := f.store.HeartbeatRuntimeNode(f.t.Context(), value.id, value.connection, value.epoch, store.RuntimeNodeHealth{ProviderReady: false}); err != nil {
+			f.t.Fatal(err)
+		}
+	}
 	session, err := f.store.CreateSession(f.t.Context(), tenant, input)
-	if _, restoreErr := f.pool.Exec(f.t.Context(), "UPDATE runtime_nodes SET provider_ready=true WHERE id::text=ANY($1)", others); restoreErr != nil {
-		f.t.Fatal(restoreErr)
+	for _, value := range others {
+		if err := f.store.HeartbeatRuntimeNode(context.WithoutCancel(f.t.Context()), value.id, value.connection, value.epoch, store.RuntimeNodeHealth{ProviderReady: true}); err != nil {
+			f.t.Fatal(err)
+		}
 	}
 	if err != nil {
 		f.t.Fatal(err)
@@ -185,6 +210,10 @@ func (f *nodeIsolationFixture) session(node string, initialize bool) (string, st
 	env, err := f.store.GetSessionEnvironment(f.t.Context(), tenant, session.ID)
 	if err != nil {
 		f.t.Fatal(err)
+	}
+	var placed string
+	if err := f.pool.QueryRow(f.t.Context(), "SELECT node_id::text FROM runtime_placements WHERE environment_id=$1 AND released_at IS NULL", env.ID).Scan(&placed); err != nil || placed != node {
+		f.t.Fatal("fixture did not place on its authenticated ready node", placed, node, err)
 	}
 	return tenant, session, env
 }

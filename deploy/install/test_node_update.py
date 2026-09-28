@@ -87,6 +87,8 @@ class UpdateTests(unittest.TestCase):
             later["docker"]["image"] = "sha256:" + "9" * 64
             node_generations.atomic_json(self.root / "state/node/generations/2.json", later)
             grant.generation = 2
+            with node_generations.collection_lease(self.root, 2, installer, node_generations.marker_identity(grant), initialize=True):
+                pass
             node_generations.collect(grant, installer)
             self.assertTrue((self.root / "state/node/generations/2.dropped").exists())
             self.assertTrue(marker.exists())

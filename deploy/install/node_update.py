@@ -159,6 +159,9 @@ def retain_legacy(root, value, provider, installer):
     if path.exists() and installer.private_json(path) != expected:
         raise installer.InstallError("Legacy helper retention marker differs")
     node_generations.atomic_json(path, expected)
+    identity = dict(expected, installation_id=provider["installation_id"], generation=generation)
+    with node_generations.collection_lease(root, generation, installer, identity, initialize=True):
+        pass
     descriptor = os.open(directory.parent, os.O_RDONLY | os.O_DIRECTORY)
     try:
         os.fsync(descriptor)

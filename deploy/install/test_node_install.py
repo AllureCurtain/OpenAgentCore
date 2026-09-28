@@ -328,6 +328,8 @@ class NodeInstallTests(unittest.TestCase):
         self.assertTrue(installer.node_generations.image_available(successor, installer))
         self.args.generation = 2
         self.args.specification_digest = node_spec.digest("microsandbox", successor["specification"])
+        with installer.node_generations.collection_lease(self.root, 2, installer, installer.node_generations.marker_identity(self.args), initialize=True):
+            pass
         def inventory(command, *_args, **_kwargs):
             if command[1:3] == ["image", "list"]: return ""
             if command[1:3] == ["sandbox", "list"]: return "[]"
@@ -372,7 +374,8 @@ class NodeInstallTests(unittest.TestCase):
                 with self.assertRaises(OSError):
                     installer.node_generations.prepare(self.args, installer)
             directory = self.root / "state/node/generations"
-            saved = json.loads((directory / "2.json").read_text())
+            saved = json.loads((directory / "2.preparing").read_text())["configuration"]
+            self.assertFalse((directory / "2.json").exists())
             self.assertEqual(saved["specification"], config["specification"])
             self.assertFalse(json.loads((directory / "2.preparing").read_text())["import_started"])
             helper = Path(saved["microsandbox"]["helper_path"])
@@ -381,7 +384,7 @@ class NodeInstallTests(unittest.TestCase):
             installer.node_generations.prepare(self.args, installer)
             self.assertEqual(helper.stat().st_ino, inode)
             self.assertEqual(json.loads((directory / "2.json").read_text()), saved)
-            self.assertTrue(json.loads((directory / "2.preparing").read_text())["import_started"])
+            self.assertFalse((directory / "2.preparing").exists())
         self.assertEqual((self.root / "provider.json").read_bytes(), original)
 
     def test_restart_repairs_only_missing_micro_bytes_at_original_paths(self):
@@ -416,7 +419,7 @@ class NodeInstallTests(unittest.TestCase):
         helper = self.root / installer.MICRO[0]
         helper.unlink()
         directory = self.root / "state/node/generations"
-        directory.mkdir(mode=0o700)
+        directory.mkdir(mode=0o700, exist_ok=True)
         descriptor = os.open(directory / "1.lease", os.O_CREAT | os.O_RDWR, 0o600)
         try:
             for mode in (fcntl.LOCK_SH, fcntl.LOCK_EX):

@@ -71,7 +71,7 @@ func NewGenerationManager(ctx context.Context, options GenerationManagerOptions)
 			cancel()
 			return nil, sandbox.ErrInvalid
 		}
-		m.values[ref.Generation] = &localGeneration{value: GenerationProvider{Generation: ref.Generation, SpecificationDigest: ref.SpecificationDigest}, state: "failed", diagnostic: sandbox.NodeRuntimeDownloadFailed, repairing: true}
+		m.values[ref.Generation] = &localGeneration{value: GenerationProvider{Generation: ref.Generation, SpecificationDigest: ref.SpecificationDigest}, state: "failed", diagnostic: sandbox.NodeProviderUnavailable, repairing: true}
 	}
 	for _, ref := range options.Collect {
 		if !validGeneration(ref.Generation) || !validSpecificationDigest(ref.SpecificationDigest) || m.values[ref.Generation] != nil {
@@ -308,7 +308,7 @@ func (m *GenerationManager) prepareLoop() {
 				value.Close()
 			}
 			g.state = "failed"
-			g.diagnostic = sandbox.NodeRuntimeDownloadFailed
+			g.diagnostic = sandbox.NodeDiagnostic(err)
 			g.failures++
 			delays := []time.Duration{time.Minute, 2 * time.Minute, 5 * time.Minute, 10 * time.Minute, 30 * time.Minute}
 			index := g.failures - 1

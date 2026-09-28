@@ -2,7 +2,6 @@ package store
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/db/sqlc"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -314,21 +313,20 @@ func TestGenerationUpdateSerializesWithAllocationAdmission(t *testing.T) {
 
 func TestNodeRolloutSeparatesOfflinePinAndTargetReadiness(t *testing.T) {
 	for _, tc := range []struct {
-		name                  string
-		online, ready         bool
-		enrolled, pin, target int64
-		diagnostic, state     string
+		name                           string
+		online, ready                  bool
+		enrolled, pin, target          int64
+		targetState, diagnostic, state string
 	}{
-		{"offline pin", false, true, 1, 1, 2, "", "unknown"},
-		{"old serving", true, true, 1, 1, 2, "", "update_required"},
-		{"current serving", true, true, 2, 2, 2, "", "ready"},
-		{"current failed", true, false, 2, 2, 2, "kvm_unavailable", "failed"},
-		{"current unknown", true, false, 2, 2, 2, "", "unknown"},
+		{"offline pin", false, true, 1, 1, 2, "ready", "", "unknown"},
+		{"old serving", true, true, 1, 1, 2, "ready", "", "update_required"},
+		{"current serving", true, true, 2, 2, 2, "ready", "", "ready"},
+		{"current failed", true, false, 2, 2, 2, "failed", "kvm_unavailable", "failed"},
+		{"current unknown", true, false, 2, 2, 2, "", "", "unknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			raw, _ := json.Marshal(RuntimeNodeHealth{Diagnostic: tc.diagnostic})
-			got := nodeRollout(sqlc.ListRuntimeNodesRow{Online: tc.online, ProviderReady: tc.ready, DeploymentGeneration: tc.enrolled, ReadyGeneration: pgtype.Int8{Int64: tc.pin, Valid: true}, TargetGeneration: tc.target, Health: raw})
-			if got.State != tc.state || got.ReadyGeneration == nil || *got.ReadyGeneration != uint64(tc.pin) {
+			got := nodeRollout(sqlc.ListRuntimeNodesRow{Online: tc.online, ProviderReady: tc.ready, DeploymentGeneration: tc.enrolled, ReadyGeneration: pgtype.Int8{Int64: tc.pin, Valid: true}, TargetGeneration: tc.target, ProtocolVersion: 1, TargetState: tc.targetState, TargetDiagnostic: tc.diagnostic})
+			if got.State != tc.state || got.Diagnostic != tc.diagnostic || got.ReadyGeneration == nil || *got.ReadyGeneration != uint64(tc.pin) {
 				t.Fatal(got)
 			}
 		})

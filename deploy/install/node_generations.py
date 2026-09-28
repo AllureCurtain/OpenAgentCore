@@ -70,7 +70,7 @@ def generation_marker(root, generation, suffix, digest, installation, installer)
     with os.fdopen(descriptor) as stream:
         info = os.fstat(stream.fileno())
         if (not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600
-                or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_size > 4096):
+                or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_size > (16384 if suffix == ".preparing" else 4096)):
             raise installer.InstallError("Invalid generation ownership journal")
         try:
             value = json.load(stream)
@@ -79,6 +79,10 @@ def generation_marker(root, generation, suffix, digest, installation, installer)
         named = path.lstat()
         if (named.st_dev, named.st_ino) != (info.st_dev, info.st_ino):
             raise installer.InstallError("Generation ownership journal was replaced")
+    if digest is None:
+        digest = value.get("specification_digest") if isinstance(value, dict) else None
+        if not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
+            raise installer.InstallError("Invalid preparation specification identity")
     expected = {"installation_id": installation, "generation": generation, "specification_digest": digest}
     if (not isinstance(value, dict) or type(value.get("generation")) is not int
             or any(value.get(key) != item for key, item in expected.items())):
@@ -90,6 +94,13 @@ def generation_marker(root, generation, suffix, digest, installation, installer)
             raise installer.InstallError("Invalid generation collection journal")
     if suffix == ".preparing":
         keys.add("import_started")
+        if "configuration" in value:
+            keys.add("configuration")
+            plan = value["configuration"]
+            if (not isinstance(plan, dict) or plan.get("installation_id") != installation or plan.get("generation") != generation
+                    or plan.get("provider") not in ("docker", "microsandbox")
+                    or installer.node_spec.digest(plan["provider"], plan.get("specification")) != digest):
+                raise installer.InstallError("Invalid generation preparation plan")
         if type(value.get("import_started")) is not bool:
             raise installer.InstallError("Invalid generation preparation journal")
     if set(value) != keys:
@@ -181,7 +192,68 @@ def retained_configs(root, installer):
                 if value["generation"] in result and result[value["generation"]] != value:
                     raise installer.InstallError("Conflicting retained generation configuration")
                 result[value["generation"]] = value
+    if directory.exists():
+        for path in sorted(directory.glob("*.preparing")):
+            if not re.fullmatch(r"[1-9][0-9]*\.preparing", path.name):
+                raise installer.InstallError("Invalid preparation filename")
+            if not base:
+                raise installer.InstallError("Preparation installation identity is unavailable")
+            journal = generation_marker(root, int(path.stem), ".preparing", None, base["installation_id"], installer)
+            plan = journal.get("configuration")
+            if plan is None:
+                if int(path.stem) not in result:
+                    raise installer.InstallError("Preparation plan is missing")
+                continue
+            validate_preparation_plan(root, plan, base, installer)
+            if generation_marker(root, plan["generation"], ".dropped", journal["specification_digest"], plan["installation_id"], installer):
+                continue
+            final = result.get(plan["generation"])
+            if final is not None:
+                verify_plan_final(plan, final, installer)
+            else:
+                result[plan["generation"]] = plan
     return result
+
+
+def validate_preparation_plan(root, plan, base, installer):
+    if (not base or any(plan.get(key) != base.get(key) for key in ("installation_id", "provider", "core_url"))
+            or type(plan.get("generation")) is not int):
+        raise installer.InstallError("Preparation plan installation differs")
+    runtime = plan["specification"]["runtime"]
+    source = runtime["source_commit"]
+    if not re.fullmatch(r"[a-f0-9]{40}", source):
+        raise installer.InstallError("Preparation release identity differs")
+    if plan["provider"] == "docker":
+        policy = Path(plan["docker"]["seccomp_file"])
+        if policy not in (root / "runtime/seccomp.json", root / "releases" / source / "runtime/seccomp.json"):
+            raise installer.InstallError("Preparation policy is outside its immutable release")
+        if plan["docker"]["image"] not in (runtime["image_id"], runtime["image_manifest_digest"]):
+            raise installer.InstallError("Preparation image differs from the specification")
+        installer.no_links(policy)
+    else:
+        micro = plan["microsandbox"]
+        paths = [Path(micro[key]) for key in ("helper_path", "runtime_path", "firmware_path")]
+        if not any(paths == [release / name for name in installer.MICRO] for release in (root, root / "releases" / source)):
+            raise installer.InstallError("Preparation artifacts are outside their immutable release")
+        expected_home = generation_home(root, plan, base, installer)
+        if Path(micro["runtime_home"]) != expected_home:
+            raise installer.InstallError("Preparation native store differs")
+        for path in paths + [expected_home]:
+            installer.no_links(path)
+    configuration = dict(plan, core_url=plan["core_url"].removesuffix("/api/v1"))
+    installer.node_spec.verify_provider(plan, configuration, plan.get("docker", {}).get("image"))
+
+
+def verify_plan_final(plan, final, installer):
+    expected = copy.deepcopy(plan)
+    if plan["provider"] == "docker":
+        image = final.get("docker", {}).get("image")
+        runtime = plan["specification"]["runtime"]
+        if image not in (runtime["image_id"], runtime["image_manifest_digest"]):
+            raise installer.InstallError("Final Docker image differs from the preparation specification")
+        expected["docker"]["image"] = image
+    if expected != final:
+        raise installer.InstallError("Final generation differs from its immutable preparation plan")
 
 
 def owned_root(args, installer):
@@ -254,7 +326,10 @@ def runtime_files(root, value, args, manifest, sums, installer):
     if (release / "manifest.json").exists():
         if saved is None:
             raise installer.InstallError("Retained Runtime manifest is unreadable")
-        installer.node_spec.verify_release(args.configuration, saved)
+        try:
+            installer.node_spec.verify_release(args.configuration, saved)
+        except installer.node_spec.SpecificationError as error:
+            raise installer.RuntimeDownloadError("Retained Runtime release provenance differs") from error
     # Inspect every existing byte before starting any repair, so a missing file
     # cannot hide a conflicting sibling or redirect a later download.
     for name in names:
@@ -263,7 +338,7 @@ def runtime_files(root, value, args, manifest, sums, installer):
         if installer.existing_file(path):
             expected = sums[name] if name == "runtime/seccomp.json" else installer.distribution.artifact(manifest, name)["sha256"]
             if installer.file_digest(path) != expected:
-                raise installer.InstallError("Retained Runtime artifact checksum differs")
+                raise installer.RuntimeDownloadError("Retained Runtime artifact checksum differs")
     for name in names:
         installer.safe_directory((release / name).parent)
         if name == "runtime/seccomp.json":
@@ -277,12 +352,16 @@ def runtime_files(root, value, args, manifest, sums, installer):
 
 def prepare(args, installer):
     root, identity = owned_root(args, installer)
-    with installer.install_lock(root), collection_lease(root, args.generation, installer):
+    with installer.install_lock(root), collection_lease(
+            root, args.generation, installer, marker_identity(args),
+            initialize=args.generation not in retained_configs(root, installer)
+            and not (root / "state/node/generations" / (str(args.generation) + ".json")).exists()):
         directory = root / "state/node/generations"
+        target = directory / (str(args.generation) + ".json")
         if (generation_marker(root, args.generation, ".dropped", args.specification_digest, args.installation_id, installer)
                 or generation_marker(root, args.generation, ".collecting", args.specification_digest, args.installation_id, installer)):
             raise installer.InstallError("A dropped generation cannot be adopted again")
-        generation_marker(root, args.generation, ".preparing", args.specification_digest, args.installation_id, installer)
+        preparation = generation_marker(root, args.generation, ".preparing", args.specification_digest, args.installation_id, installer)
         args.core_url = identity["core_url"]
         args.configuration = installer.node_spec.fetch(args, "", identity, installer.open_request,
                                                        generation=args.generation, allow_selection_change=True)
@@ -293,11 +372,14 @@ def prepare(args, installer):
         base = installer.private_json(root / "provider.json")
         runtime = args.configuration["specification"]["runtime"]
         value = configurations.get(args.generation)
-        retained = value is not None
-        if retained:
+        finalized = target.exists() or base["generation"] == args.generation
+        if value is not None:
             installer.node_spec.verify_provider(value, args.configuration, value.get("docker", {}).get("image"))
         else:
             for candidate in configurations.values():
+                # Unpublished plans must never be used as ready reuse candidates.
+                if any((directory / (str(candidate["generation"]) + suffix)).exists() for suffix in (".preparing", ".collecting", ".dropped")):
+                    continue
                 if candidate["specification"]["runtime"] == runtime and image_available(candidate, installer):
                     value = copy.deepcopy(candidate)
                     value["generation"] = args.generation
@@ -305,25 +387,22 @@ def prepare(args, installer):
                     if args.provider == "microsandbox":
                         value["microsandbox"].update(value["specification"]["resources"])
                     break
-        if value is None or not image_available(value, installer):
+        if not finalized or value is None or not image_available(value, installer):
             settings = installer.private_json(root / "preparation.json")
             args.source_url = installer.origin(settings["source_url"])
             args.bundle = None
             manifest, sums = installer.metadata(args.source_url, prefix="releases/" + runtime["source_commit"] + "/")
-            installer.node_spec.verify_release(args.configuration, manifest)
+            try:
+                installer.node_spec.verify_release(args.configuration, manifest)
+            except installer.node_spec.SpecificationError as error:
+                raise installer.RuntimeDownloadError("Runtime release provenance differs") from error
             if args.provider == "microsandbox":
-                args.runtime_home = Path(value["microsandbox"]["runtime_home"]) if retained else generation_home(root, args.configuration, base, installer)
-            if not retained:
-                # Persist the exact authorized identity before any artifact/import
-                # mutation. Interrupted preparation must remain discoverable after
-                # node restart; file presence still requires a real provider probe.
+                args.runtime_home = Path(value["microsandbox"]["runtime_home"]) if value else generation_home(root, args.configuration, base, installer)
+            if value is None:
                 value = installer.provider_config(root / "releases" / runtime["source_commit"], args, manifest, runtime["image_id"])
-                target = directory / (str(args.generation) + ".json")
-                if installer.existing_file(target) and installer.private_json(target) != value:
-                    raise installer.InstallError("Immutable generation configuration differs")
-                atomic_json(directory / (str(args.generation) + ".preparing"), dict(marker_identity(args), import_started=False))
-                atomic_json(target, value)
-                retained = True
+            if preparation is None:
+                preparation = dict(marker_identity(args), import_started=False, configuration=copy.deepcopy(value))
+                atomic_json(directory / (str(args.generation) + ".preparing"), preparation)
             release = runtime_files(root, value, args, manifest, sums, installer)
             if args.provider == "microsandbox":
                 installer.safe_directory(args.runtime_home)
@@ -331,24 +410,57 @@ def prepare(args, installer):
                 if not owner.exists() and any(args.runtime_home.iterdir()):
                     raise installer.InstallError("Versioned microsandbox store contains unowned state")
                 installer.write_once(owner, installer.json_text({"installation_id": args.installation_id}))
-            atomic_json(directory / (str(args.generation) + ".preparing"), dict(marker_identity(args), import_started=True))
+            preparation = dict(preparation, import_started=True)
+            atomic_json(directory / (str(args.generation) + ".preparing"), preparation)
             runtime_image = installer.prepare_runtime(release, args, manifest)
-            if retained:
+            if finalized:
                 installer.node_spec.verify_provider(value, args.configuration, runtime_image)
-            else:
-                value = installer.provider_config(release, args, manifest, runtime_image)
-        target = directory / (str(args.generation) + ".json")
-        if installer.existing_file(target) and installer.private_json(target) != value:
-            raise installer.InstallError("Immutable generation configuration differs")
-        atomic_json(target, value)
+            elif args.provider == "docker":
+                if runtime_image not in (runtime["image_id"], runtime["image_manifest_digest"]):
+                    raise installer.InstallError("Resolved Docker image is outside the authorized specification")
+                value = copy.deepcopy(value)
+                value["docker"]["image"] = runtime_image
+        if preparation and preparation.get("configuration"):
+            verify_plan_final(preparation["configuration"], value, installer)
+        if installer.existing_file(target):
+            if installer.private_json(target) != value:
+                raise installer.InstallError("Immutable generation configuration differs")
+        else:
+            atomic_json(target, value)
+        # If interrupted after publication, restart rechecks the same plan and
+        # final identity. It never edits the published provider configuration.
+        pending = directory / (str(args.generation) + ".preparing")
+        pending.unlink(missing_ok=True)
+        descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
 
 
 @contextlib.contextmanager
-def collection_lease(root, generation, installer):
+def collection_lease(root, generation, installer, identity=None, initialize=False):
     directory = root / "state/node/generations"
     installer.safe_directory(directory)
     path = directory / (str(generation) + ".lease")
-    descriptor = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    record = directory / (str(generation) + ".lease-identity")
+    if identity is None:
+        value = retained_configs(root, installer).get(generation)
+        if value is None:
+            # Dropped configurations remain as immutable identity receipts.
+            value = installer.private_json(directory / (str(generation) + ".json")) or installer.private_json(root / "provider.json")
+        if not value or value["generation"] != generation:
+            raise installer.InstallError("Generation lease identity is unavailable")
+        identity = {"installation_id": value["installation_id"], "generation": generation,
+                    "specification_digest": installer.node_spec.digest(value["provider"], value["specification"])}
+    flags = os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
+    created = False
+    if initialize and not record.exists() and not record.is_symlink():
+        # O_EXCL prevents adopting an old unrecorded inode after interruption.
+        descriptor = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)
+        created = True
+    else:
+        descriptor = os.open(path, flags)
     try:
         info = os.fstat(descriptor)
         if (not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600
@@ -361,6 +473,24 @@ def collection_lease(root, generation, installer):
         named = path.lstat()
         if (named.st_dev, named.st_ino) != (info.st_dev, info.st_ino):
             raise installer.InstallError("Generation helper lease was replaced")
+        expected = dict(identity, device=info.st_dev, inode=info.st_ino)
+        if created:
+            os.fsync(descriptor)
+            atomic_json(record, expected)
+        else:
+            installer.no_links(record)
+            fd = os.open(record, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+            with os.fdopen(fd) as stream:
+                saved_info = os.fstat(stream.fileno())
+                if (not stat.S_ISREG(saved_info.st_mode) or stat.S_IMODE(saved_info.st_mode) != 0o600
+                        or saved_info.st_uid != os.geteuid() or saved_info.st_nlink != 1 or saved_info.st_size > 4096):
+                    raise installer.InstallError("Invalid durable generation lease identity")
+                saved = json.load(stream)
+                named_record = record.lstat()
+                if (named_record.st_dev, named_record.st_ino) != (saved_info.st_dev, saved_info.st_ino):
+                    raise installer.InstallError("Durable generation lease identity was replaced")
+                if saved != expected or any(type(saved.get(key)) is not int for key in ("generation", "device", "inode")):
+                    raise installer.InstallError("Generation helper lease identity differs; retain its payload")
         yield
     finally:
         # Never unlink a lease: a replacement inode could bypass an old helper.
@@ -369,7 +499,7 @@ def collection_lease(root, generation, installer):
 
 def collect(args, installer):
     root, _ = owned_root(args, installer)
-    with installer.install_lock(root), collection_lease(root, args.generation, installer):
+    with installer.install_lock(root), collection_lease(root, args.generation, installer, marker_identity(args)):
         configurations = retained_configs(root, installer)
         value = configurations.get(args.generation)
         if value is None:

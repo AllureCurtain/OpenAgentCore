@@ -44,8 +44,9 @@ the parent counts that helper through its actual `Wait` completion.
 
 Every generation also owns a permanent private lease file at
 `state/node/generations/<generation>.lease`. Before starting a native helper, the
-node acquires its shared flock and checks the generation's dropped tombstone under
-that lock. The helper inherits the descriptor. The node closes its own descriptor
+node acquires its shared flock and validates the durable lease identity under
+that lock. It also requires the matching published final provider configuration
+and absence of preparing, collecting and dropped journals. The helper inherits the descriptor. The node closes its own descriptor
 only after `Wait`; it never explicitly unlocks the shared open-file description.
 Thus caller cancellation or node exit does not release a live helper's reference.
 New native helpers set this descriptor close-on-exec before calling the SDK so VM
@@ -56,7 +57,19 @@ removing shared images or release files, or publishing the dropped tombstone. It
 keeps the lock through those changes. Lock files belong to stable node state and
 are never removed or atomically replaced during collection. Symlinks, multiply
 linked files, foreign ownership, unsafe permissions and replaced lock paths are
-refused. A dropped generation cannot be prepared or used again; a future rollback
+refused. Before the first helper can start, the installer exclusively creates the lease and
+fsyncs it, then atomically persists and fsyncs a private `.lease-identity` record and
+its parent directory. The record binds installation, generation, specification
+digest, device and inode. Python exclusive collection/repair and Go shared helper
+openers validate the same record on every open, including after node restart.
+Neither opener adopts a missing identity, replaces its inode, or erases
+it after GC. Initialization interrupted before the identity is durable refuses
+re-adoption; preserve the installation for inspection. A removed identity or an
+owned replacement 0600 lease still refuses, even when its current fstat/lstat agree.
+The approved v1 update initializes this new fence before starting v2 but retains
+its separate legacy-unfenced marker for already-running old helpers.
+
+A dropped generation cannot be prepared or used again; a future rollback
 would require a new generation and a separate policy.
 
 An immutable older native helper may pass its inherited descriptor to descendants.
@@ -100,7 +113,7 @@ No connection-established deployment facts means no preparation starts. Repair
 preserves existing configurations and paths, verifies the selected release and all
 existing sibling checksums, and downloads only absent immutable files. Conflicting
 bytes or a different retained specification refuse repair. A missing complete
-provider configuration remains a refusal rather than a guessed reconstruction.
+provider configuration without an exact durable preparation plan remains a refusal rather than a guessed reconstruction.
 
 Repair takes the same exclusive generation lease and installation lock used by
 collection. A live helper or concurrent collector therefore retains ownership;
@@ -141,14 +154,41 @@ retained provider after the original Runtime bytes have gone. Shared native path
 are compared across all retained configurations before removal. The v1
 legacy-unfenced marker still prevents any collection of its original payload.
 
-New preparation records its exact identity before downloads and records import
-start before invoking the native importer. An interrupted download can repair only
-missing bytes at the original paths. If collection precedes any import attempt,
-the preparation journal proves that this generation has no imported native image.
-An older or interrupted generation whose native executable is missing and whose
-import may have started remains conservatively retained; missing files do not
-prove native absence. Receipt/store history and a legacy-unfenced generation are
-never erased using an empty native inventory.
+New preparation has two distinct records. Before downloads, `.preparing` holds the
+immutable installation/generation/specification identity, private provider paths
+and `import_started:false`; it is a recovery/collection plan, not a published
+provider. Before invoking the importer, the same plan records `import_started:true`.
+Both Python retention discovery and Go restart recovery recognize pending-only
+plans, but never build, probe or acquire a provider from them. Current-connection
+Core authorization is still required for recovery or collection.
+
+Only successful preparation publishes the final `.json` provider configuration.
+Docker records the actual immutable local ID returned by the resolver; either
+builder-proven config or manifest identity can be valid for the same specification.
+The final configuration is write-once. Publication is durable before clearing the
+preparation journal. Interruption between those steps revalidates the same plan
+and existing final identity; it does not permit editing a published configuration.
+Plan/spec/path drift refuses. A canceled or failed import remains visible to fresh
+Core retention exchange without becoming a serving generation.
+
+An interrupted download repairs only missing bytes at the original paths. If
+collection precedes any import attempt, the preparation journal proves that this
+generation has no imported native image. An older or interrupted generation whose
+native executable is missing and whose import may have started remains retained;
+missing files do not prove native absence. Receipt/store history and a
+legacy-unfenced generation are never erased using an empty native inventory.
+
+Preparation diagnostics preserve fixed typed causes. Only artifact transfer,
+checksum or release-provenance failures report `runtime_download_failed`. A private
+preparer exit category communicates that class without parsing stderr; provider,
+ownership, cancellation and unclassified failures remain their existing typed
+code or `provider_unavailable`. No raw provider text crosses the node protocol.
+
+Published console releases keep immutable metadata and existing artifact bytes.
+A rerun first validates all published metadata and every existing declared artifact,
+then may atomically add only absent, checksum-matched declared artifacts. This
+supports thin-release completion and retained HTTP artifact repair. Any existing
+conflict prevents all additions; repair never overwrites a conflicting artifact.
 
 ## Identity-preserving program updates
 

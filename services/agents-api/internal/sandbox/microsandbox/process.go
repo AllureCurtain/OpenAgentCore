@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -20,7 +22,8 @@ type ProcessCaller struct {
 	active atomic.Int64
 	// LeasePath belongs to the permanent node state namespace, not a release.
 	// It is never unlinked, including after the generation is collected.
-	LeasePath string
+	LeasePath     string
+	LeaseIdentity LeaseIdentity
 }
 
 func (p *ProcessCaller) Quiescent() bool { return p.active.Load() == 0 }
@@ -115,7 +118,7 @@ func (p *ProcessCaller) acquireLease() (*os.File, error) {
 	if p.LeasePath == "" {
 		return nil, nil
 	}
-	fd, err := syscall.Open(p.LeasePath, syscall.O_RDWR|syscall.O_CREAT|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0600)
+	fd, err := syscall.Open(p.LeasePath, syscall.O_RDWR|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0600)
 	if err != nil {
 		return nil, err
 	}
@@ -136,8 +139,95 @@ func (p *ProcessCaller) acquireLease() (*os.File, error) {
 	if err != nil || !os.SameFile(info, named) {
 		return fail(errors.New("generation lease replaced"))
 	}
-	if _, err := os.Lstat(strings.TrimSuffix(p.LeasePath, ".lease") + ".dropped"); !os.IsNotExist(err) {
-		return fail(errors.New("generation collected or unavailable"))
+	if err := p.verifyLeaseIdentity(stat); err != nil {
+		return fail(err)
+	}
+	for _, suffix := range []string{".preparing", ".collecting", ".dropped"} {
+		if _, err := os.Lstat(strings.TrimSuffix(p.LeasePath, ".lease") + suffix); !os.IsNotExist(err) {
+			return fail(errors.New("generation is not finalized and usable"))
+		}
+	}
+	if err := p.verifyFinalizedGeneration(); err != nil {
+		return fail(err)
 	}
 	return file, nil
+}
+
+// LeaseIdentity is recorded by the installer before a generation can spawn a
+// helper. Neither opener adopts a missing record or a replacement lease inode.
+type LeaseIdentity struct {
+	InstallationID      string `json:"installation_id"`
+	Generation          uint64 `json:"generation"`
+	SpecificationDigest string `json:"specification_digest"`
+}
+
+func (p *ProcessCaller) verifyLeaseIdentity(lease *syscall.Stat_t) error {
+	path := strings.TrimSuffix(p.LeasePath, ".lease") + ".lease-identity"
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return err
+	}
+	file := os.NewFile(uintptr(fd), path)
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || st.Uid != uint32(os.Geteuid()) || st.Nlink != 1 || st.Size > 4096 {
+		return errors.New("invalid durable generation lease identity")
+	}
+	var saved struct {
+		LeaseIdentity
+		Device uint64 `json:"device"`
+		Inode  uint64 `json:"inode"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(file, 4097))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(&saved) != nil || decoder.Decode(new(any)) != io.EOF || saved.LeaseIdentity != p.LeaseIdentity || saved.Generation == 0 || saved.InstallationID == "" || len(saved.SpecificationDigest) != 64 || saved.Device != uint64(lease.Dev) || saved.Inode != lease.Ino {
+		return errors.New("generation lease identity differs")
+	}
+	named, err := os.Lstat(path)
+	if err != nil || !os.SameFile(info, named) {
+		return errors.New("generation lease identity replaced")
+	}
+	return nil
+}
+
+// A durable lease alone is not a published provider. Initial enrollment stores
+// its final config at provider.json; later generations use <generation>.json.
+func (p *ProcessCaller) verifyFinalizedGeneration() error {
+	path := strings.TrimSuffix(p.LeasePath, ".lease") + ".json"
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		path = filepath.Join(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(p.LeasePath)))), "provider.json")
+	}
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return err
+	}
+	file := os.NewFile(uintptr(fd), path)
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || st.Uid != uint32(os.Geteuid()) || st.Nlink != 1 || st.Size > 16384 {
+		return errors.New("invalid finalized generation")
+	}
+	var value struct {
+		InstallationID string                 `json:"installation_id"`
+		Generation     uint64                 `json:"generation"`
+		Provider       string                 `json:"provider"`
+		Specification  sandbox.DeploymentSpec `json:"specification"`
+	}
+	decoder := json.NewDecoder(io.LimitReader(file, 16385))
+	if decoder.Decode(&value) != nil || decoder.Decode(new(any)) != io.EOF || value.InstallationID != p.LeaseIdentity.InstallationID || value.Generation != p.LeaseIdentity.Generation || value.Provider != "microsandbox" || value.Specification.Digest(value.Provider) != p.LeaseIdentity.SpecificationDigest {
+		return errors.New("finalized generation identity differs")
+	}
+	named, err := os.Lstat(path)
+	if err != nil || !os.SameFile(info, named) {
+		return errors.New("finalized generation was replaced")
+	}
+	return nil
 }
