@@ -55,10 +55,9 @@ Otherwise creation fails with 400 `model_provider_required`.
    The [native guide](../self-hosted-native.md#install-and-start) has Linux/macOS and
    PowerShell examples. No Docker installation is required for this native path.
 
-The console's existing **Connect a host** download command targets the Linux
-container installer, not the native installation command. Use the native guide for
-this workflow; downloading an executor credential is independent of the console's
-installer assets. Core must be reachable from the host: `wss://` is required
+The console's **Connect a host** flow provides native installation guidance and
+the executor credential download. Obtain the matching native distribution before
+running its command. Core must be reachable from the host: `wss://` is required
 outside loopback, while a local Core can use a loopback `ws://` URL.
 
 A connected Environment proves only the machine connection. Send a Turn to check
