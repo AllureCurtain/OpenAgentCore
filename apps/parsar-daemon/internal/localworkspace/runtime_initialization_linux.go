@@ -28,7 +28,7 @@ func (b *Binding) initializeRuntime(ctx context.Context, input proto.RuntimeInit
 	if err != nil || len(raw) > proto.RuntimePrepareMaxFrameBytes {
 		return agentcapabilities.ErrInvalid
 	}
-	result, err := runInitializationProcess(ctx, "/usr/bin/python3", []string{"-I", "-S", MCPInitializer, "initialize", b.workspace}, bytes.NewReader(raw))
+	result, err := runInitializationProcess(ctx, "/usr/bin/python3", []string{"-I", "-S", MCPInitializer, "initialize", b.workspace, b.capabilityRoot}, bytes.NewReader(raw))
 	if err != nil {
 		return err
 	}

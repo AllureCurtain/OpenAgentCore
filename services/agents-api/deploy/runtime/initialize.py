@@ -107,7 +107,7 @@ def sandbox(network, cwd, workspace=None):
     return args + ['--chdir', cwd, '--']
 
 
-def run(request, workspace=None):
+def run(request, workspace=None, capability_root=None):
     action = request['action']
     if action == 'configure':
         configure(request.get('env', {}))
@@ -116,6 +116,7 @@ def run(request, workspace=None):
         runpy.run_path('/usr/local/bin/oac-tool-root')['install'](request['packages'], workspace=workspace or str(ROOT / 'workspace'))
         return
     args = sandbox(request['network'], request.get('cwd', '/workspace'), workspace=workspace)
+    expose_capabilities(args, capability_root)
     if action == 'setup':
         command = request['command']
         if not isinstance(command, str) or not command or '\x00' in command:
@@ -210,6 +211,23 @@ def stdio_lifetime(args):
         os.close(parent_fd)
 
 
+def expose_capabilities(args, capability_root):
+    """Expose only the Runtime-owned capability tree, including custom layouts."""
+    if capability_root is None:
+        return
+    path = Path(capability_root)
+    if (not capability_root.startswith('/') or capability_root == '/'
+            or os.path.normpath(capability_root) != capability_root
+            or any(ord(c) < 32 or ord(c) == 127 or c == '\\' for c in capability_root)
+            or path.resolve() != path):
+        raise ValueError('invalid Runtime capability directory')
+    # Configuration may precede the first bundle import or empty finalization.
+    if path.exists():
+        if not path.is_dir():
+            raise ValueError('invalid Runtime capability directory')
+        args[-1:-1] = ['--ro-bind', capability_root, capability_root]
+
+
 def stdio(installation_root, workspace, package, server):
     """Preserve the native MCP descriptors while entering the existing sandbox."""
     for value in (installation_root, workspace):
@@ -224,15 +242,16 @@ def stdio(installation_root, workspace, package, server):
     helper = '/tmp/oac-mcp-exec'
     # System-package roots predate daemon installation. Mount only the fixed
     # static helper, never native configuration, credentials or Runtime state.
-    args[-1:-1] = ['--ro-bind', '/usr/local/bin/oac-daemon', helper, '--ro-bind', installation_root, installation_root]
+    expose_capabilities(args, installation_root)
+    args[-1:-1] = ['--ro-bind', '/usr/local/bin/oac-daemon', helper]
     args += [helper, 'runtime-mcp-exec', installation_root, package, server]
     return stdio_lifetime(args)
 
 
 def main():
-    workspace = None
-    if len(sys.argv) == 3 and sys.argv[1] == 'initialize':
-        workspace = sys.argv[2]
+    workspace, capability_root = None, None
+    if len(sys.argv) == 4 and sys.argv[1] == 'initialize':
+        workspace, capability_root = sys.argv[2:]
     elif len(sys.argv) != 1:
         try:
             if len(sys.argv) != 6 or sys.argv[1] != 'stdio':
@@ -259,7 +278,7 @@ def main():
             run(request)
         else:
             roots(workspace)
-            run(request, workspace=workspace)
+            run(request, workspace=workspace, capability_root=capability_root)
     except Exception as error:
         print(failed_receipt(error))
         return 1

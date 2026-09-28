@@ -119,18 +119,42 @@ class FailureReceiptTest(unittest.TestCase):
             workspace = str(Path(directory).resolve())
             stdin = mock.Mock()
             stdin.buffer = io.BytesIO(b'{"version":1,"action":"configure"}')
-            with mock.patch.object(initialize.sys, 'argv', ['initialize', 'initialize', workspace]), \
+            with mock.patch.object(initialize.sys, 'argv', ['initialize', 'initialize', workspace, workspace + '/caps']), \
                  mock.patch.object(initialize.sys, 'stdin', stdin), \
                  mock.patch.object(initialize, 'roots') as roots, \
                  mock.patch.object(initialize, 'run') as run, \
                  contextlib.redirect_stdout(io.StringIO()) as output:
                 self.assertEqual(initialize.main(), 0)
                 roots.assert_called_once_with(workspace)
-                run.assert_called_once_with({'version': 1, 'action': 'configure'}, workspace=workspace)
+                run.assert_called_once_with({'version': 1, 'action': 'configure'}, workspace=workspace, capability_root=workspace + '/caps')
                 self.assertEqual(json.loads(output.getvalue()), {'version': 1, 'outcome': 'completed'})
             with mock.patch.object(initialize, 'configure') as configure:
                 initialize.run({'action': 'configure'}, workspace=workspace)
                 configure.assert_called_once_with({})
+
+    def test_setup_mounts_custom_capabilities_read_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            capabilities = base / 'capabilities'
+            capabilities.mkdir()
+            for system in (False, True):
+                with self.subTest(system=system), \
+                     mock.patch.object(initialize, 'sandbox', return_value=['system-root' if system else 'bwrap', '--']), \
+                     mock.patch.object(initialize.subprocess, 'run') as execute:
+                    initialize.run({'action': 'setup', 'network': 'enabled', 'command': 'true'},
+                                   workspace=str(base / 'workspace'), capability_root=str(capabilities))
+                    args = execute.call_args.args[0]
+                    self.assertIn(['--ro-bind', str(capabilities), str(capabilities)],
+                                  [args[i:i+3] for i in range(len(args)-2)])
+                    self.assertLess(args.index(str(capabilities)), args.index('--'))
+            alias = base / 'alias'
+            alias.symlink_to(capabilities, target_is_directory=True)
+            for invalid in ('relative', '/', str(alias), str(base / 'capabilities' / '..')):
+                with self.assertRaises(ValueError):
+                    initialize.expose_capabilities(['bwrap', '--'], invalid)
+            args = ['bwrap', '--']
+            initialize.expose_capabilities(args, str(base / 'not-installed'))
+            self.assertEqual(args, ['bwrap', '--'])
 
     def test_sandboxed_step_reports_only_its_exit_status(self):
         for status in (1, 3, 100, 255):
