@@ -107,6 +107,8 @@ type Session struct {
 	subs              map[string]*Subscription
 	preparationMu     sync.Mutex
 	preparations      map[string]*preparationSubscription
+	capabilitiesMu    sync.Mutex
+	capabilities      map[string]chan proto.Envelope
 	workspaceWriteMu  sync.Mutex
 	workspaceWrites   map[string]chan proto.Envelope
 	suspendMu         sync.Mutex
@@ -273,6 +275,7 @@ func (s *Session) Close(reason string) {
 		s.closeWorkspaceReads()
 		s.closeSuspendReplies()
 		s.closeWorkspaceWrites()
+		s.closeCapabilities()
 		s.closeWorkspaceExports()
 		s.markOfflineOnClose()
 		s.releaseOwnerLease()
@@ -604,6 +607,9 @@ func (s *Session) dispatch(env proto.Envelope) {
 	switch env.Type {
 	case proto.TypeWorkspaceExportResult:
 		s.dispatchWorkspaceExport(env)
+		return
+	case proto.TypeRuntimePrepareResult:
+		s.dispatchCapabilities(env)
 		return
 	case proto.TypeWorkspaceWriteResult:
 		s.dispatchWorkspaceWrite(env)

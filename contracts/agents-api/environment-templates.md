@@ -73,8 +73,9 @@ Session, omission and null inherit, while a supplied list replaces the entire fi
 set, including `[]` clearing it. Paths are not merged between the two sources.
 The effective list retains the existing validation and tenant-owned source checks.
 
-Core initializes both paths with the same trusted file installer through Provider
-RunCommand. Daemon authentication remains available, but native preparation and live
+Core initializes both paths through the authenticated daemon's typed `runtime_prepare`
+file operation. The Runtime resolves the logical workspace path and owns the trusted
+file installer. Daemon authentication remains available, but native preparation and live
 Files wait for all writes. Each file gets a two-minute transfer budget; the batch has
 a thirty-minute local budget and shares maintenance scans with other allocations.
 These are local operational limits, not verified upstream timing. Initial input
@@ -126,14 +127,14 @@ in its creation transaction. Later source deletion, default changes or template
 updates cannot change that Session or its committed creation retry. A supplied
 Session Skill list replaces the template list; omission/null inherit. Template
 responses include `version: null` for an unresolved default selector; resolved
-Session references retain a concrete version string. See [resource selector
-qualification](resource-selector-semantics.md) and [null selection evidence](template-null-selection.md).
+Session references retain a concrete version string. See
+[resource selector qualification](resource-selector-semantics.md) and [null selection evidence](template-null-selection.md).
 References return type/skill_id/version/name/description in Session metadata,
 while template responses retain unresolved selectors. Confidential bundle content
 never appears in these metadata responses. The common Runtime installation path
 receives frozen files and descriptive metadata, without source or template IDs.
 
-Inline Skill ZIPs use the same initializer:
+Inline Skill ZIPs use the shared Runtime capability installer:
 
 ```python
 import base64
@@ -163,10 +164,15 @@ resource-bound template and Session snapshots. Updates replace supplied `skills`
 omission preserves and null/[] clears. Existing Sessions retain their frozen
 content after template update/deletion.
 
-The shared initializer installs Skills under
-`/environment/initialization/capabilities/skills/<name>` before setup and native execution.
-Setup and native tools can read that tree but cannot write it; completed recovery
-never reinstalls it. The public descriptor requests capability installation; the common daemon resolves protected metadata and paths for native preparation.
+Core transfers frozen Skill archives over the authenticated Runtime connection.
+Runtime's shared parser installs them under its operator-bound capability root
+(default `/environment/initialization/capabilities/skills/<name>` for each Skill)
+before setup and native execution;
+The same daemon handles initial files, configuration, packages and setup; Providers
+only bootstrap it and manage compute resources. Setup and native tools can read
+that tree but cannot write it. Completed recovery loads the protected installation
+without reinstalling. The common Runtime resolves installed metadata and paths before
+invoking the native executor factory.
 Codex registers native extra roots, Claude creates its own explicit Skill plugin
 envelope, and MiniMax points its native user-global catalog at the shared root.
 MiniMax retains disabled unrestricted built-in tools and uses its existing
@@ -192,18 +198,23 @@ Referencing Session Plugin lists inherit on omission/null and replace when a
 non-null list is supplied, including empty-list clearing. Template resource updates
 continue to accept null/empty clearing.
 
-`capability_directories` currently accepts clean absolute paths within `/workspace`.
-Initial files and setup can populate them. The shared initializer snapshots these
-directories after setup, then publishes one protected installed manifest. Recovery
-uses those installed bytes even if the source directory changes or is removed.
-This timing and workspace restriction are local implementation choices, not claims
-about unspecified upstream behavior. A supplied Session directory list replaces
+Hosted Template and inline `capability_directories` accept clean absolute paths
+within `/workspace`; self-hosted local selections have their
+[separate public input](environments.md#runtime-capability-preparation).
+Initial files and setup can populate hosted directories. Runtime snapshots them after
+setup and writes the shared protected `installed.json`, bound to the Session,
+Environment and source-selection digest. Recovery loads those installed bytes even
+if a source directory changes or is removed; a new Session captures its own snapshot.
+Partial or conflicting installation fails rather than silently recapturing sources.
+This timing and the hosted path restriction are local implementation choices, not
+claims about unspecified upstream behavior. A supplied Session directory list replaces
 the template list; omitted/null lists inherit. Missing, overlapping duplicate Skill
 names, unsupported manifests and nonregular files reject initialization without
 publishing completion. Directory-discovered Skills do not become fabricated
 inline entries in public `skills` or `plugins` metadata.
 
-The common daemon resolves the installed manifest before executable preparation;
+The common Runtime resolves the installed manifest during admitted asynchronous
+preparation, before creating a native executor;
 read-only Files operations retain their existing minimal requirements. Native
 adapters consume Runtime-owned Skill and package roots. Codex uses explicit roots,
 MiniMax uses its native registry and Claude uses controlled envelopes with explicit
@@ -218,8 +229,8 @@ combined installed capabilities are limited to 50 Skills and 50 MiB. Limits are
 implementation bounds. Native shell preprocessing, dependency activation and
 nested discovery retain the existing adapter restrictions.
 
-Real standalone Docker acceptance on 2026-09-21 passed with the fixed official
-SDK and raw HTTP against current Core/daemon/adapters on qualified native images:
+Historical standalone Docker acceptance on 2026-09-21 passed with the fixed official
+SDK and raw HTTP against the then-current Core/daemon/adapters on qualified native images:
 Codex/Kimi (258.08s), Claude/Kimi (187.81s) and MiniMax Code/MiniMax (250.23s).
 Each exercised two Plugin Skills with package-relative resources and one directory
 Skill generated during setup, public Files/Artifacts and tenant rejection, retained
@@ -237,7 +248,8 @@ fixture is `services/agents-api/tests/official_environment_plugins.py`; operator
 runners reuse existing standalone acceptance and private model configuration.
 A user-authorized reused-context GPT-6 Astra high independent review of all 60
 changed files found no material actionable findings. Those historical results do
-not qualify Plugin MCP. Portable root `plugin.json` applicability and the unconfirmed
+not qualify Plugin MCP or the later shared Runtime transport and self-hosted directory
+preparation. Portable root `plugin.json` applicability and the unconfirmed
 semantics above remain gaps;
 these results do not establish complete Environment Templates or protocol compatibility.
 
@@ -387,30 +399,37 @@ Templates workflow, not all upstream semantics, transports or Provider combinati
 ## Packaged Runtime initialization contract
 
 Template handlers and stores resolve public configuration without choosing a
-harness, native path or compute backend. The common initialization lifecycle uses
-the following existing Linux Runtime packaging requirements through Provider
-`RunCommand`; these are private deployment requirements, not public Template fields.
+harness, native path or compute backend. The common runner depends on neutral
+Environment/Session identity and an authenticated Runtime peer. It sends initial
+files, configure/system/npm/python/setup operations, Skills, Plugins and finalization
+through `runtime_prepare`, then uses the same daemon for execution. Providers own
+placement, creation, daemon bootstrap, inspection, renewal and reclamation; they do
+not run Core initialization commands. Harness-specific behavior stays in adapters.
 
-- `/workspace` is the public workspace. `/environment/workspace` names the same
-  storage for trusted initialization; `/environment/staging` is private staging.
-- `/usr/bin/python3 -I -S` runs the trusted, fd-anchored initial-file installer.
-  It invokes the existing `/usr/local/bin/oac-codex-write` atomic writer in
-  its four-argument replace mode; only public Files.create uses the create mode.
-  That executable is a shared filesystem helper packaged for every harness; its
-  historical name does not select Codex or invoke native Codex tools.
-- Confidential content travels on bounded stdin. Successful initialization needs
-  the writer's versioned completion receipt and confirmed process exit. Unknown
-  effects use the existing allocation cleanup path rather than replay.
-- Provider implementations preserve argv, stdin, exit status and allocation
-  ownership. They do not interpret public templates. Runtime adapters own native
-  configuration; initialization must not consume a harness's private history,
-  model credentials or native tool protocol.
+The protocol accepts logical `/workspace` file and working-directory addresses and
+portable absolute source selections. Physical paths, executable selection and local
+access checks belong to Runtime. The current implementation uses these existing
+Linux packaging requirements; they are not public Template fields or requirements
+for future Runtime implementations on other platforms:
 
-New hosted harnesses reuse these helpers and paths; new Providers deploy the same
-Runtime contract. Neither addition should change template validation, storage or
-resolution. Extend this contract only for an accepted initialization requirement.
+- `/workspace` is the logical workspace. The packaged Linux default binds it to
+  `/environment/workspace`; `/environment/staging` is private staging.
+- The daemon invokes the fixed trusted, fd-anchored initial-file installer and the
+  shared atomic writer. These helpers do not select a harness or invoke native
+  model tools.
+- Confidential content travels in bounded protocol frames and private helper stdin.
+  The daemon verifies native completion before sending a typed Runtime receipt.
+  Unknown effects use the existing allocation cleanup path rather than replay.
+- Runtime adapters own native configuration. Initialization cannot access a
+  harness's private history, model credentials or native tool protocol.
+
+New Providers bootstrap the same Runtime contract. New harnesses reuse common
+preparation, with native differences confined to their adapters. Neither addition
+changes template validation, storage or resolution. This interface separation does
+not claim a non-Linux installer, layout or isolation implementation.
 The trusted `/usr/local/bin/oac-runtime-initialize` receives a bounded
-version-1 JSON operation on stdin. It configures read-only tool env under
+version-1 JSON operation on stdin from the Linux daemon. This private helper format
+is not the Core-to-Runtime protocol. It configures read-only tool env under
 `/environment/initialization`, installs packages under `/environment/packages`,
 and runs ordered commands through distro bubblewrap. The fixed mount/process map
 excludes daemon credentials, native history and staging. User values are applied
@@ -424,7 +443,9 @@ Runtime receives a `tool_environment` execution flag, without template identity 
 provider information. Adapters validate the common files and apply them in their
 native tool sandbox: Claude uses its native Bash hook, Codex its managed Bash hook,
 and MiniMax its isolated native-tool worker. Native transports remain unchanged.
-Files reads do not require initialized tool configuration. Docker setup requires
+Files reads do not require initialized tool configuration. Packages and setup keep
+enabled provisioning network access; requested Session network restrictions apply
+to native execution after setup. Docker setup requires
 the existing nested-sandbox deployment profile for every harness; E2B supplies
 the same Runtime layout and kernel isolation.
 
@@ -434,6 +455,10 @@ stops the Turn on an observed failed hook. Earlier command effects may already
 exist; this is not an atomic hook-failure prevention guarantee.
 
 ## Initialization failure — September 23
+
+The September 23 observations below are historical acceptance evidence. Current
+initialization uses the shared daemon protocol described above; these observations
+do not qualify that new transport against a real deployment.
 
 When a hosted Environment fails to provision, Core now reports it the way the
 official service does (evidence and rows H1–H8 in
@@ -452,19 +477,19 @@ The reason names only the failed step and its exit status:
 | Setup command `i` | `Failed to provision environment: script "setup_commands[i]" failed with exit code N` (observed) |
 | Python packages | `... script "Python package installation" failed with exit code N` (observed label; the official reason appends raw pip output, Core never does) |
 | npm or system packages | `... script "npm package installation"` / `"System package installation"` `failed with exit code N` (unverified) |
-| Initial file or Skill with a confirmed failed write | `Failed to provision environment: initial file installation failed` / `Skill installation failed` (unverified) |
+| Initial file write or Runtime Skill preparation with a confirmed failure | `Failed to provision environment: initial file installation failed` / `Skill installation failed` (unverified) |
 | Anything else | `Failed to provision environment: initialization did not complete` |
 
 "Anything else" covers timeouts, the thirty-minute budget, unknown effects,
-missing or malformed receipts, receipts without `exit_code` from Runtime images
-built before this change, Plugin and capability installation, bootstrap
-rejection and Core restart during initialization. Core treats a step as
-confirmed failed only when the process exits 1 with empty stderr and stdout
-decodes as a version-1 receipt whose `outcome` is `failed`. The decoder is
-deliberately lenient so older images keep working: other receipt fields are
-ignored and never read. The only value ever taken from the receipt is
-`exit_code`, used only when it is an integer from 1 to 255. The Store composes the
-reason from a fixed label and integers, so commands, env values, package names,
+missing or malformed receipts, Plugin installation and directory finalization,
+bootstrap rejection and Core restart during initialization. All initialization
+operations return typed Runtime `rejected`, `failed` or `unknown` outcomes. The
+Linux daemon confirms the trusted helper's process exit and private receipt before
+reporting completion or failure. Only `failed` can carry a bounded `exit_code`;
+For setup and package steps, Core projects a confirmed nonzero status, never
+process output; zero or missing status retains the generic reason. Only a confirmed
+Skill preparation failure gets the Skill label. Plugin/finalization failures and
+uncertain effects retain the generic reason. The Store composes the reason from a fixed label and integers, so commands, env values, package names,
 paths and any process output never reach the reason, events, logs or responses.
 The failed step is
 not retried and later steps do not run.

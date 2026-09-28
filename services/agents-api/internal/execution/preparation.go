@@ -11,11 +11,23 @@ import (
 	"github.com/google/uuid"
 )
 
+type preparationRejection struct {
+	code      string
+	operation string
+}
+
+func (e *preparationRejection) Error() string { return "preparation control rejected: " + e.code }
+
 type preparedStart struct {
-	peer      *gateway.Session
-	requestID string
-	handle    string
-	sub       *gateway.Subscription
+	createdAt     time.Time
+	startSentAt   time.Time
+	startObserved bool
+	readyObserved bool
+	peer          *gateway.Session
+	requestID     string
+	handle        string
+	executorID    string
+	sub           *gateway.Subscription
 }
 
 func newPreparedStart(peer *gateway.Session) (*preparedStart, error) {
@@ -24,7 +36,7 @@ func newPreparedStart(peer *gateway.Session) (*preparedStart, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &preparedStart{peer: peer, requestID: id, sub: sub}, nil
+	return &preparedStart{peer: peer, requestID: id, sub: sub, createdAt: time.Now()}, nil
 }
 
 func (p *preparedStart) close() {
@@ -45,7 +57,14 @@ func (p *preparedStart) controlStatus(env proto.Envelope) (proto.PreparationStat
 	if status.Handle == "" || status.Revision == 0 || (p.handle != "" && p.handle != status.Handle) {
 		return status, errors.New("preparation identity changed")
 	}
-	p.handle = status.Handle
+	if p.executorID != "" && status.ExecutorID != p.executorID {
+		return status, errors.New("executor identity changed")
+	}
+	p.handle, p.executorID = status.Handle, status.ExecutorID
+	if status.State == "ready" && status.ExecutorID != "" && !p.readyObserved {
+		p.readyObserved = true
+		recordExecutorReadiness(p, status)
+	}
 	return status, nil
 }
 
@@ -55,7 +74,7 @@ func (p *preparedStart) observation(env proto.Envelope) (proto.PreparationStatus
 		return status, err
 	}
 	if status.State == "rejected" {
-		return status, errors.New("preparation control rejected")
+		return status, &preparationRejection{code: status.ErrorCode, operation: status.Operation}
 	}
 	switch status.State {
 	case "preparing", "ready", "starting", "started":
@@ -85,7 +104,7 @@ func (d *Dispatcher) awaitPreparation(ctx context.Context, tenant, session strin
 			if err != nil {
 				return pending, err
 			}
-			if status.State == "ready" && status.RunID == "" {
+			if status.State == "ready" && status.RunID == "" && status.ExecutorID != "" {
 				return pending, nil
 			}
 			if status.State != "preparing" {
@@ -96,7 +115,8 @@ func (d *Dispatcher) awaitPreparation(ctx context.Context, tenant, session strin
 }
 
 func (p *preparedStart) start(ctx context.Context, request proto.PromptRequestPayload) error {
-	return send(ctx, p.peer, proto.TypeExecutionStart, p.requestID, proto.ExecutionStartPayload{Handle: p.handle, RunID: request.RunID, Input: request.Input})
+	p.startSentAt = time.Now()
+	return send(ctx, p.peer, proto.TypeExecutionStart, p.requestID, proto.ExecutionStartPayload{Handle: p.handle, ExecutorID: p.executorID, RunID: request.RunID, Input: request.Input})
 }
 
 func (p *preparedStart) started(env proto.Envelope, runID string) (bool, error) {
@@ -106,6 +126,10 @@ func (p *preparedStart) started(env proto.Envelope, runID string) (bool, error) 
 	}
 	if status.RunID != runID || (status.State != "starting" && status.State != "started") {
 		return false, errors.New("unexpected preparation state after admission")
+	}
+	if status.State == "started" && !p.startObserved {
+		p.startObserved = true
+		recordExecutorStart(p, runID)
 	}
 	return status.State == "started", nil
 }

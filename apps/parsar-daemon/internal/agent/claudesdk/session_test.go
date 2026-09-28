@@ -101,6 +101,10 @@ func TestTextFactoryRejectsUnsupportedInput(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
+	if os.Getenv("GO_CLAUDE_EXECUTOR_HELPER") == "1" {
+		runPersistentExecutorHelper()
+		os.Exit(0)
+	}
 	if os.Getenv("GO_CLAUDE_PREPARATION_HELPER") == "1" {
 		runPreparationHelper()
 		os.Exit(0)
@@ -117,18 +121,23 @@ func TestMain(m *testing.M) {
 }
 
 func runSDKHelper() {
+	if len(os.Args) > 1 && strings.HasSuffix(os.Args[1], "runtime_check.js") {
+		fmt.Fprintln(os.Stdout, strings.TrimSuffix(readyReport, "}")+`,"features":["structured_output","subagents"]}`)
+		return
+	}
 	scanner := bufio.NewScanner(os.Stdin)
 	if !scanner.Scan() {
 		os.Exit(2)
 	}
 	var request startRequest
-	if json.Unmarshal(scanner.Bytes(), &request) != nil || request.Type != "start" || *request.Input[0].Content[0].Text != "hello" || request.Model != "fake-model" || request.SystemPrompt != "instructions" {
+	if json.Unmarshal(scanner.Bytes(), &request) != nil || request.Type != "executor_prepare" || request.Model != "fake-model" || request.SystemPrompt != "instructions" {
 		os.Exit(3)
 	}
-	encode := func(event bridgeEvent) { _ = json.NewEncoder(os.Stdout).Encode(event) }
+	encode, finish := helperTurn(scanner, &request)
+	defer finish()
 	mode := os.Getenv("SDK_HELPER_MODE")
 	if strings.HasPrefix(mode, "cancellation-") {
-		runCancellationHelper(request, mode, encode)
+		runCancellationHelper(request, mode, scanner, encode)
 		return
 	}
 	if strings.HasPrefix(mode, "steering-") {

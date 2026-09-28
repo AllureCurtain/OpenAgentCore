@@ -8,12 +8,18 @@ import (
 	"testing"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/google/uuid"
 )
 
 func testBinding(t *testing.T) (*Binding, proto.PromptRequestPayload) {
 	t.Helper()
+	private := t.TempDir()
+	if err := os.Chmod(private, 0700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("OAC_RUNTIME_HOME", private)
 	root := t.TempDir()
 	helper := filepath.Join(t.TempDir(), "helper")
 	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
@@ -25,7 +31,8 @@ func testBinding(t *testing.T) (*Binding, proto.PromptRequestPayload) {
 		t.Fatal(err)
 	}
 	b.networkAccess = "disabled"
-	return b, proto.PromptRequestPayload{LocalEnvironment: &proto.LocalEnvironment{ID: environment, NetworkAccess: "disabled"}, AgentStateKey: "agents-api-" + session, StrictResume: true, ReleaseOnCompletion: true}
+	b.capabilityRoot = t.TempDir()
+	return b, proto.PromptRequestPayload{LocalEnvironment: &proto.LocalEnvironment{ID: environment, NetworkAccess: "disabled", WorkspaceDirectory: "/workspace", CapabilitySources: &agentcapabilities.Input{}}, AgentStateKey: "agents-api-" + session, StrictResume: true, ReleaseOnCompletion: true}
 }
 
 func TestBindingRejectsScopeAndPathOverrides(t *testing.T) {
@@ -105,5 +112,34 @@ func TestDirectoryRejectsMalformedOrIncompleteResponses(t *testing.T) {
 		if _, err := decodeDirectory([]byte(frame), 2); err == nil {
 			t.Fatal("unconfirmed response accepted", frame)
 		}
+	}
+}
+
+func TestBindingAllowsRetainedExecutor(t *testing.T) {
+	b, req := testBinding(t)
+	req.ReleaseOnCompletion = false
+	if _, err := b.Configure(req); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCapabilityLayoutExcludesWritableAndPrivateRoots(t *testing.T) {
+	b, _ := testBinding(t)
+	private := os.Getenv("OAC_RUNTIME_HOME")
+	for _, directory := range []string{b.workspace, filepath.Join(b.workspace, "caps"), private, filepath.Join(private, "caps"), PackageDirectory, filepath.Join(PackageDirectory, "caps"), "/"} {
+		if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, b.helper, directory); err == nil {
+			t.Fatal("unsafe installation layout accepted")
+		}
+	}
+	root := t.TempDir()
+	alias := filepath.Join(root, "alias")
+	if err := os.Symlink(t.TempDir(), alias); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, b.helper, filepath.Join(alias, "new")); err == nil {
+		t.Fatal("installation parent alias accepted")
+	}
+	if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, b.helper, t.TempDir()); err != nil {
+		t.Fatal(err)
 	}
 }

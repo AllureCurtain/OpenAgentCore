@@ -45,7 +45,7 @@ func TestManagedNodesIsolateBlockedProviderAndInitialization(t *testing.T) {
 			select {
 			case <-f.provider.entered:
 			case <-time.After(8 * time.Second):
-				t.Fatal("node A did not enter blocked provider")
+				t.Fatalf("node A did not enter blocked %s operation", mode)
 			}
 			online, err := f.store.RuntimeNodeAvailable(t.Context(), f.nodeA)
 			if err != nil || !online {
@@ -53,7 +53,7 @@ func TestManagedNodesIsolateBlockedProviderAndInitialization(t *testing.T) {
 			}
 
 			// Same-node direct callers and the scan all consume the same one-shot
-			// allocation receipt. A's in-flight provider operation remains blocked.
+			// allocation receipt. A's provider or Runtime operation remains blocked.
 			tenant, _, env := f.session(f.nodeB, true)
 			f.provider.mu.Lock()
 			before := f.provider.creates
@@ -120,6 +120,9 @@ func TestManagedNodesIsolateBlockedProviderAndInitialization(t *testing.T) {
 			f.provider.mu.Lock()
 			restores := f.provider.restores
 			f.provider.mu.Unlock()
+			if f.provider.preparation.commandCalls.Load() != 0 {
+				t.Fatal("initialization invoked Provider.RunCommand")
+			}
 			if restores != 1 || f.provider.promptFrames.Load() != 0 {
 				t.Fatal("restore replayed or lifecycle sent model work")
 			}

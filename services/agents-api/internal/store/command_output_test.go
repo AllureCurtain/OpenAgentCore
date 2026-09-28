@@ -131,7 +131,7 @@ func TestExecutionJournalsCommandOutputBeforeCancellation(t *testing.T) {
 	ctx := context.Background()
 	input := h.message("command", "run a command")
 	result := h.run(ctx, input.TurnID)
-	h.read(proto.TypePromptRequest)
+	h.read(testExecutionRequest)
 	h.write(input.TurnID, proto.TypeToolCall, proto.ToolCallPayload{ID: "cmd", Stage: "before", Observation: &proto.ToolObservation{Kind: "command", Command: "wait", Status: "in_progress"}})
 	h.write(input.TurnID, proto.TypeCommandOutput, proto.CommandOutputPayload{ID: "cmd", Delta: "partial"})
 	if _, err := h.s.RequestCancel(ctx, h.tenant, h.session.ID, "cancel"); err != nil {

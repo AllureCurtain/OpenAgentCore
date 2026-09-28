@@ -75,8 +75,8 @@ func TestFunctionFactoryNativeReceipts(t *testing.T) {
 					}
 				case proto.TypeDelta:
 					if mode == "functions-cancel" {
-						if err := running.Cancel(ctx); err != nil {
-							t.Fatal(err)
+						if err := running.Cancel(ctx); err == nil {
+							t.Fatal("unconfirmed function receipts became successful cancellation")
 						}
 					}
 				case proto.TypeError:
@@ -127,7 +127,9 @@ func runFunctionHelper(request startRequest, mode string, scanner *bufio.Scanner
 	}
 	if mode == "functions-cancel" {
 		emit(bridgeEvent{Type: "delta", Delta: "waiting for confirmation"})
-		time.Sleep(time.Hour)
+		if scanner.Scan() {
+			emit(bridgeEvent{Type: "error", Code: "cancelled"})
+		}
 		return
 	}
 	if mode == "functions-no-receipt" {

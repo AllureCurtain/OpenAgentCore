@@ -154,7 +154,7 @@ func TestEnvironmentBindingPreservesIdentityAndHistory(t *testing.T) {
 	if err := os.Chmod(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	want := environmentBinding{"wss://core/api/v1/agent-daemon/ws", environmentEnrollment{uuid.NewString(), uuid.NewString(), uuid.NewString(), "/workspace"}, "/environment/workspace"}
+	want := environmentBinding{"wss://core/api/v1/agent-daemon/ws", environmentEnrollment{uuid.NewString(), uuid.NewString(), uuid.NewString(), "/workspace"}, "/environment/workspace", "/environment/initialization/capabilities"}
 	if err := saveEnvironmentBinding(root, want); err != nil {
 		t.Fatal(err)
 	}
@@ -191,7 +191,7 @@ func TestEnvironmentBindingAllowsPackagedFilesAndRejectsUnsafeReceipt(t *testing
 	if err := os.Chmod(root, 0700); err != nil {
 		t.Fatal(err)
 	}
-	want := environmentBinding{"wss://core/api/v1/agent-daemon/ws", environmentEnrollment{uuid.NewString(), uuid.NewString(), uuid.NewString(), "/workspace"}, "/environment/workspace"}
+	want := environmentBinding{"wss://core/api/v1/agent-daemon/ws", environmentEnrollment{uuid.NewString(), uuid.NewString(), uuid.NewString(), "/workspace"}, "/environment/workspace", "/environment/initialization/capabilities"}
 	if err := os.WriteFile(filepath.Join(root, "installed-bundle"), []byte("bundle"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +213,7 @@ func TestEnvironmentTargetCheckedBeforeCredentialTransmission(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("OAC_RUNTIME_HOME", root)
-	want := environmentBinding{"wss://core/api/v1/agent-daemon/ws", environmentEnrollment{uuid.NewString(), uuid.NewString(), uuid.NewString(), "/workspace"}, "/environment/workspace"}
+	want := environmentBinding{"wss://core/api/v1/agent-daemon/ws", environmentEnrollment{uuid.NewString(), uuid.NewString(), uuid.NewString(), "/workspace"}, "/environment/workspace", "/environment/initialization/capabilities"}
 	if err := saveEnvironmentBinding(root, want); err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestEnvironmentTargetCheckedBeforeCredentialTransmission(t *testing.T) {
 func TestEnvironmentEnrollmentRejectsWrongIdentityAndWorkspace(t *testing.T) {
 	environment := uuid.NewString()
 	good := environmentEnrollment{uuid.NewString(), uuid.NewString(), environment, "/workspace"}
-	for _, mutate := range []func(*environmentEnrollment){func(b *environmentEnrollment) { b.EnvironmentID = uuid.NewString() }, func(b *environmentEnrollment) { b.DeviceID = "" }, func(b *environmentEnrollment) { b.SessionID = "invalid" }, func(b *environmentEnrollment) { b.WorkspaceDirectory = "/different" }} {
+	for _, mutate := range []func(*environmentEnrollment){func(b *environmentEnrollment) { b.EnvironmentID = uuid.NewString() }, func(b *environmentEnrollment) { b.DeviceID = "" }, func(b *environmentEnrollment) { b.SessionID = "invalid" }, func(b *environmentEnrollment) { b.WorkspaceDirectory = "relative" }} {
 		bad := good
 		mutate(&bad)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _ = json.NewEncoder(w).Encode(bad) }))
@@ -251,5 +251,16 @@ func TestEnvironmentConnectRejectsPairing(t *testing.T) {
 	err := runConnect(rc, []string{"--remote", "wss://core/api/v1/agent-daemon/ws", "--environment-id", uuid.NewString(), "--credential-file", "/unused", "--token", "private-pairing-canary"})
 	if err == nil || strings.Contains(err.Error(), "private-pairing-canary") {
 		t.Fatal("pairing accepted or leaked")
+	}
+}
+
+func TestEnvironmentEnrollmentAcceptsPhysicalWorkspaceSelection(t *testing.T) {
+	environment := uuid.NewString()
+	want := environmentEnrollment{uuid.NewString(), uuid.NewString(), environment, "/srv/runtime/workspace"}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _ = json.NewEncoder(w).Encode(want) }))
+	defer server.Close()
+	actual, err := enrollEnvironment(t.Context(), environmentClient(), server.URL, environment, "secret")
+	if err != nil || actual != want {
+		t.Fatal("canonical workspace selection refused", actual, err)
 	}
 }

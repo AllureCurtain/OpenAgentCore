@@ -60,16 +60,15 @@ func TestSubcommandsAreRegistered(t *testing.T) {
 	// Guards against dropping a subcommand off the commands slice —
 	// the public CLI surface is the shipped contract.
 	want := map[string]bool{
-		"resume":               false,
-		"runtime-capabilities": false,
-		"runtime-mcp-exec":     false,
-		"placement":            false,
-		"connect":              false,
-		"status":               false,
-		"stop":                 false,
-		"logs":                 false,
-		"logout":               false,
-		"version":              false,
+		"resume":           false,
+		"runtime-mcp-exec": false,
+		"placement":        false,
+		"connect":          false,
+		"status":           false,
+		"stop":             false,
+		"logs":             false,
+		"logout":           false,
+		"version":          false,
 	}
 	for _, c := range commands {
 		if _, ok := want[c.name]; !ok {
@@ -82,5 +81,16 @@ func TestSubcommandsAreRegistered(t *testing.T) {
 		if !seen {
 			t.Errorf("expected subcommand %q to be registered", name)
 		}
+	}
+}
+
+func TestRemovedCapabilityHelperIsNotACommand(t *testing.T) {
+	help, _, err := runArgv(t, "--help")
+	if err != nil || strings.Contains(help, "runtime-capabilities") {
+		t.Fatal("removed helper remains advertised", err)
+	}
+	_, _, err = runArgv(t, "runtime-capabilities")
+	if err == nil || !strings.Contains(err.Error(), "unknown subcommand") {
+		t.Fatal("removed helper still dispatches", err)
 	}
 }

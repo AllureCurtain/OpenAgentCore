@@ -5,10 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +15,7 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/device"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/gateway"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/credentialcrypto"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/execution"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
@@ -70,28 +69,21 @@ func (p *nodeIsolationProvider) GetCompute(ctx context.Context, r sandbox.Refere
 	return p.fakeCheckpointProvider.GetCompute(ctx, r, c)
 }
 func (p *nodeIsolationProvider) RunCommand(ctx context.Context, r sandbox.Reference, c sandbox.Command) (sandbox.CommandResult, error) {
-	if err := p.block(ctx, r, "initialize"); err != nil {
-		return sandbox.CommandResult{}, err
-	}
-	size, err := strconv.Atoi(c.Args[len(c.Args)-1])
-	if err != nil || len(c.Stdin) != size+32 {
-		return sandbox.CommandResult{}, sandbox.ErrInvalid
-	}
-	p.writes.Add(1)
-	return sandbox.CommandResult{Stdout: fmt.Sprintf("{\"version\":1,\"outcome\":\"completed\",\"size_bytes\":%d}", size)}, nil
+	return p.preparation.RunCommand(ctx, r, c)
 }
 
 type nodeIsolationFixture struct {
-	t                 *testing.T
-	store             *store.Store
-	pool              *pgxpool.Pool
-	worker            *execution.Worker
-	provider          *nodeIsolationProvider
-	key, nodeA, nodeB string
-	epoch             uint64
-	runCancel         context.CancelFunc
-	runDone           chan error
-	stopOnce          sync.Once
+	t                    *testing.T
+	store                *store.Store
+	pool                 *pgxpool.Pool
+	worker               *execution.Worker
+	provider             *nodeIsolationProvider
+	key, nodeA, nodeB    string
+	epoch                uint64
+	initializationCancel context.CancelFunc
+	runCancel            context.CancelFunc
+	runDone              chan error
+	stopOnce             sync.Once
 }
 
 func newNodeIsolationFixture(t *testing.T, mode string) *nodeIsolationFixture {
@@ -105,6 +97,19 @@ func newNodeIsolationFixture(t *testing.T, mode string) *nodeIsolationFixture {
 	registry := gateway.NewRegistry()
 	cp := &fakeCheckpointProvider{lifecycleProvider: lifecycleProvider{resources: map[string]sandbox.Info{}}, computes: map[string]sandbox.ComputeState{}, snapshots: map[string]sandbox.SnapshotIdentity{}, bootstraps: map[string]sandbox.Bootstrap{}, peers: map[string]*websocket.Conn{}, registry: registry}
 	p := &nodeIsolationProvider{fakeCheckpointProvider: cp, blocked: map[string]bool{}, mode: mode, entered: make(chan struct{})}
+	preparationContext, cancelPreparation := context.WithCancel(t.Context())
+	t.Cleanup(cancelPreparation)
+	cp.preparation = &initializationPeer{t: t, apply: func(request proto.RuntimePreparePayload, data []byte) proto.RuntimePrepareResultPayload {
+		if err := p.block(preparationContext, sandbox.Reference{EnvironmentID: request.EnvironmentID}, "initialize"); err != nil {
+			return proto.RuntimePrepareResultPayload{Outcome: "unknown", ErrorCode: "runtime_preparation_unconfirmed"}
+		}
+		if request.Action != "file" || request.File.Path != "/workspace/seed" || string(data) != "retained" {
+			t.Error("unexpected node initialization request")
+			return proto.RuntimePrepareResultPayload{Outcome: "failed", ErrorCode: "runtime_preparation_failed"}
+		}
+		p.writes.Add(1)
+		return completedInitialization(request, data)
+	}}
 	handler := gateway.NewHandler(gateway.HandlerConfig{Authenticator: gateway.NewAuthenticator(s), Registry: registry})
 	server := httptest.NewServer(http.HandlerFunc(handler.WS))
 	cp.endpoint = "ws" + strings.TrimPrefix(server.URL, "http")
@@ -116,7 +121,7 @@ func newNodeIsolationFixture(t *testing.T, mode string) *nodeIsolationFixture {
 		cp.mu.Unlock()
 		server.Close()
 	})
-	f := &nodeIsolationFixture{t: t, store: s, pool: pool, provider: p, key: uuid.NewString(), nodeA: uuid.NewString(), nodeB: uuid.NewString()}
+	f := &nodeIsolationFixture{initializationCancel: cancelPreparation, t: t, store: s, pool: pool, provider: p, key: uuid.NewString(), nodeA: uuid.NewString(), nodeB: uuid.NewString()}
 	// Keep restored compute awake throughout the isolation assertions.
 	// The suspension setup explicitly dates its activity two minutes in the past.
 	policy := &execution.RuntimeSuspensionPolicy{IdleTimeout: time.Minute, Retention: time.Hour, MaxActive: 100, MaxRetained: 100}
@@ -252,6 +257,7 @@ func (f *nodeIsolationFixture) run() {
 }
 func (f *nodeIsolationFixture) stop() {
 	f.stopOnce.Do(func() {
+		f.initializationCancel()
 		if f.runDone == nil {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()

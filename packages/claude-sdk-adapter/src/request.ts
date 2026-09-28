@@ -20,20 +20,21 @@ export type Start = {
   mcp_http_servers?: HTTPServer[];
   workspace?: Workspace;
 };
+export type ExecutorPrepare = Omit<Start, "type" | "input"> & { type: "executor_prepare" };
 export type Prepare = Omit<Start, "type" | "input" | "workspace"> & { type: "prepare"; workspace: Workspace };
 
 // MCP startup confirms its hooks before the native input iterator yields.
-export function immediateInput(request: Start | Prepare): MessageInput | undefined {
+export function immediateInput(request: Start | Prepare | ExecutorPrepare): MessageInput | undefined {
   return request.type === "start" && request.mcp_http_servers === undefined && !request.workspace?.mcp?.length ? request.input : undefined;
 }
 
-export function parseRequest(line: string): Start | Prepare {
+export function parseRequest(line: string): Start | Prepare | ExecutorPrepare {
   const value: unknown = JSON.parse(line);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_request");
   const request = value as Record<string, unknown>;
   const allowed = new Set(["type", "input", "model", "system_prompt", "cwd", "resume", "require_history", "observe_messages", "output_format", "subagents", "functions", "tool_search", "mcp_http_servers", "workspace"]);
   if (Object.keys(request).some(key => !allowed.has(key)) ||
-      (request.type !== "start" && request.type !== "prepare") ||
+      (request.type !== "start" && request.type !== "prepare" && request.type !== "executor_prepare") ||
       (request.type === "start" ? !Array.isArray(request.input) : "input" in request) ||
       typeof request.model !== "string" || !request.model.trim() ||
       typeof request.system_prompt !== "string" ||
@@ -68,7 +69,7 @@ export function parseRequest(line: string): Start | Prepare {
   if (request.require_history && !workspace) throw new Error("invalid_request");
   if ((workspace && "mcp_http_servers" in request) ||
       (request.type === "prepare" && !workspace)) throw new Error("invalid_request");
-  return request as Start | Prepare;
+  return request as Start | Prepare | ExecutorPrepare;
 }
 
 export function parseStart(line: string): Start {

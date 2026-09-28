@@ -6,7 +6,6 @@ export type WorkspaceSkill = {
   relative_root: string;
   package_root: string;
 };
-export const capabilityRoot = "/environment/initialization/capabilities";
 const relativePath = (value: unknown): value is string => typeof value === "string" && value !== "." &&
   value.length > 0 && !value.startsWith("/") && !/[\\\x00-\x1f\x7f]/.test(value) &&
   posix.normalize(value) === value && !value.split("/").includes("..");
@@ -53,7 +52,7 @@ function projectPackage(source: string, destination: string): void {
 
 // Only the generated envelope is activated. Original plugin control files stay
 // beneath content; exact Skill roots, not public plugin manifests, drive loading.
-export function workspaceSkills(skills: readonly WorkspaceSkill[]): { paths: string[]; names: string[] } | undefined {
+export function workspaceSkills(skills: readonly WorkspaceSkill[], capabilityRoot: string): { paths: string[]; names: string[] } | undefined {
   if (!skills.length) return undefined;
   const packages = new Map<string, WorkspaceSkill[]>();
   for (const skill of skills) {

@@ -5,10 +5,15 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentplugin"
 )
 
-// LocalEnvironment references a deployment-bound workspace; it never supplies a path.
+// LocalEnvironment names a frozen workspace selection. Runtime must verify it
+// against the bound local root before resolving capabilities or native execution.
 type LocalEnvironment struct {
-	ID string `json:"id"`
-	// Capabilities requests the completed, protected Runtime installation.
+	CapabilityRoot     string                   `json:"-"`
+	ID                 string                   `json:"id"`
+	WorkspaceDirectory string                   `json:"workspace_directory"`
+	CapabilitySources  *agentcapabilities.Input `json:"capability_sources"`
+	// Capabilities is derived from the frozen selection for engine qualification;
+	// Runtime still ensures and loads the protected installation before execution.
 	Capabilities bool `json:"capabilities,omitempty"`
 	// Skills is resolved by the bound daemon; wire input cannot supply paths.
 	Skills []agentcapabilities.InstalledSkill `json:"-"`
@@ -26,9 +31,11 @@ type LocalEnvironment struct {
 // EnvironmentMCP is transient Runtime configuration. Do not log it: HTTP headers
 // and the selected user bearer may be confidential. It is not agent.tools MCP.
 type EnvironmentMCP struct {
-	PackageRoot string
-	Server      agentplugin.MCPServer
-	BearerToken *string
+	InstallationRoot string
+	WorkspaceRoot    string
+	PackageRoot      string
+	Server           agentplugin.MCPServer
+	BearerToken      *string
 }
 
 func (r PromptRequestPayload) EnvironmentID() string {

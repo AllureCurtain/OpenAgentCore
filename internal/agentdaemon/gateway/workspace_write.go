@@ -44,24 +44,15 @@ func (s *Session) WriteWorkspaceFile(ctx context.Context, id string, request pro
 		if err != nil || len(env.Payload) > proto.WorkspaceWriteMaxFrameBytes {
 			return empty, errors.New("agentdaemon gateway: invalid write frame")
 		}
-		if err := s.Send(ctx, env); err != nil {
+		reply, err := s.exchangeChunkFrame(ctx, env, replies)
+		if err != nil {
 			return empty, err
 		}
-		select {
-		case env, ok := <-replies:
-			if !ok {
-				return empty, ErrSessionClosed
-			}
-			var result proto.WorkspaceWriteResultPayload
-			if env.DecodePayload(&result) != nil || !validWorkspaceWriteResult(result, outcome, offset, len(data)) {
-				return empty, errors.New("agentdaemon gateway: invalid write receipt")
-			}
-			return result, nil
-		case <-ctx.Done():
-			return empty, ctx.Err()
-		case <-s.closed:
-			return empty, ErrSessionClosed
+		var result proto.WorkspaceWriteResultPayload
+		if reply.DecodePayload(&result) != nil || !validWorkspaceWriteResult(result, outcome, offset, len(data)) {
+			return empty, errors.New("agentdaemon gateway: invalid write receipt")
 		}
+		return result, nil
 	}
 	result, err := exchange(request, "ready", 0)
 	if err != nil || result.Outcome != "ready" {

@@ -3,7 +3,6 @@ package dispatch_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -14,6 +13,7 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/dispatch"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 )
 
@@ -32,7 +32,9 @@ func (p *controlledPreparation) Close() error {
 		if p.closeHook != nil {
 			p.closeHook()
 		}
-		close(p.closed)
+		if p.closed != nil {
+			close(p.closed)
+		}
 	})
 	return nil
 }
@@ -76,16 +78,22 @@ func preparationWorkspace(t *testing.T) *localworkspace.Binding {
 	if err := os.WriteFile(helper, []byte("#!/bin/sh\nprintf '%s' '{\"version\":1,\"directory\":{\"entries\":[{\"name\":\"file\",\"kind\":\"file\",\"size_bytes\":3}],\"truncated\":true}}'\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	runtimeHome := t.TempDir()
+	if err := os.Chmod(runtimeHome, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	for name, value := range map[string]string{
-		"OAC_RUNTIME_ENVIRONMENT_ID":   preparationEnvironmentID,
-		"OAC_RUNTIME_SESSION_ID":       preparationSessionID,
-		"OAC_RUNTIME_WORKSPACE":        t.TempDir(),
-		"OAC_RUNTIME_DIRECTORY_HELPER": helper,
-		"OAC_RUNTIME_NETWORK_ACCESS":   "enabled",
-		"OAC_RUNTIME_ALLOWED_DOMAINS":  "",
-		"OAC_RUNTIME_WRITE_HELPER":     "",
-		"OAC_RUNTIME_EXPORT_HELPER":    "",
-		"OAC_RUNTIME_STAGING":          "",
+		"OAC_RUNTIME_ENVIRONMENT_ID":       preparationEnvironmentID,
+		"OAC_RUNTIME_SESSION_ID":           preparationSessionID,
+		"OAC_RUNTIME_WORKSPACE":            t.TempDir(),
+		"OAC_RUNTIME_CAPABILITY_DIRECTORY": t.TempDir(),
+		"OAC_RUNTIME_HOME":                 runtimeHome,
+		"OAC_RUNTIME_DIRECTORY_HELPER":     helper,
+		"OAC_RUNTIME_NETWORK_ACCESS":       "enabled",
+		"OAC_RUNTIME_ALLOWED_DOMAINS":      "",
+		"OAC_RUNTIME_WRITE_HELPER":         "",
+		"OAC_RUNTIME_EXPORT_HELPER":        "",
+		"OAC_RUNTIME_STAGING":              "",
 	} {
 		t.Setenv(name, value)
 	}
@@ -111,7 +119,7 @@ func localPreparationHarness(t *testing.T) *harness {
 }
 
 func preparationRequest() proto.ExecutionPreparePayload {
-	return proto.ExecutionPreparePayload{Configuration: proto.PromptRequestPayload{AgentKind: "prepared", AgentStateKey: "agents-api-" + preparationSessionID, StrictResume: true, ReleaseOnCompletion: true, LocalEnvironment: &proto.LocalEnvironment{ID: preparationEnvironmentID, NetworkAccess: "enabled"}}}
+	return proto.ExecutionPreparePayload{SessionID: preparationSessionID, Configuration: proto.PromptRequestPayload{AgentKind: "prepared", AgentStateKey: "agents-api-" + preparationSessionID, StrictResume: true, ReleaseOnCompletion: true, LocalEnvironment: &proto.LocalEnvironment{ID: preparationEnvironmentID, NetworkAccess: "enabled", WorkspaceDirectory: "/workspace", CapabilitySources: &agentcapabilities.Input{}}}}
 }
 
 func preparationRouter(t *testing.T, sender dispatch.Sender, timeout time.Duration, factory agent.PreparationFactory) *dispatch.Router {
@@ -121,6 +129,7 @@ func preparationRouter(t *testing.T, sender dispatch.Sender, timeout time.Durati
 		return nil, errors.New("ordinary Factory must not be used for preparation")
 	})
 	reg.RegisterPreparation("prepared", true, factory)
+	reg.RegisterExecutor("prepared", preparationExecutorFixture(factory))
 	r, err := dispatch.New(dispatch.Config{Registry: reg, Sender: sender, PreparationTimeout: timeout, LocalWorkspace: preparationWorkspace(t)})
 	if err != nil {
 		t.Fatal(err)
@@ -225,7 +234,7 @@ func TestPreparationSingleTransferAndReleaseDoesNotCancelRun(t *testing.T) {
 	if err := r.Handle(t.Context(), prepare); err != nil {
 		t.Fatal(err)
 	}
-	start := mustEnv(t, proto.TypeExecutionStart, "request", proto.ExecutionStartPayload{Handle: ready.Handle, RunID: "real-run", Input: proto.TextInput("actual input")})
+	start := mustEnv(t, proto.TypeExecutionStart, "request", proto.ExecutionStartPayload{Handle: ready.Handle, ExecutorID: ready.ExecutorID, RunID: "real-run", Input: proto.TextInput("actual input")})
 	if err := r.Handle(t.Context(), start); err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +285,7 @@ func TestPreparationCancelDuringStartClosesLateSession(t *testing.T) {
 	r := preparationRouter(t, sender, time.Minute, func(context.Context, proto.PromptRequestPayload) (agent.Prepared, error) { return p, nil })
 	_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionPrepare, "request", preparationRequest()))
 	ready := waitPreparationStatus(t, sender, "request", "ready", "")
-	_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionStart, "request", proto.ExecutionStartPayload{Handle: ready.Handle, RunID: "real-run", Input: proto.TextInput("input")}))
+	_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionStart, "request", proto.ExecutionStartPayload{Handle: ready.Handle, ExecutorID: ready.ExecutorID, RunID: "real-run", Input: proto.TextInput("input")}))
 	<-entered
 	if err := r.Handle(t.Context(), mustEnv(t, proto.TypePromptCancel, "real-run", proto.PromptCancelPayload{DeliveryID: "cancel"})); err != nil {
 		t.Fatal(err)
@@ -307,37 +316,6 @@ func TestPreparationCancelDuringStartClosesLateSession(t *testing.T) {
 	}
 }
 
-func TestPreparationCapacityAndConnectionOwnership(t *testing.T) {
-	sender := &recSender{}
-	var count atomic.Int32
-	r := preparationRouter(t, sender, time.Minute, func(context.Context, proto.PromptRequestPayload) (agent.Prepared, error) {
-		count.Add(1)
-		return &controlledPreparation{closed: make(chan struct{})}, nil
-	})
-	var handles []string
-	for i := 0; i < 4; i++ {
-		id := fmt.Sprint(i)
-		_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionPrepare, id, preparationRequest()))
-		handles = append(handles, waitPreparationStatus(t, sender, id, "ready", "").Handle)
-	}
-	if err := r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionPrepare, "overflow", preparationRequest())); err == nil {
-		t.Fatal("capacity unbounded")
-	}
-	if err := r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionPrepare, "0", preparationRequest())); err != nil {
-		t.Fatal(err)
-	}
-	if count.Load() != 4 {
-		t.Fatal("retry recreated native resource")
-	}
-	other := preparationRouter(t, &recSender{}, time.Minute, func(context.Context, proto.PromptRequestPayload) (agent.Prepared, error) {
-		t.Error("unexpected new native resource")
-		return nil, errors.New("unexpected")
-	})
-	if err := other.Handle(t.Context(), mustEnv(t, proto.TypeExecutionStart, "0", proto.ExecutionStartPayload{Handle: handles[0], RunID: "run", Input: proto.TextInput("input")})); err == nil {
-		t.Fatal("another connection consumed handle")
-	}
-}
-
 func TestPreparationExpiryAndOldHandleCannotStartReplacement(t *testing.T) {
 	sender := &recSender{}
 	created := make(chan *controlledPreparation, 2)
@@ -350,13 +328,18 @@ func TestPreparationExpiryAndOldHandleCannotStartReplacement(t *testing.T) {
 	_ = r.Handle(t.Context(), env)
 	old := waitPreparationStatus(t, sender, "request", "ready", "")
 	waitPreparationStatus(t, sender, "request", "expired", "")
-	waitPreparationClosed(t, <-created)
+	owner := <-created
+	select {
+	case <-owner.closed:
+		t.Fatal("admission expiry closed a healthy executor")
+	default:
+	}
 	_ = r.Handle(t.Context(), env)
-	next := waitPreparationStatus(t, sender, "request", "preparing", old.Handle)
+	next := waitPreparationStatus(t, sender, "request", "ready", old.Handle)
 	if next.Handle == old.Handle || next.ExpiresAt <= old.ExpiresAt {
 		t.Fatal("replacement reused expired identity")
 	}
-	if err := r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionStart, "request", proto.ExecutionStartPayload{Handle: old.Handle, RunID: "late", Input: proto.TextInput("late")})); err == nil {
+	if err := r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionStart, "request", proto.ExecutionStartPayload{Handle: old.Handle, ExecutorID: old.ExecutorID, RunID: "late", Input: proto.TextInput("late")})); err == nil {
 		t.Fatal("old handle started replacement")
 	}
 }
@@ -371,59 +354,23 @@ func (s failReadySender) Send(ctx context.Context, env proto.Envelope) error {
 	return s.recSender.Send(ctx, env)
 }
 
-func TestPreparationFailedReadyDeliveryClosesResource(t *testing.T) {
+func TestPreparationFailedReadyDeliveryAbandonsAdmission(t *testing.T) {
+	created := make(chan struct{})
 	p := &controlledPreparation{closed: make(chan struct{})}
-	r := preparationRouter(t, failReadySender{&recSender{}}, time.Minute, func(context.Context, proto.PromptRequestPayload) (agent.Prepared, error) { return p, nil })
+	r := preparationRouter(t, failReadySender{&recSender{}}, time.Minute, func(context.Context, proto.PromptRequestPayload) (agent.Prepared, error) {
+		close(created)
+		return p, nil
+	})
 	_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionPrepare, "request", preparationRequest()))
+	<-created
+	waitFor(t, func() bool { return r.ActiveRuns() == 0 }, "abandoned admission")
+	if err := r.Shutdown(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	waitPreparationClosed(t, p)
 	if r.ActiveRuns() != 0 {
 		t.Fatal("failed preparation became a run")
 	}
-}
-
-func TestPreparationCapacityIncludesClosingResources(t *testing.T) {
-	sender := &recSender{}
-	entered, unblock := make(chan struct{}), make(chan struct{})
-	var releaseOnce sync.Once
-	release := func() { releaseOnce.Do(func() { close(unblock) }) }
-	defer release()
-	var count atomic.Int32
-	r := preparationRouter(t, sender, time.Minute, func(context.Context, proto.PromptRequestPayload) (agent.Prepared, error) {
-		p := &controlledPreparation{closed: make(chan struct{})}
-		if count.Add(1) == 1 {
-			p.closeHook = func() { close(entered); <-unblock }
-		}
-		return p, nil
-	})
-	var first proto.PreparationStatusPayload
-	for i := 0; i < 4; i++ {
-		id := fmt.Sprint(i)
-		_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionPrepare, id, preparationRequest()))
-		ready := waitPreparationStatus(t, sender, id, "ready", "")
-		if i == 0 {
-			first = ready
-		}
-	}
-	_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionRelease, "0", proto.ExecutionReleasePayload{Handle: first.Handle}))
-	select {
-	case <-entered:
-	case <-time.After(time.Second):
-		t.Fatal("cleanup did not start")
-	}
-	request := mustEnv(t, proto.TypeExecutionPrepare, "replacement", preparationRequest())
-	if err := r.Handle(t.Context(), request); err == nil {
-		t.Fatal("closing resource returned capacity early")
-	}
-	release()
-	deadline := time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		if err := r.Handle(t.Context(), request); err == nil {
-			waitPreparationStatus(t, sender, "replacement", "ready", "")
-			return
-		}
-		time.Sleep(time.Millisecond)
-	}
-	t.Fatal("completed cleanup did not release capacity")
 }
 
 func TestPreparationRejectsInputAndProductConfiguration(t *testing.T) {
@@ -437,7 +384,6 @@ func TestPreparationRejectsInputAndProductConfiguration(t *testing.T) {
 		},
 		"missing environment": func(p *proto.PromptRequestPayload) { p.LocalEnvironment = nil },
 		"resume":              func(p *proto.PromptRequestPayload) { p.StrictResume = false },
-		"release":             func(p *proto.PromptRequestPayload) { p.ReleaseOnCompletion = false },
 	} {
 		t.Run(name, func(t *testing.T) {
 			r := preparationRouter(t, &recSender{}, time.Minute, func(context.Context, proto.PromptRequestPayload) (agent.Prepared, error) {

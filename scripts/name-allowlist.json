@@ -823,5 +823,35 @@
     "path": "apps/docs/lib/legacy-redirects.ts",
     "regex": "\"agents-api(?:-sessions|-errors)?\"",
     "reason": "Retired documentation URL keys redirect to the current public API guide; these are not current commands or API namespaces."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/cli/connect_cleanup_test.go",
+    "regex": "\"agents-api-cleanup\"",
+    "reason": "Executor ownership validates the current Core and local-workspace AgentStateKey namespace; this change does not introduce an alternate identity or compatibility path."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/dispatch/executor.go",
+    "regex": "\"agents-api-(?:session)?\"",
+    "reason": "Executor ownership validates the current Core and local-workspace AgentStateKey namespace; this change does not introduce an alternate identity or compatibility path."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/dispatch/executor_handoff_test.go",
+    "regex": "\"agents-api-(?:session)?\"",
+    "reason": "Executor ownership validates the current Core and local-workspace AgentStateKey namespace; this change does not introduce an alternate identity or compatibility path."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/dispatch/executor_test.go",
+    "regex": "\"agents-api-(?:session)?\"",
+    "reason": "Executor ownership validates the current Core and local-workspace AgentStateKey namespace; this change does not introduce an alternate identity or compatibility path."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/localworkspace/capabilities.go",
+    "regex": "\"agents-api-\"",
+    "reason": "AgentStateKey retains the existing daemon/native-session resume identity; capability snapshots bind to the Session UUID carried in that identity."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/localworkspace/capability_preparation_test.go",
+    "regex": "\"agents-api-\"",
+    "reason": "AgentStateKey retains the existing daemon/native-session resume identity; capability snapshots bind to the Session UUID carried in that identity."
   }
 ]

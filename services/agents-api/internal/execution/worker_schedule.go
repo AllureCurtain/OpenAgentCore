@@ -25,8 +25,12 @@ func (s *workerSchedule) selectWork(ctx context.Context, w *Worker, devices []st
 	if err != nil {
 		return nil, err
 	}
-	if len(turns) == 0 {
+	if len(turns) == 0 && s.turnCursor != "" {
 		s.turnCursor = ""
+		turns, err = w.dispatcher.Store.ListExecutionWork(ctx, "", []string{store.TurnQueued}, devices)
+		if err != nil {
+			return nil, err
+		}
 	}
 	var environments []store.EnvironmentInputWork
 	if !time.Now().Before(s.nextEnvironmentScan) {

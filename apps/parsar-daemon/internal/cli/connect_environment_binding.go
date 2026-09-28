@@ -11,13 +11,15 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 )
 
 // This receipt contains identity only; executor credentials remain in their file.
 type environmentBinding struct {
-	RemoteURL      string                `json:"remote_url"`
-	Enrollment     environmentEnrollment `json:"enrollment"`
-	LocalWorkspace string                `json:"local_workspace"`
+	RemoteURL           string                `json:"remote_url"`
+	Enrollment          environmentEnrollment `json:"enrollment"`
+	LocalWorkspace      string                `json:"local_workspace"`
+	CapabilityDirectory string                `json:"capability_directory"`
 }
 
 // Check persisted ownership before transmitting the executor credential.
@@ -70,8 +72,25 @@ func bindEnvironmentRuntime(remote string, bound environmentEnrollment, credenti
 		return errors.New("connect: Runtime state directory unavailable")
 	}
 	workspace := os.Getenv("OAC_RUNTIME_WORKSPACE")
-	if workspace != "/environment/workspace" {
-		return errors.New("connect: packaged /workspace Runtime required")
+	if workspace == "/" || agentcapabilities.ValidateLocalDirectories([]string{workspace}) != nil {
+		return errors.New("connect: clean absolute Runtime workspace required")
+	}
+	canonical, err := filepath.EvalSymlinks(workspace)
+	info, statErr := os.Stat(workspace)
+	if err != nil || canonical != workspace || statErr != nil || !info.IsDir() {
+		return errors.New("connect: existing canonical Runtime workspace directory required")
+	}
+	if bound.WorkspaceDirectory != "/workspace" && bound.WorkspaceDirectory != workspace {
+		return errors.New("connect: enrollment does not match the Runtime workspace")
+	}
+	initialization := localworkspace.InitializationDirectory
+	if resolved, resolveErr := filepath.EvalSymlinks(initialization); resolveErr == nil {
+		initialization = resolved
+	} else if !errors.Is(resolveErr, os.ErrNotExist) {
+		return errors.New("connect: protected initialization directory unavailable")
+	}
+	if environmentPathsOverlap(workspace, initialization) {
+		return errors.New("connect: Runtime workspace overlaps protected initialization")
 	}
 	for key, value := range map[string]string{
 		"OAC_RUNTIME_ENVIRONMENT_ID": bound.EnvironmentID,
@@ -95,8 +114,8 @@ func bindEnvironmentRuntime(remote string, bound environmentEnrollment, credenti
 			return errors.New("connect: private Runtime path unavailable")
 		}
 		for _, public := range []string{"/workspace", workspace} {
-			if relative, e := filepath.Rel(public, resolved); e == nil && (relative == "." || filepath.IsLocal(relative)) {
-				return errors.New("connect: private Runtime state cannot be inside the workspace")
+			if environmentPathsOverlap(public, resolved) {
+				return errors.New("connect: private Runtime state cannot overlap the workspace")
 			}
 		}
 	}
@@ -109,7 +128,14 @@ func bindEnvironmentRuntime(remote string, bound environmentEnrollment, credenti
 	if err != nil || !filepath.IsLocal(relative) || relative == "." {
 		return errors.New("connect: executor credential must be inside the protected daemon directory")
 	}
-	want := environmentBinding{RemoteURL: remote, Enrollment: bound, LocalWorkspace: workspace}
+	capabilityDirectory := os.Getenv("OAC_RUNTIME_CAPABILITY_DIRECTORY")
+	if capabilityDirectory == "" {
+		capabilityDirectory = localworkspace.CapabilityDirectory
+	}
+	if _, err := localworkspace.NewWithCapabilityDirectory(bound.EnvironmentID, bound.SessionID, workspace, os.Getenv("OAC_RUNTIME_DIRECTORY_HELPER"), capabilityDirectory); err != nil {
+		return errors.New("connect: local Runtime layout unavailable")
+	}
+	want := environmentBinding{RemoteURL: remote, Enrollment: bound, LocalWorkspace: workspace, CapabilityDirectory: capabilityDirectory}
 	if err = saveEnvironmentBinding(root, want); err != nil {
 		return err
 	}
@@ -123,6 +149,17 @@ func bindEnvironmentRuntime(remote string, bound environmentEnrollment, credenti
 		return errors.New("connect: packaged Runtime binding or helpers unavailable")
 	}
 	return nil
+}
+
+// Neither selecting private state nor selecting its parent grants workspace access.
+func environmentPathsOverlap(first, second string) bool {
+	for _, pair := range [][2]string{{first, second}, {second, first}} {
+		relative, err := filepath.Rel(pair[0], pair[1])
+		if err == nil && (relative == "." || filepath.IsLocal(relative)) {
+			return true
+		}
+	}
+	return false
 }
 
 func saveEnvironmentBinding(root string, want environmentBinding) error {

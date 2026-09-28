@@ -95,6 +95,48 @@ Core delivers the Session's model provider only over this Environment's executor
 connection. The host keeps it in the Runtime's harness home, where the model's tools
 and the Files API can't read it but the host's owner can.
 
+## Local capability directories
+
+A self-hosted Session may supply `capability_directories` alongside its
+`workspace_directory`, for example:
+
+```python
+environment = {
+    "type": "self_hosted",
+    "workspace_directory": "/workspace",
+    "capability_directories": ["/workspace/capabilities"],
+}
+```
+
+The API accepts portable absolute Unix, Windows drive and UNC source paths without
+checking Core's filesystem. The current Linux Runtime requires canonical local Unix
+paths and applies its own access checks; this does not add Windows support.
+These paths refer to directories visible inside that Runtime. Populate them before
+first execution. `/workspace` maps to its bound workspace; an operator-prepared
+Runtime may use its exact canonical absolute workspace instead. Directory aliases,
+private credentials, native history and protected initialization trees are refused.
+This does not mount arbitrary host paths into the container or add a new installer.
+Self-hosted public input accepts local directories, not managed Skill/Plugin archives
+or hosted Templates.
+
+The current implementation uses the packaged Linux helpers and protected
+`installed.json`, by default under `/environment/initialization/capabilities`.
+Operators may freeze another root with `OAC_RUNTIME_CAPABILITY_DIRECTORY`; it must
+stay separate from the workspace and private Runtime state and is not a public API
+setting. Runtime snapshots sources
+before native execution and supplies the resulting Skill and MCP inventory through
+the same parser as managed bundles. Reconnect reuses installed contents even after
+source edits; a new Session captures its own snapshot. A missing or inconsistent
+snapshot fails preparation without silently reinstalling. Local discovery does not
+create entries in the public API-managed installation arrays.
+
+Closing an executor, cancelling a Turn or losing its connection preserves the
+snapshot and workspace. The compute owner remains responsible for explicit resource
+cleanup. This source-level capability behavior requires its own real acceptance;
+[earlier qualification](../../contracts/agents-api/user-managed-runtime-v1.md) covered
+only its recorded inputs and binaries, not local directory preparation or additional
+platforms.
+
 ## Rotate or revoke
 
 | Action in Web | Effect |

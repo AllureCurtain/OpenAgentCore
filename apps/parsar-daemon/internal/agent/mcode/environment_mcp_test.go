@@ -15,7 +15,7 @@ import (
 )
 
 func environmentMCPFixture() proto.EnvironmentMCP {
-	return proto.EnvironmentMCP{PackageRoot: "plugins/fixture", Server: agentplugin.MCPServer{
+	return proto.EnvironmentMCP{InstallationRoot: "/private/runtime/capabilities", WorkspaceRoot: "/private/runtime/workspace", PackageRoot: "plugins/fixture", Server: agentplugin.MCPServer{
 		Name: "proof.server", Type: "stdio", Command: "never-exec-before-sandbox", Args: []string{"private-argument"},
 		EnvVars: []string{"USER_SELECTED"}, CWD: "resources",
 	}}
@@ -54,7 +54,7 @@ func TestEnvironmentMCPUsesFixedLauncherForNewAndLoadedSessions(t *testing.T) {
 			}
 			server := params.MCP[1]
 			if server.Name != "proof.server" || server.Command != "/usr/bin/python3" || server.Env == nil || len(server.Env) != 0 ||
-				!reflect.DeepEqual(server.Args, []string{"-I", "-S", "/usr/local/bin/oac-runtime-initialize", "stdio", "plugins/fixture", "proof.server"}) {
+				!reflect.DeepEqual(server.Args, []string{"-I", "-S", "/usr/local/bin/oac-runtime-initialize", "stdio", "/private/runtime/capabilities", "/private/runtime/workspace", "plugins/fixture", "proof.server"}) {
 				t.Fatal("ACP declaration bypassed the fixed isolated launcher")
 			}
 			if (params.SessionID != "") != resume || strings.Contains(string(raw), "must-not") || strings.Contains(string(raw), "private-argument") {
@@ -114,7 +114,7 @@ func TestEnvironmentMCPCancelSettlesPendingObservationBeforeDone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = session.Cancel(context.Background()) })
+	t.Cleanup(func() { _ = resource.(*prepared).Cancel(context.Background()) })
 	select {
 	case event := <-out:
 		var call proto.ToolCallPayload
@@ -125,7 +125,11 @@ func TestEnvironmentMCPCancelSettlesPendingObservationBeforeDone(t *testing.T) {
 		t.Fatal("MCP start was not observed")
 	}
 	if err := session.Cancel(ctx); err != nil {
-		t.Fatal(err)
+		t.Fatal("stopped nonreusable MCP owner reported cancellation failure", err)
+	}
+	settlement, err := session.(*Session).AwaitSettlement(ctx)
+	if err != nil || settlement.Reusable {
+		t.Fatal("pending MCP work retained a reusable owner", settlement, err)
 	}
 	closed, done := false, false
 	for event := range out {

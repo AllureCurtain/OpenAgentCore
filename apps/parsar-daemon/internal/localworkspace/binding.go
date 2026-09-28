@@ -5,6 +5,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+
+	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentnetwork"
@@ -21,6 +25,8 @@ type Binding struct {
 	helper         string
 	exportHelper   string
 	writer         *fileWriter
+	capabilityMu   sync.Mutex
+	capabilityRoot string
 }
 
 func New(environment, session, workspace, helper string) (*Binding, error) {
@@ -43,7 +49,30 @@ func New(environment, session, workspace, helper string) (*Binding, error) {
 	if err != nil || !program.Mode().IsRegular() || program.Mode().Perm()&0111 == 0 || strings.HasPrefix(helper, workspace+string(filepath.Separator)) {
 		return nil, errors.New("local workspace helper must be executable outside the workspace")
 	}
-	return &Binding{environment: environment, stateKey: "agents-api-" + session, workspace: workspace, helper: helper}, nil
+	return &Binding{environment: environment, stateKey: "agents-api-" + session, workspace: workspace, helper: helper, capabilityRoot: CapabilityDirectory}, nil
+}
+
+// NewWithCapabilityDirectory freezes an operator-owned installation layout.
+// Core and capability transfer messages cannot choose this destination.
+func NewWithCapabilityDirectory(environment, session, workspace, helper, directory string) (*Binding, error) {
+	b, err := New(environment, session, workspace, helper)
+	if err != nil {
+		return nil, err
+	}
+	if agentcapabilities.ValidateLocalDirectories([]string{directory}) != nil || directory == "/" || containsPath(workspace, directory) || containsPath(directory, workspace) || containsPath(PackageDirectory, directory) || containsPath(directory, PackageDirectory) {
+		return nil, agentcapabilities.ErrInvalid
+	}
+	private, err := paths.Root()
+	if err != nil || !filepath.IsAbs(private) || containsPath(private, directory) || containsPath(directory, private) {
+		return nil, agentcapabilities.ErrInvalid
+	}
+	for _, name := range []string{workspace, private, directory} {
+		if !canonicalExistingParent(name) {
+			return nil, agentcapabilities.ErrInvalid
+		}
+	}
+	b.capabilityRoot = directory
+	return b, nil
 }
 
 func Load() (*Binding, error) {
@@ -55,10 +84,14 @@ func Load() (*Binding, error) {
 	network := policy.Access
 	writeHelper, staging := os.Getenv("OAC_RUNTIME_WRITE_HELPER"), os.Getenv("OAC_RUNTIME_STAGING")
 	exportHelper := os.Getenv("OAC_RUNTIME_EXPORT_HELPER")
-	if strings.Join(values, "") == "" && writeHelper == "" && staging == "" && network == "" && exportHelper == "" {
+	capabilityDirectory := os.Getenv("OAC_RUNTIME_CAPABILITY_DIRECTORY")
+	if strings.Join(values, "") == "" && writeHelper == "" && staging == "" && network == "" && exportHelper == "" && capabilityDirectory == "" {
 		return nil, nil
 	}
-	b, err := New(values[0], values[1], values[2], values[3])
+	if capabilityDirectory == "" {
+		capabilityDirectory = CapabilityDirectory
+	}
+	b, err := NewWithCapabilityDirectory(values[0], values[1], values[2], values[3], capabilityDirectory)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +123,7 @@ func (b *Binding) Configure(r proto.PromptRequestPayload) (proto.PromptRequestPa
 	}
 	if b == nil || r.LocalEnvironment == nil || r.LocalEnvironment.ID != b.environment || r.AgentStateKey != b.stateKey ||
 		r.DisableExecutionEnvironment || r.WorkDir != "" ||
-		r.ConversationID != "" || r.WorkspaceAuthoring || !r.StrictResume || !r.ReleaseOnCompletion {
+		r.ConversationID != "" || r.WorkspaceAuthoring || !r.StrictResume {
 		return r, errors.New("request does not match the dedicated local Environment")
 	}
 	if !r.WorkspaceReadOnly || r.LocalEnvironment.NetworkAccess != "" || len(r.LocalEnvironment.AllowedDomains) > 0 {
@@ -100,39 +133,43 @@ func (b *Binding) Configure(r proto.PromptRequestPayload) (proto.PromptRequestPa
 		}
 	}
 	if !r.WorkspaceReadOnly {
-		if r.LocalEnvironment.SystemPackages && !r.LocalEnvironment.ToolEnvironment {
-			return r, errors.New("system packages require initialized tool configuration")
-		}
-		if r.LocalEnvironment.ToolEnvironment {
-			if err := VerifyToolEnvironment(r.LocalEnvironment.SystemPackages); err != nil {
-				return r, err
-			}
-		}
 		local := *r.LocalEnvironment
-		local.Skills = nil
-		local.MCP = nil
-		if local.Capabilities {
-			manifest, err := LoadCapabilities()
-			if err != nil {
-				return r, err
-			}
-			local.Skills = manifest.Skills
-			if len(manifest.MCP) != 0 {
-				if b.NetworkPolicy().Access != "enabled" {
-					return r, errors.New("environment MCP requires qualified enabled-network execution")
-				}
-				values, err := ReadToolEnvironment()
-				if err != nil {
-					return r, err
-				}
-				local.MCP, err = resolveEnvironmentMCP(manifest.MCP, values)
-				if err != nil {
-					return r, err
-				}
-			}
+		if local.WorkspaceDirectory != "/workspace" && local.WorkspaceDirectory != b.workspace {
+			return r, errors.New("request does not match the local workspace selection")
 		}
+		if local.CapabilitySources == nil || agentcapabilities.ValidateInput(*local.CapabilitySources) != nil {
+			return r, agentcapabilities.ErrInvalid
+		}
+		sources := *local.CapabilitySources
+		present := len(sources.Skills)+len(sources.Plugins)+len(sources.Directories) > 0
+		if present != local.Capabilities || local.SystemPackages && !local.ToolEnvironment {
+			return r, agentcapabilities.ErrInvalid
+		}
+		local.Skills, local.MCP, local.CapabilityRoot = nil, nil, ""
 		r.LocalEnvironment = &local
 		r.WorkDir = b.workspace
 	}
 	return r, nil
+}
+
+func (b *Binding) Matches(environment, session string) bool {
+	return b != nil && b.environment == environment && b.stateKey == "agents-api-"+session
+}
+
+// Inspect existing ancestors before creating an operator-owned path. This prevents
+// MkdirAll from creating directories through an alias before its final validation.
+func canonicalExistingParent(name string) bool {
+	for {
+		if _, err := os.Lstat(name); err == nil {
+			actual, err := filepath.EvalSymlinks(name)
+			return err == nil && actual == name
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return false
+		}
+		parent := filepath.Dir(name)
+		if parent == name {
+			return false
+		}
+		name = parent
+	}
 }

@@ -57,6 +57,9 @@ func (p *prepared) ListWorkspaceDirectory(ctx context.Context, path string, maxE
 }
 
 func (s *session) ListWorkspaceDirectory(ctx context.Context, path string, maxEntries int) (agent.WorkspaceDirectoryResult, error) {
+	if s.owner != nil {
+		return s.owner.base.ListWorkspaceDirectory(ctx, path, maxEntries)
+	}
 	read, err := s.admitWorkspaceDirectory(ctx, path, maxEntries)
 	if err != nil {
 		return agent.WorkspaceDirectoryResult{}, err

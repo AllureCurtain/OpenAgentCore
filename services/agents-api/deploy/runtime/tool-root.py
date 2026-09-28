@@ -38,6 +38,8 @@ def sandbox(cwd, *, writable=False, network='enabled', workspace='/workspace', s
             '--bind', workspace, '/environment/workspace',
             '--bind', '/environment/packages', '/environment/packages',
             '--ro-bind', str(ROOT), str(ROOT), '--ro-bind', str(CONFIG), str(CONFIG)]
+    if workspace not in ('/workspace', '/environment/workspace'):
+        args += ['--bind', workspace, workspace]
     if network == 'disabled':
         args += ['--unshare-net']
     elif network != 'enabled':
@@ -47,15 +49,15 @@ def sandbox(cwd, *, writable=False, network='enabled', workspace='/workspace', s
     return args + ['--chdir', cwd, '--']
 
 
-def initialization_sandbox(cwd, network='enabled', *, writable=False):
-    args = sandbox(cwd, writable=writable, network=network, workspace='/environment/workspace')
+def initialization_sandbox(cwd, network='enabled', *, writable=False, workspace='/environment/workspace'):
+    args = sandbox(cwd, writable=writable, network=network, workspace=workspace)
     args[1:1] = ['--new-session', '--clearenv']
     for key, value in {**BASE_ENV, 'DEBIAN_FRONTEND': 'noninteractive'}.items():
         args[-1:-1] = ['--setenv', key, value]
     return args
 
 
-def install(packages):
+def install(packages, *, workspace='/environment/workspace'):
     if not isinstance(packages, list) or not packages or any(
         not isinstance(p, str) or not p or p.startswith('-') or '\x00' in p for p in packages
     ):
@@ -69,7 +71,7 @@ def install(packages):
     ROOT.mkdir(mode=0o700)
     subprocess.run(['/usr/bin/tar', '--no-same-owner', '--no-same-permissions', '-xzf', str(SEED), '-C', str(ROOT)],
                    check=True, env=BASE_ENV, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    args = initialization_sandbox('/workspace', writable=True)
+    args = initialization_sandbox('/workspace', writable=True, workspace=workspace)
     # Namespace root maps only to the unprivileged Runtime UID; _apt is unmapped.
     apt = ['/usr/bin/apt-get', '-o', 'APT::Sandbox::User=root', '-o', 'Acquire::Retries=0']
     for command in (apt + ['update'], apt + ['install', '-y', '--no-install-recommends', '--', *packages]):

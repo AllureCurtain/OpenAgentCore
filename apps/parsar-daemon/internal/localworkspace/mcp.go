@@ -13,7 +13,7 @@ const MCPInitializer = "/usr/local/bin/oac-runtime-initialize"
 // MCPStdioCommand contains only installed identities. The server's executable,
 // arguments and selected user variables are resolved after entering isolation.
 func MCPStdioCommand(server proto.EnvironmentMCP) (string, []string) {
-	return "/usr/bin/python3", []string{"-I", "-S", MCPInitializer, "stdio", server.PackageRoot, server.Server.Name}
+	return "/usr/bin/python3", []string{"-I", "-S", MCPInitializer, "stdio", server.InstallationRoot, server.WorkspaceRoot, server.PackageRoot, server.Server.Name}
 }
 
 func resolveEnvironmentMCP(installed []agentcapabilities.InstalledMCP, values map[string]string) ([]proto.EnvironmentMCP, error) {

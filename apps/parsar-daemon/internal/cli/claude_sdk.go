@@ -128,6 +128,9 @@ func registerClaudeSDK(registry *agent.Registry, discovery *claudeSDKDiscovery) 
 		}
 	}
 	registry.RegisterKind(discovery.Info, factory)
+	if discovery.Info.Available {
+		registry.RegisterExecutor("claude_sdk", claudesdk.NewExecutorFactory(discovery.Config))
+	}
 	if discovery.Info.Available && discovery.Info.Capabilities.LocalEnvironment {
 		registry.RegisterPreparation("claude_sdk", true, claudesdk.NewPreparationFactory(discovery.Config))
 	}

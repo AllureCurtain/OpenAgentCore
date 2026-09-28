@@ -103,7 +103,7 @@ func prepareWorkspaceOptions(ctx context.Context, c WorkspaceConfig, req proto.P
 	if err = os.WriteFile(filepath.Join(opts.DataDir, "config.yaml"), raw, 0600); err != nil {
 		return opts, err
 	}
-	profile := map[string]any{"workspace": "/workspace", "scratch": c.Scratch, "network": c.Network, "allowedDomains": (agentnetwork.Policy{Access: c.Network, AllowedDomains: c.AllowedDomains}).Hosts(), "protectedDirs": slices.Clone(c.ProtectedDirs), "skills": len(req.LocalEnvironment.Skills) > 0}
+	profile := map[string]any{"capabilityRoot": req.LocalEnvironment.CapabilityRoot, "workspace": "/workspace", "scratch": c.Scratch, "network": c.Network, "allowedDomains": (agentnetwork.Policy{Access: c.Network, AllowedDomains: c.AllowedDomains}).Hosts(), "protectedDirs": slices.Clone(c.ProtectedDirs), "skills": len(req.LocalEnvironment.Skills) > 0}
 	if req.LocalEnvironment.ToolEnvironment {
 		if err := localworkspace.VerifyToolEnvironment(req.LocalEnvironment.SystemPackages); err != nil {
 			return opts, err

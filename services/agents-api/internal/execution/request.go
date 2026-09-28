@@ -52,7 +52,7 @@ func (d *Dispatcher) executionRequest(ctx context.Context, session store.Session
 	}
 	request := proto.PromptRequestPayload{AgentKind: session.Engine, FunctionTools: tools.Functions, ToolSearch: tools.Search,
 		AgentOptions: options, ExecutionControls: controls, AgentStateKey: "agents-api-" + session.ID,
-		AgentSessionID: bound.NativeSessionID, ReleaseOnCompletion: true, StrictResume: true,
+		AgentSessionID: bound.NativeSessionID, StrictResume: true,
 		RequireExistingNativeSession: recoverNativeSession,
 		ObserveMessages:              caps.MessageItems, ObserveToolObservations: true,
 		ObserveSubagentIdentities: snapshot.Agent.MultiAgent.Enabled,

@@ -16,7 +16,7 @@ type EnvironmentRun struct {
 	Turn        store.Turn
 }
 
-// RunEnvironmentInput owns a private preparation through its first admitted Run.
+// RunEnvironmentInput reserves a Turn on the Session-owned Runtime Executor.
 func (d *Dispatcher) RunEnvironmentInput(ctx context.Context, tenantID, sessionID, reservationID string) (run EnvironmentRun, err error) {
 	if err = d.Store.CheckExecutionOwnership(ctx); err != nil {
 		return run, err
@@ -81,7 +81,7 @@ func (d *Dispatcher) RunEnvironmentInput(ctx context.Context, tenantID, sessionI
 		return run, err
 	}
 	defer prepared.close()
-	if err = send(owner, peer, proto.TypeExecutionPrepare, prepared.requestID, proto.ExecutionPreparePayload{Configuration: req}); err != nil {
+	if err = send(owner, peer, proto.TypeExecutionPrepare, prepared.requestID, proto.ExecutionPreparePayload{SessionID: sessionID, Configuration: req}); err != nil {
 		return run, err
 	}
 	run.Reservation, err = d.awaitPreparation(owner, tenantID, sessionID, run.Reservation, prepared)
@@ -95,6 +95,9 @@ func (d *Dispatcher) RunEnvironmentInput(ctx context.Context, tenantID, sessionI
 	if errors.Is(err, store.ErrTurnConflict) {
 		// A rejected claim leaves the reservation pending for a later attempt.
 		return run, err
+	}
+	if err == nil {
+		d.notifications.notify(tenantID, sessionID)
 	}
 	run.Reservation = promoted
 	if err != nil || run.Reservation.State != store.EnvironmentInputAdmitted {

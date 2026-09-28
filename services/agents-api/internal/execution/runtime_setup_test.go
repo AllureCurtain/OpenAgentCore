@@ -7,129 +7,79 @@ import (
 	"testing"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
-	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 )
 
 const setupCanary = "CANARY-runtime-setup-9b3e"
 
-// receiptProvider answers every initialization command with one fixed result.
-type receiptProvider struct {
-	sandbox.Provider
-	result sandbox.CommandResult
-	err    error
+type receiptRuntime struct {
+	result  proto.RuntimePrepareResultPayload
+	err     error
+	request proto.RuntimePreparePayload
+	data    []byte
 }
 
-func (p receiptProvider) RunCommand(context.Context, sandbox.Reference, sandbox.Command) (sandbox.CommandResult, error) {
+func (p *receiptRuntime) PrepareRuntime(_ context.Context, _ string, request proto.RuntimePreparePayload, data []byte) (proto.RuntimePrepareResultPayload, error) {
+	p.request, p.data = request, data
 	return p.result, p.err
 }
-
-// Only a process status 1, empty stderr and a version-1 failed receipt confirm a
-// failed step, and only an integer exit_code from 1 to 255 is taken from it.
-// Other receipt fields are ignored, never read; everything else stays generic.
 func TestRuntimeSetupReceiptOutcomes(t *testing.T) {
-	setup := runtimeSetupOperation{Version: 1, Action: "setup", Network: "enabled", Command: "echo " + setupCanary, CWD: "/workspace", Index: 2}
-	plugin := runtimeSetupOperation{Capabilities: &agentcapabilities.Operation{Version: 1, Action: "plugin"}}
-	unconfirmed := -1
 	for _, test := range []struct {
-		name      string
-		operation runtimeSetupOperation
-		result    sandbox.CommandResult
-		err       error
-		exitCode  int // -1 unconfirmed, 0 confirmed without a status
+		name, outcome string
+		code          int
+		err           error
+		confirmed     bool
 	}{
-		{"completed", setup, sandbox.CommandResult{Stdout: `{"version":1,"outcome":"completed"}`}, nil, -2},
-		{"exit status", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":3}`}, nil, 3},
-		{"highest exit status", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":255}` + "\n"}, nil, 255},
-		{"old receipt", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed"}`}, nil, 0},
-		{"zero exit status", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":0}`}, nil, 0},
-		{"exit status above 255", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":256}`}, nil, 0},
-		{"negative exit status", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":-9}`}, nil, 0},
-		{"null exit status", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":null}`}, nil, 0},
-		// Lenient for older and newer images: other fields are never read.
-		{"ignored output field", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":3,"output":"` + setupCanary + `"}`}, nil, 3},
-		{"duplicate key keeps the last", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":3,"exit_code":4}`}, nil, 4},
-		{"string exit status", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":"3"}`}, nil, unconfirmed},
-		{"fractional exit status", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":3.5}`}, nil, unconfirmed},
-		{"stderr", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":3}`, Stderr: setupCanary}, nil, unconfirmed},
-		{"process status 2", setup, sandbox.CommandResult{ExitCode: 2, Stdout: `{"version":1,"outcome":"failed","exit_code":3}`}, nil, unconfirmed},
-		{"process status 0", setup, sandbox.CommandResult{Stdout: `{"version":1,"outcome":"failed","exit_code":3}`}, nil, unconfirmed},
-		{"completed with status 1", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"completed"}`}, nil, unconfirmed},
-		{"version 2", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":2,"outcome":"failed","exit_code":3}`}, nil, unconfirmed},
-		{"raw output", setup, sandbox.CommandResult{ExitCode: 3, Stdout: setupCanary}, nil, unconfirmed},
-		{"trailing output", setup, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":3}` + setupCanary}, nil, unconfirmed},
-		{"provider error", setup, sandbox.CommandResult{}, sandbox.ErrCommandUnconfirmed, unconfirmed},
-		{"plugin step", plugin, sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed","exit_code":3}`}, nil, unconfirmed},
+		{"completed", "completed", 0, nil, false}, {"failed", "failed", 3, nil, true}, {"failed without status", "failed", 0, nil, true}, {"maximum status", "failed", 255, nil, true}, {"rejected", "rejected", 0, nil, true}, {"unknown", "unknown", 0, nil, false}, {"transport", "completed", 0, errors.New(setupCanary), false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			err := runRuntimeSetup(t.Context(), receiptProvider{result: test.result, err: test.err}, sandbox.Reference{}, test.operation)
-			var failed *runtimeStepFailure
-			switch {
-			case test.exitCode == -2:
+			peer := &receiptRuntime{result: proto.RuntimePrepareResultPayload{Outcome: test.outcome, ExitCode: test.code}, err: test.err}
+			err := runRuntimeSetup(t.Context(), peer, agentcapabilities.Identity{}, runtimeSetupOperation{Request: proto.RuntimePreparePayload{Action: "initialize", Initialization: &proto.RuntimeInitialization{Action: "setup", Command: setupCanary}}})
+			if test.outcome == "completed" && test.err == nil {
 				if err != nil {
 					t.Fatal(err)
 				}
-			case test.exitCode == unconfirmed:
-				if err == nil || errors.As(err, &failed) {
-					t.Fatal("unconfirmed result became a confirmed failure", err)
-				}
-			default:
-				if !errors.As(err, &failed) || failed.exitCode != test.exitCode {
-					t.Fatal("confirmed failure", err, failed)
-				}
+				return
 			}
-			if err != nil && strings.Contains(err.Error(), setupCanary) {
-				t.Fatal("receipt or output reached the error", err)
-			}
-		})
-	}
-}
-
-func TestRuntimeSetupFailureLabels(t *testing.T) {
-	for operation, want := range map[string]store.ProvisioningFailure{
-		"setup":     {Step: store.ProvisioningSetupCommand, Index: 2, ExitCode: 3},
-		"python":    {Step: store.ProvisioningPythonPackages, Index: 2, ExitCode: 3},
-		"npm":       {Step: store.ProvisioningNPMPackages, Index: 2, ExitCode: 3},
-		"system":    {Step: store.ProvisioningSystemPackages, Index: 2, ExitCode: 3},
-		"skill":     {Step: store.ProvisioningSkill, Index: 2, ExitCode: 3},
-		"configure": {},
-		"":          {},
-	} {
-		if got := (runtimeSetupOperation{Action: operation, Index: 2}).provisioningFailure(3); got != want {
-			t.Errorf("%q: %+v", operation, got)
-		}
-	}
-	// setupOperations numbers setup commands from zero.
-	operations := setupOperations(store.EnvironmentSetup{Commands: []store.SetupCommand{{Command: "a"}, {Command: "b"}}})
-	if len(operations) != 3 || operations[1].Index != 0 || operations[2].Index != 1 || operations[2].Action != "setup" {
-		t.Fatal("setup command positions", operations)
-	}
-}
-
-// The file writer exits 0 with a failed receipt when it committed nothing; an
-// unknown outcome, stderr or a wrong size stays unconfirmed.
-func TestInitialFileReceiptOutcomes(t *testing.T) {
-	body := []byte(setupCanary)
-	file := store.InitialFileMetadata{Path: "/workspace/a"}
-	size := int64(len(body))
-	file.SizeBytes = &size
-	for _, test := range []struct {
-		name      string
-		result    sandbox.CommandResult
-		confirmed bool
-	}{
-		{"failed", sandbox.CommandResult{Stdout: `{"version":1,"outcome":"failed","error":"write_failed"}`}, true},
-		{"unknown", sandbox.CommandResult{Stdout: `{"version":1,"outcome":"unknown","error":"write_failed"}`}, false},
-		{"stderr", sandbox.CommandResult{ExitCode: 1, Stdout: `{"version":1,"outcome":"failed"}`, Stderr: setupCanary}, false},
-		{"wrong size", sandbox.CommandResult{Stdout: `{"version":1,"outcome":"completed","size_bytes":1}`}, false},
-		{"raw output", sandbox.CommandResult{ExitCode: 2, Stdout: setupCanary}, false},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			err := installInitialFile(t.Context(), receiptProvider{result: test.result}, sandbox.Reference{}, file, body)
 			var failed *runtimeStepFailure
 			if err == nil || errors.As(err, &failed) != test.confirmed || strings.Contains(err.Error(), setupCanary) {
-				t.Fatal(err)
+				t.Fatal("unsafe outcome", err)
+			}
+			if failed != nil && failed.exitCode != test.code {
+				t.Fatal("exit status lost")
 			}
 		})
+	}
+}
+func TestRuntimeSetupFailureLabels(t *testing.T) {
+	for action, want := range map[string]store.ProvisioningFailure{"setup": {Step: store.ProvisioningSetupCommand, Index: 2, ExitCode: 3}, "python": {Step: store.ProvisioningPythonPackages, Index: 2, ExitCode: 3}, "npm": {Step: store.ProvisioningNPMPackages, Index: 2, ExitCode: 3}, "system": {Step: store.ProvisioningSystemPackages, Index: 2, ExitCode: 3}, "skill": {Step: store.ProvisioningSkill, Index: 2, ExitCode: 3}, "configure": {}, "": {}} {
+		op := runtimeSetupOperation{Request: proto.RuntimePreparePayload{Action: action}, Index: 2}
+		if action != "skill" {
+			op.Request = proto.RuntimePreparePayload{Action: "initialize", Initialization: &proto.RuntimeInitialization{Action: action}}
+		}
+		if got := op.provisioningFailure(3); got != want {
+			t.Fatal(action, got)
+		}
+	}
+	operations := setupOperations(store.EnvironmentSetup{Commands: []store.SetupCommand{{Command: "a"}, {Command: "b"}}})
+	if len(operations) != 3 || operations[1].Index != 0 || operations[2].Index != 1 || operations[2].Request.Initialization.CWD != "" {
+		t.Fatal("command index or Runtime default changed")
+	}
+}
+func TestInitialFileUsesTypedRuntimeBytes(t *testing.T) {
+	body := []byte(setupCanary)
+	size := int64(len(body))
+	owner := agentcapabilities.Identity{EnvironmentID: "environment", SessionID: "session"}
+	peer := &receiptRuntime{result: proto.RuntimePrepareResultPayload{Outcome: "completed"}}
+	if err := installInitialFile(t.Context(), peer, owner, store.InitialFileMetadata{Path: "/workspace/a", SizeBytes: &size}, body); err != nil {
+		t.Fatal(err)
+	}
+	if peer.request.Action != "file" || peer.request.File.Path != "/workspace/a" || peer.request.EnvironmentID != owner.EnvironmentID || peer.request.SessionID != owner.SessionID || string(peer.data) != setupCanary {
+		t.Fatal("file transport changed")
+	}
+	size++
+	if err := installInitialFile(t.Context(), peer, owner, store.InitialFileMetadata{SizeBytes: &size}, body); err == nil {
+		t.Fatal("mismatched source size accepted")
 	}
 }

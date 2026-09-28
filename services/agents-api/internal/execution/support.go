@@ -26,7 +26,7 @@ func (p Policy) ValidateSessionConfiguration(engine string, configuration json.R
 		return err
 	}
 	if snapshot.Environment != nil && snapshot.Environment.Type == "self_hosted" {
-		if snapshot.Daemon != nil || strings.TrimSpace(snapshot.Agent.Model) == "" || snapshot.Environment.WorkspaceDirectory != "/workspace" || len(snapshot.Environment.CapabilityDirectories) != 0 {
+		if snapshot.Daemon != nil || strings.TrimSpace(snapshot.Agent.Model) == "" || !validSelfHostedPlacement(environmentPlacement{WorkspaceDirectory: snapshot.Environment.WorkspaceDirectory, CapabilityDirectories: snapshot.Environment.CapabilityDirectories}) {
 			return store.ErrInvalidInput
 		}
 	}
@@ -85,6 +85,9 @@ func (p Policy) engineCapabilities(peer *gateway.Session, engine string, snapsho
 	caps := info.Capabilities
 	if !known || !found || !info.Available || !caps.Streaming || !caps.Steering || !caps.DurableTurns || !caps.DurableInputReceipts {
 		return fail("device must advertise streaming, steering and durable turns for this engine")
+	}
+	if !caps.Preparation {
+		return fail("device must advertise executor preparation")
 	}
 	if !caps.ExecutionControls {
 		return fail("device must advertise execution_controls")

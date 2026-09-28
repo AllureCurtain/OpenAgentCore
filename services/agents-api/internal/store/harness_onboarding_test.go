@@ -221,19 +221,42 @@ func startOnboardingPeer(t *testing.T, h *dispatchHarness) (<-chan proto.PromptR
 	}()
 	go func() {
 		enc := json.NewEncoder(in)
+		preparations := make(map[string]proto.ExecutionPreparePayload)
 		for {
 			var e proto.Envelope
 			if err := h.conn.ReadJSON(&e); err != nil {
 				down <- err
 				return
 			}
-			if e.Type == proto.TypePromptRequest {
-				var p proto.PromptRequestPayload
+			if e.Type == proto.TypeExecutionPrepare {
+				var p proto.ExecutionPreparePayload
 				if err := e.DecodePayload(&p); err != nil {
 					down <- err
 					return
 				}
-				started <- p
+				if p.SessionID == "" || p.Configuration.RunID != "" || len(p.Configuration.Input) != 0 {
+					down <- fmt.Errorf("fixture preparation submitted input or lost Session identity")
+					return
+				}
+				preparations[e.ID] = p
+			}
+			if e.Type == proto.TypeExecutionStart {
+				var start proto.ExecutionStartPayload
+				if err := e.DecodePayload(&start); err != nil {
+					down <- err
+					return
+				}
+				p, ok := preparations[e.ID]
+				if !ok || start.ExecutorID == "" || start.Handle == "" {
+					down <- fmt.Errorf("fixture Start lacks prepared Executor ownership")
+					return
+				}
+				request := p.Configuration
+				request.RunID, request.ConversationID, request.Input = start.RunID, p.SessionID, start.Input
+				started <- request
+			}
+			if e.Type == proto.TypeExecutionRelease {
+				delete(preparations, e.ID)
 			}
 			if err := enc.Encode(e); err != nil {
 				down <- err

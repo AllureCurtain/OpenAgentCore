@@ -78,7 +78,7 @@ func TestPreparationWaitsForReceiptAndRetainsConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s != p.session || s.(*session).process.Cmd.Process.Pid != pid {
+	if s.(*session).owner != p.executor || s.(*session).process.Cmd.Process.Pid != pid {
 		t.Fatal("Start replaced the prepared native process")
 	}
 	if err := p.Close(); err != nil {
@@ -184,12 +184,13 @@ func TestPreparationFailureAndUnusedRelease(t *testing.T) {
 				if startErr == nil {
 					t.Fatal("invalid or cancelled Start succeeded")
 				}
+				err = p.Close()
 			}
 			if err != nil {
 				t.Fatal(err)
 			}
 			select {
-			case <-p.session.settled:
+			case <-p.executor.done:
 			case <-time.After(5 * time.Second):
 				t.Fatal("unused process was not settled")
 			}
@@ -280,7 +281,10 @@ func TestPreparedStartRacesCloseAndCancellation(t *testing.T) {
 				}
 			}
 			if err := p.Cancel(t.Context()); err != nil {
-				t.Fatal(err)
+				// A racing Close can confirm resource cleanup without proving the Turn result.
+				if closeErr := p.executor.Close(t.Context()); closeErr != nil {
+					t.Fatal(closeErr)
+				}
 			}
 			select {
 			case <-p.session.process.Done():

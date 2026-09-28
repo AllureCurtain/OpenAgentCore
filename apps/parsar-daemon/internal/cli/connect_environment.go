@@ -18,6 +18,7 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/auth"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/daemonize"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/transport"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 	"github.com/google/uuid"
 )
 
@@ -113,7 +114,7 @@ func enrollEnvironment(ctx context.Context, client *http.Client, base, environme
 		return out, fmt.Errorf("connect: Environment enrollment rejected (HTTP %d)", resp.StatusCode)
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 16*1024+1))
-	if err != nil || len(raw) > 16*1024 || decodeEnvironmentJSON(raw, &out) != nil || !environmentUUID(out.DeviceID) || !environmentUUID(out.SessionID) || out.EnvironmentID != environment || out.WorkspaceDirectory != "/workspace" {
+	if err != nil || len(raw) > 16*1024 || decodeEnvironmentJSON(raw, &out) != nil || !environmentUUID(out.DeviceID) || !environmentUUID(out.SessionID) || out.EnvironmentID != environment || out.WorkspaceDirectory == "/" || agentcapabilities.ValidateLocalDirectories([]string{out.WorkspaceDirectory}) != nil {
 		return environmentEnrollment{}, errors.New("connect: invalid Environment enrollment response")
 	}
 	return out, nil
