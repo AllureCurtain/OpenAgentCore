@@ -45,6 +45,7 @@ with the Core key.
 | `projects`, `projects/{project_id}[/archive]`, `projects/{project_id}/keys[/{key_id}]` | Projects and their API keys | [Administrator contract](../../contracts/agents-api/admin-api.md) |
 | `projects/{project_id}/{agents,environment-templates,skills,files,vaults,sessions}/**` | Resource reads and deletion, Session history, artifacts and archive | [Administrator contract](../../contracts/agents-api/admin-api.md) |
 | `projects/{project_id}/sessions/{session_id}/execution-configuration` | Committed harness and model selection | [Execution configuration](../../contracts/agents-api/execution-configuration.md) |
+| `projects/{project_id}/sessions/{session_id}/diagnostics`, `projects/{project_id}/sessions/{session_id}/turns/{turn_id}/diagnostics` | Root failure categories and Item receipt timing | [Session diagnostics](../../contracts/agents-api/session-diagnostics.md) |
 | `projects/{project_id}/sessions/{session_id}/runtime-observation`, `sandbox/runtime-observations` | Current Runtime observations | [Runtime observations](../../contracts/agents-api/runtime-observability-api.md) |
 | `projects/{project_id}/sessions/{session_id}/runtime-history` | Stored Runtime history | [Runtime history](../../contracts/agents-api/runtime-history-api.md) |
 | `projects/{project_id}/{resource-owners,write-operations}`, `audit-log`, `summary` | Provenance, write history, administrator audit and usage summary | [Write audit](../../contracts/agents-api/write-audit.md), [administrator contract](../../contracts/agents-api/admin-api.md) |

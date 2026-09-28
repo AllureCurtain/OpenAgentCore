@@ -2,13 +2,17 @@
 SELECT * FROM session_items WHERE session_id = $1 AND id = $2;
 
 -- name: PutSessionItem :one
-INSERT INTO session_items(id, session_id, turn_id, created_at, payload, position, output_index)
+INSERT INTO session_items(id, session_id, turn_id, created_at, payload, position, output_index, settled_at)
 VALUES (sqlc.arg(id), sqlc.arg(session_id), sqlc.arg(turn_id), sqlc.arg(created_at), sqlc.arg(payload),
     (SELECT COALESCE(max(position), -1) + 1 FROM session_items WHERE session_id = sqlc.arg(session_id)),
     CASE WHEN sqlc.arg(is_output)::boolean THEN
         (SELECT COALESCE(max(output_index), -1) + 1 FROM session_items WHERE turn_id = sqlc.arg(turn_id))
-    END)
-ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload
+    END,
+    CASE WHEN sqlc.arg(payload)::jsonb->>'status' IN ('completed', 'incomplete', 'failed') THEN sqlc.arg(created_at)::timestamptz END)
+ON CONFLICT (id) DO UPDATE SET payload = EXCLUDED.payload,
+    settled_at = CASE WHEN session_items.payload->>'status' = 'in_progress'
+        AND EXCLUDED.payload->>'status' IN ('completed', 'incomplete', 'failed')
+        THEN COALESCE(session_items.settled_at, EXCLUDED.created_at) ELSE session_items.settled_at END
 RETURNING *;
 
 -- name: ListSessionItems :many
@@ -38,3 +42,9 @@ SELECT * FROM turn_events WHERE session_id = $1 AND turn_id = $2 AND ordinal >= 
 -- name: HasNativeMessageItem :one
 SELECT EXISTS(SELECT 1 FROM session_items WHERE turn_id = $1
     AND payload->>'role' = 'assistant' AND id <> $2);
+
+-- name: ListTurnItemDiagnostics :many
+SELECT id, created_at, settled_at FROM session_items
+WHERE session_id = $1 AND turn_id = $2
+ORDER BY created_at, position, id
+LIMIT 1001;

@@ -12,3 +12,5 @@ export { compareSkillVersionNumbers, isSkillId, isSkillUploadPath, isSkillVersio
 export { AdminClient } from "./admin-client";
 // Skill and SkillVersion come from ./types; the admin projections use the same shapes.
 export type { AdminClientOptions, AdminProject, CreateAdminProjectInput, RenameAdminProjectInput, AdminAPIKey, AdminIssuedAPIKey, IssueAdminAPIKeyInput, AdminPage, AdminDeleted, SessionArtifact, AdminContent, AdminResourceType, AdminKeyProvenance, AdminResourceOwner, AdminWriteOperation, AdminWriteOperationOptions, AdminWriteOperationPage, AdminSummaryOptions, AdminSummaryEntry, AdminSummary, AdminRuntimeObservation, AdminAuditOptions, AdminAuditResultID, AdminAuditEntry, AdminAuditPage, ExecutorCredential, ExecutorConnection, ExecutorCredentialList, IssueExecutorCredentialInput, IssuedExecutorCredential, CoreProjectReader, CoreInstallation, CoreInstallationConfiguration, CoreInstallationSetting, CoreAddressBindings } from "./admin-types";
+
+export type { DiagnosticFailureCode, ProvisioningFailureParams, DiagnosticFailure, SessionDiagnosticFailure, SessionDiagnostics, ItemDiagnosticTiming, TurnDiagnostics } from "./session-diagnostics";

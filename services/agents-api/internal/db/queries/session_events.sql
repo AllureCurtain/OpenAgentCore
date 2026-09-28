@@ -30,9 +30,11 @@ DELETE FROM session_events e WHERE e.session_id = $1 AND e.sequence IN (
 );
 
 -- name: FinishSessionItems :many
-UPDATE session_items SET payload = jsonb_set(payload, '{status}', '"incomplete"')
+WITH observed AS MATERIALIZED (SELECT clock_timestamp() AS at)
+UPDATE session_items SET payload = jsonb_set(payload, '{status}', '"incomplete"'), settled_at = COALESCE(session_items.settled_at, observed.at)
+FROM observed
 WHERE session_id = $1 AND turn_id = $2 AND payload->>'status' = 'in_progress'
-RETURNING *;
+RETURNING session_items.*;
 
 -- name: SessionEventTurn :one
 SELECT * FROM turns WHERE session_id = $1 AND id = $2;

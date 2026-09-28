@@ -1,3 +1,4 @@
+import { projectSessionDiagnostics, projectTurnDiagnostics } from "./session-diagnostics";
 import {
   addVaultPageOptions, projectAgentSession, projectRuntimeObservation,
   projectEnvironmentTemplate, projectEnvironmentTemplateList, projectVault, projectVaultList,
@@ -224,6 +225,12 @@ export class AdminClient {
   }
   downloadArtifact(projectId: string, sessionId: string, artifactId: string, options?: ReadOptions) {
     return this.#content(`${scope(projectId)}/sessions/${segment(sessionId)}/artifacts/${segment(artifactId)}/content`, options);
+  }
+  async retrieveSessionDiagnostics(projectId: string, sessionId: string, options?: ReadOptions) {
+    return projectSessionDiagnostics(await this.#json(`${scope(projectId)}/sessions/${segment(sessionId)}/diagnostics`, options), sessionId);
+  }
+  async retrieveTurnDiagnostics(projectId: string, sessionId: string, turnId: string, options?: ReadOptions) {
+    return projectTurnDiagnostics(await this.#json(`${scope(projectId)}/sessions/${segment(sessionId)}/turns/${segment(turnId)}/diagnostics`, options), sessionId, turnId);
   }
   async retrieveSessionExecutionConfiguration(projectId: string, sessionId: string, options?: ReadOptions) {
     return projectExecutionConfiguration(await this.#json(`${scope(projectId)}/sessions/${segment(sessionId)}/execution-configuration`, options), sessionId, invalidAdminResponse);

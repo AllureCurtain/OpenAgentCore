@@ -74,6 +74,8 @@ func (h *Handler) registerAdminResourceRoutes(router chi.Router) {
 			r.Delete("/projects/{project_id}/vaults/{vault_id}/credentials/{credential_id}", h.adminDeleteCredential)
 			r.Get("/projects/{project_id}/sessions", h.adminListSessions)
 			r.Get("/projects/{project_id}/sessions/{session_id}", h.adminGetSession)
+			r.Get("/projects/{project_id}/sessions/{session_id}/diagnostics", h.getSessionDiagnostics)
+			r.Get("/projects/{project_id}/sessions/{session_id}/turns/{turn_id}/diagnostics", h.getTurnDiagnostics)
 			r.Delete("/projects/{project_id}/sessions/{session_id}", h.adminDeleteSession)
 			if h.adminManagement != nil {
 				r.Post("/projects/{project_id}/sessions/{session_id}/archive", h.adminArchiveSession)

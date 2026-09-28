@@ -31,9 +31,11 @@ func (q *Queries) AppendSessionEvent(ctx context.Context, arg AppendSessionEvent
 }
 
 const finishSessionItems = `-- name: FinishSessionItems :many
-UPDATE session_items SET payload = jsonb_set(payload, '{status}', '"incomplete"')
+WITH observed AS MATERIALIZED (SELECT clock_timestamp() AS at)
+UPDATE session_items SET payload = jsonb_set(payload, '{status}', '"incomplete"'), settled_at = COALESCE(session_items.settled_at, observed.at)
+FROM observed
 WHERE session_id = $1 AND turn_id = $2 AND payload->>'status' = 'in_progress'
-RETURNING id, session_id, turn_id, created_at, position, payload, output_index
+RETURNING session_items.id, session_items.session_id, session_items.turn_id, session_items.created_at, session_items.position, session_items.payload, session_items.output_index, session_items.settled_at
 `
 
 type FinishSessionItemsParams struct {
@@ -58,6 +60,7 @@ func (q *Queries) FinishSessionItems(ctx context.Context, arg FinishSessionItems
 			&i.Position,
 			&i.Payload,
 			&i.OutputIndex,
+			&i.SettledAt,
 		); err != nil {
 			return nil, err
 		}
