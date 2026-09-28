@@ -107,15 +107,15 @@ def sandbox(network, cwd, workspace=None):
     return args + ['--chdir', cwd, '--']
 
 
-def run(request):
+def run(request, workspace=None):
     action = request['action']
     if action == 'configure':
-        configure(request['env'])
+        configure(request.get('env', {}))
         return
     if action == 'system':
-        runpy.run_path('/usr/local/bin/oac-tool-root')['install'](request['packages'])
+        runpy.run_path('/usr/local/bin/oac-tool-root')['install'](request['packages'], workspace=workspace or str(ROOT / 'workspace'))
         return
-    args = sandbox(request['network'], request.get('cwd', '/workspace'))
+    args = sandbox(request['network'], request.get('cwd', '/workspace'), workspace=workspace)
     if action == 'setup':
         command = request['command']
         if not isinstance(command, str) or not command or '\x00' in command:
@@ -230,7 +230,10 @@ def stdio(installation_root, workspace, package, server):
 
 
 def main():
-    if len(sys.argv) != 1:
+    workspace = None
+    if len(sys.argv) == 3 and sys.argv[1] == 'initialize':
+        workspace = sys.argv[2]
+    elif len(sys.argv) != 1:
         try:
             if len(sys.argv) != 6 or sys.argv[1] != 'stdio':
                 raise ValueError('invalid stdio invocation')
@@ -245,8 +248,18 @@ def main():
         request = json.loads(raw)
         if not isinstance(request, dict) or request.get('version') != 1:
             raise ValueError('invalid version')
-        roots()
-        run(request)
+        if workspace is not None:
+            path = Path(workspace)
+            if (not workspace.startswith('/') or workspace == '/' or os.path.normpath(workspace) != workspace
+                    or any(ord(c) < 32 or ord(c) == 127 or c == '\\' for c in workspace)
+                    or path.resolve(strict=True) != path or not path.is_dir()):
+                raise ValueError('invalid Runtime workspace')
+        if workspace is None:
+            roots()
+            run(request)
+        else:
+            roots(workspace)
+            run(request, workspace=workspace)
     except Exception as error:
         print(failed_receipt(error))
         return 1

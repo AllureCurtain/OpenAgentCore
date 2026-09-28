@@ -81,8 +81,8 @@ func ValidateDirectories(directories []string) error {
 }
 
 // ValidateLocalDirectories checks source spelling, not local access authority.
-// Absolute paths use the protocol path syntax; the Runtime resolver owns host
-// interpretation, directory access and protected-root exclusions.
+// This Linux implementation requires canonical Unix paths. The Runtime resolver
+// owns directory access and protected-root exclusions.
 func ValidateLocalDirectories(directories []string) error {
 	if len(directories) > 50 {
 		return ErrInvalid
@@ -165,7 +165,7 @@ func validSelectionHash(value string) bool {
 // ValidateInput bounds source selections without reading archives or directories.
 // Portable manifest grammar is checked by the shared Skill and Plugin parsers.
 func ValidateInput(input Input) error {
-	if len(input.Skills) > MaxSkills || len(input.Plugins) > 50 || ValidateLocalDirectories(input.Directories) != nil {
+	if len(input.Skills) > MaxSkills || len(input.Plugins) > 50 || ValidateSourceDirectories(input.Directories) != nil {
 		return ErrInvalid
 	}
 	validMetadata := func(kind, name, description string) bool {

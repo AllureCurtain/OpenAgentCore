@@ -46,7 +46,7 @@ func (r *Router) handleWorkspaceWrite(ctx context.Context, env proto.Envelope) e
 		return ErrRouterClosed
 	}
 	if request.Step == "begin" {
-		if r.workspaceExport != nil || r.capabilitiesPrepare != nil {
+		if r.workspaceExport != nil || r.runtimePreparation != nil {
 			r.mu.Unlock()
 			return r.sendWorkspaceWrite(ctx, env.ID, rejectedWorkspaceWrite("resource_unavailable"))
 		}

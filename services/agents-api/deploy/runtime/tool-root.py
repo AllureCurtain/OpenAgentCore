@@ -57,7 +57,7 @@ def initialization_sandbox(cwd, network='enabled', *, writable=False, workspace=
     return args
 
 
-def install(packages):
+def install(packages, *, workspace='/environment/workspace'):
     if not isinstance(packages, list) or not packages or any(
         not isinstance(p, str) or not p or p.startswith('-') or '\x00' in p for p in packages
     ):
@@ -71,7 +71,7 @@ def install(packages):
     ROOT.mkdir(mode=0o700)
     subprocess.run(['/usr/bin/tar', '--no-same-owner', '--no-same-permissions', '-xzf', str(SEED), '-C', str(ROOT)],
                    check=True, env=BASE_ENV, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    args = initialization_sandbox('/workspace', writable=True)
+    args = initialization_sandbox('/workspace', writable=True, workspace=workspace)
     # Namespace root maps only to the unprivileged Runtime UID; _apt is unmapped.
     apt = ['/usr/bin/apt-get', '-o', 'APT::Sandbox::User=root', '-o', 'Acquire::Retries=0']
     for command in (apt + ['update'], apt + ['install', '-y', '--no-install-recommends', '--', *packages]):

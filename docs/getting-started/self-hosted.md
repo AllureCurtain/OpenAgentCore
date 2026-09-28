@@ -108,6 +108,9 @@ environment = {
 }
 ```
 
+The API accepts portable absolute Unix, Windows drive and UNC source paths without
+checking Core's filesystem. The current Linux Runtime requires canonical local Unix
+paths and applies its own access checks; this does not add Windows support.
 These paths refer to directories visible inside that Runtime. Populate them before
 first execution. `/workspace` maps to its bound workspace; an operator-prepared
 Runtime may use its exact canonical absolute workspace instead. Directory aliases,

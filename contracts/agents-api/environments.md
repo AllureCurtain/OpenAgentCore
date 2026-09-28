@@ -49,8 +49,11 @@ Omitted/null network defaults to enabled. Enabled, disabled and exact-host restr
 policies use the same qualified image with adapter-selected immutable native policy.
 Templates and inline configuration share initial files, env, packages, ordered setup
 and inline or tenant-owned referenced Skills through ordered managed initialization.
-Provider operations retain file/tool/package/setup work; Runtime imports Skills and
-Plugins and finalizes directory snapshots through its authenticated connection.
+The same authenticated daemon handles initial files, tool configuration, packages,
+setup, Skill/Plugin import and directory snapshot finalization through
+`runtime_prepare`. Providers place, create, bootstrap, inspect, renew and reclaim
+compute. Package installation and setup retain enabled provisioning network access;
+the requested network policy constrains native execution after setup.
 Unsupported hostname forms and installation combinations reject explicitly; see
 the [Template coverage and limits](environment-templates.md). Empty/null installation
 defaults produce safe empty metadata, not a live workspace inventory. Service-origin
@@ -152,7 +155,9 @@ revocation/deletion on each declared deployment.
 Core freezes resource versions, metadata and source selections. Managed initialization
 keeps initial files and tool configuration before Runtime Skill/Plugin import,
 then runs packages and ordered setup before Runtime snapshots local capability
-directories. Providers do not parse or install capability bundles. Self-hosted input
+directories. All steps use the common `runtime_prepare` protocol; Providers do
+not execute Core initialization commands. The common runner depends on neutral
+Environment/Session identity and a Runtime peer, not Provider, deployment or OS. Self-hosted input
 accepts only local `capability_directories` with `workspace_directory`, not managed
 Skill/Plugin archive fields or a hosted Template. Local directory discovery does not
 populate the public API-managed `skills` or `plugins` installation arrays.
@@ -175,6 +180,11 @@ Resource management owns allocation and Environment creation, renewal and reclam
 Executor close, Turn cancellation and transport loss preserve the installed snapshot,
 workspace and allocation. Reclamation is an explicit operation coordinated with active
 work; a disconnected socket is not proof that native effects have stopped.
+
+Source selections accept portable absolute Unix, Windows drive and UNC paths;
+Core does not resolve these paths on its own host. The daemon applies its local
+path and access checks. Initial files and setup working directories use logical
+`/workspace` paths. Harness differences remain in adapters.
 
 The protocol is platform-neutral, but this implementation retains the existing Linux
 helpers, protected initialization storage and isolation requirements. It does not provide

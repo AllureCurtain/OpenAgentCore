@@ -4,6 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -75,7 +78,16 @@ func managedWorker(t *testing.T, s *store.Store, key string, p sandbox.Provider)
 
 func managedWorkerMode(t *testing.T, s *store.Store, key string, p sandbox.Provider, maintenance bool) (*execution.Worker, func()) {
 	t.Helper()
-	w, err := execution.StartWorker(t.Context(), &execution.Dispatcher{Store: s, Registry: gateway.NewRegistry(), ManagedRuntimes: &execution.RuntimeProvider{CoreURL: "http://core.invalid/api/v1", InstallationID: key, BackendFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Provider: p, AdmissionPaused: maintenance}})
+	registry := gateway.NewRegistry()
+	if peer, ok := p.(interface {
+		setRuntimeGateway(*testing.T, string, *gateway.Registry)
+	}); ok {
+		handler := gateway.NewHandler(gateway.HandlerConfig{Authenticator: gateway.NewAuthenticator(s), Registry: registry})
+		server := httptest.NewServer(http.HandlerFunc(handler.WS))
+		t.Cleanup(server.Close)
+		peer.setRuntimeGateway(t, "ws"+strings.TrimPrefix(server.URL, "http"), registry)
+	}
+	w, err := execution.StartWorker(t.Context(), &execution.Dispatcher{Store: s, Registry: registry, ManagedRuntimes: &execution.RuntimeProvider{CoreURL: "http://core.invalid/api/v1", InstallationID: key, BackendFingerprint: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Provider: p, AdmissionPaused: maintenance}})
 	if err != nil {
 		t.Fatal(err)
 	}

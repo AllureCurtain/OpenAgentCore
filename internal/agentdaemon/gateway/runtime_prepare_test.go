@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -16,19 +17,19 @@ import (
 	"github.com/google/uuid"
 )
 
-func skillPreparation() proto.CapabilitiesPreparePayload {
-	return proto.CapabilitiesPreparePayload{EnvironmentID: uuid.NewString(), SessionID: uuid.NewString(), Action: "skill",
+func skillPreparation() proto.RuntimePreparePayload {
+	return proto.RuntimePreparePayload{EnvironmentID: uuid.NewString(), SessionID: uuid.NewString(), Action: "skill",
 		Skill: &agentskill.Metadata{Type: "inline", Name: "example", Description: "Example"}}
 }
 
 type capabilityOutcome struct {
-	result proto.CapabilitiesResultPayload
+	result proto.RuntimePrepareResultPayload
 	err    error
 }
 
-func beginCapabilities(s *Session, ctx context.Context, id string, request proto.CapabilitiesPreparePayload, data []byte) <-chan capabilityOutcome {
+func beginCapabilities(s *Session, ctx context.Context, id string, request proto.RuntimePreparePayload, data []byte) <-chan capabilityOutcome {
 	done := make(chan capabilityOutcome, 1)
-	go func() { r, err := s.PrepareCapabilities(ctx, id, request, data); done <- capabilityOutcome{r, err} }()
+	go func() { r, err := s.PrepareRuntime(ctx, id, request, data); done <- capabilityOutcome{r, err} }()
 	return done
 }
 func nextCapabilityFrame(t *testing.T, s *Session) proto.Envelope {
@@ -51,8 +52,8 @@ func finishCapabilities(t *testing.T, done <-chan capabilityOutcome) capabilityO
 		return capabilityOutcome{}
 	}
 }
-func replyCapabilities(s *Session, id string, result proto.CapabilitiesResultPayload) {
-	reply, _ := proto.NewEnvelope(proto.TypeCapabilitiesResult, id, result)
+func replyCapabilities(s *Session, id string, result proto.RuntimePrepareResultPayload) {
+	reply, _ := proto.NewEnvelope(proto.TypeRuntimePrepareResult, id, result)
 	s.dispatch(reply)
 }
 func noCapabilityFrame(t *testing.T, s *Session) {
@@ -75,11 +76,11 @@ func TestCapabilitiesTransfersMoreThanFrameLimitAndCorrelates(t *testing.T) {
 	for {
 		env := nextCapabilityFrame(t, s)
 		encoded, err := json.Marshal(env)
-		var p proto.CapabilitiesPreparePayload
-		if err != nil || len(encoded) > proto.CapabilitiesMaxFrameBytes || env.ID != id || env.Type != proto.TypeCapabilitiesPrepare || env.DecodePayload(&p) != nil || !proto.ValidCapabilitiesPrepareRequest(p) {
+		var p proto.RuntimePreparePayload
+		if err != nil || len(encoded) > proto.RuntimePrepareMaxFrameBytes || env.ID != id || env.Type != proto.TypeRuntimePrepare || env.DecodePayload(&p) != nil || !proto.ValidRuntimePrepareRequest(p) {
 			t.Fatal("invalid frame")
 		}
-		result := proto.CapabilitiesResultPayload{}
+		result := proto.RuntimePrepareResultPayload{}
 		switch p.Step {
 		case "begin":
 			digest := sha256.Sum256(data)
@@ -115,20 +116,20 @@ func TestCapabilitiesTransfersMoreThanFrameLimitAndCorrelates(t *testing.T) {
 func TestCapabilitiesFinalizeTransfersNoArchive(t *testing.T) {
 	s := NewSession(newFakeConn(), "device", "tenant", "test", nil, nil)
 	defer s.Close("test")
-	request := proto.CapabilitiesPreparePayload{EnvironmentID: uuid.NewString(), SessionID: uuid.NewString(), Action: "finalize", Sources: &agentcapabilities.Input{}}
+	request := proto.RuntimePreparePayload{EnvironmentID: uuid.NewString(), SessionID: uuid.NewString(), Action: "finalize", Sources: &agentcapabilities.Input{}}
 	id := uuid.NewString()
 	done := beginCapabilities(s, t.Context(), id, request, nil)
 	env := nextCapabilityFrame(t, s)
-	var p proto.CapabilitiesPreparePayload
+	var p proto.RuntimePreparePayload
 	if env.DecodePayload(&p) != nil || p.Step != "begin" || p.Sources == nil || p.SizeBytes != 0 || p.SHA256 != "" {
 		t.Fatal("invalid finalization", p)
 	}
-	replyCapabilities(s, id, proto.CapabilitiesResultPayload{Outcome: "ready"})
+	replyCapabilities(s, id, proto.RuntimePrepareResultPayload{Outcome: "ready"})
 	env = nextCapabilityFrame(t, s)
 	if env.DecodePayload(&p) != nil || p.Step != "commit" {
 		t.Fatal("finalization sent archive")
 	}
-	replyCapabilities(s, id, proto.CapabilitiesResultPayload{Outcome: "completed"})
+	replyCapabilities(s, id, proto.RuntimePrepareResultPayload{Outcome: "completed"})
 	if result := finishCapabilities(t, done); result.err != nil || result.result.Outcome != "completed" {
 		t.Fatal(result)
 	}
@@ -137,14 +138,14 @@ func TestCapabilitiesFinalizeTransfersNoArchive(t *testing.T) {
 func TestCapabilitiesRefusesConflictingArchiveBeforeSending(t *testing.T) {
 	s := NewSession(newFakeConn(), "device", "tenant", "test", nil, nil)
 	defer s.Close("test")
-	for _, mutate := range []func(*proto.CapabilitiesPreparePayload){
-		func(p *proto.CapabilitiesPreparePayload) { p.SHA256 = "incorrect" },
-		func(p *proto.CapabilitiesPreparePayload) { p.SizeBytes = 999 },
-		func(p *proto.CapabilitiesPreparePayload) { p.Sources = &agentcapabilities.Input{} },
+	for _, mutate := range []func(*proto.RuntimePreparePayload){
+		func(p *proto.RuntimePreparePayload) { p.SHA256 = "incorrect" },
+		func(p *proto.RuntimePreparePayload) { p.SizeBytes = 999 },
+		func(p *proto.RuntimePreparePayload) { p.Sources = &agentcapabilities.Input{} },
 	} {
 		request := skillPreparation()
 		mutate(&request)
-		if result, err := s.PrepareCapabilities(t.Context(), uuid.NewString(), request, []byte("data")); err == nil || result.Outcome != "unknown" {
+		if result, err := s.PrepareRuntime(t.Context(), uuid.NewString(), request, []byte("data")); err == nil || result.Outcome != "unknown" {
 			t.Fatal("conflict admitted", result, err)
 		}
 		noCapabilityFrame(t, s)
@@ -152,10 +153,10 @@ func TestCapabilitiesRefusesConflictingArchiveBeforeSending(t *testing.T) {
 }
 
 func TestCapabilitiesStopsAtTerminalOrMalformedReceipt(t *testing.T) {
-	for name, receipt := range map[string]proto.CapabilitiesResultPayload{
-		"rejected":            {Outcome: "rejected", ErrorCode: "capabilities_rejected"},
-		"failed":              {Outcome: "failed", ErrorCode: "capabilities_failed"},
-		"unknown":             {Outcome: "unknown", ErrorCode: "capabilities_unconfirmed"},
+	for name, receipt := range map[string]proto.RuntimePrepareResultPayload{
+		"rejected":            {Outcome: "rejected", ErrorCode: "runtime_preparation_rejected"},
+		"failed":              {Outcome: "failed", ErrorCode: "runtime_preparation_failed"},
+		"unknown":             {Outcome: "unknown", ErrorCode: "runtime_preparation_unconfirmed"},
 		"premature completed": {Outcome: "completed", SizeBytes: 4},
 		"wrong offset":        {Outcome: "ready", Offset: 1},
 		"unsafe code":         {Outcome: "rejected", ErrorCode: "private detail"},
@@ -186,9 +187,9 @@ func TestCapabilitiesRejectsWrongChunkReceipt(t *testing.T) {
 	id := uuid.NewString()
 	done := beginCapabilities(s, t.Context(), id, skillPreparation(), []byte("data"))
 	nextCapabilityFrame(t, s)
-	replyCapabilities(s, id, proto.CapabilitiesResultPayload{Outcome: "ready"})
+	replyCapabilities(s, id, proto.RuntimePrepareResultPayload{Outcome: "ready"})
 	nextCapabilityFrame(t, s)
-	replyCapabilities(s, id, proto.CapabilitiesResultPayload{Outcome: "received", Offset: 3})
+	replyCapabilities(s, id, proto.RuntimePrepareResultPayload{Outcome: "received", Offset: 3})
 	result := finishCapabilities(t, done)
 	if result.err == nil || result.result.Outcome != "unknown" {
 		t.Fatal(result)
@@ -205,14 +206,14 @@ func TestCapabilitiesConnectionOwnershipAndUnknownInterruption(t *testing.T) {
 			defer cancel()
 			done := beginCapabilities(s, ctx, uuid.NewString(), skillPreparation(), []byte("data"))
 			nextCapabilityFrame(t, s)
-			if _, err := s.PrepareCapabilities(t.Context(), uuid.NewString(), skillPreparation(), []byte("second")); err == nil {
+			if _, err := s.PrepareRuntime(t.Context(), uuid.NewString(), skillPreparation(), []byte("second")); err == nil {
 				t.Fatal("concurrent transfer admitted")
 			}
 			if closeConnection {
 				s.Close("lost connection")
 			}
 			result := finishCapabilities(t, done)
-			if result.result.Outcome != "unknown" || result.result.ErrorCode != "capabilities_unconfirmed" {
+			if result.result.Outcome != "unknown" || result.result.ErrorCode != "runtime_preparation_unconfirmed" {
 				t.Fatal("interruption claimed rejection", result)
 			}
 			expected := error(context.DeadlineExceeded)
@@ -229,6 +230,100 @@ func TestCapabilitiesConnectionOwnershipAndUnknownInterruption(t *testing.T) {
 			if remaining != 0 {
 				t.Fatal("transfer ownership retained")
 			}
+		})
+	}
+}
+
+func TestRuntimeInitialFileChunking(t *testing.T) {
+	for _, size := range []int{0, (4 << 20) + 1} {
+		t.Run(fmt.Sprint(size), func(t *testing.T) {
+			s := NewSession(newFakeConn(), "device", "tenant", "test", nil, nil)
+			defer s.Close("test")
+			request := proto.RuntimePreparePayload{EnvironmentID: uuid.NewString(), SessionID: uuid.NewString(), Action: "file", File: &proto.RuntimeInitialFile{Path: "/workspace/project/file"}}
+			data := bytes.Repeat([]byte("z"), size)
+			id := uuid.NewString()
+			done := beginCapabilities(s, t.Context(), id, request, data)
+			var received []byte
+			for {
+				env := nextCapabilityFrame(t, s)
+				var p proto.RuntimePreparePayload
+				if env.DecodePayload(&p) != nil || !proto.ValidRuntimePrepareRequest(p) {
+					t.Fatal("invalid file frame")
+				}
+				result := proto.RuntimePrepareResultPayload{}
+				switch p.Step {
+				case "begin":
+					sum := sha256.Sum256(data)
+					if p.File == nil || p.File.Path != request.File.Path || p.SizeBytes != size || p.SHA256 != hex.EncodeToString(sum[:]) {
+						t.Fatal("file header changed")
+					}
+					result.Outcome = "ready"
+				case "chunk":
+					if p.Offset != len(received) {
+						t.Fatal("wrong chunk offset")
+					}
+					received = append(received, p.Data...)
+					result.Outcome, result.Offset = "received", len(received)
+				case "commit":
+					if !bytes.Equal(data, received) {
+						t.Fatal("file bytes changed")
+					}
+					result.Outcome, result.SizeBytes = "completed", size
+				}
+				replyCapabilities(s, id, result)
+				if p.Step == "commit" {
+					break
+				}
+			}
+			got := finishCapabilities(t, done)
+			if got.err != nil || got.result.Outcome != "completed" {
+				t.Fatal(got)
+			}
+			noCapabilityFrame(t, s)
+		})
+	}
+}
+
+func TestRuntimeInitializationNoDataAndExitReceipt(t *testing.T) {
+	for _, exit := range []int{0, 42, 256} {
+		t.Run(fmt.Sprint(exit), func(t *testing.T) {
+			s := NewSession(newFakeConn(), "device", "tenant", "test", nil, nil)
+			defer s.Close("test")
+			request := proto.RuntimePreparePayload{EnvironmentID: uuid.NewString(), SessionID: uuid.NewString(), Action: "initialize", Initialization: &proto.RuntimeInitialization{Action: "setup", Network: "enabled", Command: "echo test"}}
+			if _, err := s.PrepareRuntime(t.Context(), uuid.NewString(), request, []byte("forbidden")); err == nil {
+				t.Fatal("initialization body accepted")
+			}
+			noCapabilityFrame(t, s)
+			id := uuid.NewString()
+			done := beginCapabilities(s, t.Context(), id, request, nil)
+			env := nextCapabilityFrame(t, s)
+			var p proto.RuntimePreparePayload
+			if env.DecodePayload(&p) != nil {
+				t.Fatal("invalid initialization frame")
+			}
+			if p.Step != "begin" || p.Initialization == nil || p.Initialization.Command != request.Initialization.Command || p.SizeBytes != 0 || p.SHA256 != "" {
+				t.Fatal("initialization changed")
+			}
+			replyCapabilities(s, id, proto.RuntimePrepareResultPayload{Outcome: "ready"})
+			env = nextCapabilityFrame(t, s)
+			p = proto.RuntimePreparePayload{}
+			if env.DecodePayload(&p) != nil || p.Step != "commit" {
+				t.Fatal("initialization sent data")
+			}
+			result := proto.RuntimePrepareResultPayload{Outcome: "completed"}
+			if exit != 0 {
+				result = proto.RuntimePrepareResultPayload{Outcome: "failed", ErrorCode: "runtime_preparation_failed", ExitCode: exit}
+			}
+			replyCapabilities(s, id, result)
+			got := finishCapabilities(t, done)
+			if exit == 256 {
+				if got.err == nil || got.result.Outcome != "unknown" {
+					t.Fatal("unsafe exit accepted", got)
+				}
+			} else if got.err != nil || got.result != result {
+				t.Fatal(got)
+			}
+			noCapabilityFrame(t, s)
 		})
 	}
 }

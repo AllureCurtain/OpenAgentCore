@@ -114,6 +114,24 @@ class FailureReceiptTest(unittest.TestCase):
                 self.assertIn(['--ro-bind', '/environment/initialization', '/environment/initialization'], mounts)
                 self.assertIn(['--chdir', '/workspace'], [args[i:i+2] for i in range(len(args)-1)])
 
+    def test_private_initialization_uses_bound_workspace_and_empty_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = str(Path(directory).resolve())
+            stdin = mock.Mock()
+            stdin.buffer = io.BytesIO(b'{"version":1,"action":"configure"}')
+            with mock.patch.object(initialize.sys, 'argv', ['initialize', 'initialize', workspace]), \
+                 mock.patch.object(initialize.sys, 'stdin', stdin), \
+                 mock.patch.object(initialize, 'roots') as roots, \
+                 mock.patch.object(initialize, 'run') as run, \
+                 contextlib.redirect_stdout(io.StringIO()) as output:
+                self.assertEqual(initialize.main(), 0)
+                roots.assert_called_once_with(workspace)
+                run.assert_called_once_with({'version': 1, 'action': 'configure'}, workspace=workspace)
+                self.assertEqual(json.loads(output.getvalue()), {'version': 1, 'outcome': 'completed'})
+            with mock.patch.object(initialize, 'configure') as configure:
+                initialize.run({'action': 'configure'}, workspace=workspace)
+                configure.assert_called_once_with({})
+
     def test_sandboxed_step_reports_only_its_exit_status(self):
         for status in (1, 3, 100, 255):
             failure = subprocess.CalledProcessError(status, SANDBOXED, output=CANARY.encode(), stderr=CANARY.encode())

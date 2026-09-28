@@ -27,3 +27,13 @@ func TestSelfHostedPathsDoNotCreateManagedInitialization(t *testing.T) {
 		}
 	}
 }
+
+func TestSelfHostedSourcePathsArePlatformNeutral(t *testing.T) {
+	for _, directory := range []string{`C:\work`, `D:/skills`, `\\server\share\project`, `/Users/user/work`} {
+		raw, _ := json.Marshal(map[string]any{"type": "self_hosted", "workspace_directory": directory, "capability_directories": []string{directory}})
+		request, err := (decodedSessionRequest{Environment: raw}).validated()
+		if err != nil || request.Environment.WorkspaceDirectory != directory || !request.initialization.Empty() {
+			t.Fatal("Core interpreted a Runtime source path", directory, err)
+		}
+	}
+}

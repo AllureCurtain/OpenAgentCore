@@ -22,7 +22,8 @@ Core orchestrates protocol-defined operations. Sandbox providers, Runtime
 implementations, harnesses and model providers are replaceable components.
 User-owned machines, E2B, Docker and other environments must expose the same
 execution protocol. Resource management selects machines, allocates capacity and
-creates, renews and reclaims Environments; Runtime prepares capabilities, executes
+creates, bootstraps, renews and reclaims Environments; Runtime initializes files,
+tool configuration, packages, setup and capabilities, then executes
 work and recovers within an Environment. Keep these contracts and lifetimes
 separate: closing a Session executor does not release its allocation, destroy its
 Environment or delete its workspace. Reclamation is an explicit resource-manager
@@ -554,9 +555,11 @@ or load encrypted file bodies. Record original creation intent before resolution
 Template parsing, persistence and resolution must not select a harness or Provider,
 or depend on native tool names and private harness paths. The shared initializer
 uses the packaged Runtime contract for trusted commands, workspace/staging paths,
-confidential input and completion receipts. Each Provider supplies that same
-Runtime and carries initialization commands through RunCommand; each adapter owns
-native tool configuration. A new harness or Provider must not require template
+confidential input and completion receipts. Each Provider bootstraps the same
+daemon; all initialization uses its authenticated `runtime_prepare` protocol.
+The common runner depends on Environment and Session identity and a Runtime peer,
+not a Provider, deployment type or operating system. Each adapter owns native tool
+configuration. A new harness or Provider must not require template
 business-logic changes. Reuse qualified shared helpers even when their executable
 names have historical engine prefixes; renaming is not a boundary fix. Select real
 regressions by the changed shared, Provider and adapter boundaries, rather than
@@ -596,8 +599,9 @@ never from command, package-manager or file output; unknown effects, timeouts an
 receipts without a status keep a generic reason. New input then gets the observed 409
 `conflict_error`; expiry and pending-input settlement keep their behavior.
 Completed environments never reinstall initial files on reconnect or native recovery.
-Provider RunCommand carries bounded stdin, not confidential argv. Only fixed trusted
-initializers may run with Runtime authority. User setup and package install hooks
+The typed Runtime preparation protocol carries bounded confidential input. The
+daemon selects fixed trusted initializers; Core supplies no executable or host
+platform field. User setup and package install hooks
 run in the common packaged sandbox, without daemon credentials or native history.
 Files, resolved Skills and inline Plugins precede system, npm/Python packages and ordered setup commands. Initialization has
 provisioning network access; requested network restrictions apply to native tools
@@ -728,11 +732,13 @@ omission; expand inline and template initialization together in separately quali
 batches. Resource reads need only tenant authorization, not a live Runtime.
 See the [Template coverage and unresolved semantics](contracts/agents-api/environment-templates.md).
 
-SandboxProvider has five operations: Create, GetInfo, Renew, Kill and RunCommand.
-Use maintained provider SDKs and thin adapters. Hosted deployments select one deployment-wide Provider: E2B cloud, or Docker/microsandbox on administrator-owned nodes.
-Provider initialization creates the sandbox and starts its daemon/harness;
-RunCommand is for initialization only. Daily execution and Files use Runtime and
-native or bounded local capabilities. Docker's lack of a native renewable lease
+SandboxProvider owns Create, GetInfo, Renew and Kill, with placement and daemon
+bootstrap at the resource-management boundary. Use maintained provider SDKs and
+thin adapters. Hosted deployments select one deployment-wide Provider: E2B cloud,
+or Docker/microsandbox on administrator-owned nodes. Providers do not execute Core
+initialization commands. Initialization, daily execution and Files use the same
+daemon through typed Runtime operations and native or bounded local capabilities.
+Docker's lack of a native renewable lease
 does not remove service-owned hosted expiry and cleanup requirements.
 
 The official `openai_hosted` discriminator means hosting by this independent Core
@@ -1095,11 +1101,12 @@ change guard. This boundary does not add cross-node Session
 migration, Core multi-active, autoscaling, Kubernetes or harness residency.
 
 The common
-`services/agents-api/internal/sandbox` contract owns the five base operations
-(Create, GetInfo, Renew, Kill, RunCommand) and the optional CheckpointProvider
+`services/agents-api/internal/sandbox` contract owns the four base operations
+(Create, GetInfo, Renew, Kill) and the optional CheckpointProvider
 capability. Core orchestration must not import an adapter or SDK. Exact compute
 identity, generation construction, inspection, full snapshot capture, restore,
-thaw, command execution and owned artifact cleanup use that common capability.
+thaw and owned artifact cleanup use that common capability. Initialization and
+execution use the authenticated Runtime peer.
 Provider-specific names and snapshot identities are opaque to Core. Self-hosted
 compute and providers without checkpoint support keep their existing behavior.
 
@@ -3909,28 +3916,42 @@ Sessions only. Keep the existing product navigation and direct empty-chat compos
 
 Resource management retains provider placement, capacity, allocation and Environment
 create/renew/reclaim operations. The authenticated Runtime connection carries
-capability preparation and executor operations; it does not implicitly allocate or
-destroy compute. Connection loss, executor idle close and Turn cancellation preserve
+initialization, capability preparation and executor operations; it does not implicitly
+allocate or destroy compute. Connection loss, executor idle close and Turn cancellation preserve
 the workspace and installed snapshot. Resource reclamation coordinates with active
 work through its existing owner.
 
 Core freezes resource versions, metadata and local source selections. Managed
-initialization keeps its existing order: initial files, provider tool configuration,
-Runtime bundle import, provider packages and setup commands, then Runtime directory
-snapshot finalization. Provider commands no longer parse or install Skills/Plugins.
+initialization keeps its existing order: initial files, tool configuration,
+Skill/Plugin bundle import, packages and setup commands, then directory snapshot
+finalization. Every step uses the same daemon and `runtime_prepare` exchange.
+Providers only place, create, bootstrap, inspect, renew and reclaim resources; they
+do not execute Core initialization commands. The common runner uses only neutral
+Environment/Session identity and a Runtime peer, with no Provider, deployment or OS
+branch. Harness differences belong to native adapters. Package installation and
+setup retain enabled provisioning network access; the requested network policy
+constrains native execution after setup.
 A missing authenticated Runtime connection waits before capability initialization
 is claimed; an operation whose effect is unknown is not replayed. Self-hosted
 capability directories remain in immutable Environment configuration and never
 create a managed initialization row or allocation.
 
-The private `capabilities_prepare`/`capabilities_result` exchange transfers inert
-Skill/Plugin archives or a finalization selection, with canonical Session and
-Environment identities. It accepts no command or destination path. Ordered 64 KiB
-chunks and SHA-256 receipts bound each archive to 50 MiB, each control frame to
-1 MiB and each connection to one transfer. Begin, chunk and commit are never retried;
+The private `runtime_prepare`/`runtime_prepare_result` exchange carries typed
+initial files, configure/system/npm/python/setup operations, inert Skill/Plugin
+archives and finalization selections, with canonical Session and Environment
+identities. Files and setup working directories use logical `/workspace` addresses;
+setup commands are explicit typed input, while executable selection and physical
+destinations remain Runtime-owned. Ordered 64 KiB chunks and SHA-256 receipts
+bound each file or archive to 50 MiB, each control frame to 1 MiB and each connection
+to one transfer. Initialization and finalization headers carry no file data. Begin,
+chunk and commit are never retried;
 rejected, failed and unknown effects remain distinct. Runtime owns transfer and
 filesystem work through settlement, including disconnect or cancellation.
 
+The source-selection protocol accepts portable absolute Unix, Windows drive and
+UNC paths without consulting Core's filesystem. Runtime interprets and authorizes
+local paths. The current implementation is Linux-only, with its existing packaged
+helpers and layout; the interface imposes no Linux executable or platform field.
 The common Linux binding authorizes local directories, excluding aliases, Runtime
 credentials, native history and initialization roots or their ancestors. One shared
 parser writes `installed.json` below the operator-owned capability directory
@@ -3962,6 +3983,8 @@ installation arrays describe API-managed uploads and stay empty for local direct
 MCP environment variables must come from explicit immutable Runtime tool configuration;
 missing variables never fall back to daemon credentials or ambient process variables.
 No project-version upgrade or historical manifest compatibility is introduced.
+These implementation rules do not establish new real-deployment acceptance;
+historical evidence remains limited to its recorded binaries and inputs.
 
 ### API-key write provenance
 

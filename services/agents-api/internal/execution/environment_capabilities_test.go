@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"encoding/json"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 	"slices"
@@ -29,6 +30,19 @@ func TestSelfHostedCapabilitySourcesAreFrozenAndStrict(t *testing.T) {
 	} {
 		if LocalWorkspaceConfiguration([]byte(configuration)) {
 			t.Fatal("invalid self-hosted shape accepted", configuration)
+		}
+	}
+}
+
+func TestSelfHostedPreparedPathsArePlatformNeutral(t *testing.T) {
+	for _, directory := range []string{`C:\work`, `D:/skills`, `\\server\share\project`, `/Users/user/work`} {
+		raw, _ := json.Marshal(map[string]any{"type": "self_hosted", "workspace_directory": directory, "capability_directories": []string{directory}})
+		session := store.Session{ID: "session", TenantID: "tenant"}
+		environment := store.Environment{ID: "environment", SessionID: session.ID, TenantID: session.TenantID, Configuration: raw}
+		var request proto.PromptRequestPayload
+		err := (&Dispatcher{}).configurePreparedEnvironment(session, environment, store.ExecutionDevice{EnvironmentID: environment.ID}, &request)
+		if err != nil || request.LocalEnvironment.WorkspaceDirectory != directory || request.LocalEnvironment.CapabilitySources.Directories[0] != directory {
+			t.Fatal("Core interpreted a Runtime source path", directory, err)
 		}
 	}
 }

@@ -49,37 +49,37 @@ func capabilitiesTestRouter(t *testing.T) (*Router, *capabilitiesTestSender, str
 	return router, sender, environment, session
 }
 
-func capabilityEnvelope(t *testing.T, id string, request proto.CapabilitiesPreparePayload) proto.Envelope {
+func capabilityEnvelope(t *testing.T, id string, request proto.RuntimePreparePayload) proto.Envelope {
 	t.Helper()
-	env, err := proto.NewEnvelope(proto.TypeCapabilitiesPrepare, id, request)
+	env, err := proto.NewEnvelope(proto.TypeRuntimePrepare, id, request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return env
 }
 
-func capabilityBegin(environment, session string, body []byte) proto.CapabilitiesPreparePayload {
+func capabilityBegin(environment, session string, body []byte) proto.RuntimePreparePayload {
 	digest := sha256.Sum256(body)
-	return proto.CapabilitiesPreparePayload{
+	return proto.RuntimePreparePayload{
 		Step: "begin", Action: "skill", EnvironmentID: environment, SessionID: session,
 		Skill:     &agentskill.Metadata{Type: "inline", Name: "proof", Description: "A proof."},
 		SizeBytes: len(body), SHA256: hex.EncodeToString(digest[:]),
 	}
 }
 
-func capabilitiesReceipt(t *testing.T, sender *capabilitiesTestSender, id, outcome string) proto.CapabilitiesResultPayload {
+func capabilitiesReceipt(t *testing.T, sender *capabilitiesTestSender, id, outcome string) proto.RuntimePrepareResultPayload {
 	t.Helper()
 	select {
 	case env := <-sender.frames:
-		var result proto.CapabilitiesResultPayload
-		if env.Type != proto.TypeCapabilitiesResult || env.ID != id || env.DecodePayload(&result) != nil || result.Outcome != outcome {
+		var result proto.RuntimePrepareResultPayload
+		if env.Type != proto.TypeRuntimePrepareResult || env.ID != id || env.DecodePayload(&result) != nil || result.Outcome != outcome {
 			t.Fatalf("unexpected capability receipt: id=%s type=%s result=%+v", env.ID, env.Type, result)
 		}
 		return result
 	case <-time.After(3 * time.Second):
 		t.Fatal("missing capability receipt")
 	}
-	return proto.CapabilitiesResultPayload{}
+	return proto.RuntimePrepareResultPayload{}
 }
 
 func shutdownCapabilitiesRouter(t *testing.T, router *Router) {
@@ -91,12 +91,12 @@ func shutdownCapabilitiesRouter(t *testing.T, router *Router) {
 	}
 }
 
-func TestCapabilitiesTransferValidatesCompleteBodyBeforeMutation(t *testing.T) {
+func TestRuntimePreparationTransferValidatesCompleteBodyBeforeMutation(t *testing.T) {
 	for _, mode := range []string{"offset", "digest", "short", "oversized-chunk"} {
 		t.Run(mode, func(t *testing.T) {
 			r, sender, environment, session := capabilitiesTestRouter(t)
 			defer shutdownCapabilitiesRouter(t, r)
-			body := bytes.Repeat([]byte("a"), proto.CapabilitiesChunkBytes+1)
+			body := bytes.Repeat([]byte("a"), proto.RuntimePrepareChunkBytes+1)
 			request := capabilityBegin(environment, session, body)
 			if mode == "digest" {
 				request.SHA256 = stringsOfZeroDigest()
@@ -107,37 +107,37 @@ func TestCapabilitiesTransferValidatesCompleteBodyBeforeMutation(t *testing.T) {
 			}
 			capabilitiesReceipt(t, sender, id, "ready")
 			r.mu.Lock()
-			owner := r.capabilitiesPrepare
+			owner := r.runtimePreparation
 			r.mu.Unlock()
 			duplicate := uuid.NewString()
 			if err := r.Handle(t.Context(), capabilityEnvelope(t, duplicate, request)); err != nil {
 				t.Fatal(err)
 			}
-			if got := capabilitiesReceipt(t, sender, duplicate, "rejected"); got.ErrorCode != "capabilities_capacity" {
+			if got := capabilitiesReceipt(t, sender, duplicate, "rejected"); got.ErrorCode != "runtime_preparation_capacity" {
 				t.Fatal(got)
 			}
 			switch mode {
 			case "offset":
-				_ = r.Handle(t.Context(), capabilityEnvelope(t, id, proto.CapabilitiesPreparePayload{Step: "chunk", Offset: 1, Data: []byte("a")}))
+				_ = r.Handle(t.Context(), capabilityEnvelope(t, id, proto.RuntimePreparePayload{Step: "chunk", Offset: 1, Data: []byte("a")}))
 			case "oversized-chunk":
-				_ = r.Handle(t.Context(), capabilityEnvelope(t, id, proto.CapabilitiesPreparePayload{Step: "chunk", Data: body}))
+				_ = r.Handle(t.Context(), capabilityEnvelope(t, id, proto.RuntimePreparePayload{Step: "chunk", Data: body}))
 			default:
-				if err := r.Handle(t.Context(), capabilityEnvelope(t, id, proto.CapabilitiesPreparePayload{Step: "chunk", Data: body[:proto.CapabilitiesChunkBytes]})); err != nil {
+				if err := r.Handle(t.Context(), capabilityEnvelope(t, id, proto.RuntimePreparePayload{Step: "chunk", Data: body[:proto.RuntimePrepareChunkBytes]})); err != nil {
 					t.Fatal(err)
 				}
-				if got := capabilitiesReceipt(t, sender, id, "received"); got.Offset != proto.CapabilitiesChunkBytes {
+				if got := capabilitiesReceipt(t, sender, id, "received"); got.Offset != proto.RuntimePrepareChunkBytes {
 					t.Fatal(got)
 				}
 				if mode == "digest" {
-					_ = r.Handle(t.Context(), capabilityEnvelope(t, id, proto.CapabilitiesPreparePayload{Step: "chunk", Offset: proto.CapabilitiesChunkBytes, Data: body[proto.CapabilitiesChunkBytes:]}))
+					_ = r.Handle(t.Context(), capabilityEnvelope(t, id, proto.RuntimePreparePayload{Step: "chunk", Offset: proto.RuntimePrepareChunkBytes, Data: body[proto.RuntimePrepareChunkBytes:]}))
 					capabilitiesReceipt(t, sender, id, "received")
 				}
-				_ = r.Handle(t.Context(), capabilityEnvelope(t, id, proto.CapabilitiesPreparePayload{Step: "commit"}))
+				_ = r.Handle(t.Context(), capabilityEnvelope(t, id, proto.RuntimePreparePayload{Step: "commit"}))
 			}
 			capabilitiesReceipt(t, sender, id, "rejected")
 			r.mu.Lock()
 			defer r.mu.Unlock()
-			if owner.apply || owner.data != nil || r.capabilitiesPrepare != nil {
+			if owner.apply || owner.data != nil || r.runtimePreparation != nil {
 				t.Fatal("invalid body retained or admitted a mutation")
 			}
 		})
@@ -146,7 +146,7 @@ func TestCapabilitiesTransferValidatesCompleteBodyBeforeMutation(t *testing.T) {
 
 func stringsOfZeroDigest() string { return hex.EncodeToString(make([]byte, sha256.Size)) }
 
-func TestCapabilitiesBeginRequiresExactBindingAndBounds(t *testing.T) {
+func TestRuntimePreparationBeginRequiresExactBindingAndBounds(t *testing.T) {
 	r, sender, environment, session := capabilitiesTestRouter(t)
 	defer shutdownCapabilitiesRouter(t, r)
 	for _, mode := range []string{"environment", "session", "size", "nil-binding"} {
@@ -157,7 +157,7 @@ func TestCapabilitiesBeginRequiresExactBindingAndBounds(t *testing.T) {
 		case "session":
 			request.SessionID = uuid.NewString()
 		case "size":
-			request.SizeBytes = proto.CapabilitiesMaxBytes + 1
+			request.SizeBytes = proto.RuntimePrepareMaxBytes + 1
 		case "nil-binding":
 			r.localWorkspace = nil
 		}
@@ -166,13 +166,13 @@ func TestCapabilitiesBeginRequiresExactBindingAndBounds(t *testing.T) {
 			t.Fatal(err)
 		}
 		capabilitiesReceipt(t, sender, id, "rejected")
-		if r.capabilitiesPrepare != nil {
+		if r.runtimePreparation != nil {
 			t.Fatal("invalid scope allocated a transfer")
 		}
 	}
 }
 
-func TestCapabilitiesPreparationExcludesOwnedResources(t *testing.T) {
+func TestRuntimePreparationPreparationExcludesOwnedResources(t *testing.T) {
 	for _, mode := range []string{"write", "export", "read", "run", "idle", "executor", "preparation"} {
 		t.Run(mode, func(t *testing.T) {
 			r, sender, environment, session := capabilitiesTestRouter(t)
@@ -199,7 +199,7 @@ func TestCapabilitiesPreparationExcludesOwnedResources(t *testing.T) {
 			if got := capabilitiesReceipt(t, sender, id, "rejected"); got.ErrorCode != "resource_unavailable" {
 				t.Fatal(got)
 			}
-			if r.capabilitiesPrepare != nil {
+			if r.runtimePreparation != nil {
 				t.Fatal("busy Runtime admitted capability preparation")
 			}
 			r.workspaceWrite = nil
@@ -214,7 +214,7 @@ func TestCapabilitiesPreparationExcludesOwnedResources(t *testing.T) {
 	}
 }
 
-func TestCapabilitiesUploadBlocksWorkspaceWriteAndSuspension(t *testing.T) {
+func TestRuntimePreparationUploadBlocksWorkspaceWriteAndSuspension(t *testing.T) {
 	r, sender, environment, session := capabilitiesTestRouter(t)
 	id := uuid.NewString()
 	if err := r.Handle(t.Context(), capabilityEnvelope(t, id, capabilityBegin(environment, session, []byte("abc")))); err != nil {
@@ -242,26 +242,26 @@ func TestCapabilitiesUploadBlocksWorkspaceWriteAndSuspension(t *testing.T) {
 		t.Fatal("missing write rejection")
 	}
 	r.mu.Lock()
-	owner := r.capabilitiesPrepare
+	owner := r.runtimePreparation
 	r.mu.Unlock()
 	shutdownCapabilitiesRouter(t, r)
-	if owner.data != nil || r.capabilitiesPrepare != nil {
+	if owner.data != nil || r.runtimePreparation != nil {
 		t.Fatal("disconnect retained uncommitted body")
 	}
 }
 
-func TestCapabilitiesCancellationKeepsOwnershipUntilApplyStops(t *testing.T) {
+func TestRuntimePreparationCancellationKeepsOwnershipUntilApplyStops(t *testing.T) {
 	r, sender, environment, session := capabilitiesTestRouter(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	id := uuid.NewString()
-	request := proto.CapabilitiesPreparePayload{Step: "begin", Action: "finalize", EnvironmentID: environment, SessionID: session, Sources: &agentcapabilities.Input{}}
-	owner := &capabilitiesUpload{envelope: capabilityEnvelope(t, id, request), request: request, ready: make(chan struct{}), cancel: cancel, finished: true, apply: true}
+	request := proto.RuntimePreparePayload{Step: "begin", Action: "finalize", EnvironmentID: environment, SessionID: session, Sources: &agentcapabilities.Input{}}
+	owner := &runtimePreparationTransfer{envelope: capabilityEnvelope(t, id, request), request: request, ready: make(chan struct{}), cancel: cancel, finished: true, apply: true}
 	close(owner.ready)
-	r.capabilitiesPrepare = owner
+	r.runtimePreparation = owner
 	r.shutdownWG.Add(1)
 	started, interrupted, release := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	retained := filepath.Join(t.TempDir(), "installed.json")
-	go r.runCapabilitiesUpload(ctx, owner, func(ctx context.Context, got proto.CapabilitiesPreparePayload, data []byte) error {
+	go r.runRuntimePreparationTransfer(ctx, owner, func(ctx context.Context, got proto.RuntimePreparePayload, data []byte) error {
 		if got.Action != "finalize" || len(data) != 0 {
 			return agentcapabilities.ErrInvalid
 		}
@@ -280,7 +280,7 @@ func TestCapabilitiesCancellationKeepsOwnershipUntilApplyStops(t *testing.T) {
 	}
 	<-interrupted
 	r.mu.Lock()
-	owned := r.capabilitiesPrepare == owner
+	owned := r.runtimePreparation == owner
 	r.mu.Unlock()
 	if !owned {
 		t.Fatal("cancel released unsettled capability ownership")
@@ -291,24 +291,43 @@ func TestCapabilitiesCancellationKeepsOwnershipUntilApplyStops(t *testing.T) {
 	if _, err := os.Stat(retained); err != nil {
 		t.Fatal("shutdown deleted installation result")
 	}
-	if r.capabilitiesPrepare != nil {
+	if r.runtimePreparation != nil {
 		t.Fatal("confirmed completion retained capacity")
 	}
 }
 
-func TestCapabilitiesResultCategoriesAndUnknownOwnership(t *testing.T) {
+func TestRuntimePreparationInitializationReceipts(t *testing.T) {
+	for _, code := range []int{-1, 0, 1, 255, 256} {
+		got := runtimePreparationResult(&localworkspace.InitializationFailure{ExitCode: &code}, 0)
+		if code > 0 && code <= 255 {
+			if got.Outcome != "failed" || got.ExitCode != code {
+				t.Fatalf("lost confirmed exit code: %+v", got)
+			}
+		} else if got.Outcome != "unknown" {
+			t.Fatalf("accepted invalid failure receipt: %+v", got)
+		}
+	}
+	if got := runtimePreparationResult(&localworkspace.InitializationFailure{}, 0); got.Outcome != "failed" || got.ExitCode != 0 {
+		t.Fatalf("lost confirmed generic failure: %+v", got)
+	}
+	if got := runtimePreparationResult(errors.Join(&localworkspace.InitializationFailure{}, context.Canceled), 0); got.Outcome != "unknown" {
+		t.Fatalf("cancellation reported confirmed: %+v", got)
+	}
+}
+
+func TestRuntimePreparationResultCategoriesAndUnknownOwnership(t *testing.T) {
 	for _, tc := range []struct {
 		err           error
 		outcome, code string
 	}{
 		{nil, "completed", ""},
-		{agentcapabilities.ErrInvalid, "failed", "capabilities_failed"},
-		{context.DeadlineExceeded, "unknown", "capabilities_unconfirmed"},
-		{errors.Join(agentcapabilities.ErrInvalid, context.Canceled), "unknown", "capabilities_unconfirmed"},
-		{errors.New("private native diagnostic"), "unknown", "capabilities_unconfirmed"},
+		{agentcapabilities.ErrInvalid, "failed", "runtime_preparation_failed"},
+		{context.DeadlineExceeded, "unknown", "runtime_preparation_unconfirmed"},
+		{errors.Join(agentcapabilities.ErrInvalid, context.Canceled), "unknown", "runtime_preparation_unconfirmed"},
+		{errors.New("private native diagnostic"), "unknown", "runtime_preparation_unconfirmed"},
 	} {
-		got := capabilitiesApplyResult(tc.err, 3)
-		if got.Outcome != tc.outcome || got.ErrorCode != tc.code || !proto.ValidCapabilitiesResult(got, "completed", 0, 3) {
+		got := runtimePreparationResult(tc.err, 3)
+		if got.Outcome != tc.outcome || got.ErrorCode != tc.code || !proto.ValidRuntimePrepareResult(got, "completed", 0, 3) {
 			t.Fatalf("unsafe result: %+v", got)
 		}
 	}
@@ -316,14 +335,14 @@ func TestCapabilitiesResultCategoriesAndUnknownOwnership(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	id := uuid.NewString()
 	request := capabilityBegin(environment, session, []byte("abc"))
-	owner := &capabilitiesUpload{envelope: capabilityEnvelope(t, id, request), request: request, data: []byte("abc"), ready: make(chan struct{}), cancel: cancel, finished: true, apply: true}
+	owner := &runtimePreparationTransfer{envelope: capabilityEnvelope(t, id, request), request: request, data: []byte("abc"), ready: make(chan struct{}), cancel: cancel, finished: true, apply: true}
 	close(owner.ready)
-	r.capabilitiesPrepare = owner
+	r.runtimePreparation = owner
 	r.shutdownWG.Add(1)
-	go r.runCapabilitiesUpload(ctx, owner, func(context.Context, proto.CapabilitiesPreparePayload, []byte) error { return context.DeadlineExceeded })
+	go r.runRuntimePreparationTransfer(ctx, owner, func(context.Context, proto.RuntimePreparePayload, []byte) error { return context.DeadlineExceeded })
 	capabilitiesReceipt(t, sender, id, "unknown")
 	r.mu.Lock()
-	owned := r.capabilitiesPrepare == owner && owner.uncertain && owner.data == nil
+	owned := r.runtimePreparation == owner && owner.uncertain && owner.data == nil
 	r.mu.Unlock()
 	if !owned {
 		t.Fatal("unknown mutation released its ownership")

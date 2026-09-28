@@ -2,13 +2,11 @@ package execution
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
-	"strconv"
-	"strings"
 	"time"
 
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/gateway"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
@@ -58,15 +56,10 @@ func (r *runtimeLifecycle) observeInitialization(ctx context.Context, owner stor
 		_, err = r.store.RequestRuntimeCleanup(ctx, owner)
 		return err
 	}
-	// A not-yet-connected Runtime is not a failed initialization attempt.
-	for _, operation := range operations {
-		if operation.Capabilities != nil {
-			peer, err := r.initializationPeer(ctx, owner)
-			if err != nil || peer == nil {
-				return err
-			}
-			break
-		}
+	// No initialization is claimed before the authenticated Runtime is available.
+	peer, err := r.initializationPeer(ctx, owner)
+	if err != nil || peer == nil {
+		return err
 	}
 	claimed, err := r.store.ClaimRuntimeInitialization(ctx, owner)
 	if err != nil {
@@ -108,29 +101,23 @@ func (r *runtimeLifecycle) advanceInitialization(ctx context.Context) error {
 		r.initializing = nil
 		return err
 	}
+	peer, err := r.initializationPeer(operation, owner)
+	if err == nil && peer == nil {
+		return nil
+	}
+	identity := agentcapabilities.Identity{EnvironmentID: owner.EnvironmentID, SessionID: owner.SessionID}
 	step := store.ProvisioningFailure{Step: store.ProvisioningInitialFile}
-	if active.next < active.files {
+	if err == nil && active.next < active.files {
 		var file store.InitialFileMetadata
 		var body []byte
 		file, body, err = r.store.ReadInitialEnvironmentFile(operation, owner.TenantID, owner.SessionID, active.next)
 		if err == nil {
-			err = installInitialFile(operation, r.config.Provider, runtimeReference(owner), file, body)
+			err = installInitialFile(operation, peer, identity, file, body)
 		}
-	} else {
+	} else if err == nil {
 		setup := active.operations[active.next-active.files]
 		step = setup.provisioningFailure(0)
-		if setup.Capabilities != nil {
-			var peer *gateway.Session
-			peer, err = r.initializationPeer(operation, owner)
-			if err == nil && peer == nil {
-				return nil
-			}
-			if err == nil {
-				err = runRuntimeCapabilities(operation, peer, owner, setup)
-			}
-		} else {
-			err = runRuntimeSetup(operation, r.config.Provider, runtimeReference(owner), setup)
-		}
+		err = runRuntimeSetup(operation, peer, identity, setup)
 	}
 	if err != nil {
 		// Clearing the in-memory owner makes the next observation request cleanup,
@@ -158,60 +145,8 @@ func (r *runtimeLifecycle) advanceInitialization(ctx context.Context) error {
 	return nil
 }
 
-func installInitialFile(ctx context.Context, provider sandbox.Provider, reference sandbox.Reference, file store.InitialFileMetadata, body []byte) error {
-	if provider == nil || file.SizeBytes == nil || *file.SizeBytes != int64(len(body)) || len(body) > store.MaxInitialFileBytes || !strings.HasPrefix(file.Path, "/workspace/") {
-		return sandbox.ErrInvalid
-	}
-	digest := sha256.Sum256(body)
-	input := make([]byte, 0, len(body)+len(digest))
-	input = append(input, body...)
-	input = append(input, digest[:]...)
-	result, err := provider.RunCommand(ctx, reference, sandbox.Command{Directory: "/", Args: []string{"/usr/bin/python3", "-I", "-S", "-c", initialFileInstaller, strings.TrimPrefix(file.Path, "/workspace/"), strconv.Itoa(len(body))}, Stdin: input})
-	if err != nil {
-		return err
-	}
-	var receipt struct {
-		Version   int    `json:"version"`
-		Outcome   string `json:"outcome"`
-		SizeBytes *int64 `json:"size_bytes"`
-	}
-	valid := result.Stderr == "" && json.Unmarshal([]byte(result.Stdout), &receipt) == nil && receipt.Version == 1
-	if valid && result.ExitCode == 0 && receipt.Outcome == "completed" && receipt.SizeBytes != nil && *receipt.SizeBytes == int64(len(body)) {
-		return nil
-	}
-	if valid && receipt.Outcome == "failed" {
-		// The writer exits 0 with a failed receipt when it committed nothing;
-		// "unknown" and every other result stay generic.
-		return &runtimeStepFailure{}
-	}
-	return errors.New("initial environment file installation unconfirmed")
-}
-
-// Isolated Python creates only fd-anchored workspace parents, then replaces itself with the existing atomic writer.
-const initialFileInstaller = `import os, sys
-parts = sys.argv[1].split('/')
-if any(not p or p in ('.', '..') or any(c in p for c in ('\\', '\x00', '\r', '\n')) for p in parts):
-    raise SystemExit(2)
-flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
-fd = os.open('/', flags)
-for component in ('environment', 'workspace'):
-    child = os.open(component, flags, dir_fd=fd)
-    os.close(fd)
-    fd = child
-for component in parts[:-1]:
-    try:
-        os.mkdir(component, mode=0o700, dir_fd=fd)
-    except FileExistsError:
-        pass
-    child = os.open(component, flags, dir_fd=fd)
-    os.close(fd)
-    fd = child
-os.close(fd)
-os.execv('/usr/local/bin/oac-codex-write', ['oac-codex-write', '/environment/workspace', sys.argv[1], sys.argv[2], '/environment/staging'])
-`
-
 // Missing authority/socket before sending consumes no initialization operation.
-// Once PrepareCapabilities is called, unknown effects use the existing cleanup.
+// Once PrepareRuntime is called, unknown effects use the existing cleanup.
 func (r *runtimeLifecycle) initializationPeer(ctx context.Context, owner store.RuntimeAllocation) (*gateway.Session, error) {
 	if r.registry == nil {
 		return nil, nil

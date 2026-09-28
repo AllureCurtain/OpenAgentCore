@@ -54,6 +54,11 @@ Applications then set `OPENAI_BASE_URL` to `https://core.example/v1` and
 - **Your sandboxes.** Core-hosted Sessions run in sandboxes on your nodes (Docker or
   microsandbox microVMs) or on E2B. Applications can also connect their own machines as
   self-hosted executors.
+- **One Runtime path.** The same daemon handles initial files, tool configuration,
+  packages, setup, Skills/Plugins and execution. Providers place and bootstrap
+  compute, then renew or reclaim it. The protocol is platform-neutral; the current
+  packaged implementation and isolation are Linux-only. Harness differences stay
+  in adapters.
 - **A console for administrators.** Web signs in with the Core key, issues Project API
   keys, adds nodes, sets default models and shows metrics and Session history. It
   never runs Agents on anyone's behalf.

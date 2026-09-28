@@ -75,10 +75,10 @@ func (b *Binding) Prepare(ctx context.Context, r proto.PromptRequestPayload) (pr
 	return r, nil
 }
 
-// ApplyCapabilities settles every filesystem operation before returning. A
+// ApplyRuntimePreparation settles every filesystem operation before returning. A
 // cancelled caller never leaves an unowned installation goroutine behind.
-func (b *Binding) ApplyCapabilities(ctx context.Context, input proto.CapabilitiesPreparePayload, data []byte) error {
-	if b == nil || !b.Matches(input.EnvironmentID, input.SessionID) || !proto.ValidCapabilitiesPrepareRequest(input) || input.Step != "begin" {
+func (b *Binding) ApplyRuntimePreparation(ctx context.Context, input proto.RuntimePreparePayload, data []byte) error {
+	if b == nil || !b.Matches(input.EnvironmentID, input.SessionID) || !proto.ValidRuntimePrepareRequest(input) || input.Step != "begin" {
 		return agentcapabilities.ErrInvalid
 	}
 	b.capabilityMu.Lock()
@@ -90,6 +90,21 @@ func (b *Binding) ApplyCapabilities(ctx context.Context, input proto.Capabilitie
 	defer marker.close()
 	if marker.completed {
 		return agentcapabilities.ErrInvalid
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	switch input.Action {
+	case "file":
+		if len(data) != input.SizeBytes {
+			return agentcapabilities.ErrInvalid
+		}
+		return b.installInitialFile(ctx, *input.File, data)
+	case "initialize":
+		if len(data) != 0 {
+			return agentcapabilities.ErrInvalid
+		}
+		return b.initializeRuntime(ctx, *input.Initialization)
 	}
 	root, unlock, err := b.openCapabilities(ctx, false)
 	if err != nil {

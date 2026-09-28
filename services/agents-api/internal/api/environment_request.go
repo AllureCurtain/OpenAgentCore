@@ -20,7 +20,7 @@ func decodeSessionEnvironment(raw json.RawMessage) (*v1.Environment, error) {
 		return decodeHostedEnvironment(raw)
 	case "self_hosted":
 		fields = append(fields, "workspace_directory", "capability_directories")
-		if agentcapabilities.ValidateLocalDirectories([]string{environment.WorkspaceDirectory}) != nil || agentcapabilities.ValidateLocalDirectories(environment.CapabilityDirectories) != nil {
+		if agentcapabilities.ValidateSourceDirectories([]string{environment.WorkspaceDirectory}) != nil || agentcapabilities.ValidateSourceDirectories(environment.CapabilityDirectories) != nil {
 			return nil, store.ErrInvalidInput
 		}
 	default:

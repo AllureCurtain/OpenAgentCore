@@ -16,7 +16,7 @@ import (
 
 // Directory selection is syntactically valid and passes frozen configuration
 // admission. Runtime preparation must fail before creating a native Executor.
-func TestCapabilitiesUnavailablePreventsNativeExecutor(t *testing.T) {
+func TestRuntimePreparationUnavailablePreventsNativeExecutor(t *testing.T) {
 	for _, mode := range []string{"missing-directory", "invalid-skill"} {
 		t.Run(mode, func(t *testing.T) {
 			source := filepath.Join(t.TempDir(), "capability")

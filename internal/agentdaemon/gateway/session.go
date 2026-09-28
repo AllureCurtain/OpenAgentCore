@@ -608,7 +608,7 @@ func (s *Session) dispatch(env proto.Envelope) {
 	case proto.TypeWorkspaceExportResult:
 		s.dispatchWorkspaceExport(env)
 		return
-	case proto.TypeCapabilitiesResult:
+	case proto.TypeRuntimePrepareResult:
 		s.dispatchCapabilities(env)
 		return
 	case proto.TypeWorkspaceWriteResult:

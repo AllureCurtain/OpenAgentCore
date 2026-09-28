@@ -214,8 +214,8 @@ func TestSnapshotMarkerRefusesDamagedOrAliasedPrivateState(t *testing.T) {
 func TestCapabilityFinalizeRecordsCompletionAndRejectsLaterImports(t *testing.T) {
 	b, _ := markerBinding(t)
 	identity := b.capabilityIdentity()
-	finalize := proto.CapabilitiesPreparePayload{Step: "begin", EnvironmentID: identity.EnvironmentID, SessionID: identity.SessionID, Action: "finalize", Sources: &agentcapabilities.Input{}}
-	if err := b.ApplyCapabilities(t.Context(), finalize, nil); err != nil {
+	finalize := proto.RuntimePreparePayload{Step: "begin", EnvironmentID: identity.EnvironmentID, SessionID: identity.SessionID, Action: "finalize", Sources: &agentcapabilities.Input{}}
+	if err := b.ApplyRuntimePreparation(t.Context(), finalize, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(markerPath(b)); err != nil {
@@ -225,11 +225,11 @@ func TestCapabilityFinalizeRecordsCompletionAndRejectsLaterImports(t *testing.T)
 	if err := os.RemoveAll(b.capabilityRoot); err != nil {
 		t.Fatal(err)
 	}
-	skill := proto.CapabilitiesPreparePayload{Step: "begin", EnvironmentID: identity.EnvironmentID, SessionID: identity.SessionID, Action: "skill", Skill: &agentskill.Metadata{Type: "inline", Name: "example", Description: "Example"}, SizeBytes: 1, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
-	if err := b.ApplyCapabilities(t.Context(), skill, []byte("x")); err == nil {
+	skill := proto.RuntimePreparePayload{Step: "begin", EnvironmentID: identity.EnvironmentID, SessionID: identity.SessionID, Action: "skill", Skill: &agentskill.Metadata{Type: "inline", Name: "example", Description: "Example"}, SizeBytes: 1, SHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+	if err := b.ApplyRuntimePreparation(t.Context(), skill, []byte("x")); err == nil {
 		t.Fatal("completed identity accepted import")
 	}
-	if err := b.ApplyCapabilities(t.Context(), finalize, nil); err == nil {
+	if err := b.ApplyRuntimePreparation(t.Context(), finalize, nil); err == nil {
 		t.Fatal("completed identity finalized again")
 	}
 	if _, err := os.Stat(b.capabilityRoot); !os.IsNotExist(err) {

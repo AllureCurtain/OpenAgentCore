@@ -117,7 +117,7 @@ func (d *Dispatcher) configurePreparedEnvironment(session store.Session, environ
 }
 
 func validSelfHostedPlacement(placement environmentPlacement) bool {
-	return agentcapabilities.ValidateLocalDirectories([]string{placement.WorkspaceDirectory}) == nil &&
-		agentcapabilities.ValidateLocalDirectories(placement.CapabilityDirectories) == nil &&
+	return agentcapabilities.ValidateSourceDirectories([]string{placement.WorkspaceDirectory}) == nil &&
+		agentcapabilities.ValidateSourceDirectories(placement.CapabilityDirectories) == nil &&
 		!placement.ToolEnvironment && len(placement.Skills)+len(placement.Plugins) == 0
 }

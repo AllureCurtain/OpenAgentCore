@@ -4,36 +4,26 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/gateway"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentplugin"
-	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 	"github.com/google/uuid"
 	"testing"
 )
 
-type capabilityProviderTrap struct {
-	sandbox.Provider
-	calls int
-}
-
-func (p *capabilityProviderTrap) RunCommand(context.Context, sandbox.Reference, sandbox.Command) (sandbox.CommandResult, error) {
-	p.calls++
-	return sandbox.CommandResult{}, nil
-}
-
 type capabilityFixture struct {
-	request   proto.CapabilitiesPreparePayload
+	request   proto.RuntimePreparePayload
 	body      []byte
 	requestID string
 	outcome   string
 	err       error
 }
 
-func (f *capabilityFixture) PrepareCapabilities(_ context.Context, id string, request proto.CapabilitiesPreparePayload, body []byte) (proto.CapabilitiesResultPayload, error) {
+func (f *capabilityFixture) PrepareRuntime(_ context.Context, id string, request proto.RuntimePreparePayload, body []byte) (proto.RuntimePrepareResultPayload, error) {
 	f.requestID, f.request, f.body = id, request, append([]byte(nil), body...)
-	return proto.CapabilitiesResultPayload{Outcome: f.outcome, ErrorCode: "safe_failure"}, f.err
+	return proto.RuntimePrepareResultPayload{Outcome: f.outcome, ErrorCode: "safe_failure"}, f.err
 }
 func TestRuntimeCapabilitiesPreserveRawBundlesAndSetupOrdering(t *testing.T) {
 	archive := []byte("opaque archive bytes must be expanded only by Runtime")
@@ -44,13 +34,13 @@ func TestRuntimeCapabilitiesPreserveRawBundlesAndSetupOrdering(t *testing.T) {
 		CapabilityDirectories: []string{"/workspace/generated"},
 	}
 	operations := setupOperations(setup)
-	if len(operations) != 5 || operations[0].Action != "configure" || operations[1].Capabilities.Action != "skill" || operations[2].Capabilities.Action != "plugin" || operations[3].Action != "setup" || operations[4].Capabilities.Action != "finalize" {
+	if len(operations) != 5 || operations[0].Request.Initialization.Action != "configure" || operations[1].Request.Action != "skill" || operations[2].Request.Action != "plugin" || operations[3].Request.Initialization.Action != "setup" || operations[4].Request.Action != "finalize" {
 		t.Fatal("bundle-before-setup or directory-after-setup ordering changed", operations)
 	}
-	owner := store.RuntimeAllocation{EnvironmentID: uuid.NewString(), SessionID: uuid.NewString()}
-	for _, op := range []runtimeSetupOperation{operations[1], operations[2], operations[4]} {
+	owner := agentcapabilities.Identity{EnvironmentID: uuid.NewString(), SessionID: uuid.NewString()}
+	for _, op := range operations {
 		peer := &capabilityFixture{outcome: "completed"}
-		if err := runRuntimeCapabilities(t.Context(), peer, owner, op); err != nil {
+		if err := runRuntimeSetup(t.Context(), peer, owner, op); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := uuid.Parse(peer.requestID); err != nil {
@@ -59,32 +49,29 @@ func TestRuntimeCapabilitiesPreserveRawBundlesAndSetupOrdering(t *testing.T) {
 		if peer.request.EnvironmentID != owner.EnvironmentID || peer.request.SessionID != owner.SessionID {
 			t.Fatal("allocation identity lost")
 		}
-		if op.Capabilities.Action != "finalize" && !bytes.Equal(peer.body, archive) {
+		if (op.Request.Action == "skill" || op.Request.Action == "plugin") && !bytes.Equal(peer.body, archive) {
 			t.Fatal("Core expanded or changed archive")
 		}
-		if op.Capabilities.Action == "skill" && (peer.request.Skill.Type != "inline" || peer.request.Skill.Name != "example") {
+		if op.Request.Action == "skill" && (peer.request.Skill.Type != "inline" || peer.request.Skill.Name != "example") {
 			t.Fatal("unsafe or unresolved metadata")
 		}
-		if op.Capabilities.Action == "finalize" && (len(peer.body) != 0 || peer.request.Sources == nil || len(peer.request.Sources.Skills) != 1 || len(peer.request.Sources.Plugins) != 1 || peer.request.Sources.Directories[0] != "/workspace/generated") {
+		if op.Request.Action == "finalize" && (len(peer.body) != 0 || peer.request.Sources == nil || len(peer.request.Sources.Skills) != 1 || len(peer.request.Sources.Plugins) != 1 || peer.request.Sources.Directories[0] != "/workspace/generated") {
 			t.Fatal("finalization selections changed")
 		}
-		provider := &capabilityProviderTrap{}
-		if err := runRuntimeSetup(t.Context(), provider, sandbox.Reference{}, op); err == nil || provider.calls != 0 {
-			t.Fatal("capability operation reached provider command path")
-		}
+
 	}
 }
 func TestRuntimeCapabilitiesConfirmedAndUnknownFailures(t *testing.T) {
 	for _, outcome := range []string{"failed", "rejected", "unknown", "unexpected"} {
 		peer := &capabilityFixture{outcome: outcome}
-		err := runRuntimeCapabilities(t.Context(), peer, store.RuntimeAllocation{}, runtimeSetupOperation{Capabilities: &proto.CapabilitiesPreparePayload{Action: "finalize"}})
+		err := runRuntimeSetup(t.Context(), peer, agentcapabilities.Identity{}, runtimeSetupOperation{Request: proto.RuntimePreparePayload{Action: "finalize"}})
 		var confirmed *runtimeStepFailure
 		if err == nil || errors.As(err, &confirmed) != (outcome == "failed" || outcome == "rejected") {
 			t.Fatal(outcome, err)
 		}
 	}
 	peer := &capabilityFixture{outcome: "completed", err: errors.New(setupCanary)}
-	err := runRuntimeCapabilities(t.Context(), peer, store.RuntimeAllocation{}, runtimeSetupOperation{Capabilities: &proto.CapabilitiesPreparePayload{}})
+	err := runRuntimeSetup(t.Context(), peer, agentcapabilities.Identity{}, runtimeSetupOperation{Request: proto.RuntimePreparePayload{}})
 	if err == nil || bytes.Contains([]byte(err.Error()), []byte(setupCanary)) {
 		t.Fatal("transport error leaked or succeeded", err)
 	}

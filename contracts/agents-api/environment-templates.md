@@ -73,8 +73,9 @@ Session, omission and null inherit, while a supplied list replaces the entire fi
 set, including `[]` clearing it. Paths are not merged between the two sources.
 The effective list retains the existing validation and tenant-owned source checks.
 
-Core initializes both paths with the same trusted file installer through Provider
-RunCommand. Daemon authentication remains available, but native preparation and live
+Core initializes both paths through the authenticated daemon's typed `runtime_prepare`
+file operation. The Runtime resolves the logical workspace path and owns the trusted
+file installer. Daemon authentication remains available, but native preparation and live
 Files wait for all writes. Each file gets a two-minute transfer budget; the batch has
 a thirty-minute local budget and shares maintenance scans with other allocations.
 These are local operational limits, not verified upstream timing. Initial input
@@ -126,8 +127,8 @@ in its creation transaction. Later source deletion, default changes or template
 updates cannot change that Session or its committed creation retry. A supplied
 Session Skill list replaces the template list; omission/null inherit. Template
 responses include `version: null` for an unresolved default selector; resolved
-Session references retain a concrete version string. See [resource selector
-qualification](resource-selector-semantics.md) and [null selection evidence](template-null-selection.md).
+Session references retain a concrete version string. See
+[resource selector qualification](resource-selector-semantics.md) and [null selection evidence](template-null-selection.md).
 References return type/skill_id/version/name/description in Session metadata,
 while template responses retain unresolved selectors. Confidential bundle content
 never appears in these metadata responses. The common Runtime installation path
@@ -167,7 +168,8 @@ Core transfers frozen Skill archives over the authenticated Runtime connection.
 Runtime's shared parser installs them under its operator-bound capability root
 (default `/environment/initialization/capabilities/skills/<name>` for each Skill)
 before setup and native execution;
-Provider commands do not install Skills or Plugins. Setup and native tools can read
+The same daemon handles initial files, configuration, packages and setup; Providers
+only bootstrap it and manage compute resources. Setup and native tools can read
 that tree but cannot write it. Completed recovery loads the protected installation
 without reinstalling. The common Runtime resolves installed metadata and paths before
 invoking the native executor factory.
@@ -397,30 +399,37 @@ Templates workflow, not all upstream semantics, transports or Provider combinati
 ## Packaged Runtime initialization contract
 
 Template handlers and stores resolve public configuration without choosing a
-harness, native path or compute backend. The common initialization lifecycle uses
-the following existing Linux Runtime packaging requirements through Provider
-`RunCommand`; these are private deployment requirements, not public Template fields.
+harness, native path or compute backend. The common runner depends on neutral
+Environment/Session identity and an authenticated Runtime peer. It sends initial
+files, configure/system/npm/python/setup operations, Skills, Plugins and finalization
+through `runtime_prepare`, then uses the same daemon for execution. Providers own
+placement, creation, daemon bootstrap, inspection, renewal and reclamation; they do
+not run Core initialization commands. Harness-specific behavior stays in adapters.
 
-- `/workspace` is the public workspace. `/environment/workspace` names the same
-  storage for trusted initialization; `/environment/staging` is private staging.
-- `/usr/bin/python3 -I -S` runs the trusted, fd-anchored initial-file installer.
-  It invokes the existing `/usr/local/bin/oac-codex-write` atomic writer in
-  its four-argument replace mode; only public Files.create uses the create mode.
-  That executable is a shared filesystem helper packaged for every harness; its
-  historical name does not select Codex or invoke native Codex tools.
-- Confidential content travels on bounded stdin. Successful initialization needs
-  the writer's versioned completion receipt and confirmed process exit. Unknown
-  effects use the existing allocation cleanup path rather than replay.
-- Provider implementations preserve argv, stdin, exit status and allocation
-  ownership. They do not interpret public templates. Runtime adapters own native
-  configuration; initialization must not consume a harness's private history,
-  model credentials or native tool protocol.
+The protocol accepts logical `/workspace` file and working-directory addresses and
+portable absolute source selections. Physical paths, executable selection and local
+access checks belong to Runtime. The current implementation uses these existing
+Linux packaging requirements; they are not public Template fields or requirements
+for future Runtime implementations on other platforms:
 
-New hosted harnesses reuse these helpers and paths; new Providers deploy the same
-Runtime contract. Neither addition should change template validation, storage or
-resolution. Extend this contract only for an accepted initialization requirement.
+- `/workspace` is the logical workspace. The packaged Linux default binds it to
+  `/environment/workspace`; `/environment/staging` is private staging.
+- The daemon invokes the fixed trusted, fd-anchored initial-file installer and the
+  shared atomic writer. These helpers do not select a harness or invoke native
+  model tools.
+- Confidential content travels in bounded protocol frames and private helper stdin.
+  The daemon verifies native completion before sending a typed Runtime receipt.
+  Unknown effects use the existing allocation cleanup path rather than replay.
+- Runtime adapters own native configuration. Initialization cannot access a
+  harness's private history, model credentials or native tool protocol.
+
+New Providers bootstrap the same Runtime contract. New harnesses reuse common
+preparation, with native differences confined to their adapters. Neither addition
+changes template validation, storage or resolution. This interface separation does
+not claim a non-Linux installer, layout or isolation implementation.
 The trusted `/usr/local/bin/oac-runtime-initialize` receives a bounded
-version-1 JSON operation on stdin. It configures read-only tool env under
+version-1 JSON operation on stdin from the Linux daemon. This private helper format
+is not the Core-to-Runtime protocol. It configures read-only tool env under
 `/environment/initialization`, installs packages under `/environment/packages`,
 and runs ordered commands through distro bubblewrap. The fixed mount/process map
 excludes daemon credentials, native history and staging. User values are applied
@@ -434,7 +443,9 @@ Runtime receives a `tool_environment` execution flag, without template identity 
 provider information. Adapters validate the common files and apply them in their
 native tool sandbox: Claude uses its native Bash hook, Codex its managed Bash hook,
 and MiniMax its isolated native-tool worker. Native transports remain unchanged.
-Files reads do not require initialized tool configuration. Docker setup requires
+Files reads do not require initialized tool configuration. Packages and setup keep
+enabled provisioning network access; requested Session network restrictions apply
+to native execution after setup. Docker setup requires
 the existing nested-sandbox deployment profile for every harness; E2B supplies
 the same Runtime layout and kernel isolation.
 
@@ -444,6 +455,10 @@ stops the Turn on an observed failed hook. Earlier command effects may already
 exist; this is not an atomic hook-failure prevention guarantee.
 
 ## Initialization failure — September 23
+
+The September 23 observations below are historical acceptance evidence. Current
+initialization uses the shared daemon protocol described above; these observations
+do not qualify that new transport against a real deployment.
 
 When a hosted Environment fails to provision, Core now reports it the way the
 official service does (evidence and rows H1–H8 in
@@ -467,15 +482,14 @@ The reason names only the failed step and its exit status:
 
 "Anything else" covers timeouts, the thirty-minute budget, unknown effects,
 missing or malformed receipts, Plugin installation and directory finalization,
-bootstrap rejection and Core restart during initialization. Provider-executed setup
-has a confirmed failure only when the process exits 1 with empty stderr and stdout
-decodes as a version-1 receipt whose `outcome` is `failed`. Only its optional
-`exit_code` is projected, when it is an integer from 1 to 255; unknown fields are
-ignored without establishing old-version compatibility. Runtime capability
-operations use typed `rejected`, `failed` or `unknown` outcomes instead of provider
-process receipts. Only a confirmed Skill preparation failure gets the Skill label;
-Plugin/finalization failures and uncertain effects retain the generic reason. The Store composes the
-reason from a fixed label and integers, so commands, env values, package names,
+bootstrap rejection and Core restart during initialization. All initialization
+operations return typed Runtime `rejected`, `failed` or `unknown` outcomes. The
+Linux daemon confirms the trusted helper's process exit and private receipt before
+reporting completion or failure. Only `failed` can carry a bounded `exit_code`;
+For setup and package steps, Core projects a confirmed nonzero status, never
+process output; zero or missing status retains the generic reason. Only a confirmed
+Skill preparation failure gets the Skill label. Plugin/finalization failures and
+uncertain effects retain the generic reason. The Store composes the reason from a fixed label and integers, so commands, env values, package names,
 paths and any process output never reach the reason, events, logs or responses.
 The failed step is
 not retried and later steps do not run.

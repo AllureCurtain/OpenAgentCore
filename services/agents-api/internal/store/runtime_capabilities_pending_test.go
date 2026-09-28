@@ -32,7 +32,7 @@ func TestManagedCapabilitiesWaitBeforeInitializationClaim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	provider := &initializingProvider{lifecycleProvider: lifecycleProvider{resources: map[string]sandbox.Info{}}}
+	provider := &initializingProvider{lifecycleProvider: lifecycleProvider{resources: map[string]sandbox.Info{}}, initializationPeer: initializationPeer{deferred: true}}
 	key := uuid.NewString()
 	worker, _ := managedWorker(t, s, key, provider)
 	owner, err := worker.ProvisionEnvironment(t.Context(), tenant, env.ID, key)
@@ -45,8 +45,8 @@ func TestManagedCapabilitiesWaitBeforeInitializationClaim(t *testing.T) {
 		}
 	}
 	owner, err = s.GetRuntimeAllocation(t.Context(), tenant, env.ID)
-	if err != nil || owner.Initialization != "pending" || owner.State != "running" || provider.writes != 0 || provider.kills != 0 {
-		t.Fatal("missing socket consumed initialization or requested cleanup", owner, err, provider.writes, provider.kills)
+	if err != nil || owner.Initialization != "pending" || owner.State != "running" || provider.writes.Load() != 0 || provider.kills != 0 {
+		t.Fatal("missing socket consumed initialization or requested cleanup", owner, err, provider.writes.Load(), provider.kills)
 	}
 	if _, err := s.GetSessionExecutionBinding(t.Context(), tenant, session.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatal("ordinary readiness gate bypassed", err)
