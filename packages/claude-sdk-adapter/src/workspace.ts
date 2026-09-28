@@ -119,7 +119,7 @@ export class WorkspaceProfile {
 
   readonly canUseTool: CanUseTool = async (name, input, { signal, agentID }) => {
     if (!signal.aborted && (agentID === undefined || this.subagents?.permitsActor(agentID)) && this.permits(name, input)) {
-      return { behavior: "allow", updatedInput: this.absoluteInput(name, input) };
+      return { behavior: "allow", updatedInput: this.nativeInput(name, input) };
     }
     return { behavior: "deny", message: denial };
   };
@@ -133,14 +133,21 @@ export class WorkspaceProfile {
     }
     if (!signal.aborted && input.hook_event_name === "PreToolUse" && (input.agent_id === undefined || this.subagents?.permitsActor(input.agent_id)) &&
         (id === undefined || id === input.tool_use_id) && this.permits(input.tool_name, input.tool_input)) {
-      return input.tool_name !== "Read" && input.tool_name !== "Edit" ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse",
-        updatedInput: this.absoluteInput(input.tool_name, input.tool_input as Record<string, unknown>) } };
+      return !["Read", "Edit", "Skill"].includes(input.tool_name) ? {} : { hookSpecificOutput: { hookEventName: "PreToolUse",
+        updatedInput: this.nativeInput(input.tool_name, input.tool_input as Record<string, unknown>) } };
     }
     return { hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: denial } };
   };
 
-  private absoluteInput(name: string, input: Record<string, unknown>): Record<string, unknown> {
+  private nativeInput(name: string, input: Record<string, unknown>): Record<string, unknown> {
+    if (name === "Skill") return { ...input, skill: this.skillName(input.skill) };
     return name !== "Read" && name !== "Edit" ? input : { ...input, file_path: resolve(this.cwd, input.file_path as string) };
+  }
+
+  private skillName(value: unknown): string | undefined {
+    if (typeof value !== "string") return undefined;
+    // Public names are unique in the installed snapshot; native plugins add a namespace.
+    return this.skillNames.find(name => name === value || name.endsWith(":" + value));
   }
 
   private permits(name: string, value: unknown): boolean {
@@ -148,10 +155,9 @@ export class WorkspaceProfile {
     const input = value as Record<string, unknown>;
     if (this.structuredOutput && name === "StructuredOutput") return true;
     if (this.functions.includes(name) || this.mcp?.permits(name)) return true;
-    if (name === "Skill") return typeof input.skill === "string" && this.skillNames.includes(input.skill);
+    if (name === "Skill") return this.skillName(input.skill) !== undefined;
     if (name === "Bash") return typeof input.command === "string" && !!input.command.trim() &&
-      (input.run_in_background === undefined || input.run_in_background === false) &&
-      (input.dangerouslyDisableSandbox === undefined || input.dangerouslyDisableSandbox === false);
+      (input.run_in_background === undefined || input.run_in_background === false);
     if ((name !== "Read" && name !== "Edit") || typeof input.file_path !== "string" || !input.file_path ||
         /[\x00-\x1f]/.test(input.file_path)) return false;
     return true;
