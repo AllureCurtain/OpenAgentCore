@@ -112,10 +112,11 @@ func decodeEnvironmentSetup(fields map[string]json.RawMessage) (store.Environmen
 	return result, result.Validate()
 }
 
-func packageMetadata(packages *v1.EnvironmentPackages) v1.EnvironmentPackages {
+func packageMetadata(packages *v1.EnvironmentPackages) v1.EnvironmentPackagesResponse {
 	value := store.EnvironmentSetup{}
 	if packages != nil {
 		value.Packages = *packages
 	}
-	return value.PackageMetadata()
+	normalized := value.PackageMetadata()
+	return v1.EnvironmentPackagesResponse{NPM: normalized.NPM, Python: normalized.Python, System: []string{}}
 }

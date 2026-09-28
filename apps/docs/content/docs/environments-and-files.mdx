@@ -59,7 +59,9 @@ setup, Skill/Plugin import and directory snapshot finalization through
 `runtime_prepare`. Providers place, create, bootstrap, inspect, renew and reclaim
 compute. npm/Python installation and setup use the host's existing network and
 starting account. System dependencies must be preinstalled; `packages.system`
-rejects explicitly and never invokes apt, sudo or elevated execution.
+rejects explicitly, including null and empty lists, and never invokes apt, sudo
+or elevated execution. Package responses include the official required
+`system: []` field as empty metadata; it does not enable installation.
 Unsupported hostname forms and installation combinations reject explicitly; see
 the [Template coverage and limits](https://github.com/MiniMax-AI/parsar-core/blob/281f243aa785ea25512a6157daa1d44197b9723e/contracts/agents-api/environment-templates.md). Empty/null installation
 defaults produce safe empty metadata, not a live workspace inventory. Service-origin

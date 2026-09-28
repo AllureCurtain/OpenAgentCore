@@ -670,6 +670,8 @@ or any other automatic system-package operation. No daemon privilege increase or
 managed-only exception is permitted. Missing dependencies fail the consuming
 operation. npm and Python use local prefix/target directories; setup requires Bash
 and Windows requires Git Bash, without a substitute shell.
+Package responses retain the official required `system: []` field as empty
+response metadata; it is not stored as an initialization option.
 
 Initialization and package directories default under `OAC_RUNTIME_HOME` and may be
 selected with `OAC_RUNTIME_INITIALIZATION_DIRECTORY` and
@@ -1175,8 +1177,9 @@ root or subagent Turn, pending input/file operation or initialization remains,
 and real activity has been idle for the configured interval. For node-managed
 allocations, record the first root or child terminal transition in the same
 transaction using Core's database clock and the existing compute activity field.
-Native completion timestamps remain unchanged in public history but cannot drive
-idle admission across hosts; repeated terminal projections never reset that timer.
+For every Environment source, positive native completion timestamps remain
+unchanged in public history, even when host clock skew places them before Core's
+Turn creation time. They cannot drive idle admission across hosts; repeated terminal projections never reset that timer.
 Read activity together with the database observation time. Candidate filtering and
 the Session-locked phase recheck compare elapsed database time with the configured
 idle duration; callers must not supply a Core-wall-clock cutoff. Anchor the initial

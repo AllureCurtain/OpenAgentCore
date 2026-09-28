@@ -154,15 +154,53 @@ func TestManagedIdleClockIgnoresChildHostSkewAndReplay(t *testing.T) {
 		})
 	}
 }
-func TestUnmanagedRootCompletionStillRejectsEarlierClock(t *testing.T) {
-	s, _ := testStore(t)
-	tenant, session := newTurnSession(t, s)
-	input := submitMessage(t, s, tenant, session.ID, "earlier-clock")
-	current := transition(t, s, tenant, session.ID, input.TurnID, TurnQueued, TurnInProgress)
-	source := current.CreatedAt.Add(-269 * time.Second).UnixMilli()
-	outcome := json.RawMessage(fmt.Sprintf(`{"done":{"source_completed_at_ms":%d}}`, source))
-	if _, err := s.CompleteExecution(t.Context(), tenant, session.ID, input.TurnID, TurnCompleted, outcome, "", input.Sequence); !errors.Is(err, ErrInvalidInput) {
-		t.Fatal("unmanaged timing contract changed", err)
+func TestUnmanagedRootCompletionPreservesHostSkew(t *testing.T) {
+	for _, placement := range []string{"none", "self_hosted"} {
+		for _, skew := range []time.Duration{-269 * time.Second, 269 * time.Second} {
+			t.Run(placement+"/"+skew.String(), func(t *testing.T) {
+				s, _ := testStore(t)
+				tenant := uuid.NewString()
+				environment := map[string]any{"type": placement}
+				if placement == "self_hosted" {
+					environment["workspace_directory"] = "/workspace"
+				}
+				configuration, _ := json.Marshal(map[string]any{"agent": map[string]string{"model": "test"}, "environment": environment})
+				session, err := s.CreateSession(t.Context(), tenant, CreateSessionInput{Creator: FixtureCreator(), Engine: "codex", IdempotencyKey: uuid.NewString(), Configuration: configuration})
+				if err != nil {
+					t.Fatal(err)
+				}
+				input := submitMessage(t, s, tenant, session.ID, "host-clock")
+				current := transition(t, s, tenant, session.ID, input.TurnID, TurnQueued, TurnInProgress)
+				source := current.CreatedAt.Add(skew).UnixMilli()
+				outcome := json.RawMessage(fmt.Sprintf(`{"done":{"source_completed_at_ms":%d}}`, source))
+				completed, err := s.CompleteExecution(t.Context(), tenant, session.ID, input.TurnID, TurnCompleted, outcome, "", input.Sequence)
+				if err != nil || completed.CompletedAt.UnixMilli() != source {
+					t.Fatal("native completion changed or rejected", completed, err)
+				}
+				read, err := s.GetTurn(t.Context(), tenant, session.ID, input.TurnID)
+				if err != nil || read.Status != TurnCompleted || read.CompletedAt.UnixMilli() != source {
+					t.Fatal("public native timestamp rewritten", read, err)
+				}
+				if _, err := s.CompleteExecution(t.Context(), tenant, session.ID, input.TurnID, TurnCompleted, outcome, "", input.Sequence); !errors.Is(err, ErrTurnConflict) {
+					t.Fatal("terminal replay accepted", err)
+				}
+			})
+		}
+	}
+}
+
+func TestRootCompletionRejectsNonpositiveSourceTime(t *testing.T) {
+	for _, source := range []int64{0, -1} {
+		t.Run(fmt.Sprint(source), func(t *testing.T) {
+			s, _ := testStore(t)
+			tenant, session := newTurnSession(t, s)
+			input := submitMessage(t, s, tenant, session.ID, "invalid-clock")
+			transition(t, s, tenant, session.ID, input.TurnID, TurnQueued, TurnInProgress)
+			outcome := json.RawMessage(fmt.Sprintf(`{"done":{"source_completed_at_ms":%d}}`, source))
+			if _, err := s.CompleteExecution(t.Context(), tenant, session.ID, input.TurnID, TurnCompleted, outcome, "", input.Sequence); !errors.Is(err, ErrInvalidInput) {
+				t.Fatal("invalid native timestamp accepted", err)
+			}
+		})
 	}
 }
 

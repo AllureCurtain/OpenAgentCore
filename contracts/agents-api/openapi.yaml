@@ -549,6 +549,25 @@ definitions:
         type: array
         x-nullable: true
     type: object
+  v1.EnvironmentPackagesResponse:
+    properties:
+      npm:
+        items:
+          type: string
+        type: array
+      python:
+        items:
+          type: string
+        type: array
+      system:
+        items:
+          type: string
+        type: array
+    required:
+    - npm
+    - python
+    - system
+    type: object
   v1.EnvironmentTemplate:
     properties:
       capability_directories:
@@ -573,7 +592,7 @@ definitions:
         - agent.environment.template
         type: string
       packages:
-        $ref: '#/definitions/v1.EnvironmentPackages'
+        $ref: '#/definitions/v1.EnvironmentPackagesResponse'
       plugins:
         items:
           type: object
@@ -1362,7 +1381,7 @@ definitions:
       network:
         $ref: '#/definitions/v1.EnvironmentNetwork'
       packages:
-        $ref: '#/definitions/v1.EnvironmentPackages'
+        $ref: '#/definitions/v1.EnvironmentPackagesResponse'
       plugins:
         items:
           type: object
