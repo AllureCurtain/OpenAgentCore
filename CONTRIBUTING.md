@@ -4070,7 +4070,9 @@ error. A partial addition must preserve the old configuration and allow reuse of
 complete components; it must not remove previous files or data.
 
 Installers run as the current user in writable directories. Native subprocess
-diagnostics must not expose sensitive parameters or environment values. Readiness,
+diagnostics must not expose sensitive parameters or environment values. Adapter
+readiness checks receive the installer cancellation context and must reap owned
+processes before returning after interruption. Readiness,
 authenticated connection and model configuration are separate reported facts.
 Starting execution must not download or install Harnesses. Ordinary stop/reconnect
 must preserve capability snapshots and native Session state.

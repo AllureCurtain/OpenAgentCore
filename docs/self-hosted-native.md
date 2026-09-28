@@ -171,8 +171,10 @@ Runtime initialization/package directories default to `initialization` and
 through `OAC_RUNTIME_INITIALIZATION_DIRECTORY` and `OAC_RUNTIME_PACKAGE_DIRECTORY`;
 this does not change the preparation protocol or account permissions. npm and
 Python dependencies use user-writable prefix/target directories. Setup uses Bash,
-including Git Bash on Windows. `packages.system` is rejected even when empty or
-null; managed images/templates must include system dependencies before launch.
+including Git Bash on Windows. Supplying `packages.system` in configuration is
+rejected even when empty or null; managed images/templates must include system
+dependencies before launch. Official API read responses retain the required
+`system: []` field, which does not imply support for installing system packages.
 
 On Windows, stdio MCP commands named npm or npx (including explicit .cmd
 paths) run through the selected installation's JavaScript entrypoint with Node.
