@@ -292,33 +292,10 @@ describes reset and API behavior. Same-team E2B edits have a separate online Cor
 API path and do not involve node installation.
 
 
-## Remove a node added before the rename
+## Historical node installations
 
-A new installer refuses retained state for the same installation under the old
-`parsar-node` names. It does not convert that state or remove nodes belonging to
-another installation. Remove the node on its old Core's Nodes page, then run the
-**previous release's** verified `node-install.pyz --uninstall --installation-id
-<installation-id>`, with `sudo` only if that node was installed with sudo. Use
-`--force` only when that Core no longer exists.
-
-If the previous installer is unavailable, inspect and remove only that
-installation's resources:
-
-1. Stop and disable `parsar-node-<installation-id>.service` with `systemctl`, using
-   `sudo` for a system service or `--user` as the original installing user.
-2. Remove its exact unit file or enablement link. System units live in
-   `/etc/systemd/system/`; user links live in `~/.config/systemd/user/`. Reload the
-   same systemd manager after removing the unit.
-3. After stopping the node, remove its state directory as its owner:
-   `/var/lib/parsar-node/.parsar/nodes/<installation-id>` as `parsar-node` in sudo
-   mode, or `~/.parsar/nodes/<installation-id>` as the original user. Do not run
-   root cleanup through files or links controlled by the service account.
-4. In sudo mode, remove only `/etc/parsar-node/<installation-id>.json`. Keep the
-   account record, the `parsar-node` user and group memberships while any other
-   installation or retained microsandbox store uses them.
-5. For Docker, remove `parsar-node-<installation-id>` only after confirming that
-   its network has no attached containers. Keep Runtime images, volumes and
-   retained microsandbox stores until their owners have explicitly retired them.
-
-Then use the new Core's Add node command. The new account, service and state use
-`oac-node` and `~/.oac/nodes`; historical Core Session records remain in Core.
+An older node installation is unsupported by the current installer. Retained state
+under the old `parsar-node` names is a refusal condition, not an invitation to
+convert or delete it. Preserve the old installation, Runtime resources and history;
+provision a fresh node separately through **Add node**. The current installer does
+not adopt historical resources or remove another installation's state.
