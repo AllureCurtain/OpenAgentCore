@@ -224,6 +224,9 @@ func run() error {
 		defer runtime.CloseConnections(registry)
 		options = append(options, api.WithEnvironmentRemoteURL(wsURL))
 	}
+	options = append(options, api.WithExecutorConnections(func(ctx context.Context, environment, digest string) (bool, error) {
+		return runtimeenrollment.RuntimeConnected(ctx, executionStore, registry, environment, digest)
+	}))
 	if registry != nil {
 		dispatcher := &execution.Dispatcher{Store: executionStore, Registry: registry,
 			ManagedRuntimes: managed, MaxConcurrentExecutions: concurrency}

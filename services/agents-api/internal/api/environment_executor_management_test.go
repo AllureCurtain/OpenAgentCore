@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ type executorManagementFixture struct {
 	rotate, audited  bool
 	calls            int
 	err              error
+	connection       store.ExecutorConnectionState
 }
 
 func (f *executorManagementFixture) record(ctx context.Context, principal identity.Principal, environment, key string) {
@@ -28,9 +30,9 @@ func (f *executorManagementFixture) record(ctx context.Context, principal identi
 	_, f.audited = adminaudit.FromContext(ctx)
 	f.calls++
 }
-func (f *executorManagementFixture) ListProjectExecutorCredentials(ctx context.Context, principal identity.Principal, environment string) ([]store.ExecutorCredential, error) {
+func (f *executorManagementFixture) ProjectExecutorCredentialState(ctx context.Context, principal identity.Principal, environment string) (store.ExecutorCredentialState, error) {
 	f.record(ctx, principal, environment, "")
-	return []store.ExecutorCredential{{KeyID: "listed", CreatedAt: time.Unix(1, 0).UTC()}}, f.err
+	return store.ExecutorCredentialState{Credentials: []store.ExecutorCredential{{KeyID: "listed", CreatedAt: time.Unix(1, 0).UTC()}}, Connection: f.connection}, f.err
 }
 func (f *executorManagementFixture) IssueProjectExecutorCredential(ctx context.Context, principal identity.Principal, environment, key string, rotate bool) (store.IssuedExecutorCredential, error) {
 	f.record(ctx, principal, environment, key)
@@ -85,7 +87,7 @@ func TestProjectExecutorCredentialsHTTP(t *testing.T) {
 	}
 
 	w := projectKeyHTTP(h, "GET", path, "admin", "")
-	if w.Code != 200 || w.Body.String() != `{"data":[{"key_id":"listed","created_at":"1970-01-01T00:00:01Z","revoked_at":null}]}`+"\n" {
+	if w.Code != 200 || w.Body.String() != `{"data":[{"key_id":"listed","created_at":"1970-01-01T00:00:01Z","revoked_at":null}],"connection":{"status":"never_enrolled","bound_key_id":null,"enrolled_at":null,"last_seen_at":null}}`+"\n" {
 		t.Fatal("list", w.Code, w.Body)
 	}
 	w = projectKeyHTTP(h, "POST", path, "admin", body)
@@ -129,5 +131,55 @@ func TestProjectExecutorCredentialsHTTP(t *testing.T) {
 		if w := projectKeyHTTP(h, "DELETE", path+"/"+keyID, "admin", ""); w.Code != 204 || w.Body.Len() != 0 || f.key != keyID {
 			t.Fatal("revocation", w.Code)
 		}
+	}
+}
+
+func TestExecutorConnectionListObservation(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		observer  bool
+		connected bool
+		err       error
+		want      string
+		status    int
+	}{
+		{"live", true, true, nil, "connected", 200}, {"closed", true, false, nil, "disconnected", 200},
+		{"no registry", false, false, nil, "disconnected", 200}, {"rotated", true, false, store.ErrDeviceBindingConflict, "disconnected", 200},
+		{"revoked", true, false, store.ErrNotFound, "disconnected", 200}, {"database failure", true, false, errors.New("private-database"), "", 500},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			key := callerBinding()
+			at := time.Unix(1, 0).UTC()
+			bound := "bound-key"
+			f := &executorManagementFixture{connection: store.ExecutorConnectionState{DeviceID: "device", BoundKeyID: &bound, EnrolledAt: &at, CredentialHash: "private-digest", EnvironmentStatus: "connected"}}
+			auth, _ := NewAuthenticator([]APIKey{key})
+			admin, _ := NewDeploymentAuthenticator([]string{device.HashCredential("admin")})
+			opts := []Option{WithProjectAPIKeys(managementProjectStore(key), admin)}
+			if tc.observer {
+				opts = append(opts, WithExecutorConnections(func(_ context.Context, environment, digest string) (bool, error) {
+					if environment != "environment" || digest != "private-digest" {
+						t.Fatal("wrong binding")
+					}
+					return tc.connected, tc.err
+				}))
+			}
+			h, err := NewHandler(f, auth, "codex", opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			w := projectKeyHTTP(h, "GET", "/core/v1/projects/"+managementProjectID+"/environments/environment/executor-credentials", "admin", "")
+			if w.Code != tc.status {
+				t.Fatal(w.Code, w.Body)
+			}
+			if strings.Contains(w.Body.String(), "private-") {
+				t.Fatal("internal observation leaked")
+			}
+			if tc.status == 200 {
+				var got ExecutorCredentialList
+				if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.Connection.Status != tc.want || got.Connection.BoundKeyID == nil || *got.Connection.BoundKeyID != bound {
+					t.Fatal("projection", err, w.Body)
+				}
+			}
+		})
 	}
 }

@@ -37,6 +37,7 @@ type ResourceStore interface {
 }
 
 type Handler struct {
+	executorConnections   func(context.Context, string, string) (bool, error)
 	coreMetrics           CoreMetricsService
 	sandboxStore          *store.Store
 	deploymentAuth        *DeploymentAuthenticator

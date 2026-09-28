@@ -258,12 +258,43 @@ definitions:
       rotate:
         type: boolean
     type: object
+  api.ExecutorConnection:
+    properties:
+      bound_key_id:
+        format: uuid
+        type: string
+        x-nullable: true
+      enrolled_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      last_seen_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      status:
+        enum:
+          - never_enrolled
+          - connected
+          - disconnected
+        type: string
+    required:
+      - bound_key_id
+      - enrolled_at
+      - last_seen_at
+      - status
+    type: object
   api.ExecutorCredentialList:
     properties:
+      connection:
+        $ref: '#/definitions/api.ExecutorConnection'
       data:
         items:
           $ref: '#/definitions/store.ExecutorCredential'
         type: array
+    required:
+      - connection
+      - data
     type: object
   api.HarnessModelProvider:
     properties:
@@ -3860,7 +3891,7 @@ paths:
         - Environment Templates
   /core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials:
     get:
-      description: Core key only. Returns metadata of the credentials restricted to this Environment, oldest first; secrets are never listed. The Environment must be a self_hosted Environment of the Project whose Session exists; otherwise 404.
+      description: Core key only. Returns metadata of the credentials restricted to this Environment, oldest first; secrets are never listed. Connection combines current credential authority and an open matching gateway peer; timestamps are historical observations, not readiness. Without a gateway it is never connected. The Environment must be a self_hosted Environment of the Project whose Session exists; otherwise 404.
       parameters:
         - description: Project UUID
           in: path

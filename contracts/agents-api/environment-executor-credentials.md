@@ -18,13 +18,36 @@ type, missing Environment or deleted Session returns 404.
 
 | Operation | Request | Result |
 | --- | --- | --- |
-| List | `GET …/executor-credentials` | `{"data":[{"key_id","created_at","revoked_at"}]}` |
+| List | `GET …/executor-credentials` | Credential metadata in `data`, plus required `connection` observation |
 | Issue or rotate | `POST …/executor-credentials` with `{"key_id":"UUID","rotate":false}` | 201 credential file, returned once |
 | Revoke | `DELETE …/executor-credentials/{key_id}` | 204 |
 
 The list holds metadata only, oldest first, for the credentials restricted to this
 Environment; `revoked_at` is null while a credential is active. It never contains
 a secret.
+
+The required `connection` object contains `status` (`never_enrolled`, `connected`,
+or `disconnected`), `bound_key_id`, `enrolled_at`, and `last_seen_at`. All three
+binding fields are null before enrollment. Once enrolled, the bound key and
+enrollment time describe the existing device; a null `last_seen_at` means no
+authenticated heartbeat has been recorded. Issuing another key does not change
+the binding. Rotation/revocation can make the binding disconnected while its
+history remains visible. Expired Environments remain readable under the existing
+list rules but cannot have current executor authority.
+
+Connected means the Environment is connected, its device and executor key still
+have current Core authority, and the process-local gateway has an open peer
+that authenticated with that current key. Core rechecks authority after observing
+the peer. A former key's live socket, a device timestamp, or a ready-looking
+Environment alone is insufficient; without a gateway, Core never returns
+connected. These facts are an observation, not a reservation of connectivity or
+native/model readiness. `last_seen_at` may lag by a heartbeat interval.
+
+List metadata and binding facts use one read-only database snapshot. That snapshot
+ends before the live authority checks, so a committed rotation/revocation is not
+hidden by snapshot isolation. Known authority loss projects as disconnected;
+observation/storage failures remain errors. Device IDs and credential digests are
+internal and never serialized. The public `/v1` Environment shape is unchanged.
 
 `key_id` is a canonical nonzero UUID chosen and retained before the request.
 `rotate` is optional and defaults to false. The 201 response is the daemon

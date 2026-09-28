@@ -46,7 +46,7 @@ func ConnectionHandler(s ConnectionStore, registry *gateway.Registry) http.Handl
 		digest := device.HashCredential(authorization[1])
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		connected, err := runtimeConnected(ctx, s, registry, environment, digest)
+		connected, err := RuntimeConnected(ctx, s, registry, environment, digest)
 		switch {
 		case errors.Is(err, store.ErrNotFound):
 			fail(http.StatusUnauthorized)
@@ -68,7 +68,9 @@ func ConnectionHandler(s ConnectionStore, registry *gateway.Registry) http.Handl
 	})
 }
 
-func runtimeConnected(ctx context.Context, s ConnectionStore, registry *gateway.Registry, environment, digest string) (bool, error) {
+// RuntimeConnected observes current executor authority and a matching open peer.
+// It rechecks authority after the peer; callers must not supply a stale transaction.
+func RuntimeConnected(ctx context.Context, s ConnectionStore, registry *gateway.Registry, environment, digest string) (bool, error) {
 	tenant, err := s.AuthenticateEnvironmentExecutor(ctx, environment, digest)
 	if err != nil {
 		return false, err
@@ -100,6 +102,9 @@ func runtimeConnected(ctx context.Context, s ConnectionStore, registry *gateway.
 	if credential.CredentialHash != digest {
 		return false, store.ErrDeviceBindingConflict
 	}
+	if registry == nil {
+		return false, nil
+	}
 	peer, err := registry.LookupDevice(bound.ID)
 	if errors.Is(err, gateway.ErrDeviceNotRegistered) {
 		return false, nil
@@ -115,5 +120,17 @@ func runtimeConnected(ctx context.Context, s ConnectionStore, registry *gateway.
 	if _, err = s.AuthenticateEnvironmentExecutor(ctx, environment, digest); err != nil {
 		return false, err
 	}
-	return !peer.IsClosed(), nil
+	// The executor key can remain valid while the device itself is revoked.
+	// Recheck the shared authority view too, including Environment retirement.
+	credential, found, err = s.GetDeviceCredential(ctx, bound.ID)
+	if err != nil {
+		return false, err
+	}
+	if !found {
+		return false, store.ErrNotFound
+	}
+	if credential.CredentialHash != digest {
+		return false, store.ErrDeviceBindingConflict
+	}
+	return !peer.IsClosed() && peer.AuthenticatedWith(digest), nil
 }

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -196,5 +197,111 @@ func TestArchivedProjectExecutorCredentials(t *testing.T) {
 	}
 	if listed, err := s.ListProjectExecutorCredentials(ctx, p, environment.ID); err != nil || len(listed) != 1 || listed[0].RevokedAt == nil {
 		t.Fatal("revoked list", listed, err)
+	}
+}
+
+func TestProjectExecutorConnectionState(t *testing.T) {
+	s, pool := testStore(t)
+	ctx := t.Context()
+	project := createTestProject(t, s)
+	binding, err := s.GetProject(ctx, project.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, env, key := runtimeEnrollmentFixture(t, s, binding.Principal)
+	state, err := s.ProjectExecutorCredentialState(ctx, binding.Principal, env.ID)
+	if err != nil || state.Connection.DeviceID != "" || state.Connection.EnrolledAt != nil || state.Connection.BoundKeyID != nil || state.Connection.LastSeenAt != nil {
+		t.Fatal("never enrolled", state, err)
+	}
+	enrolled, err := s.EnrollRuntime(ctx, env.ID, executorDigest(key.Token))
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func() ExecutorCredentialState {
+		t.Helper()
+		v, e := s.ProjectExecutorCredentialState(ctx, binding.Principal, env.ID)
+		if e != nil {
+			t.Fatal(e)
+		}
+		return v
+	}
+	state = check()
+	if state.Connection.DeviceID != enrolled.DeviceID || state.Connection.BoundKeyID == nil || *state.Connection.BoundKeyID != key.KeyID || state.Connection.EnrolledAt == nil || state.Connection.LastSeenAt != nil || state.Connection.CredentialHash != executorDigest(key.Token) {
+		t.Fatal("binding", state)
+	}
+	// An additional credential never changes the enrolled device's bound key.
+	if _, err = s.IssueProjectExecutorCredential(keyAdminContext(ctx, project.ID), binding.Principal, env.ID, uuid.NewString(), false); err != nil {
+		t.Fatal(err)
+	}
+	state = check()
+	if *state.Connection.BoundKeyID != key.KeyID || len(state.Credentials) != 2 {
+		t.Fatal("second key changed binding")
+	}
+	if _, err = pool.Exec(ctx, "UPDATE devices SET last_seen_at=clock_timestamp() WHERE id=$1", enrolled.DeviceID); err != nil {
+		t.Fatal(err)
+	}
+	state = check()
+	if state.Connection.LastSeenAt == nil {
+		t.Fatal("heartbeat history missing")
+	}
+	rotated, err := s.IssueProjectExecutorCredential(keyAdminContext(ctx, project.ID), binding.Principal, env.ID, key.KeyID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state = check()
+	if state.Connection.CredentialHash != executorDigest(rotated.Token) || *state.Connection.BoundKeyID != key.KeyID {
+		t.Fatal("rotation must expose only the fresh authority internally")
+	}
+	if _, err = pool.Exec(ctx, "UPDATE environments SET status='expired' WHERE id=$1", env.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.AuthenticateEnvironmentExecutor(ctx, env.ID, executorDigest(rotated.Token)); err != nil {
+		t.Fatal("fixture executor key should still authenticate", err)
+	}
+	state = check()
+	if state.Connection.CredentialHash != "" {
+		t.Fatal("retired Environment retained device authority")
+	}
+	if _, err = pool.Exec(ctx, "UPDATE environments SET status='connected' WHERE id=$1", env.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.RevokeProjectExecutorCredential(keyAdminContext(ctx, project.ID), binding.Principal, env.ID, key.KeyID); err != nil {
+		t.Fatal(err)
+	}
+	state = check()
+	if state.Connection.CredentialHash != "" || state.Connection.EnrolledAt == nil || *state.Connection.BoundKeyID != key.KeyID {
+		t.Fatal("revocation lost history or retained authority")
+	}
+	raw, err := json.Marshal(state.Connection)
+	if err != nil || string(raw) != "{}" {
+		t.Fatal("internal facts serialize", string(raw), err)
+	}
+	// Existing target visibility is preserved: an expired self-hosted Environment
+	// is readable but never has runtime_device_authority; deletion removes it.
+	if _, err = pool.Exec(ctx, "UPDATE environments SET status='expired' WHERE id=$1", env.ID); err != nil {
+		t.Fatal(err)
+	}
+	state = check()
+	if state.Connection.EnvironmentStatus != "expired" || state.Connection.CredentialHash != "" {
+		t.Fatal("expired authority")
+	}
+	foreignProject := createTestProject(t, s)
+	foreign, err := s.GetProject(ctx, foreignProject.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{uuid.NewString(), "malformed"} {
+		if _, err = s.ProjectExecutorCredentialState(ctx, binding.Principal, id); !errors.Is(err, ErrNotFound) {
+			t.Fatal("missing target", err)
+		}
+	}
+	if _, err = s.ProjectExecutorCredentialState(ctx, foreign.Principal, env.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatal("foreign target", err)
+	}
+	if _, err = pool.Exec(ctx, "UPDATE sessions SET deleted_at=clock_timestamp() WHERE id=$1", session.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = s.ProjectExecutorCredentialState(ctx, binding.Principal, env.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatal("deleted target", err)
 	}
 }

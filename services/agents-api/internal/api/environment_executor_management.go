@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/identity"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
@@ -16,7 +18,7 @@ import (
 // self_hosted Environments. The Project's principal is the credential's
 // execution principal; the Core key that authorizes the request is not.
 type EnvironmentExecutorStore interface {
-	ListProjectExecutorCredentials(context.Context, identity.Principal, string) ([]store.ExecutorCredential, error)
+	ProjectExecutorCredentialState(context.Context, identity.Principal, string) (store.ExecutorCredentialState, error)
 	IssueProjectExecutorCredential(context.Context, identity.Principal, string, string, bool) (store.IssuedExecutorCredential, error)
 	RevokeProjectExecutorCredential(context.Context, identity.Principal, string, string) error
 }
@@ -28,7 +30,24 @@ type EnvironmentExecutorCredentialRequest struct {
 
 // ExecutorCredentialList holds credential metadata only, never a secret.
 type ExecutorCredentialList struct {
-	Data []store.ExecutorCredential `json:"data"`
+	Data       []store.ExecutorCredential `json:"data" binding:"required"`
+	Connection ExecutorConnection         `json:"connection" binding:"required"`
+}
+
+// ExecutorConnection reports binding history and current Core-observed connectivity.
+// Heartbeat times are observations, not execution or native readiness.
+type ExecutorConnection struct {
+	Status     string     `json:"status" binding:"required" enums:"never_enrolled,connected,disconnected"`
+	BoundKeyID *string    `json:"bound_key_id" binding:"required" extensions:"x-nullable" format:"uuid"`
+	EnrolledAt *time.Time `json:"enrolled_at" binding:"required" format:"date-time" extensions:"x-nullable"`
+	LastSeenAt *time.Time `json:"last_seen_at" binding:"required" format:"date-time" extensions:"x-nullable"`
+}
+
+// WithExecutorConnections observes current authority and its actual gateway peer.
+// The observer runs after the store snapshot closes and must recheck authority
+// after inspecting the peer. Without an observer, no binding is called connected.
+func WithExecutorConnections(observe func(context.Context, string, string) (bool, error)) Option {
+	return func(h *Handler) { h.executorConnections = observe }
 }
 
 // registerExecutorCredentialRoutes adds executor credential issuance to the
@@ -45,7 +64,7 @@ func (h *Handler) registerExecutorCredentialRoutes(r chi.Router) {
 }
 
 // @Summary List a self_hosted Environment's executor credentials
-// @Description Core key only. Returns metadata of the credentials restricted to this Environment, oldest first; secrets are never listed. The Environment must be a self_hosted Environment of the Project whose Session exists; otherwise 404.
+// @Description Core key only. Returns metadata of the credentials restricted to this Environment, oldest first; secrets are never listed. Connection combines current credential authority and an open matching gateway peer; timestamps are historical observations, not readiness. Without a gateway it is never connected. The Environment must be a self_hosted Environment of the Project whose Session exists; otherwise 404.
 // @Tags Executor Credentials
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -59,12 +78,27 @@ func (h *Handler) listExecutorCredentials(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	credentials, err := s.ListProjectExecutorCredentials(r.Context(), binding.Principal, chi.URLParam(r, "environment_id"))
+	state, err := s.ProjectExecutorCredentialState(r.Context(), binding.Principal, chi.URLParam(r, "environment_id"))
 	if err != nil {
 		writeStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, ExecutorCredentialList{Data: credentials})
+	connection := ExecutorConnection{Status: "never_enrolled"}
+	observed := state.Connection
+	if observed.DeviceID != "" {
+		connection = ExecutorConnection{Status: "disconnected", BoundKeyID: observed.BoundKeyID, EnrolledAt: observed.EnrolledAt, LastSeenAt: observed.LastSeenAt}
+		if observed.EnvironmentStatus == "connected" && observed.CredentialHash != "" && h.executorConnections != nil {
+			connected, err := h.executorConnections(r.Context(), chi.URLParam(r, "environment_id"), observed.CredentialHash)
+			if err != nil && !errors.Is(err, store.ErrNotFound) && !errors.Is(err, store.ErrDeviceBindingConflict) {
+				writeStoreError(w, r, err)
+				return
+			}
+			if err == nil && connected {
+				connection.Status = "connected"
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, ExecutorCredentialList{Data: state.Credentials, Connection: connection})
 }
 
 // @Summary Issue or explicitly rotate a self_hosted Environment executor credential

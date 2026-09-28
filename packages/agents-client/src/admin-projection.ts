@@ -3,7 +3,7 @@ import { projectTokenUsage } from "./usage-projection";
 import { safeProvider } from "./execution-configuration-projection";
 import { canonicalUuid, exactFields, isNonnegativeInteger, isRecord, onlyFields, sameResourceId } from "./response-projection";
 import type { CoreHarness, CoreHarnessKind, HarnessModelProvider, ListPage, SavedAgent } from "./types";
-import type { AdminAPIKey, AdminProject, AdminAuditPage, AdminSummary, AdminRuntimeObservation, RuntimeDiskObservation, AdminKeyProvenance, AdminResourceOwner, AdminWriteOperationPage, AdminAuditResultID, AdminDeleted, AdminIssuedAPIKey, AdminPage, AdminSessionArchive, SessionArtifact, Skill, SkillVersion, ExecutorCredential, IssuedExecutorCredential, CoreInstallation, CoreInstallationSetting } from "./admin-types";
+import type { AdminAPIKey, AdminProject, AdminAuditPage, AdminSummary, AdminRuntimeObservation, RuntimeDiskObservation, AdminKeyProvenance, AdminResourceOwner, AdminWriteOperationPage, AdminAuditResultID, AdminDeleted, AdminIssuedAPIKey, AdminPage, AdminSessionArchive, SessionArtifact, Skill, SkillVersion, ExecutorCredentialList, ExecutorConnection, IssuedExecutorCredential, CoreInstallation, CoreInstallationSetting } from "./admin-types";
 
 export function invalidAdminResponse(): never {
   throw new AgentCoreError("Core returned an invalid administration response.", 502, "invalid_admin_response");
@@ -198,10 +198,17 @@ export function projectAdminAudit(value: unknown): AdminAuditPage {
   });
   return { data, has_more: page.has_more, next_cursor: page.next_cursor } as AdminAuditPage;
 }
-export function projectExecutorCredentials(value: unknown): { data: ExecutorCredential[] } {
-  const page = record(value, ["data"]);
+export function projectExecutorCredentials(value: unknown): ExecutorCredentialList {
+  const page = record(value, ["data", "connection"]);
   if (!Array.isArray(page.data)) return invalidAdminResponse();
-  return { data: page.data.map((entry) => {
+  const connection = record(page.connection, ["status", "bound_key_id", "enrolled_at", "last_seen_at"]);
+  if (!["never_enrolled", "connected", "disconnected"].includes(connection.status as string) ||
+      !(connection.bound_key_id === null || (typeof connection.bound_key_id === "string" && connection.bound_key_id.length > 0)) ||
+      !date(connection.enrolled_at) || !date(connection.last_seen_at)) return invalidAdminResponse();
+  if (connection.status === "never_enrolled" && [connection.bound_key_id, connection.enrolled_at, connection.last_seen_at].some(value => value !== null)) return invalidAdminResponse();
+  if (connection.status !== "never_enrolled" && connection.enrolled_at === null) return invalidAdminResponse();
+  if (connection.status === "connected" && connection.bound_key_id === null) return invalidAdminResponse();
+  return { connection: { ...connection } as unknown as ExecutorConnection, data: page.data.map((entry) => {
     const credential = record(entry, ["key_id", "created_at", "revoked_at"]);
     if (typeof credential.key_id !== "string" || typeof credential.created_at !== "string" || !date(credential.created_at) || !date(credential.revoked_at)) return invalidAdminResponse();
     return { key_id: credential.key_id, created_at: credential.created_at, revoked_at: credential.revoked_at as string | null };

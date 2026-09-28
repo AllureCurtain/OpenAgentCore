@@ -3,9 +3,13 @@ package runtimeenrollment
 import (
 	"context"
 	"errors"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
+	"github.com/gorilla/websocket"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/device"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/gateway"
@@ -63,5 +67,102 @@ func TestConnectionReadContract(t *testing.T) {
 		if res.Code == 200 && res.Body.String() != `{"environment_id":"environment","status":"disconnected"}`+"\n" {
 			t.Fatal("unexpected response", res.Body.String())
 		}
+	}
+}
+
+// A real gateway peer captures its digest at HTTP upgrade. The test store makes
+// authority changes at the deterministic post-peer recheck, without timing sleeps.
+type liveConnectionStore struct {
+	digest                 string
+	authCalls              int
+	credentialCalls        int
+	revokeAtRecheck        bool
+	deviceRevokedAtRecheck bool
+	recheckError           error
+	credentialRecheckError error
+}
+
+func (s *liveConnectionStore) AuthenticateEnvironmentExecutor(context.Context, string, string) (string, error) {
+	s.authCalls++
+	if s.authCalls == 2 {
+		if s.recheckError != nil {
+			return "", s.recheckError
+		}
+		if s.revokeAtRecheck {
+			return "", store.ErrNotFound
+		}
+	}
+	return "tenant", nil
+}
+func (s *liveConnectionStore) GetEnvironment(context.Context, string, string) (store.Environment, error) {
+	return store.Environment{ID: "environment", SessionID: "session", Status: "connected"}, nil
+}
+func (s *liveConnectionStore) GetSessionDevice(context.Context, string, string) (store.ExecutionDevice, error) {
+	return store.ExecutionDevice{ID: "device", EnvironmentID: "environment"}, nil
+}
+func (s *liveConnectionStore) GetDeviceCredential(context.Context, string) (device.Credential, bool, error) {
+	s.credentialCalls++
+	if s.authCalls >= 2 && s.credentialRecheckError != nil {
+		return device.Credential{}, false, s.credentialRecheckError
+	}
+	if s.deviceRevokedAtRecheck && s.authCalls >= 2 {
+		return device.Credential{}, false, nil
+	}
+	return device.Credential{ID: "device", WorkspaceID: "tenant", Type: gateway.RuntimeTypeAgentDaemon, CredentialHash: s.digest}, true, nil
+}
+func TestRuntimeConnectedCurrentAuthorityAfterPeer(t *testing.T) {
+	for _, name := range []string{"connected", "rotated before read", "revoked after peer", "device revoked after peer", "retired after peer", "store error after peer", "device store error after peer", "closed", "no registry"} {
+		t.Run(name, func(t *testing.T) {
+			digest := device.HashCredential("fixture-key")
+			s := &liveConnectionStore{digest: digest}
+			registry := gateway.NewRegistry()
+			handler := gateway.NewHandler(gateway.HandlerConfig{Registry: registry, Authenticator: gateway.NewAuthenticator(s)})
+			server := httptest.NewServer(http.HandlerFunc(handler.WS))
+			defer server.Close()
+			conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"?device_id=device&version="+proto.Version, http.Header{"Authorization": {"Bearer fixture-key"}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			// Wait for the actual registration, not merely the transport upgrade.
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			peer, err := registry.WaitForDevice(ctx, "device", time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer peer.Close("test complete")
+			s.authCalls = 0
+			var wantErr error
+			want := name == "connected"
+			switch name {
+			case "rotated before read":
+				s.digest = device.HashCredential("new-key")
+				digest = s.digest
+			case "revoked after peer":
+				s.revokeAtRecheck = true
+				wantErr = store.ErrNotFound
+			case "device revoked after peer", "retired after peer":
+				s.deviceRevokedAtRecheck = true
+				wantErr = store.ErrNotFound
+			case "store error after peer":
+				s.recheckError = errors.New("database unavailable")
+				wantErr = s.recheckError
+			case "device store error after peer":
+				s.credentialRecheckError = errors.New("device authority unavailable")
+				wantErr = s.credentialRecheckError
+			case "closed":
+				peer.Close("closed before observation")
+			case "no registry":
+				registry = nil
+			}
+			connected, err := RuntimeConnected(t.Context(), s, registry, "environment", digest)
+			if connected != want || !errors.Is(err, wantErr) {
+				t.Fatalf("connected=%v err=%v", connected, err)
+			}
+			if name == "connected" && s.authCalls != 2 {
+				t.Fatal("post-peer authority was not checked")
+			}
+		})
 	}
 }

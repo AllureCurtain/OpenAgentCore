@@ -20,7 +20,7 @@ import type {
 import type {
   AdminClientOptions, AdminAuditOptions, AdminContent, ArchiveAdminSessionInput, CreateAdminProjectInput, RenameAdminProjectInput,
   IssueAdminAPIKeyInput, AdminSummaryOptions, AdminResourceType, AdminResourceOwner, AdminWriteOperationOptions, AdminWriteOperationPage,
-  ExecutorCredential, IssueExecutorCredentialInput, IssuedExecutorCredential, CoreInstallation,
+  ExecutorCredentialList, IssueExecutorCredentialInput, IssuedExecutorCredential, CoreInstallation,
 } from "./admin-types";
 
 function segment(value: string): string {
@@ -260,7 +260,7 @@ export class AdminClient {
   }
 
   /** Credential metadata for one self_hosted Environment; the credentials themselves are never listed. */
-  async listExecutorCredentials(projectId: string, environmentId: string, options?: ReadOptions): Promise<{ data: ExecutorCredential[] }> {
+  async listExecutorCredentials(projectId: string, environmentId: string, options?: ReadOptions): Promise<ExecutorCredentialList> {
     return projectExecutorCredentials(await this.#json(`${scope(projectId)}/environments/${segment(environmentId)}/executor-credentials`, options));
   }
   /**
