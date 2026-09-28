@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/MiniMax-AI-Dev/parsar/internal/obs/log"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 )
@@ -343,6 +344,8 @@ func (w *Worker) runClaim(ctx context.Context, item store.ExecutionWork) error {
 	if err == nil || errors.Is(err, store.ErrTurnConflict) {
 		return nil
 	}
+	var rejection *preparationRejection
+	capacityRejected := errors.As(err, &rejection) && rejection.operation == proto.TypeExecutionPrepare && rejection.code == "preparation_capacity"
 	outcome := json.RawMessage(`{"error_code":"execution_unavailable"}`)
 	if errors.Is(err, store.ErrModelProviderRequired) {
 		outcome = json.RawMessage(`{"error_code":"model_provider_required"}`)
@@ -352,6 +355,11 @@ func (w *Worker) runClaim(ctx context.Context, item store.ExecutionWork) error {
 	turn, err := w.dispatcher.Store.GetTurn(finish, item.TenantID, item.SessionID, item.TurnID)
 	if err != nil {
 		return err
+	}
+	if turn.Status == store.TurnQueued && capacityRejected {
+		// No input was sent. Leave durable work for the existing scheduler tick;
+		// active and cleanup-held Runtime capacity have the same rejection.
+		return nil
 	}
 	if turn.Status == store.TurnCompleted || turn.Status == store.TurnFailed || turn.Status == store.TurnCancelled {
 		return nil
