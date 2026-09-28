@@ -59,6 +59,7 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 	commands := commandState{calls: map[string]proto.ToolObservation{}}
 	settlementReceived := false
 	settlementConfirmed := false
+	cancelled := false
 	reusable := false
 	reason := "bridge_interrupted"
 	for raw := range s.frames {
@@ -158,7 +159,7 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 			}
 			emit(proto.TypeUsage, proto.UsagePayload{Usage: usage})
 		case "result":
-			if !s.matchesInputSession(event.SessionID) || event.SessionID == "" || start.Resume != "" && event.SessionID != start.Resume || usageSession != "" && event.SessionID != usageSession || !s.functionsComplete() || !s.steeringComplete() || !mcp.complete() || !commands.complete() {
+			if !s.matchesInputSession(event.SessionID) || event.SessionID == "" || start.Resume != "" && event.SessionID != start.Resume || usageSession != "" && event.SessionID != usageSession || !s.functionsComplete(false) || !s.steeringComplete() || !mcp.complete() || !commands.complete() {
 				failure = fmt.Errorf("claudesdk: invalid native completion or unconfirmed input/result")
 				s.settlementErr = failure
 				s.invalidate()
@@ -167,6 +168,7 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 			}
 			terminal = true
 		case "error":
+			cancelled = event.Code == "cancelled"
 			failure = bridgeFailure(event.Code)
 			if event.Code == "execution_failed" && event.SessionID != "" && s.matchesInputSession(event.SessionID) &&
 				event.SessionID == usageSession && event.ResultID != "" && event.ResultID == failedResultID {
@@ -190,12 +192,13 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 	if result == nil && failure == nil {
 		failure = fmt.Errorf("claudesdk: SDK result is missing")
 	}
-	if !s.functionsComplete() || !s.steeringComplete() || !mcp.complete() || !commands.complete() {
+	// Close result admission before deciding which unanswered calls cancellation settled.
+	s.stopFunctions()
+	if !s.functionsComplete(cancelled && settlementConfirmed) || !s.steeringComplete() || !mcp.complete() || !commands.complete() {
 		settlementConfirmed, reusable, reason = false, false, "unsettled_native_operations"
 	}
 	mcp.close(start, emit)
 	commands.close(start, emit)
-	s.stopFunctions()
 	s.stopSteering()
 	metadata := map[string]any{proto.DoneMetaAgentSessionType: "claude_session"}
 	if id := s.inputSessionID(); id != "" {

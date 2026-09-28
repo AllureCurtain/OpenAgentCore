@@ -185,6 +185,26 @@ func TestPreparationFakeCodexProcess(t *testing.T) {
 				}
 			}
 			result = map[string]any{"thread": map[string]string{"id": "fixture-native-thread"}, "model": "fixture-model"}
+		case "thread/backgroundTerminals/list":
+			result = map[string]any{"data": []any{}}
+			if executorMode == "terminal-cleanup" {
+				if _, err := os.Stat(os.Getenv("OAC_TEST_PREPARATION_FRAMES") + ".terminated"); os.IsNotExist(err) {
+					result = map[string]any{"data": []any{map[string]string{"processId": "owned-terminal"}}}
+				}
+			}
+		case "thread/backgroundTerminals/terminate":
+			var target struct {
+				ThreadID  string `json:"threadId"`
+				ProcessID string `json:"processId"`
+			}
+			if json.Unmarshal(frame.Params, &target) != nil || target.ThreadID != "fixture-native-thread" || target.ProcessID != "owned-terminal" {
+				os.Exit(8)
+			}
+			_, allowed := os.Stat(os.Getenv("OAC_TEST_PREPARATION_FRAMES") + ".allow-cleanup")
+			result = map[string]any{"terminated": allowed == nil}
+			if allowed == nil {
+				_ = os.WriteFile(os.Getenv("OAC_TEST_PREPARATION_FRAMES")+".terminated", nil, 0600)
+			}
 		case "turn/interrupt":
 			if executorMode == "interrupt-error" {
 				_ = output.Encode(map[string]any{"id": frame.ID, "error": map[string]any{"code": -32603, "message": "interrupt rejected"}})
