@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
@@ -121,10 +122,11 @@ func (e *Executor) Close(ctx context.Context) error {
 			select {
 			case <-running.waitDone:
 			default:
-				if err := running.Cancel(ctx); err != nil {
-					done <- err
-					return
-				}
+				// Try native cancellation before closing its transport, but never
+				// let an absent terminal receipt prevent resource retirement.
+				cancelCtx, stop := context.WithTimeout(ctx, 10*time.Second)
+				_ = running.Cancel(cancelCtx)
+				stop()
 			}
 		}
 		base.cancelFn()
@@ -133,7 +135,13 @@ func (e *Executor) Close(ctx context.Context) error {
 		active := e.active
 		e.mu.Unlock()
 		if err == nil && active != nil {
-			_, err = active.AwaitSettlement(ctx)
+			// A Turn's permanent outcome error survives Close. Cleanup succeeds
+			// when its work and output have stopped, not when that outcome changes.
+			select {
+			case <-active.waitDone:
+			case <-ctx.Done():
+				err = ctx.Err()
+			}
 		}
 		if err == nil {
 			err = base.rpc.awaitReaders(ctx)

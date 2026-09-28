@@ -185,6 +185,11 @@ func TestPreparationFakeCodexProcess(t *testing.T) {
 				}
 			}
 			result = map[string]any{"thread": map[string]string{"id": "fixture-native-thread"}, "model": "fixture-model"}
+		case "turn/interrupt":
+			if executorMode == "interrupt-error" {
+				_ = output.Encode(map[string]any{"id": frame.ID, "error": map[string]any{"code": -32603, "message": "interrupt rejected"}})
+				continue
+			}
 		case "turn/start":
 			if executorMode != "" {
 				turnNumber++
@@ -209,6 +214,9 @@ func TestPreparationFakeCodexProcess(t *testing.T) {
 		}
 
 		if executorMode != "" && (frame.Method == "turn/start" || frame.Method == "turn/interrupt") {
+			if frame.Method == "turn/interrupt" && executorMode == "interrupt-no-terminal" {
+				continue
+			}
 			if frame.Method == "turn/start" {
 				_ = output.Encode(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": "fixture-native-thread", "turn": map[string]string{"id": currentTurn}}})
 			}

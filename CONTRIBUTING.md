@@ -1606,7 +1606,10 @@ confirms that the native owner can accept the next Turn. `Reusable=false` requir
 a reason and subsequent confirmed Executor close. An error means settlement is
 unconfirmed; it cannot free ownership or capacity. Caller deadlines stop waiting,
 not tracked cleanup. Retry the same cleanup target serially. Failed cleanup
-blocks replacement and retains its resource slot.
+blocks replacement and retains its resource slot. Executor Close confirms resource
+retirement independently of the Turn outcome: an immutable Turn error must not
+prevent closing the native transport and releasing resources once their work and
+output have stopped.
 
 One output consumer starts before native Start, drains the bounded 64-frame
 channel, and retains the terminal observation until Start publication, Turn
@@ -1614,7 +1617,11 @@ settlement and admitted operation receipts finish. Natural Done never calls
 Cancel. Input, function and interaction admission close before settlement, and
 operations already admitted hold their barrier through native receipts and
 outbound acknowledgement. Only then forward Done or an applied cancellation
-receipt. Preserve the ten-second settlement wait and separate five-second receipt
+receipt. Commit native continuity and release the old Run admission before
+publishing Done, since the receiver may immediately start another Turn. A late
+terminal-send failure belongs to the old Run; it cannot invalidate a successor
+that already owns the Executor. Connection shutdown owns transport-loss cleanup.
+Preserve the ten-second settlement wait and separate five-second receipt
 send budget; timeout is not proof of quiescence. The observed cancellation outcome
 retains native identity, Usage and output without fabricating missing evidence.
 

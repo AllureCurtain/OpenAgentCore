@@ -240,18 +240,17 @@ func (r *Router) runPreparedRelease(state *sessionState, handoff *preparedHandof
 	r.mu.Lock()
 	outputErr, terminal, closed := handoff.outputErr, handoff.terminal, r.closed
 	r.mu.Unlock()
-	var terminalErr error
-	if outputErr == nil && !closed && turn != nil {
-		terminalErr = r.forwardPreparedTerminal(state, release.failure, terminal, terminal == nil)
-	}
+	// Done can become visible before Sender.Send returns. Commit the settled
+	// owner and retire this Run before publication so an immediate successor
+	// observes both the new native identity and an available Executor.
 	r.cleanupSession(state)
 	r.mu.Lock()
-	handoff.outputErr = errors.Join(handoff.outputErr, terminalErr)
 	p := handoff.preparation
 	p.busy, p.owns, p.handoff = false, false, nil
-	p.closeErr = terminalErr
 	p.cancel()
-	owner.run = nil
+	if owner.run == state {
+		owner.run = nil
+	}
 	if owner.invalid && owner.closeDone != nil && owner.closeErr == nil && r.executors[owner.sessionID] == owner {
 		delete(r.executors, owner.sessionID)
 	}
@@ -263,17 +262,23 @@ func (r *Router) runPreparedRelease(state *sessionState, handoff *preparedHandof
 			owner.nativeID = id
 		}
 	}
-	if terminalErr != nil {
-		owner.invalid = true
-	}
 	if !owner.invalid {
 		r.scheduleExecutorIdleLocked(owner)
 	}
+	r.mu.Unlock()
+
+	var terminalErr error
+	if outputErr == nil && !closed && turn != nil {
+		terminalErr = r.forwardPreparedTerminal(state, release.failure, terminal, terminal == nil)
+	}
+	r.mu.Lock()
+	// Delivery failure belongs to this Run, not to a successor that may have
+	// already acquired the settled owner. Connection shutdown owns transport
+	// failure cleanup; terminal publication does not change native settlement.
+	handoff.outputErr = errors.Join(handoff.outputErr, terminalErr)
+	p.closeErr = terminalErr
 	close(release.settled)
 	r.mu.Unlock()
-	if terminalErr != nil {
-		_ = r.closeExecutor(owner)
-	}
 }
 
 func (r *Router) forwardPreparedOutput(state *sessionState) {

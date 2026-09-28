@@ -185,3 +185,63 @@ func TestExecutorCloseRetainsPlanUntilReaped(t *testing.T) {
 		t.Fatal("cleanup retry did not release plan")
 	}
 }
+
+func TestExecutorCloseSeparatesTurnFailureFromResourceCleanup(t *testing.T) {
+	e, root := executorFixture(t, "interrupt-error")
+	out := make(chan proto.Envelope, 20)
+	turn, err := e.StartTurn(t.Context(), "cancel-failure", proto.TextInput("hold"), out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if err := turn.Cancel(ctx); err == nil {
+		t.Fatal("native interrupt failure was hidden")
+	}
+	if _, err := turn.AwaitSettlement(ctx); err == nil {
+		t.Fatal("failed Turn unexpectedly settled successfully")
+	}
+	if err := e.Close(ctx); err != nil {
+		t.Fatal("failed Turn prevented confirmed resource cleanup", err)
+	}
+	if e.prepared.session.rpc.Alive() || len(preparedCatalogs(t, root)) != 0 {
+		t.Fatal("Close did not release native process and plan")
+	}
+	if _, err := turn.AwaitSettlement(ctx); err == nil {
+		t.Fatal("resource cleanup fabricated successful Turn settlement")
+	}
+}
+
+func TestExecutorCloseTerminatesAfterMissingCancellationTerminal(t *testing.T) {
+	e, root := executorFixture(t, "interrupt-no-terminal")
+	out := make(chan proto.Envelope, 20)
+	turn, err := e.StartTurn(t.Context(), "missing-terminal", proto.TextInput("hold"), out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cancelCtx, stopCancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer stopCancel()
+	cancelled := make(chan error, 1)
+	go func() { cancelled <- turn.Cancel(cancelCtx) }()
+	waitPreparationMethod(t, root, "turn/interrupt")
+	closeCtx, stopClose := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer stopClose()
+	if err := e.Close(closeCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatal("missing receipt did not reach the cleanup deadline", err)
+	}
+	// Retrying waits on the same owner; the expired observation must not skip
+	// the transport close that can actually stop an unresponsive native Turn.
+	retry, stopRetry := context.WithTimeout(t.Context(), 2*time.Second)
+	defer stopRetry()
+	if err := e.Close(retry); err != nil {
+		t.Fatal("Close never retired the native process", err)
+	}
+	if e.prepared.session.rpc.Alive() || len(preparedCatalogs(t, root)) != 0 {
+		t.Fatal("unresponsive native process or plan still owned after Close")
+	}
+	select {
+	case <-cancelled:
+	case <-retry.Done():
+		t.Fatal("original cancellation waiter was abandoned")
+	}
+}
