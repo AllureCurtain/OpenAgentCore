@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 export const pins = { node: '22.22.0', codex: '0.153.4', claude: '0.3.269', minimax: '0.4.12' };
 const platforms = { linux: 'linux', darwin: 'darwin', win32: 'windows' };
@@ -130,7 +131,9 @@ export async function buildBundle(options) {
     for (const name of ['node', ...names]) components[name] = { version: pins[name], files: await copyComponent(options[name], join(staging, 'components', name)) };
     if (components.minimax) {
       const component = join(staging, 'components', 'minimax');
-      const rg = join(component, 'native', 'node_modules', '@vscode', `ripgrep-${process.platform}-${process.arch}`, 'bin', 'rg');
+      const nativeRequire = createRequire(join(component, 'native', 'cli.js'));
+      const rg = await realpath(nativeRequire('@vscode/ripgrep').rgPath);
+      if (!inside(component, rg)) throw new Error('MiniMax ripgrep escaped the component');
       await requireFile(rg);
       await mkdir(join(component, 'bin'), { recursive: true });
       await copyFile(rg, join(component, 'bin', 'rg')); await chmod(join(component, 'bin', 'rg'), 0o755);
