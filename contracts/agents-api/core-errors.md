@@ -111,3 +111,31 @@ Only the marked Core router maps their typed field metadata to this catalog;
 public `/v1` and machine routes retain their previous complete error bodies.
 Unknown sandbox providers retain the existing untyped error. E2B provider errors
 above retain their fixed redaction contract with no echoed template or key.
+
+## Diagnostic failure categories
+
+The [root diagnostics reads](session-diagnostics.md) return these categories
+inside a successful HTTP 200 snapshot, not the operation error envelope. Public
+`/v1` Turn errors remain unchanged. `params` is `{}` unless specified.
+
+| Code | Stored cause or safe meaning |
+| --- | --- |
+| `harness_error` | `engine_failed` without a native classification |
+| `model_provider_required` | Missing frozen model provider |
+| `runtime_unavailable` | `execution_device_unavailable`, `execution_unavailable` |
+| `runtime_disconnected` | `device_disconnected`, `event_stream_incomplete` |
+| `runtime_preparation_failed` | `preparation_start_failed`, `preparation_interrupted` |
+| `execution_interrupted` | Core execution interrupted |
+| `delivery_unconfirmed` | `delivery_unknown`, `input_outcome_unknown`, `cancel_unconfirmed`, `cancel_outcome_unavailable`, `function_result_unconfirmed` |
+| `input_rejected` | `invalid_input`, `input_not_applied`, `message_input_unsupported`, and the exact steering outcomes `input_invalid_input`, `input_run_inactive`, `input_input_conflict`, `input_input_limit`, `input_unsupported`, `input_rejected`, `input_not_ready`, `input_busy` |
+| `executor_protocol_error` | `invalid_executor_result`, `interaction_not_supported`, `execution_state_unavailable`, `execution_state_changed`, `function_call_invalid`, `function_result_invalid` |
+| `core_storage_failed` | `event_persistence_failed`, `artifact_capture_failed` |
+| `internal_error` | Unknown or malformed outcome; no raw value is returned |
+| `environment_connection_timeout` | Initial input connection deadline expired |
+| `environment_unavailable` | Environment unavailable for initial input |
+| `environment_provisioning_failed` | Hosted provisioning failure; params contain nullable `step`, `index`, `exit_code` from a sanitized receipt |
+
+`diagnostics_unavailable` is the HTTP 503 operation error when the diagnostic
+reader is not configured; it has no details. A database failure remains an error,
+never a healthy or empty diagnostic snapshot. Historical provisioning reasons and
+private native messages are not parsed for categories or parameters.

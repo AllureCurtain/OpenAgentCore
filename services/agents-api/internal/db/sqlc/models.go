@@ -83,6 +83,7 @@ type Environment struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	FailureReason pgtype.Text        `json:"failure_reason"`
 	FailedAt      pgtype.Timestamptz `json:"failed_at"`
+	FailureDetail []byte             `json:"failure_detail"`
 }
 
 type EnvironmentConnection struct {
@@ -418,6 +419,7 @@ type SessionItem struct {
 	Position    int32              `json:"position"`
 	Payload     []byte             `json:"payload"`
 	OutputIndex pgtype.Int4        `json:"output_index"`
+	SettledAt   pgtype.Timestamptz `json:"settled_at"`
 }
 
 type SessionModelExecution struct {

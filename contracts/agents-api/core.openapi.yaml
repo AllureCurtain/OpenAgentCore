@@ -250,6 +250,16 @@ definitions:
       - data
       - object
     type: object
+  api.DiagnosticFailure:
+    properties:
+      code:
+        type: string
+      failed_at:
+        type: string
+        x-nullable: true
+      params:
+        type: object
+    type: object
   api.EnvironmentExecutorCredentialRequest:
     properties:
       key_id:
@@ -403,6 +413,19 @@ definitions:
         description: Applied value; always null for a sensitive setting.
         x-nullable: true
     type: object
+  api.ItemDiagnosticTiming:
+    properties:
+      completed_at:
+        type: string
+        x-nullable: true
+      item_id:
+        type: string
+      observed_duration_ms:
+        type: integer
+        x-nullable: true
+      started_at:
+        type: string
+    type: object
   api.ProjectAPIKeyRequest:
     properties:
       name:
@@ -519,6 +542,67 @@ definitions:
         items:
           $ref: '#/definitions/store.RuntimeNode'
         type: array
+    type: object
+  api.SessionDiagnosticFailure:
+    properties:
+      code:
+        type: string
+      failed_at:
+        type: string
+        x-nullable: true
+      params:
+        type: object
+      source:
+        enum:
+          - turn
+          - environment
+          - environment_input
+        type: string
+      turn_id:
+        type: string
+    type: object
+  api.SessionDiagnostics:
+    properties:
+      failure:
+        allOf:
+          - $ref: '#/definitions/api.SessionDiagnosticFailure'
+        x-nullable: true
+      object:
+        enum:
+          - core.session_diagnostics
+        type: string
+      session_id:
+        type: string
+      status:
+        enum:
+          - idle
+          - in_progress
+          - requires_action
+          - failed
+        type: string
+    type: object
+  api.TurnDiagnostics:
+    properties:
+      failure:
+        allOf:
+          - $ref: '#/definitions/api.DiagnosticFailure'
+        x-nullable: true
+      items:
+        items:
+          $ref: '#/definitions/api.ItemDiagnosticTiming'
+        type: array
+      items_truncated:
+        type: boolean
+      object:
+        enum:
+          - core.turn_diagnostics
+        type: string
+      session_id:
+        type: string
+      status:
+        type: string
+      turn_id:
+        type: string
     type: object
   coremetrics.Database:
     properties:
@@ -4835,6 +4919,52 @@ paths:
       summary: Download immutable artifact bytes in a Project
       tags:
         - Artifacts
+  /core/v1/projects/{project_id}/sessions/{session_id}/diagnostics:
+    get:
+      description: Core key only. Safe failure categories from one committed snapshot; no native text or historical inference.
+      parameters:
+        - description: Project ID
+          in: path
+          name: project_id
+          required: true
+          type: string
+        - description: Session ID
+          in: path
+          name: session_id
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.SessionDiagnostics'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: Retrieve root Session diagnostics
+      tags:
+        - Sessions
   /core/v1/projects/{project_id}/sessions/{session_id}/execution-configuration:
     get:
       description: Core key only; the Project ID selects the target space and does not authenticate. Returns the committed model, harness and safe provider selection with recorded sources. This read never decrypts credentials, resolves current defaults or probes execution health. Deployment defaults frozen after they moved into Core show their safe view; older deployment selections remain redacted. Historical provenance and missing provider projections are explicitly unknown/unavailable.
@@ -5159,6 +5289,57 @@ paths:
       security:
         - DeploymentAdminAuth: []
       summary: Retrieve an execution Turn in a Project
+      tags:
+        - Turns
+  /core/v1/projects/{project_id}/sessions/{session_id}/turns/{turn_id}/diagnostics:
+    get:
+      description: Core key only. At most 1000 root Item receipt timings in public Item order. Receipt intervals are not native execution durations.
+      parameters:
+        - description: Project ID
+          in: path
+          name: project_id
+          required: true
+          type: string
+        - description: Session ID
+          in: path
+          name: session_id
+          required: true
+          type: string
+        - description: Root Turn ID
+          in: path
+          name: turn_id
+          required: true
+          type: string
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.TurnDiagnostics'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: Retrieve root Turn diagnostics
       tags:
         - Turns
   /core/v1/projects/{project_id}/skills:

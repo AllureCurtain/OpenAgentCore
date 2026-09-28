@@ -267,6 +267,11 @@ func TestGenerationDowngradeRefusesOldAllocation(t *testing.T) {
 	if _, err = migrations.DownTo(t.Context(), 80); err == nil {
 		t.Fatal("downgrade erased old owned allocation")
 	}
+	// Earlier down migrations can commit before the generation guard vetoes
+	// downgrade. Restore the current schema before invoking current Store code.
+	if _, err = migrations.Up(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	if _, err = w.RequestRuntimeCleanup(t.Context(), owner); err != nil {
 		t.Fatal(err)
 	}

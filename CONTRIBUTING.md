@@ -3816,3 +3816,13 @@ bounds/catalog details. Preserve Project/key rune limits and node byte limits
 separately. Keep sandbox validation metadata through its existing store wrapper
 without changing transaction or provider authority. Public Session provider
 validation remains byte-compatible; cover it with handler-level golden responses.
+
+Root Session/Turn diagnostics are Core-key reads from one committed database
+snapshot, reusing public status projection and precedence. Keep their finite
+failure catalog separate from private outcome text. Persist safe provisioning
+details in the existing failure transaction; never reconstruct historical details
+from reason strings. Item settlement belongs to the existing Session lock and
+terminal transaction: event/input receipt for normal terminal projections, one
+post-lock database wall-clock sample for forced incomplete Items. Preserve
+historical terminal nulls and public native completion times. See the
+[diagnostics contract](contracts/agents-api/session-diagnostics.md).
