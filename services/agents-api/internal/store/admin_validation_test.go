@@ -31,13 +31,16 @@ func TestRuntimeNodeValidationIdentityAndPrecedence(t *testing.T) {
 		param            string
 	}{
 		{"", 0, 0, "name"}, {strings.Repeat("界", 43), 1, 1, "name"}, {"private\nname", 1, 1, "name"},
-		{"node", 0, 0, "max_active"}, {"node", 2, 1, "max_retained"}, {"node", 1, 1000001, "max_retained"},
+		{"node", 0, 0, "max_active"}, {"node", 1000001, 1000001, "max_active"}, {"node", 1000001, 8, "max_active"}, {"node", 2, 1, "max_retained"}, {"node", 1, 1000001, "max_retained"},
 	} {
 		err := validateRuntimeNode(tc.name, tc.active, tc.retained)
 		var field *AdminValidationError
 		if !errors.As(err, &field) || !errors.Is(err, ErrInvalidInput) || field.Param != tc.param || err.Error() != ErrInvalidInput.Error() {
 			t.Fatalf("wrong capacity error: %#v", err)
 		}
+	}
+	if err := validateRuntimeNode("node", 1000000, 1000000); err != nil {
+		t.Fatal("inclusive active capacity bound changed", err)
 	}
 	// Node validation retains its historical byte bound and limited controls;
 	// it must not silently adopt the stricter Project/key name validator.
