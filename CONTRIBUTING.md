@@ -1785,8 +1785,12 @@ later Turn. Cancellation uses the exact Run identity.
 Preparations and Start execute outside the receive loop and Router lock. Admission
 expires after five minutes; retries do not extend that deadline. Bound active
 preparation and execution separately from idle retained resources, and count
-closing or uncertain resources until cleanup succeeds. At most 64 admission
-records are retained; old handles never consume replacement admissions. Idle expiry
+closing or uncertain resources until cleanup succeeds. A definite
+`execution_prepare` rejection with `preparation_capacity` leaves an unclaimed
+queued Turn for the existing Worker scheduler to retry, including capacity held
+by cleanup. Other errors and uncertain input delivery do not authorize replay.
+At most 64 admission records are retained; old handles never consume replacement
+admissions. Idle expiry
 is a Runtime resource policy, not Core active-Turn concurrency. Shutdown tracks and
 closes active and idle Executors, retains failed close targets, and allows a later
 serialized retry. Ordinary disconnection closes the failed transport and keeps
