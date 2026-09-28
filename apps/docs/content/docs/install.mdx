@@ -125,7 +125,7 @@ and rerunning `install.sh` accepts no flag except `--install-dir`.
 | `--web-port PORT` | `8080` | Loopback port of Web. Seeds `ports.web` |
 | `--install-dir DIR` | `~/.oac/core` | Absolute installation directory. It must be empty or missing |
 | `--config FILE` | | Seed `config.json` from a prepared file instead of the setting flags above (`--public-url`, the mode flags, `--native-core`, ports, `--core-url`) |
-| `--convert`, `--yes` | | [Convert an installation](/troubleshooting#convert-an-earlier-installation) made before the OpenAgentCore rename; `--yes` skips the confirmation |
+
 
 #### Sandbox backend
 
@@ -488,8 +488,8 @@ at Add node.
 **Show Getting started** in the sidebar brings it back.
 
 An existing pre-rename installation at `~/.parsar/core` blocks a new default install.
-Use `./install.sh --convert` after draining it with the old release, or explicitly
-choose another `--install-dir`. See [conversion and retained backups](/troubleshooting#convert-an-earlier-installation).
+Historical conversion is not supported. Preserve the existing installation and explicitly
+choose another `--install-dir`. See [installation version policy](/troubleshooting#convert-an-earlier-installation).
 
 ## What the installer creates
 

@@ -25,7 +25,7 @@
     "source": "docs/getting-started/install.md",
     "title": "Install Core and Web",
     "description": "Current distribution, host prerequisites, HTTPS, first sign-in and installation options.",
-    "zh": "安装器默认在 ~/.oac/core 安装 Core、Web 和专用 PostgreSQL，初始没有执行节点。先确定公网 HTTPS 地址，按当前版本的校验步骤下载并安装，再用 Core key 登录 Web。"
+    "zh": "安装器默认在 ~/.oac/core 安装 Core、Web 和专用 PostgreSQL，初始没有执行节点。先确定公网 HTTPS 地址，按当前版本的校验步骤下载并安装，再用 Core key 登录 Web。 只支持全新安装与同一版本修复；不支持旧版本原地升级或历史转换。保留旧安装和数据，在新的空目录安装当前版本。"
   },
   {
     "slug": "configure",
@@ -81,7 +81,7 @@
     "source": "docs/getting-started/nodes.md",
     "title": "Nodes and hosted providers",
     "description": "Add and remove Docker or microsandbox nodes; diagnose connection and readiness.",
-    "zh": "在 Web 的 Nodes 页面添加节点，并在目标主机执行经过校验的命令。sudo 模式使用 oac-node 系统账户；无 sudo 模式使用用户服务。旧名称的同一安装实例必须先按旧版本流程移除，再添加。"
+    "zh": "在 Web 的 Nodes 页面添加节点，并在目标主机执行经过校验的命令。sudo 模式使用 oac-node 系统账户；无 sudo 模式使用用户服务。节点程序不支持通过 --update 升级版本；保留旧节点状态和 Runtime 数据，另行添加新节点。当前 Runtime generation 操作不属于节点程序版本升级。"
   },
   {
     "slug": "self-hosted-execution",
@@ -118,7 +118,7 @@
     "slug": "troubleshooting",
     "source": "docs/getting-started/operations.md",
     "title": "Operations and troubleshooting",
-    "description": "oac lifecycle commands, backups, key rotation, upgrades and diagnostics.",
-    "zh": "使用 oac status 查看安装状态，oac doctor 诊断配置，oac apply 应用 config.json。备份必须同时保留数据库、配置和密钥。升级按当前指南执行；不要假设在线 generation 更新或 reset 已实现。"
+    "description": "oac lifecycle commands, backups, key rotation, current-version repair and diagnostics.",
+    "zh": "使用 oac status 查看安装状态，oac start 和 oac stop 管理服务，oac apply 应用 config.json。备份必须同时保留数据库、配置和密钥。只支持全新安装和同一版本修复，不支持原地升级、降级或历史转换；保留旧安装和数据，在新的空目录重新安装。安装、修复和修改状态的 oac 命令共用 .oac.lock；遇到占用应等待当前命令结束，不要删除或替换锁文件。"
   }
 ]

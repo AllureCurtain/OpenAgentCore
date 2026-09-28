@@ -18,6 +18,14 @@ for (const token of ['/v1', '/core/v1', '/api/v1', 'Project API key', 'Core key'
 for (const token of ['config.json', 'oac apply']) assert.ok(source('configure').includes(token), 'Configuration guide omits ' + token)
 for (const token of ['oac-node', '~/.oac/nodes']) assert.ok(source('hosted-providers').includes(token), 'Node guide omits ' + token)
 for (const token of ['oac-selfhost', '~/.oac/self-hosted']) assert.ok(source('self-hosted-execution').includes(token), 'Executor guide omits ' + token)
+// Installation policy must agree in both generated guides and reviewed reading notes.
+for (const [slug, tokens] of [
+  ['troubleshooting', ['In-place version upgrades, downgrades and historical conversions are not supported.', '.oac.lock']],
+  ['hosted-providers', ['Node program version updates are not supported.', '`--update` refuses']],
+  ['install.zh', ['同一版本修复', '不支持旧版本原地升级或历史转换']],
+  ['troubleshooting.zh', ['不支持原地升级、降级或历史转换', '.oac.lock']],
+  ['hosted-providers.zh', ['不支持通过 --update 升级版本', '保留旧节点状态和 Runtime 数据']],
+]) for (const token of tokens) assert.ok(source(slug).includes(token), 'Installation policy drift in ' + slug + ': ' + token)
 for (const file of fs.readdirSync(path.join(app, 'content/docs')).filter(n => n.endsWith('.mdx'))) {
   const text = fs.readFileSync(path.join(app, 'content/docs', file), 'utf8')
   for (const retired of ['/core/v1/admin', 'sandbox-manager.openapi.yaml']) assert.ok(!text.includes(retired), 'Obsolete claim in ' + file + ': ' + retired)
