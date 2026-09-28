@@ -52,24 +52,18 @@ func initializationPython() (string, error) {
 }
 
 func initializationNPM() (string, []string, error) {
-	node, err := exec.LookPath("node")
-	if err != nil {
+	if _, err := exec.LookPath("node"); err != nil {
 		return "", nil, initializationDependency("Node.js")
 	}
 	npm, err := exec.LookPath("npm")
 	if err != nil {
 		return "", nil, initializationDependency("npm")
 	}
-	if runtime.GOOS != "windows" {
-		return npm, nil, nil
-	}
-	// npm's Windows launcher is a .cmd file. Use the installed CLI with Node rather
-	// than reinterpret package arguments through cmd.exe.
-	cli := filepath.Join(filepath.Dir(npm), "node_modules", "npm", "bin", "npm-cli.js")
-	if info, err := os.Stat(cli); err != nil || !info.Mode().IsRegular() {
+	binary, args, err := ResolvePackageManagerCommand(npm, nil)
+	if err != nil {
 		return "", nil, initializationDependency("npm CLI")
 	}
-	return node, []string{cli}, nil
+	return binary, args, nil
 }
 
 func initializationEnvironment(configured map[string]string) []string {

@@ -45,7 +45,7 @@ func runPreparationHelper() {
 			features = []string{"workspace_tools", "workspace_prepare"}
 		}
 		if strings.HasPrefix(mode, "structured-") {
-			features = append(features, "local_runtime_v1", "structured_output")
+			features = append(features, "local_runtime_v2", "structured_output")
 			if mode == "structured-ready" {
 				features = append(features, "workspace_structured_output")
 			}

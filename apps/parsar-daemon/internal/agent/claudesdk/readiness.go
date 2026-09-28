@@ -74,7 +74,7 @@ func (info RuntimeInfo) supportsWorkspaceCommands() bool {
 }
 
 func (info RuntimeInfo) SupportsLocalRuntime() bool {
-	return info.supportsWorkspaceCommands() && slices.Contains(info.Features, "local_runtime_v1")
+	return info.supportsWorkspaceCommands() && slices.Contains(info.Features, "local_runtime_v2")
 }
 
 func (info RuntimeInfo) SupportsWorkspaceFunctions() bool {

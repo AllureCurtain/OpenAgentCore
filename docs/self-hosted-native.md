@@ -152,3 +152,9 @@ Runtime does not run apt, request sudo or elevate the daemon's privileges.
 an empty or null value; it is never ignored. A missing preinstalled dependency
 fails the operation that requires it. npm/Python package installation and setup retain their supported
 initialization flow using the launching user's existing permissions.
+
+
+On Windows, stdio MCP commands named `npm` or `npx` (including explicit
+`.cmd` paths) use the selected installation's JavaScript entrypoint with Node.
+Ordinary executables run directly. Other batch wrappers must configure
+`cmd.exe` explicitly, with the wrapper arguments required by that command.
