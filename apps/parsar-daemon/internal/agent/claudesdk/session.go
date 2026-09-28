@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"strings"
 	"sync"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
@@ -14,10 +12,21 @@ import (
 )
 
 type session struct {
+	owner          *executor
+	runID          string
+	frames         chan []byte
+	outputDone     chan struct{}
+	turnSettlement agent.TurnSettlement
+	settlementErr  error
+	outputErr      error
+	cancelOnce     sync.Once
+	cancelOutput   chan struct{}
+	nativeEnded    bool
+
 	reads       workspaceReadState
 	directories workspaceDirectoryState
 	process     *clirunner.Process
-	writeMu     sync.Mutex
+	writeMu     *sync.Mutex
 	functions   functionState
 	steering    steeringState
 	settled     chan struct{}
@@ -25,59 +34,33 @@ type session struct {
 }
 
 func NewFactory(config Config) agent.Factory {
+	prepareExecutor := NewExecutorFactory(config)
 	return func(ctx context.Context, req proto.PromptRequestPayload, out chan<- proto.Envelope) (agent.Session, error) {
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		if out == nil {
-			return nil, fmt.Errorf("claudesdk: output channel is required")
-		}
-		if config.Workspace != nil {
-			runID, prompt := req.RunID, req.Input
-			if strings.TrimSpace(runID) == "" || prompt.Validate() != nil {
-				return nil, fmt.Errorf("claudesdk: run id and prompt are required")
-			}
-			req.RunID, req.Input = "", nil
-			prepared, err := NewPreparationFactory(config)(ctx, req)
-			if err != nil {
-				return nil, err
-			}
-			defer prepared.Close()
-			return prepared.Start(ctx, runID, prompt, out)
-		}
-		start, env, err := prepare(config, req)
+		run, input := req.RunID, req.Input
+		req.RunID, req.ConversationID, req.Input = "", "", nil
+		resource, err := prepareExecutor(ctx, req)
 		if err != nil {
 			return nil, err
 		}
-		if start.MCPHTTPServers != nil || start.Subagents != nil {
-			info, err := CheckRuntime(ctx, config)
-			if start.Subagents != nil && (err != nil || !info.SupportsSubagents()) {
-				return nil, fmt.Errorf("claudesdk: packaged runtime does not support subagent resources")
-			}
-			if start.MCPHTTPServers != nil && (err != nil || !info.SupportsHTTPMCP()) {
-				return nil, fmt.Errorf("claudesdk: packaged runtime does not support HTTP MCP")
-			}
-			if start.MCPHTTPServers != nil {
-				for _, server := range *start.MCPHTTPServers {
-					if server.Required && !info.SupportsHTTPMCPRequired() {
-						return nil, fmt.Errorf("claudesdk: packaged runtime does not support required HTTP MCP")
-					}
-					if server.BearerTokenEnvVar != "" && !info.SupportsHTTPMCPBearer() {
-						return nil, fmt.Errorf("claudesdk: packaged runtime does not support authenticated HTTP MCP")
-					}
-				}
-			}
-		}
-		s, err := launch(ctx, config, start, env)
-		if err != nil {
+		turn, err := resource.StartTurn(ctx, run, input, out)
+		if turn == nil {
+			_ = resource.Close(context.Background())
 			return nil, err
 		}
-		go s.run(ctx, req.RunID, start, out, nil)
-		return s, nil
+		// Factory callers own one execution. Both entrypoints use the same
+		// Executor implementation; Runtime pooling uses NewExecutorFactory.
+		go func() { _, _ = turn.AwaitSettlement(context.Background()); _ = resource.Close(context.Background()) }()
+		return turn, err
 	}
 }
 
 type bridgeEvent struct {
+	TurnID    string `json:"turn_id"`
+	Reusable  *bool  `json:"reusable"`
+	Confirmed *bool  `json:"confirmed"`
+	Reason    string `json:"reason"`
+	Protocol  int    `json:"protocol"`
+
 	Fact        json.RawMessage             `json:"fact"`
 	InputID     string                      `json:"input_id"`
 	ResultID    string                      `json:"result_id"`
@@ -97,191 +80,6 @@ type bridgeEvent struct {
 	Observation *proto.ToolObservation      `json:"observation"`
 }
 
-func (s *session) run(ctx context.Context, runID string, start startRequest, out chan<- proto.Envelope, prepared *prepared) {
-	defer func() {
-		if out != nil {
-			close(out)
-		}
-	}()
-	defer s.stopFunctions()
-	defer s.stopSteering()
-	defer s.stopWorkspaceReads()
-	defer s.stopWorkspaceDirectories()
-	emit := func(kind string, payload any) {
-		event, err := proto.NewEnvelope(kind, runID, payload)
-		if err != nil {
-			return
-		}
-		// Cancellation must drain native output even if the event consumer stops.
-		// Terminal publication follows settlement and cannot hold up Cancel.
-		var stopping <-chan struct{}
-		if kind != proto.TypeError && kind != proto.TypeDone {
-			stopping = s.process.Context().Done()
-		}
-		// Preserve drained observations when the consumer can accept them immediately.
-		select {
-		case out <- event:
-			return
-		default:
-		}
-		select {
-		case out <- event:
-		case <-ctx.Done():
-		case <-stopping:
-		}
-	}
-	stderrDone := make(chan struct{})
-	go func() { _, _ = io.Copy(io.Discard, s.process.Stderr); close(stderrDone) }()
-	var failure error
-	if err := json.NewEncoder(s.process.Stdin).Encode(start); err != nil {
-		failure = fmt.Errorf("claudesdk: cannot submit SDK input")
-		s.process.Cancel()
-	}
-	scanner := s.bridgeOutput()
-	if prepared != nil {
-		binding, err := prepared.awaitStart(scanner, failure)
-		if binding == nil {
-			prepared.failure = s.drain(scanner, stderrDone, err)
-			close(s.settled)
-			return
-		}
-		runID, out = binding.runID, binding.out
-		s.writeMu.Lock()
-		err = json.NewEncoder(s.process.Stdin).Encode(struct {
-			Type  string             `json:"type"`
-			Input proto.MessageInput `json:"input"`
-		}{Type: "start", Input: binding.prompt})
-		s.writeMu.Unlock()
-		if err != nil {
-			failure = fmt.Errorf("claudesdk: cannot submit SDK input")
-			s.process.Cancel()
-		}
-	}
-	var content strings.Builder
-	var result *bridgeEvent
-	var usage proto.Usage
-	var usageSession string
-	usageIDs := map[string]bool{}
-	var sequence uint64
-	terminal := false
-	mcp := mcpState{calls: map[string]proto.ToolObservation{}}
-	commands := commandState{calls: map[string]proto.ToolObservation{}}
-	for scanner.Scan() {
-		var event bridgeEvent
-		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil || terminal {
-			failure = fmt.Errorf("claudesdk: invalid SDK bridge output")
-			s.process.Cancel()
-			break
-		}
-		switch event.Type {
-		case "command_observation":
-			if err := commands.receive(event, start, s.inputSessionID(), emit); err != nil {
-				failure = err
-				s.process.Cancel()
-			}
-		case "mcp_observation":
-			if err := mcp.receive(event, start, emit); err != nil {
-				failure = err
-				s.process.Cancel()
-			}
-		case "delta":
-			if start.ObserveMessages && event.ItemID == "" || !start.ObserveMessages && event.ItemID != "" {
-				failure = fmt.Errorf("claudesdk: invalid message delta identity")
-				s.process.Cancel()
-				break
-			}
-			content.WriteString(event.Delta)
-			sequence++
-			emit(proto.TypeDelta, proto.DeltaPayload{ItemID: event.ItemID, Delta: event.Delta, Sequence: sequence})
-		case "output_message":
-			message := event.Message
-			if !start.ObserveMessages || message == nil || message.ID == "" ||
-				(message.Status != "in_progress" && message.Status != "completed") ||
-				(message.Status == "completed") != (message.Text != nil) {
-				failure = fmt.Errorf("claudesdk: invalid message observation")
-				s.process.Cancel()
-				break
-			}
-			emit(proto.TypeOutputMessage, message)
-		case "function_call", "function_applied":
-			if err := s.receiveFunction(event, start, emit); err != nil {
-				failure = err
-				s.process.Cancel()
-			}
-		case "input_ready", "input_closed", "input_applied", "input_rejected":
-			if err := s.receiveInput(event, start); err != nil {
-				failure = err
-				s.process.Cancel()
-			}
-		case proto.TypeSubagentIdentity, proto.TypeSubagentTurn, proto.TypeSubagentItem, proto.TypeSubagentCoordination:
-			if start.Subagents == nil || !json.Valid(event.Fact) {
-				failure = fmt.Errorf("claudesdk: unrequested native child observation")
-				s.process.Cancel()
-				break
-			}
-			emit(event.Type, event.Fact)
-		case "usage":
-			if event.ResultID == "" || !s.matchesInputSession(event.SessionID) || event.SessionID == "" || (start.Resume != "" && event.SessionID != start.Resume) ||
-				(usageSession != "" && usageSession != event.SessionID) || usageIDs[event.ResultID] {
-				failure = fmt.Errorf("claudesdk: invalid usage identity or duplicate result")
-				s.process.Cancel()
-				break
-			}
-			nextUsage, err := appendNativeUsage(usage, event.Usage)
-			failure = err
-			if failure != nil {
-				s.process.Cancel()
-				break
-			}
-			usage = nextUsage
-			usageIDs[event.ResultID] = true
-			usageSession = event.SessionID
-			emit(proto.TypeUsage, proto.UsagePayload{Usage: usage})
-		case "result":
-			if !s.matchesInputSession(event.SessionID) || event.SessionID == "" || start.Resume != "" && event.SessionID != start.Resume || usageSession != "" && event.SessionID != usageSession || !s.functionsComplete() || !s.steeringComplete() || !mcp.complete() || !commands.complete() {
-				failure = fmt.Errorf("claudesdk: invalid native completion or unconfirmed input/result")
-				s.process.Cancel()
-			} else {
-				result = &event
-			}
-			terminal = true
-		case "error":
-			failure = bridgeFailure(event.Code)
-			terminal = true
-		default:
-			failure = fmt.Errorf("claudesdk: unknown SDK bridge event")
-			s.process.Cancel()
-		}
-		if failure != nil && !terminal {
-			break
-		}
-	}
-	failure = s.drain(scanner, stderrDone, failure)
-	if result == nil && failure == nil {
-		failure = fmt.Errorf("claudesdk: SDK result is missing")
-	}
-	mcp.close(start, emit)
-	commands.close(start, emit)
-	s.stopFunctions()
-	s.stopSteering()
-	metadata := map[string]any{proto.DoneMetaAgentSessionType: "claude_session"}
-	if id := s.inputSessionID(); id != "" {
-		metadata[proto.DoneMetaAgentSessionID] = id
-	}
-	if failure == nil {
-		content.Reset()
-		content.WriteString(result.Text)
-		metadata[proto.DoneMetaAgentSessionID] = result.SessionID
-	}
-	s.outcome = proto.DonePayload{Content: content.String(), Usage: usage, Metadata: metadata}
-	// Router completion cleanup calls Cancel while consuming Done. Settle first.
-	close(s.settled)
-	if failure != nil {
-		emit(proto.TypeError, proto.ErrorPayload{Error: failure.Error()})
-	}
-	emit(proto.TypeDone, s.outcome)
-}
-
 func launch(ctx context.Context, config Config, start startRequest, env []string) (*session, error) {
 	binary := config.Node
 	if binary == "" {
@@ -291,7 +89,7 @@ func launch(ctx context.Context, config Config, start startRequest, env []string
 	if err != nil {
 		return nil, err
 	}
-	return &session{process: process, functions: functionState{calls: map[string]*pendingFunction{}}, settled: make(chan struct{})}, nil
+	return &session{process: process, writeMu: &sync.Mutex{}, functions: functionState{calls: map[string]*pendingFunction{}}, settled: make(chan struct{})}, nil
 }
 
 func (s *session) drain(scanner *bridgeOutput, stderrDone <-chan struct{}, failure error) error {

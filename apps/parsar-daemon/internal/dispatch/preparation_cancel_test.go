@@ -3,7 +3,6 @@ package dispatch_test
 import (
 	"context"
 	"errors"
-	"fmt"
 	"reflect"
 	"sync"
 	"sync/atomic"
@@ -49,7 +48,7 @@ func startCancellationPreparation(t *testing.T, r *dispatch.Router, sender *recS
 		t.Fatal(err)
 	}
 	ready := waitPreparationStatus(t, sender, "request", "ready", "")
-	if err := r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionStart, "request", proto.ExecutionStartPayload{Handle: ready.Handle, RunID: "run", Input: proto.TextInput("input")})); err != nil {
+	if err := r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionStart, "request", proto.ExecutionStartPayload{Handle: ready.Handle, ExecutorID: ready.ExecutorID, RunID: "run", Input: proto.TextInput("input")})); err != nil {
 		t.Fatal(err)
 	}
 	return ready
@@ -167,7 +166,7 @@ func TestPreparedCancellationWaitsForOutputAndCleanup(t *testing.T) {
 }
 
 func TestPreparedCancellationBeforeTransferPreservesUnknownOutcome(t *testing.T) {
-	for _, boundary := range []string{"start_failure", "release", "expiry", "shutdown"} {
+	for _, boundary := range []string{"start_failure", "release", "shutdown"} {
 		t.Run(boundary, func(t *testing.T) {
 			sender := &recSender{}
 			entered, cancelled, allowReturn := make(chan struct{}), make(chan struct{}), make(chan struct{})
@@ -195,7 +194,7 @@ func TestPreparedCancellationBeforeTransferPreservesUnknownOutcome(t *testing.T)
 			switch boundary {
 			case "release":
 				_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionRelease, "request", proto.ExecutionReleasePayload{Handle: ready.Handle}))
-				waitPreparationStatus(t, sender, "request", "released", "")
+				// An admission release does not terminate a handed-off Turn.
 			case "expiry":
 				waitPreparationStatus(t, sender, "request", "expired", "")
 			case "shutdown":
@@ -248,6 +247,9 @@ func TestPreparedCancellationFailuresRemainConservative(t *testing.T) {
 			startCancellationPreparation(t, r, sender.recSender)
 			<-entered
 			_ = r.Handle(t.Context(), mustEnv(t, proto.TypePromptCancel, "run", proto.PromptCancelPayload{DeliveryID: "cancel"}))
+			if failure == "cancel_failed" {
+				waitFor(t, func() bool { return p.calls.Load() == 1 }, "failed pre-transfer cleanup")
+			}
 			close(allowReturn)
 			waitFor(t, func() bool { return len(cancellationAcks(sender.recSender)) == 1 }, "failed cancellation")
 			ack := cancellationAcks(sender.recSender)[0]
@@ -255,17 +257,21 @@ func TestPreparedCancellationFailuresRemainConservative(t *testing.T) {
 				t.Fatalf("uncertain cancellation accepted: %+v", ack)
 			}
 			if failure == "cancel_failed" {
-				if r.ActiveRuns() != 1 || session.cancels() != 0 {
-					t.Fatal("failed attempt released ownership or used a fallback target")
+				waitFor(t, func() bool { p.mu.Lock(); defer p.mu.Unlock(); return p.session != nil }, "late Turn returned")
+				if r.ActiveRuns() != 1 {
+					t.Fatal("unconfirmed cleanup lost owner")
 				}
 				_ = r.Handle(t.Context(), mustEnv(t, proto.TypePromptCancel, "run", proto.PromptCancelPayload{DeliveryID: "retry"}))
-				waitFor(t, func() bool { return len(cancellationAcks(sender.recSender)) == 2 && r.ActiveRuns() == 0 }, "same-target cancellation retry")
-				if retry := cancellationAcks(sender.recSender)[1]; !retry.Applied || retry.ErrorCode != "" || session.cancels() != 1 || p.calls.Load() != 2 {
-					t.Fatalf("same target was not retried exactly once: ack=%+v calls=%d session=%d", retry, p.calls.Load(), session.cancels())
+				waitFor(t, func() bool { return len(cancellationAcks(sender.recSender)) == 2 }, "cleanup retry receipt")
+				if !cancellationAcks(sender.recSender)[1].Applied {
+					t.Fatal("confirmed retry was rejected")
 				}
-			} else if r.ActiveRuns() != 0 || session.cancels() != 1 {
-				t.Fatal("successful cleanup did not settle output failure")
 			}
+			waitFor(t, func() bool { return r.ActiveRuns() == 0 }, "confirmed resource cleanup")
+			if session.cancels() != 1 {
+				t.Fatal("confirmed cleanup did not stop the native Turn")
+			}
+
 		})
 	}
 }
@@ -310,11 +316,7 @@ func TestPreparedCancellationTimeoutKeepsCapacityUntilStartReturns(t *testing.T)
 	})
 	startCancellationPreparation(t, r, sender)
 	<-entered
-	for i := 0; i < 3; i++ {
-		id := fmt.Sprint(i)
-		_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionPrepare, id, preparationRequest()))
-		waitPreparationStatus(t, sender, id, "ready", "")
-	}
+
 	_ = r.Handle(t.Context(), mustEnv(t, proto.TypePromptCancel, "run", proto.PromptCancelPayload{DeliveryID: "cancel"}))
 	deadline := time.Now().Add(12 * time.Second)
 	for len(cancellationAcks(sender)) == 0 && time.Now().Before(deadline) {

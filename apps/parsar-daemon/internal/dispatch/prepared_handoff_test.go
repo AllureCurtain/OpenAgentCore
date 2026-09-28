@@ -208,7 +208,7 @@ func TestPreparedHandoffDuplicateStartDoesNotReexecuteDuringPublication(t *testi
 	if session.functions.Load() != 0 || session.steers.Load() != 0 || session.reads.Load() != 0 || len(session.submissions()) != 0 || askCalls != 0 {
 		t.Fatal("private Session accepted work before started publication")
 	}
-	duplicate := mustEnv(t, proto.TypeExecutionStart, "request", proto.ExecutionStartPayload{Handle: ready.Handle, RunID: "run", Input: proto.TextInput("input")})
+	duplicate := mustEnv(t, proto.TypeExecutionStart, "request", proto.ExecutionStartPayload{Handle: ready.Handle, ExecutorID: ready.ExecutorID, RunID: "run", Input: proto.TextInput("input")})
 	if err := r.Handle(t.Context(), duplicate); err != nil {
 		t.Fatal(err)
 	}
@@ -315,7 +315,7 @@ func TestPreparedHandoffEarlyDoneDetachesPublishedPreparation(t *testing.T) {
 		return session, nil
 	}
 	p.cancel = func(ctx context.Context) error {
-		if p.calls.Load() == 1 {
+		if p.calls.Load() <= 2 {
 			return errors.New("cleanup incomplete")
 		}
 		return session.Cancel(ctx)
@@ -327,7 +327,7 @@ func TestPreparedHandoffEarlyDoneDetachesPublishedPreparation(t *testing.T) {
 	waitPreparationStatus(t, sender, "request", "started", "")
 	waitFor(t, func() bool {
 		_, busy := r.PreparationOwnershipForTest(ready.Handle)
-		return p.calls.Load() == 1 && !busy
+		return p.calls.Load() == 2 && !busy
 	}, "failed natural cleanup")
 	if owned, _ := r.PreparationOwnershipForTest(ready.Handle); owned {
 		t.Fatal("published Run retained preparation capacity after early Done")
@@ -345,14 +345,14 @@ func TestPreparedHandoffEarlyDoneDetachesPublishedPreparation(t *testing.T) {
 		}
 		return count == 2
 	}, "published preparation release response")
-	if p.calls.Load() != 1 {
+	if p.calls.Load() != 2 {
 		t.Fatal("old preparation handle retried native cancellation")
 	}
 	if err := r.Handle(t.Context(), mustEnv(t, proto.TypePromptCancel, "run", proto.PromptCancelPayload{DeliveryID: "retry"})); err != nil {
 		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return len(cancellationAcks(sender)) == 1 && r.ActiveRuns() == 0 }, "Run-owned retry settlement")
-	if p.calls.Load() != 2 || session.cancels() != 1 || !cancellationAcks(sender)[0].Applied {
+	if p.calls.Load() != 3 || session.cancels() != 1 || !cancellationAcks(sender)[0].Applied {
 		t.Fatal("explicit Run cancellation did not retry the retained native target")
 	}
 }

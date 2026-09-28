@@ -29,6 +29,7 @@ type DaemonConfig struct {
 }
 
 type Dispatcher struct {
+	notifications *executionNotifications
 	Policy
 	Store    *store.Store
 	Registry *gateway.Registry
@@ -89,12 +90,17 @@ func (d *Dispatcher) Run(ctx context.Context, tenantID, sessionID, turnID string
 	if err != nil {
 		return store.Turn{}, err
 	}
+	req.WorkDir, req.DisableExecutionEnvironment = workDir, noEnvironment
+	prepared, err := d.prepareTurnExecutor(ctx, peer, tenantID, sessionID, turnID, req, store.TurnQueued)
+	if err != nil {
+		return store.Turn{}, err
+	}
+	defer prepared.close()
 	if _, err := d.Store.TransitionTurn(ctx, tenantID, sessionID, turnID, store.TurnTransition{ExpectedStatus: store.TurnQueued, Status: store.TurnInProgress}); err != nil {
 		return store.Turn{}, err
 	}
 	req.ConversationID, req.RunID, req.Input = sessionID, turnID, text
-	req.WorkDir, req.DisableExecutionEnvironment = workDir, noEnvironment
-	result, status := d.deliver(ctx, tenantID, sessionID, peer, req, through, nil)
+	result, status := d.deliver(ctx, tenantID, sessionID, peer, req, through, prepared)
 	return d.finishRun(tenantID, sessionID, turnID, snapshot.Agent.Model, result, status)
 }
 

@@ -28,7 +28,7 @@ func TestClaudeMCPWaitsForCapableRuntime(t *testing.T) {
 				}
 				claudeSession(t, h, configuration, prebound)
 				// Base MCP support does not imply authentication or required initialization.
-				caps := proto.AgentKindCapabilities{Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: true, ExecutionControls: true, EnvironmentNone: true, SubagentControl: true, ToolObservations: true, MCPHTTPTools: authenticated || required}
+				caps := proto.AgentKindCapabilities{Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: true, ExecutionControls: true, EnvironmentNone: true, SubagentControl: true, ToolObservations: true, MCPHTTPTools: authenticated || required, Preparation: true}
 				h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{SupportedAgentKinds: []proto.SupportedAgentKind{{Kind: "claude_sdk", Available: true, Capabilities: caps}}})
 				awaitDaemonRemoteCondition(t, t.Context(), 3*time.Second, "Claude MCP heartbeat", func() bool {
 					peer, _ := h.registry.LookupDevice(h.device.ID)
@@ -71,7 +71,7 @@ func TestClaudeMCPWaitsForCapableRuntime(t *testing.T) {
 				caps.MCPHTTPRequired = required
 				h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{SupportedAgentKinds: []proto.SupportedAgentKind{{Kind: "claude_sdk", Available: true, Capabilities: caps}}})
 				var prompt proto.PromptRequestPayload
-				if h.read(proto.TypePromptRequest).DecodePayload(&prompt) != nil || prompt.AgentKind != "claude_sdk" || prompt.MCPHTTPServers == nil || len(*prompt.MCPHTTPServers) != 1 {
+				if h.read(testExecutionRequest).DecodePayload(&prompt) != nil || prompt.AgentKind != "claude_sdk" || prompt.MCPHTTPServers == nil || len(*prompt.MCPHTTPServers) != 1 {
 					t.Fatal("missing typed MCP dispatch")
 				}
 				server := (*prompt.MCPHTTPServers)[0]
@@ -104,7 +104,7 @@ func TestClaudeMCPUnsupportedSnapshotRejectedBeforeClaim(t *testing.T) {
 				configuration = strings.Replace(configuration, `"tickets"`, `"functions"`, 1)
 			}
 			claudeSession(t, h, configuration, true)
-			caps := proto.AgentKindCapabilities{Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: true, ExecutionControls: true, EnvironmentNone: true, SubagentControl: true, ToolObservations: true, MCPHTTPTools: true, MCPHTTPRequired: true, MCPHTTPBearerAuth: true}
+			caps := proto.AgentKindCapabilities{Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: true, ExecutionControls: true, EnvironmentNone: true, SubagentControl: true, ToolObservations: true, MCPHTTPTools: true, MCPHTTPRequired: true, MCPHTTPBearerAuth: true, Preparation: true}
 			if profile == "missing required capability" {
 				caps.MCPHTTPRequired = false
 			}

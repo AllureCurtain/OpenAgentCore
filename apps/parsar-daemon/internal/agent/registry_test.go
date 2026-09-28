@@ -136,3 +136,24 @@ func TestRegistrySupportedAgentKindsReportsDescriptors(t *testing.T) {
 		t.Fatalf("opencode descriptor not preserved: %#v", got[1])
 	}
 }
+
+func TestRegistryExecutorRequiresExplicitRegistration(t *testing.T) {
+	registry := agent.NewRegistry()
+	registry.Register("native", stubFactory("native"))
+	if _, err := registry.ResolveExecutor("native"); err == nil {
+		t.Fatal("legacy factory implied reusable execution")
+	}
+	expected := errors.New("executor factory")
+	registry.RegisterExecutor("native", func(context.Context, proto.PromptRequestPayload) (agent.Executor, error) { return nil, expected })
+	factory, err := registry.ResolveExecutor("native")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := factory(t.Context(), proto.PromptRequestPayload{}); !errors.Is(err, expected) {
+		t.Fatal(err)
+	}
+	registry.Register("native", stubFactory("replacement"))
+	if _, err := registry.ResolveExecutor("native"); err == nil {
+		t.Fatal("replacing a kind retained its old executor capability")
+	}
+}

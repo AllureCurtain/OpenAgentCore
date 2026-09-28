@@ -7,6 +7,21 @@ import (
 )
 
 func (s *Session) cancelSubagents(ctx context.Context) error {
+	if err := s.stopSubagents(ctx); err != nil {
+		return err
+	}
+	select {
+	case <-s.finished:
+		s.mu.Lock()
+		err := s.subagentSettlementError
+		s.mu.Unlock()
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (s *Session) stopSubagents(ctx context.Context) error {
 	select {
 	case <-s.finished:
 		return nil
@@ -21,7 +36,7 @@ func (s *Session) cancelSubagents(ctx context.Context) error {
 	id, response := s.reserveResponse()
 	defer s.removeResponse(id)
 	raw, _ := json.Marshal(map[string]string{"sessionId": native})
-	if err := s.write(rpcFrame{JSONRPC: "2.0", ID: json.RawMessage(id), Method: "mcode/session/delegation/stop", Params: raw}); err != nil {
+	if err := s.writeContext(ctx, rpcFrame{JSONRPC: "2.0", ID: json.RawMessage(id), Method: "mcode/session/delegation/stop", Params: raw}); err != nil {
 		return err
 	}
 	select {
@@ -40,13 +55,5 @@ func (s *Session) cancelSubagents(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-	select {
-	case <-s.finished:
-		s.mu.Lock()
-		err := s.subagentSettlementError
-		s.mu.Unlock()
-		return err
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return nil
 }

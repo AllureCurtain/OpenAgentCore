@@ -19,6 +19,7 @@ const preparationRecords = 64
 // All mutable fields are protected by Router.mu. owns includes resources whose
 // cancellation is underway; a slow close cannot bypass the capacity bound.
 type preparationState struct {
+	executor          *executorState
 	requestID         string
 	trace             string
 	fingerprint       [32]byte
@@ -44,6 +45,9 @@ func (r *Router) handleExecutionPrepare(ctx context.Context, env proto.Envelope)
 		return r.rejectPreparation(env, "invalid_request")
 	}
 	req := input.Configuration
+	if !req.WorkspaceReadOnly {
+		return r.handleExecutorPrepare(ctx, env, input)
+	}
 	caps := r.availableCapabilities(req.AgentKind)
 	prepare, err := r.registry.ResolvePreparation(req.AgentKind)
 	if err != nil || !caps.Preparation {
@@ -177,6 +181,11 @@ func (r *Router) releasePreparation(p *preparationState, state, code string, pub
 	r.mu.Lock()
 	if r.closed || r.suspension != nil {
 		r.mu.Unlock()
+		return
+	}
+	if p.executor != nil {
+		r.mu.Unlock()
+		r.abandonExecutorAdmission(p, state, code, publish)
 		return
 	}
 	if p.handoff != nil {

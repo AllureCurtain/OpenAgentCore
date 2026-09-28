@@ -23,7 +23,7 @@ func publicSession(t *testing.T, h *dispatchHarness, key string) store.Session {
 
 func TestExecutionWorkerAdmissionBindingAndRecovery(t *testing.T) {
 	h := newDispatchHarness(t)
-	h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{SupportedAgentKinds: []proto.SupportedAgentKind{{Kind: "codex", Available: true, Capabilities: proto.AgentKindCapabilities{Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: true, WebSearchControl: true, TextVerbosity: true, ExecutionControls: true, SubagentControl: true, ToolObservations: true, EnvironmentNone: true}}}})
+	h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{SupportedAgentKinds: []proto.SupportedAgentKind{{Kind: "codex", Available: true, Capabilities: proto.AgentKindCapabilities{Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: true, WebSearchControl: true, TextVerbosity: true, ExecutionControls: true, SubagentControl: true, ToolObservations: true, EnvironmentNone: true, Preparation: true}}}})
 	h.session = publicSession(t, h, "public")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -58,7 +58,7 @@ func TestExecutionWorkerAdmissionBindingAndRecovery(t *testing.T) {
 	if err != nil || !retry[0].Replayed || retry[0].TurnID != receipts[0].TurnID {
 		t.Fatal(retry, err)
 	}
-	request := h.read(proto.TypePromptRequest)
+	request := h.read(testExecutionRequest)
 	var prompt proto.PromptRequestPayload
 	if err := request.DecodePayload(&prompt); err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func TestExecutionWorkerAdmissionBindingAndRecovery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request = h.read(proto.TypePromptRequest)
+	request = h.read(testExecutionRequest)
 	_ = request.DecodePayload(&prompt)
 	if prompt.AgentSessionID != "worker-native" {
 		t.Fatal(prompt)

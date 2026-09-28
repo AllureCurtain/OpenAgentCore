@@ -42,7 +42,7 @@ func (d *Dispatcher) withPreparedWorkspace(owner context.Context, peer *gateway.
 		}
 	}()
 	prepare, stop := context.WithTimeout(owner, 10*time.Second)
-	err = send(prepare, peer, proto.TypeExecutionPrepare, prepared.requestID, proto.ExecutionPreparePayload{Configuration: req})
+	err = send(prepare, peer, proto.TypeExecutionPrepare, prepared.requestID, proto.ExecutionPreparePayload{SessionID: session.ID, Configuration: req})
 	if err == nil {
 		err = prepared.awaitDirectoryReady(prepare)
 	}

@@ -10,16 +10,18 @@ const (
 )
 
 // ExecutionPreparePayload reuses execution configuration without accepting input
-// or product authoring. The initial private profile requires a bound local environment,
-// stable state key, strict resume and completion release.
+// or product authoring. SessionID identifies the immutable configuration owner;
+// each request reserves a separate Turn admission on its Runtime Executor.
 type ExecutionPreparePayload struct {
+	SessionID     string               `json:"session_id"`
 	Configuration PromptRequestPayload `json:"configuration"`
 }
 
 type ExecutionStartPayload struct {
-	Handle string       `json:"handle"`
-	RunID  string       `json:"run_id"`
-	Input  MessageInput `json:"input"`
+	ExecutorID string       `json:"executor_id"`
+	Handle     string       `json:"handle"`
+	RunID      string       `json:"run_id"`
+	Input      MessageInput `json:"input"`
 }
 
 type ExecutionReleasePayload struct {
@@ -31,6 +33,10 @@ type ExecutionReleasePayload struct {
 // order. ExpiresAt is Unix milliseconds. Repeated requests do not extend it. Retired request IDs
 // may allocate a fresh handle, but an old handle can never start its replacement.
 type PreparationStatusPayload struct {
+	// ExecutorID identifies the native resource owner, independently of this admission handle.
+	ExecutorID string `json:"executor_id,omitempty"`
+	// Reused is true when readiness reused an existing settled Executor.
+	Reused    bool   `json:"reused,omitempty"`
 	Handle    string `json:"handle,omitempty"`
 	Revision  uint64 `json:"revision"`
 	State     string `json:"state"`

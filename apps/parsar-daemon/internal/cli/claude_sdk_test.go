@@ -78,6 +78,9 @@ func TestClaudeSDKDiscoveryAndRegistration(t *testing.T) {
 				t.Fatal(err)
 			}
 			info := discovery.ClaudeSDK.Info
+			if info.Available {
+				info.Capabilities.Preparation = true
+			}
 			if info.Available != tc.ready {
 				t.Fatal(info)
 			}

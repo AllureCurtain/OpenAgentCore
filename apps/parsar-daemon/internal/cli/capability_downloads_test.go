@@ -92,3 +92,24 @@ func TestCapabilityDownloadsInstallZIPThroughPairedServer(t *testing.T) {
 		t.Fatal("rewrote the original request options")
 	}
 }
+
+func TestExecutorPreparationUsesCapabilitySnapshotTransform(t *testing.T) {
+	originalURL := "http://localhost:8080/internal/blobs/pg:skill"
+	descriptor := map[string]any{"download_url": originalURL}
+	source := proto.PromptRequestPayload{AgentOptions: map[string]any{"skills": []any{descriptor}}}
+	calls := 0
+	factory := withExecutorCapabilities(func(_ context.Context, req proto.PromptRequestPayload) (agent.Executor, error) {
+		calls++
+		actual := req.AgentOptions["skills"].([]any)[0].(map[string]any)["download_url"]
+		if actual != "http://paired-core:8080/internal/blobs/pg:skill" {
+			t.Fatalf("executor capability URL = %v", actual)
+		}
+		return nil, nil
+	}, "http://paired-core:8080")
+	if _, err := factory(t.Context(), source); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 || descriptor["download_url"] != originalURL {
+		t.Fatal("preparation changed the source snapshot or repeated setup")
+	}
+}

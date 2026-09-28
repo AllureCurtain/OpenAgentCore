@@ -107,3 +107,11 @@ func TestDirectoryRejectsMalformedOrIncompleteResponses(t *testing.T) {
 		}
 	}
 }
+
+func TestBindingAllowsRetainedExecutor(t *testing.T) {
+	b, req := testBinding(t)
+	req.ReleaseOnCompletion = false
+	if _, err := b.Configure(req); err != nil {
+		t.Fatal(err)
+	}
+}

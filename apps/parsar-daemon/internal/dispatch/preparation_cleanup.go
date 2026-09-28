@@ -32,6 +32,9 @@ func (r *Router) closePendingPreparationsLocked() []*preparationState {
 	var closeNow []*preparationState
 	for _, p := range r.preparations {
 		p.timer.Stop()
+		if p.executor != nil {
+			continue
+		}
 		if !p.owns {
 			continue
 		}

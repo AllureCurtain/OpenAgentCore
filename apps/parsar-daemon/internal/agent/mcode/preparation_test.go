@@ -88,8 +88,8 @@ func TestPreparedWorkspaceHasOneInputAndOutputOwner(t *testing.T) {
 			done++
 			select {
 			case <-p.session.exited:
+				t.Fatal("successful Turn disposed the reusable native owner")
 			default:
-				t.Fatal("Done before native settlement")
 			}
 			var d proto.DonePayload
 			_ = json.Unmarshal(e.Payload, &d)

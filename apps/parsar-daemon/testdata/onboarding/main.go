@@ -28,27 +28,72 @@ func (s *sender) Send(_ context.Context, e proto.Envelope) error {
 	return s.encoder.Encode(e)
 }
 
-type harness struct{ history map[string]string }
+type harness struct {
+	mu      sync.Mutex
+	history map[string]string
+}
 
-func (h *harness) start(_ context.Context, req proto.PromptRequestPayload, out chan<- proto.Envelope) (agent.Session, error) {
-	if _, err := req.Input.TextOnly(); err != nil {
-		return nil, err
+func (h *harness) prepare(_ context.Context, req proto.PromptRequestPayload) (agent.Executor, error) {
+	if req.RunID != "" || len(req.Input) != 0 || req.ConversationID != "" {
+		return nil, errors.New("preparation submitted fixture input")
 	}
-	if !req.StrictResume || !req.ReleaseOnCompletion || !req.DisableExecutionEnvironment || !req.DisableSubagents || len(req.FunctionTools) > 0 || req.MCPHTTPServers != nil {
+	if !req.StrictResume || !req.DisableExecutionEnvironment || !req.DisableSubagents || len(req.FunctionTools) > 0 || req.MCPHTTPServers != nil {
 		return nil, errors.New("unsupported fixture operation")
 	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	previous := h.history[req.AgentStateKey]
-	if req.AgentSessionID != previous || req.RequireExistingNativeSession {
+	if req.AgentSessionID != previous || (req.RequireExistingNativeSession && previous == "") {
 		return nil, errors.New("native history mismatch")
 	}
-	id := previous
-	if id == "" {
-		id = "fixture-" + req.AgentStateKey
-		h.history[req.AgentStateKey] = id
+	if previous == "" {
+		previous = "fixture-" + req.AgentStateKey
+		h.history[req.AgentStateKey] = previous
 	}
-	s := &session{out: out, run: req.RunID, native: id}
+	return &executor{native: previous}, nil
+}
+
+type executor struct {
+	mu     sync.Mutex
+	native string
+	active *session
+	closed bool
+}
+
+func (e *executor) StartTurn(ctx context.Context, run string, input proto.MessageInput, out chan<- proto.Envelope) (agent.Turn, error) {
+	if ctx.Err() != nil || run == "" || out == nil {
+		return nil, errors.New("invalid fixture Start")
+	}
+	if _, err := input.TextOnly(); err != nil {
+		return nil, err
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.closed || e.active != nil {
+		return nil, errors.New("fixture Executor unavailable")
+	}
+	s := &session{out: out, run: run, native: e.native, settled: make(chan struct{})}
+	s.release = func() {
+		e.mu.Lock()
+		if e.active == s {
+			e.active = nil
+		}
+		e.mu.Unlock()
+	}
+	e.active = s
 	s.emit(proto.TypeDelta, proto.DeltaPayload{Delta: "ready", Sequence: 1})
 	return s, nil
+}
+
+func (e *executor) Close(ctx context.Context) error {
+	e.mu.Lock()
+	e.closed = true
+	current := e.active
+	e.mu.Unlock()
+	if current != nil {
+		return current.Cancel(ctx)
+	}
+	return nil
 }
 
 type session struct {
@@ -56,6 +101,8 @@ type session struct {
 	out         chan<- proto.Envelope
 	run, native string
 	closed      bool
+	settled     chan struct{}
+	release     func()
 }
 
 func (s *session) emit(kind string, payload any) {
@@ -68,6 +115,8 @@ func (s *session) Cancel(context.Context) error {
 	if !s.closed {
 		s.closed = true
 		close(s.out)
+		s.release()
+		close(s.settled)
 	}
 	return nil
 }
@@ -92,7 +141,18 @@ func (s *session) SteerWithReceipt(_ context.Context, p proto.PromptSteerPayload
 	s.emit(proto.TypeDone, proto.DonePayload{Content: "ready" + text, Metadata: map[string]any{proto.DoneMetaAgentSessionID: s.native}})
 	s.closed = true
 	close(s.out)
+	s.release()
+	close(s.settled)
 	return nil
+}
+
+func (s *session) AwaitSettlement(ctx context.Context) (agent.TurnSettlement, error) {
+	select {
+	case <-s.settled:
+		return agent.TurnSettlement{Reusable: true}, nil
+	case <-ctx.Done():
+		return agent.TurnSettlement{}, ctx.Err()
+	}
 }
 
 func run() error {
@@ -100,7 +160,10 @@ func run() error {
 	h := &harness{history: map[string]string{}}
 	registry.RegisterKind(proto.SupportedAgentKind{Kind: "fixture_harness", Available: true, Capabilities: proto.AgentKindCapabilities{
 		Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: true, ExecutionControls: true, ToolObservations: true, SubagentControl: true, EnvironmentNone: true,
-	}}, h.start)
+	}}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
+		return nil, errors.New("fixture execution requires an Executor")
+	})
+	registry.RegisterExecutor("fixture_harness", h.prepare)
 	sink := &sender{encoder: json.NewEncoder(os.Stdout)}
 	router, err := dispatch.New(dispatch.Config{Registry: registry, Sender: sink, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	if err != nil {

@@ -1,3 +1,4 @@
+import { ExecutorTurns, type ExecutorEvent } from "./executor_protocol.js";
 import { StructuredOutput } from "./structured_output.js";
 import { toolSearchEnvironment } from "./tool_search.js";
 import { Subagents } from "./subagents.js";
@@ -6,7 +7,7 @@ import { WorkspaceDirectories, type WorkspaceDirectoryEvent } from "./workspace_
 import { getSessionInfo, query, startup, type McpServerConfig, type Options, type WarmQuery } from "@anthropic-ai/claude-agent-sdk";
 import { WorkspaceReads, type WorkspaceReadEvent } from "./workspace_reads.js";
 import { Inputs, type InputEvent } from "./inputs.js";
-import { resultUsage, type NativeUsage } from "./usage.js";
+import { executorResultUsage, resultUsage, type NativeUsage } from "./usage.js";
 import { spawnNative } from "./native.js";
 import { MessageObserver, type MessageEvent } from "./messages.js";
 import { createFunctionServer } from "./functions.js";
@@ -15,11 +16,12 @@ import { MCPProfile } from "./mcp.js";
 import { MCPObserver, type MCPEvent } from "./mcp_observer.js";
 import { CommandObserver, type CommandEvent } from "./command_observer.js";
 import { WorkspaceProfile } from "./workspace.js";
-import { immediateInput, type Prepare, type Start } from "./request.js";
+import { immediateInput, type Prepare, type Start, type ExecutorPrepare } from "./request.js";
 import { recoverSession } from "./recovery.js";
 export { parseStart, type Start } from "./request.js";
 
 export type Event =
+  | ExecutorEvent
   | Fact
   | WorkspaceDirectoryEvent
   | WorkspaceReadEvent
@@ -34,7 +36,9 @@ export type Event =
   | { type: "result"; session_id: string; text: string }
   | { type: "error"; code: "invalid_request" | "history_unavailable" | "execution_failed" | "cancelled" };
 
-export async function execute(request: Start | Prepare, emit: (event: Event) => Promise<void>, abort: AbortController, functions = new FunctionBridge(emit), inputs = new Inputs(immediateInput(request)), reads = new WorkspaceReads(emit, abort), directories = new WorkspaceDirectories(emit, abort)): Promise<void> {
+export async function execute(request: Start | Prepare | ExecutorPrepare, emit: (event: Event) => Promise<void>, abort: AbortController, functions = new FunctionBridge(emit), inputs = new Inputs(immediateInput(request)), reads = new WorkspaceReads(emit, abort), directories = new WorkspaceDirectories(emit, abort), turns?: ExecutorTurns): Promise<void> {
+ const ownerEmit=emit;
+ if(turns) emit=event=>turns.emit(event);
   const definitions = (request.functions ?? []).map(tool => ({ name: tool.name, description: tool.description, inputSchema: tool.parameters, deferLoading: tool.defer_loading }));
   const names = definitions.map(tool => `mcp__functions__${tool.name}`);
   const allowed = [...names, ...(request.tool_search ? ["ToolSearch"] : [])];
@@ -42,7 +46,7 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
   const profile = declarations === undefined ? undefined : new MCPProfile(declarations, names);
   const subagents = request.subagents ? new Subagents(request.cwd, request.subagents.max_concurrent, request.resume) : undefined;
   const workspace = request.workspace === undefined ? undefined : new WorkspaceProfile(request.cwd, request.workspace, names, profile, subagents, !!request.output_format);
-  const commands = workspace ? new CommandObserver() : undefined;
+  let commands = workspace ? new CommandObserver() : undefined;
   if (request.type === "prepare" && !workspace) throw new Error("invalid_request");
   if (workspace && "mcp_http_servers" in request) throw new Error("invalid_request");
   if (request.require_history && !request.resume) {
@@ -59,8 +63,8 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
   }
   subagents?.expectSession(request.resume);
   const mcpServers: Record<string, McpServerConfig> = Object.create(null);
-  if (definitions.length) mcpServers.functions = createFunctionServer(definitions, functions.invoke);
-  const mcp = profile ? new MCPObserver(profile.identities) : undefined;
+  if (definitions.length) mcpServers.functions = createFunctionServer(definitions, (call,signal) => { const target=functions; return turns ? turns.track(()=>target.invoke(call,signal)) : target.invoke(call,signal); });
+  let mcp = profile ? new MCPObserver(profile.identities) : undefined;
   if (profile) Object.assign(mcpServers, profile.servers);
   const children: Promise<number | null>[] = [];
   let result: Extract<Event, { type: "result" }> | undefined;
@@ -68,12 +72,12 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
   const resultIDs = new Set<string>();
   let failed = false;
   let cancellationFactsFailed = false;
-  const structured = request.output_format ? new StructuredOutput() : undefined;
-  const messages = request.observe_messages ? new MessageObserver() : undefined;
+  let structured = request.output_format ? new StructuredOutput() : undefined;
+  let messages = request.observe_messages ? new MessageObserver() : undefined;
   let stream: ReturnType<typeof query> | undefined;
   let warm: WarmQuery | undefined;
   let nativeAlive = false;
-  const closeInputs = () => inputs.close();
+  const closeInputs = () => { inputs.close(); turns?.close(); };
   abort.signal.addEventListener("abort", closeInputs, { once: true });
   try {
     if (abort.signal.aborted) throw new Error("cancelled");
@@ -111,20 +115,46 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
           return child;
         },
     };
-    if (request.type === "prepare") {
+    if(turns) {
+      for(const matchers of Object.values(options.hooks ?? {})) for(const matcher of matchers ?? []) {
+        matcher.hooks=matcher.hooks.map(hook=>(...args)=>turns.track(()=>hook(...args)));
+      }
+      const canUseTool=options.canUseTool;
+      if(canUseTool) options.canUseTool=(...args)=>turns.track(()=>canUseTool(...args));
+    }
+    if (request.type === "prepare" || request.type === "executor_prepare") {
       warm = await startup({ options, initializeTimeoutMs: 15000 });
-      stream = warm.query(inputs);
+      stream = warm.query(turns ?? inputs);
       const initialized = await stream.initializationResult();
-      if (initialized.hooks_applied !== true || children.length !== 1 || !nativeAlive || abort.signal.aborted) {
+      const hooksRequested = Object.values(options.hooks ?? {}).some(matchers => matchers?.some(matcher => matcher.hooks.length > 0));
+      if ((hooksRequested && initialized.hooks_applied !== true) || children.length !== 1 || !nativeAlive || abort.signal.aborted) {
         throw new Error("preparation unavailable");
       }
-      reads.bind(stream, request.cwd);
-      if (process.platform === "linux") await directories.bind(request.cwd);
-      await emit({ type: "prepared" });
+      if(workspace) {
+        reads.bind(stream, request.cwd);
+        if (process.platform === "linux") await directories.bind(request.cwd);
+      }
+      if (request.mcp_http_servers?.some(server=>server.required)) profile?.verifyRequired(await stream.mcpServerStatus());
+      if(turns) {
+        turns.configure(stream,(input,output)=>{
+          inputs=new Inputs(input);
+          functions=new FunctionBridge(output);
+          messages=request.observe_messages ? new MessageObserver() : undefined;
+          structured=request.output_format ? new StructuredOutput() : undefined;
+          commands=workspace ? new CommandObserver() : undefined;
+          mcp=profile ? new MCPObserver(profile.identities) : undefined;
+          subagents?.beginTurn();
+          return inputs;
+        },async value=>{
+          if(value.type==="steer") for(const event of inputs.submit(value)) await emit(event);
+          else functions.submit(JSON.stringify(value));
+        });
+        await ownerEmit({type:"executor_ready",protocol:3});
+      } else await emit({ type: "prepared" });
     } else if (profile) {
       if (inputs.hasInput) throw new Error("MCP input released before initialization");
       warm = await startup({ options, initializeTimeoutMs: 15000 });
-      stream = warm.query(inputs);
+      stream = warm.query(turns ?? inputs);
       const initialized = await stream.initializationResult();
       if (initialized.hooks_applied !== true || children.length !== 1) throw new Error("MCP initialization unavailable");
       if (request.mcp_http_servers?.some(server => server.required)) profile.verifyRequired(await stream.mcpServerStatus());
@@ -132,9 +162,13 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
       inputs.release(request.input);
     } else stream = query({ prompt: inputs, options });
     for await (const message of stream) {
+      // Native command queue telemetry can follow a result. It is not model
+      // output or a consumed-input receipt, and has no authority over a Turn.
+      if (isCommandLifecycle(message)) continue;
+      if(turns && !turns.id && !(message.type==="system" && message.subtype==="init")) throw new Error("unbound native event");
       subagents?.consume(message);
       structured?.consume(message, nativeID);
-      await functions.consume(message, nativeID);
+      await functions.consume(message, nativeID, turns?.cancelled);
       if (mcp) for (const event of mcp.consume(message, nativeID)) await emit(event);
       if (commands) for (const event of commands.consume(message, nativeID, inputs.hasInput)) await emit(event);
       if (messages) for (const event of messages.consume(message)) await emit(event);
@@ -148,22 +182,34 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
             message.mcp_servers.some(server => server.name !== "functions" || server.status !== "connected")) {
           throw new Error("unexpected native configuration");
         }
-        for (const event of inputs.start(nativeID)) await emit(event);
+        turns?.identify(nativeID);
+        if(!turns || turns.id) for (const event of inputs.start(nativeID)) await emit(event);
       } else if (!messages && message.type === "stream_event" && message.parent_tool_use_id === null &&
                  message.event.type === "content_block_delta" && message.event.delta.type === "text_delta") {
         await emit({ type: "delta", delta: message.event.delta.text });
       } else if (message.type === "result") {
         if (!message.uuid || resultIDs.has(message.uuid) || !nativeID || message.session_id !== nativeID) throw new Error("invalid native result identity");
         resultIDs.add(message.uuid);
-        await emit({ type: "usage", session_id: nativeID, result_id: message.uuid, usage: resultUsage(message) });
+        await emit({ type: "usage", session_id: nativeID, result_id: message.uuid, usage: turns ? executorResultUsage(message) : resultUsage(message) });
         for (const event of inputs.consume(message)) await emit(event);
-        if (message.subtype !== "success" || message.is_error) throw new Error("unsuccessful native result");
-        if (structured) await emit(structured.complete(message));
-        result = { type: "result", session_id: nativeID, text: message.result };
+        if ((message.subtype !== "success" || message.is_error) && !turns?.cancelled) throw new Error("unsuccessful native result");
+        if (structured && !turns?.cancelled) await emit(structured.complete(message));
+        result = { type: "result", session_id: nativeID, text: message.subtype === "success" ? message.result : "" };
+        if(turns?.cancelled && !inputs.complete) throw new Error("unconfirmed cancelled inputs");
       }
-      if (message.type !== "result") for (const event of inputs.consume(message)) await emit(event);
+      if (message.type !== "result" && (!turns || turns.id)) for (const event of inputs.consume(message)) await emit(event);
+      if(turns && result && inputs.complete && (!subagents || subagents.complete)) {
+        if (turns.cancelled) functions.cancelUnanswered();
+        if(!await turns.quiescent() || abort.signal.aborted) throw new Error("unconfirmed interrupt");
+        functions.assertComplete(); mcp?.assertComplete(); commands?.assertComplete();
+        if(subagents) for(const event of await subagents.facts()) await emit(event);
+        await emit(turns.cancelled ? {type:"error",code:"cancelled"} : result);
+        functions.close();
+        await turns.settled(true,true,"");
+        result=undefined;
+      }
     }
-    if (subagents) for (const event of await subagents.facts()) await emit(event);
+    if (subagents && (!turns || turns.id)) for (const event of await subagents.facts()) await emit(event);
     functions.assertComplete();
     mcp?.assertComplete();
     commands?.assertComplete();
@@ -172,6 +218,7 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
   } finally {
     profile?.close();
     inputs.close();
+    turns?.close();
     functions.close();
     try { await directories.close(); } catch { failed = true; }
     await reads.close();
@@ -179,16 +226,29 @@ export async function execute(request: Start | Prepare, emit: (event: Event) => 
     warm?.close();
     abort.signal.removeEventListener("abort", closeInputs);
     const exits = await Promise.all(children);
+    await turns?.drain();
     if (!exits.length || exits.some(code => code !== 0)) failed = true;
-    if (subagents && abort.signal.aborted && exits.length === 1) {
+    if (subagents && (!turns || turns.id) && abort.signal.aborted && exits.length === 1) {
       try { for (const event of await subagents.facts(Date.now())) await emit(event); }
       catch { cancellationFactsFailed = true; }
     }
     if (mcp) for (const event of mcp.close()) await emit(event);
     if (commands) for (const event of commands.close()) await emit(event);
   }
+  if(turns) {
+    if(turns.id) {
+      await emit({type:"error",code: turns.cancelled && !cancellationFactsFailed ? "cancelled" : "execution_failed"});
+      await turns.settled(false, false, turns.cancelled ? "cancellation_unconfirmed" : "native_execution_unavailable");
+    } else if(failed && !abort.signal.aborted) await ownerEmit({type:"error",code:"execution_failed"});
+    return;
+  }
   if (cancellationFactsFailed) await emit({ type: "error", code: "execution_failed" });
   else if (abort.signal.aborted) await emit({ type: "error", code: "cancelled" });
   else if (failed || !result || !inputs.complete) await emit({ type: "error", code: "execution_failed" });
   else await emit(result);
+}
+
+function isCommandLifecycle(message: unknown): boolean {
+  return typeof message === "object" && message !== null &&
+    "type" in message && message.type === "command_lifecycle";
 }
