@@ -18,7 +18,7 @@ export class NativeFailure {
     if (!sessionID || message.session_id !== sessionID || !pending.length ||
         ("isReplay" in message && message.isReplay) || ("isSynthetic" in message && message.isSynthetic)) return;
     if (message.type === "assistant" && message.parent_tool_use_id === null) {
-      const code = message.error === undefined || !Object.hasOwn(codes, message.error) ? undefined : codes[message.error];
+      const code = typeof message.error !== "string" || !Object.hasOwn(codes, message.error) ? undefined : codes[message.error];
       for (const id of pending) {
         this.candidates.delete(id);
         if (code) this.candidates.set(id, code);

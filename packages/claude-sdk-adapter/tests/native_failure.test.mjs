@@ -48,3 +48,12 @@ test("only current admitted input identities reach classification", async () => 
   inputs.consume(good);
   assert.deepEqual(inputs.pendingInputIDs(good),[]);
 });
+
+
+test("malformed native classifications cannot coerce to a finite code", () => {
+  for (const malformed of [["rate_limit"], { toString: () => "authentication_failed" }, null, 429, true]) {
+    const f = new NativeFailure();
+    f.observe(assistant(malformed), "native", ["input"]);
+    assert.equal(f.observe(result(), "native", ["input"]), undefined);
+  }
+});
