@@ -3233,6 +3233,9 @@ remain unconfirmed even after successful teardown. Go rejects cancellation and
 AwaitSettlement when native confirmation is missing or false, or its own receipt
 ledger remains unsettled. A confirmed Turn may be non-reusable after cleanup;
 that state alone does not turn a verified cancellation into an error.
+Confirmed native cancellation may settle unanswered function calls after result
+admission closes and callbacks drain. A submitted function result still requires
+its native application receipt, including when the MCP request aborts.
 
 `claudesdk.Config.Workspace` is a private, trusted operator binding for one
 qualified placement. It enables native Bash/Read/Edit and declared host functions

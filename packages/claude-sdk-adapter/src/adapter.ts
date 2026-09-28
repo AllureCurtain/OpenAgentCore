@@ -168,7 +168,7 @@ export async function execute(request: Start | Prepare | ExecutorPrepare, emit: 
       if(turns && !turns.id && !(message.type==="system" && message.subtype==="init")) throw new Error("unbound native event");
       subagents?.consume(message);
       structured?.consume(message, nativeID);
-      await functions.consume(message, nativeID);
+      await functions.consume(message, nativeID, turns?.cancelled);
       if (mcp) for (const event of mcp.consume(message, nativeID)) await emit(event);
       if (commands) for (const event of commands.consume(message, nativeID, inputs.hasInput)) await emit(event);
       if (messages) for (const event of messages.consume(message)) await emit(event);
@@ -199,6 +199,7 @@ export async function execute(request: Start | Prepare | ExecutorPrepare, emit: 
       }
       if (message.type !== "result" && (!turns || turns.id)) for (const event of inputs.consume(message)) await emit(event);
       if(turns && result && inputs.complete && (!subagents || subagents.complete)) {
+        if (turns.cancelled) functions.cancelUnanswered();
         if(!await turns.quiescent() || abort.signal.aborted) throw new Error("unconfirmed interrupt");
         functions.assertComplete(); mcp?.assertComplete(); commands?.assertComplete();
         if(subagents) for(const event of await subagents.facts()) await emit(event);

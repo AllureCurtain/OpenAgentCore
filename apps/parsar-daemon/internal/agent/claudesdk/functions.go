@@ -159,11 +159,11 @@ func (s *session) SubmitFunctionResult(ctx context.Context, result proto.Functio
 	}
 }
 
-func (s *session) functionsComplete() bool {
+func (s *session) functionsComplete(cancelled bool) bool {
 	s.functions.mu.Lock()
 	defer s.functions.mu.Unlock()
 	for _, pending := range s.functions.calls {
-		if !pending.applied {
+		if !pending.applied && !(cancelled && pending.result == nil) {
 			return false
 		}
 	}

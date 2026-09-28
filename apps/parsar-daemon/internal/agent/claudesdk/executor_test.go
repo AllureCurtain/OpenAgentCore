@@ -65,7 +65,7 @@ func runPersistentExecutorHelper() {
 		}
 		confirmed, reusable, reason := true, true, ""
 		switch os.Getenv("SDK_EXECUTOR_MODE") {
-		case "unknown_cancel", "queued_cancel":
+		case "unknown_cancel", "queued_cancel", "pending_function_unconfirmed":
 			confirmed, reusable, reason = false, false, "cancellation_unconfirmed"
 		case "confirmed_closed":
 			reusable, reason = false, "native_closed"
@@ -99,7 +99,7 @@ func runPersistentExecutorHelper() {
 			encode(bridgeEvent{Type: "turn_started", TurnID: active})
 			encode(bridgeEvent{Type: "input_ready", TurnID: active, SessionID: "native-persistent"})
 			encode(bridgeEvent{Type: "delta", TurnID: active, Delta: "partial"})
-			if os.Getenv("SDK_EXECUTOR_MODE") == "pending_function" {
+			if strings.HasPrefix(os.Getenv("SDK_EXECUTOR_MODE"), "pending_function") {
 				encode(bridgeEvent{Type: "function_call", TurnID: active, Call: &proto.FunctionCallPayload{CallID: "call", Name: "lookup", Arguments: json.RawMessage("{}")}})
 			}
 			if len(command.Input) > 0 && len(command.Input[0].Content) > 0 && command.Input[0].Content[0].Text != nil && *command.Input[0].Content[0].Text == "wait" {

@@ -19,6 +19,7 @@ type Pending = {
   reject: (error: Error) => void;
   cleanup: () => void;
   result?: FunctionResult;
+  aborted?: boolean;
 };
 
 export class FunctionBridge {
@@ -32,7 +33,9 @@ export class FunctionBridge {
     this.seen.add(call.id);
     const waiting = new Promise<CallToolResult>((resolve, reject) => {
       const stop = () => {
-        this.pending.delete(call.id);
+        const pending = this.pending.get(call.id);
+        if (pending?.result) pending.aborted = true;
+        else this.pending.delete(call.id);
         reject(new Error("Native function call aborted."));
       };
       signal.addEventListener("abort", stop, { once: true });
@@ -69,15 +72,19 @@ export class FunctionBridge {
     }), isError: !result.success });
   }
 
-  async consume(message: SDKMessage, sessionID: string): Promise<void> {
+  async consume(message: SDKMessage, sessionID: string, cancelled = false): Promise<void> {
     if (message.type !== "user" || message.parent_tool_use_id !== null || message.session_id !== sessionID ||
         message.isSynthetic || ("isReplay" in message && message.isReplay) || !Array.isArray(message.message.content)) return;
     for (const block of message.message.content) {
       if (block.type !== "tool_result") continue;
       const pending = this.pending.get(block.tool_use_id);
-      if (!pending) continue;
+      if (!pending || pending.aborted) continue;
       const result = pending.result;
-      if (!result) throw new Error("Native response preceded host result.");
+      if (!result) {
+        if (!cancelled || !block.is_error) throw new Error("Native response preceded host result.");
+        this.cancelUnanswered(block.tool_use_id);
+        continue;
+      }
       // Native error results join MCP text blocks; retain the original parts in the host.
       const matches = result.success ? matchesNativeContent(result.content, block.content) :
         block.content === result.content.map(part => part.type === "input_text" ? part.text : "").join("\n");
@@ -87,6 +94,17 @@ export class FunctionBridge {
       await this.emit({ type: "function_applied", call_id: result.call_id, delivery_id: result.delivery_id });
       pending.cleanup();
       this.pending.delete(result.call_id);
+    }
+  }
+
+  // Only a native cancellation result authorizes abandoning unanswered calls.
+  // Submitted results retain their receipt obligation, including after abort.
+  cancelUnanswered(callID?: string): void {
+    for (const [id, pending] of this.pending) {
+      if (pending.result || (callID !== undefined && id !== callID)) continue;
+      pending.cleanup();
+      this.pending.delete(id);
+      pending.reject(new Error("Native function call cancelled."));
     }
   }
 
