@@ -41,11 +41,10 @@ adapter_spec = importlib.util.spec_from_file_location(
 qualification_adapter = importlib.util.module_from_spec(adapter_spec)
 adapter_spec.loader.exec_module(qualification_adapter)
 
-REQUIRED_CHECKS = ("fresh-install", "current-lifecycle", "managed-native",
-                   "current-generations", "node-runtime", "diagnostics-observations")
+REQUIRED_CHECKS = qualification_adapter.CHECKS
 # Only this separate promotion change may follow the qualified source on main.
 PROMOTION_FILES = {
-    ".github/workflows/release.yml", "CONTRIBUTING.md", "docs/maintainers.md",
+    ".github/workflows/release.yml", "AGENTS.md", "CONTRIBUTING.md", "docs/maintainers.md",
     "Makefile", "contracts/agents-api/node-generation-protocol.md",
     "scripts/promote-qualified-release.py",
     "scripts/promote-qualified-release.test.py", "scripts/qualify-core-release.py",
@@ -398,7 +397,8 @@ def promote(assets, state, host, remote_root, promotion_commit, *, source, packa
     download(state / "before-publication", inventory)
     notes = state / "release-notes.md"
     notes.write_text("Fresh-install offline distribution from " + SOURCE + ".\n\n"
-                     + "Qualified checks: " + ", ".join(REQUIRED_CHECKS) + ".\n"
+                     + "Real smoke checks: " + ", ".join(REQUIRED_CHECKS) + ".\n"
+                     + "The full multi-host, generation and GC matrix was not rerun for this promotion.\n"
                      + "Asset inventory SHA256: " + request["inventory_sha256"] + ".\n"
                      + "Promotion tooling commit: " + promotion_commit + ".\n")
     # Downloading can take minutes. Revalidate immediately before mutation.

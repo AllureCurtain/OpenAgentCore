@@ -351,9 +351,9 @@ print(json.dumps(r))
         path.write_text(promotion.canonical(self.manifest))
         self.request['qualification_manifest_sha256'] = promotion.file_identity(path)['sha256']
 
-    def test_six_actual_children_and_exclusive_supervision(self):
+    def test_required_actual_children_and_exclusive_supervision(self):
         result = promotion.qualification_adapter.qualify(self.request)
-        self.assertEqual(result['owned_resources'], {'child_count': 6})
+        self.assertEqual(result['owned_resources'], {'child_count': len(promotion.REQUIRED_CHECKS)})
         self.assertEqual(result['checks'], {name: 'passed' for name in promotion.REQUIRED_CHECKS})
         with self.assertRaises(FileExistsError):
             promotion.qualification_adapter.qualify(self.request)

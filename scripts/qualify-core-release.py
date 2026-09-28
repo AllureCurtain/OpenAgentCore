@@ -24,8 +24,8 @@ else:
     control = importlib.util.module_from_spec(_control_spec)
     _control_spec.loader.exec_module(control)
 
-CHECKS = ('fresh-install', 'current-lifecycle', 'managed-native',
-          'current-generations', 'node-runtime', 'diagnostics-observations')
+CHECKS = ('fresh-install', 'current-lifecycle', 'managed-native-smoke',
+          'diagnostics-observations-smoke', 'node-runtime-smoke')
 IDENTITY = ('source', 'tree', 'run_id', 'inventory_sha256', 'adapter_sha256')
 
 

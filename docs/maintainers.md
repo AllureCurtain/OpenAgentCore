@@ -98,9 +98,11 @@ GitHub credentials stay on the operator host; nodes continue to download from th
 The adapter protocol is documented in `scripts/qualify-core-release.py`: one JSON
 request as the first stdin line followed by `ping` heartbeat lines, one bound JSON
 result on stdout, redacted diagnostics on stderr,
-and a nonzero exit for any failed or skipped required check. The six current-batch
-checks cover fresh installation, current lifecycle, managed native execution,
-current generations, node Runtime and diagnostics/observations. Their actual
+and a nonzero exit for any failed or skipped required check. The five current-batch
+checks cover one fresh container installation, its current lifecycle, one managed
+native Session, read-only diagnostics/observations for that Session, and one
+current Runtime Session on one new node. The full multi-host, generation and GC
+matrix is not rerun for this promotion. Their actual
 commands must operate on freshly extracted supplied assets and respect the agreed
 resource ownership. The controller verifies remote asset hashes before and after
 execution; it has no pass-file option. Execution commands come only from the
@@ -109,7 +111,7 @@ maintainer-pinned package, never from candidate metadata or a stage result.
 The package root contains `manifest.json` and exactly its enumerated regular files;
 symlinks, extra files and changed bytes are rejected. Manifest version 1 has `files`
 (relative path to SHA256/size), `configuration` (reviewed resource bounds and private
-file paths, no credential values), and six ordered `stages`. Each stage has `name`,
+file paths, no credential values), and five ordered `stages`. Each stage has `name`,
 absolute `python` interpreter path, package-relative `.py` `script`, structured
 string `args`, and `timeout_seconds` (1–14400). No shell command or candidate-driven
 substitution is used. The explicit SHA256 covers the exact manifest bytes. Preserve
@@ -136,7 +138,7 @@ sent may still have an unknown result; retain its intent and resources without
 replay or a rollback claim. Child stdout/stderr remain private files;
 nonzero exit, timeout, changed bytes or mismatched identity stops the sequence.
 
-After all six stages pass, the same controller waits up to `--merge-wait-seconds`
+After all five stages pass, the same controller waits up to `--merge-wait-seconds`
 for main to reach the exact reviewed promotion tree. While main is an ancestor of
 that reviewed commit it continues waiting; divergent changes stop publication.
 Do not restart merely because the merge is pending. Cancellation or timeout retains
@@ -147,7 +149,8 @@ This finite command publishes automatically when all checks pass and the batch i
 landed. Candidate source and tag remain
 `48ed8158e134207d15cdd14ae0a30e10f070eb5c` / `build-48ed8158e134207d15cdd14ae0a30e10f070eb5c`.
 The reviewed tooling commit can add only the enumerated release files, the
-node-generation protocol wording correction and test registration; main must have that commit's tree and include the candidate source.
+node-generation protocol wording correction, shared component documentation in
+AGENTS.md/CONTRIBUTING.md and test registration; main must have that commit's tree and include the candidate source.
 Later release documentation is not retroactively inserted into the tested bundle.
 Any product change blocks publication of this candidate instead of silently
 publishing an obsolete product or relabeling old bytes.

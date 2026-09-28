@@ -2006,8 +2006,11 @@ never put credential values in either manifest.
 
 The reviewed adapter receives a fresh canonical UUID and exact inventory over the
 authenticated command channel. It directly supervises fresh-install,
-current-lifecycle, managed-native, current-generations, node-runtime and
-diagnostics-observations in that order. Every child must exit successfully and
+current-lifecycle, managed-native-smoke, diagnostics-observations-smoke and
+node-runtime-smoke in that order. This batch uses one fresh container installation,
+one completed managed Session, read-only diagnostics for that Session, and one
+current Runtime Session on one new node. It does not rerun the full multi-host,
+generation or GC matrix. Every child must exit successfully and
 return only its own passed check, the current controller identity and its observed
 owned resources. Resources and the previous result flow between live children;
 a supplied pass file, skipped check or old report cannot release the candidate.
