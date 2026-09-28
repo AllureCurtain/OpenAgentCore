@@ -11,7 +11,7 @@ const deployment = (overrides: Partial<SandboxDeployment> = {}): SandboxDeployme
 });
 const fleet = (value: SandboxDeployment, nodes = [node("n1")]): FleetState => ({ status: "ready", snapshot: { deployment: value, nodes, allocations: [], loadedAt: 0 }, refreshing: false, error: null });
 const sandboxes = (state: FleetState) => gettingStartedSteps({ sandboxReset: false, fleet: state, localOnly: false, projects: [], sessions: 0, harnesses: [] }).sandboxes;
-const provider = { object: "core.model_provider", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, updated_at: "2026-09-25T00:00:00Z" } as const;
+const provider = { object: "core.model_provider", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, last_used_at: null, last_error_code: null, last_error_at: null, updated_at: "2026-09-25T00:00:00Z" } as const;
 const harness = (id: CoreHarness["id"], fields: Partial<CoreHarness> = {}): CoreHarness => ({ object: "core.harness", id, enabled: true, default: false, model_provider: null, ...fields });
 
 describe("Getting started steps", () => {
