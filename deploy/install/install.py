@@ -75,7 +75,7 @@ def verify_bundle(bundle):
     required = {"manifest.json", "install.sh", "install.py", "configuration.py", "config_model.py",
                 "config.schema.json", "oac_cli.py", "convert.py", "rename.py", "oac.pyz", "native_service.py",
                 "sandbox_setup.py", "standard-sizes.json", "node_spec.py", "node-install.pyz",
-                "self-hosted-install.pyz", "distribution.py", "runtime/seccomp.json"}
+                "distribution.py", "runtime/seccomp.json"}
     required.update(f"images/{name}.tar" for name in ("core", "web", "database"))
     required.update("native/bin/" + name for name in ("oac-core", "oac-core-migrate"))
     required.add("native/e2b/oac-e2b-provider")
@@ -331,7 +331,8 @@ def prepare_node_payload(root, state, bundle, replace=False):
         revision = manifest.get("source_commit", "")
         if not re.fullmatch(r"[0-9a-f]{40}", revision):
             raise InstallError("Invalid node payload release identity")
-        names = ["node-install.pyz", "self-hosted-install.pyz", "manifest.json", "SHA256SUMS", "runtime/seccomp.json"]
+        metadata_names = ("node-install.pyz", "manifest.json", "SHA256SUMS", "runtime/seccomp.json")
+        names = list(metadata_names)
         for logical in manifest.get("artifacts", {}):
             entry = artifact(manifest, logical)
             name = "artifacts/" + entry["filename"]
@@ -349,7 +350,7 @@ def prepare_node_payload(root, state, bundle, replace=False):
         if target.exists():
             # Validate the complete published metadata and every existing declared
             # artifact before filling any absence. Existing bytes are immutable.
-            for name in names[:5]:
+            for name in metadata_names:
                 previous = target / name
                 if (previous.parent.is_symlink() or previous.is_symlink() or not previous.is_file()
                         or digest(previous) != digest(source / name)):

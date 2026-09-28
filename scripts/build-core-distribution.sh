@@ -99,7 +99,7 @@ if [[ "$(go env GOVERSION)" != "$required_go" ]]; then
   exit 1
 fi
 for file in install.sh install.py configuration.py config_model.py config.schema.json oac_cli.py convert.py rename.py \
-    native_service.py node_install.py node_spec.py node_generations.py node_update.py sandbox_setup.py distribution.py self_hosted_install.py \
+    native_service.py node_install.py node_spec.py node_generations.py node_update.py sandbox_setup.py distribution.py \
     model_provider_sessions.py; do
   cp "deploy/install/$file" "$bundle/$file"
 done
@@ -158,7 +158,6 @@ export AGENTS_EXECUTOR_BUILD_DIR="$stage/helpers"
 scripts/build-agents-executor.sh
 CGO_ENABLED=0 go build -mod=readonly -trimpath -o "$stage/oac-daemon" ./apps/parsar-daemon/cmd/parsar-daemon
 cp "$stage/oac-daemon" "$bundle/native/bin/oac-daemon"
-CGO_ENABLED=0 go build -mod=readonly -trimpath -o "$bundle/native/bin/oac-selfhost" ./services/agents-api/cmd/runtime
 codex_image="${CORE_DISTRIBUTION_CODEX_IMAGE:-}"
 claude_image="${CORE_DISTRIBUTION_CLAUDE_IMAGE:-}"
 mcode_image="${CORE_DISTRIBUTION_MCODE_IMAGE:-}"

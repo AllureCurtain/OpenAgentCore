@@ -370,8 +370,7 @@ def make_bundle(directory, manifest, commit=None):
     for name in MODULES:
         (bundle / name).write_bytes(Path(__file__).with_name(name).read_bytes())
     (bundle / "standard-sizes.json").write_bytes(STANDARD_SIZES.read_bytes())
-    for name in ("node-install.pyz", "self-hosted-install.pyz"):
-        (bundle / name).write_bytes(b"synthetic verified Python bootstrap")
+    (bundle / "node-install.pyz").write_bytes(b"synthetic verified Python bootstrap")
     (bundle / "oac.pyz").write_bytes(b"synthetic oac command " + manifest["source_commit"].encode())
     manifest["artifacts"] = {}
     for name in ("images/runtime.tar.gz", "native/bin/oac-node",

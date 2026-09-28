@@ -132,7 +132,7 @@ class GenerationReviewRegressions(unittest.TestCase):
         for name in ('node', 'helper'):
             raw = (name + ' verified artifact').encode()
             entries[name] = {'filename': name + '-' + source, 'size': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
-        files = {'node-install.pyz': b'node', 'self-hosted-install.pyz': b'self', 'SHA256SUMS': b'fixture', 'runtime/seccomp.json': b'{}', 'manifest.json': json.dumps({'source_commit': source, 'artifacts': entries}).encode()}
+        files = {'node-install.pyz': b'node', 'SHA256SUMS': b'fixture', 'runtime/seccomp.json': b'{}', 'manifest.json': json.dumps({'source_commit': source, 'artifacts': entries}).encode()}
         for name, raw in files.items():
             path = bundle / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(raw)
         install.prepare_node_payload(root, {'mode': 'all'}, bundle)
