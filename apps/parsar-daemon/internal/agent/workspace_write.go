@@ -1,18 +1,12 @@
 package agent
 
 import (
-	"context"
 	"errors"
 	"fmt"
 )
 
 type WorkspaceWriteResult struct {
 	SizeBytes int64
-}
-
-// WorkspaceWriter confirms a native commit on an already authorized prepared owner.
-type WorkspaceWriter interface {
-	WriteWorkspaceFile(context.Context, string, []byte) (WorkspaceWriteResult, error)
 }
 
 var (

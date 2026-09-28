@@ -1,23 +1,6 @@
-// Package agent is the registration surface for agent_kind
-// implementations. The dispatch router consults agent.Registry to map
-// an inbound prompt_request's AgentKind to its factory.
-//
-// Lifetime / channel ownership:
-//
-//   - Factory takes an out chan<- proto.Envelope owned by the dispatch
-//     router. The agent SENDS upstream events on it and OWNS the
-//     close: it MUST close(out) exactly once after emitting the current
-//     run's terminal "done" or "error" frame. The underlying CLI may
-//     remain alive during the router's idle window and is terminated
-//     through Session.Cancel.
-//
-//   - Session.Cancel is best-effort and idempotent: a session that
-//     already finished naturally must accept a Cancel call without
-//     panicking.
 package agent
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"slices"
@@ -25,20 +8,6 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 )
-
-// Factory builds a Session for one prompt_request. out is the upstream
-// channel the agent writes into; the agent owns its close (see package
-// doc). ctx is cancelled by the router to wind the session down.
-type Factory func(ctx context.Context, req proto.PromptRequestPayload, out chan<- proto.Envelope) (Session, error)
-
-// Session owns one prompt run and any CLI process retained after that
-// run. Run completion is signalled by closing out; process teardown is
-// signalled separately through Cancel.
-type Session interface {
-	// Cancel signals the session to abort. Idempotent. Actual teardown
-	// happens asynchronously and is signalled via the out channel close.
-	Cancel(ctx context.Context) error
-}
 
 // ErrUnknownPermission is returned by PermissionResponder.SubmitPermission when
 // the permID doesn't match any outstanding request. The router uses
@@ -69,33 +38,6 @@ func NewRegistry() *Registry {
 		executors: make(map[string]ExecutorFactory),
 		kinds:     make(map[string]proto.SupportedAgentKind),
 	}
-}
-
-// Register installs f as the factory for kind with a basic available
-// descriptor. Panics on empty kind or nil factory.
-func (r *Registry) Register(kind string, f Factory) {
-	r.RegisterKind(proto.SupportedAgentKind{Kind: kind, Available: true}, f)
-}
-
-// RegisterKind installs f and the heartbeat descriptor for an
-// agent_kind. Callers may set Available=false when an adapter exists
-// but its underlying CLI is not usable.
-func (r *Registry) RegisterKind(info proto.SupportedAgentKind, f Factory) {
-	kind := info.Kind
-	if kind == "" {
-		panic("agent.Registry.Register: empty kind")
-	}
-	if f == nil {
-		panic("agent.Registry.Register: nil factory")
-	}
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.factories[kind] = f
-	delete(r.preparers, kind)
-	delete(r.executors, kind)
-	info.Capabilities.Preparation = false
-	info.Capabilities.WorkspaceReadPreparation = false
-	r.kinds[kind] = info
 }
 
 // Resolve returns the factory for kind, or wraps ErrUnsupportedKind.
@@ -144,4 +86,24 @@ func (r *Registry) SupportedAgentKinds() []proto.SupportedAgentKind {
 		return 0
 	})
 	return out
+}
+
+func (r *Registry) ResolveExecutor(kind string) (ExecutorFactory, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	factory := r.executors[kind]
+	if factory == nil {
+		return nil, fmt.Errorf("agent: executor unavailable for %q", kind)
+	}
+	return factory, nil
+}
+
+func (r *Registry) ResolvePreparation(kind string) (PreparationFactory, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	f := r.preparers[kind]
+	if f == nil {
+		return nil, fmt.Errorf("agent: preparation unavailable for %q", kind)
+	}
+	return f, nil
 }

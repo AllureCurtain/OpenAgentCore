@@ -1,18 +1,12 @@
 package agent
 
 import (
-	"context"
 	"errors"
 )
 
 type WorkspaceReadResult struct {
 	Data      []byte
 	Truncated bool
-}
-
-// WorkspaceReader returns success only after acknowledged native close on an existing owner.
-type WorkspaceReader interface {
-	ReadWorkspaceFile(context.Context, string, int) (WorkspaceReadResult, error)
 }
 
 var (

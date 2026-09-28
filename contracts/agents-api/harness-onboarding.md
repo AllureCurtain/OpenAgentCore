@@ -1,6 +1,8 @@
 # Add a native harness to OpenAgentCore
 
-Implement one adapter for a native SDK or machine-readable protocol. Core and
+Start with [`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go).
+It defines the required lifecycle, separate optional interfaces and existing
+registration methods in one place. Implement one adapter for a native SDK or machine-readable protocol. Core and
 Runtime use the common contract; adding a harness should not add engine-name
 branches to public handlers, storage, scheduling or environment providers.
 
@@ -45,28 +47,11 @@ model communication configuration, not Turn scheduling or native process ownersh
 
 ## Required adapter interfaces
 
-The canonical signatures and ownership comments are in
-[`agent/executor.go`](../../apps/parsar-daemon/internal/agent/executor.go):
-
-```go
-type ExecutorFactory func(context.Context, proto.PromptRequestPayload) (Executor, error)
-
-type Executor interface {
-    StartTurn(context.Context, string, proto.MessageInput, chan<- proto.Envelope) (Turn, error)
-    Close(context.Context) error
-}
-
-type Turn interface {
-    Cancel(context.Context) error
-    CancellationOutcome() proto.DonePayload
-    AwaitSettlement(context.Context) (TurnSettlement, error)
-}
-
-type TurnSettlement struct {
-    Reusable bool
-    Reason   string
-}
-```
+[`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go) is the
+canonical interface entry point. Its required lifecycle is `ExecutorFactory`,
+`Executor`, `Turn` and `TurnSettlement`. Optional Turn and workspace interfaces
+remain separate; their result types and error values stay in the corresponding
+operation files in the same package. All use the existing neutral protocol types.
 
 The factory prepares a fixed configuration without sending model input. Executor
 owns the native process or connection, native Session, capability configuration and
@@ -115,7 +100,7 @@ ambiguous required history fails before new model input.
 | `agent.DurableSteerer` | Current public text execution | Distinguish write and application receipts; preserve retry identity |
 | `agent.FunctionResultSubmitter` | Public function tools | Match call/result identity and acknowledge native application |
 | `agent.PermissionResponder`, `agent.UserChoiceResponder` | When emitting these interactions | Route exact identities and settle receipts |
-| `agent.WorkspaceReader`, `agent.WorkspaceDirectoryLister` | Qualified workspace operations | Use the fixed authorized workspace and retain accepted operations through close |
+| `agent.WorkspaceReader`, `agent.WorkspaceDirectoryLister`, `agent.WorkspaceWriter` | Qualified workspace operations | Use the fixed authorized workspace and retain accepted operations through close |
 | Neutral message, image, MCP, structured-output and Subagent observations | Only when qualified and advertised | Preserve the operation-specific contract and reject unsupported combinations |
 
 Optional features need not match another harness. The service profile qualifies
@@ -126,6 +111,14 @@ read-only preparations; those do not start model work or provide another executi
 lifecycle.
 
 ## Register a supported operation set
+
+The registration methods are also defined in `agent/harness.go`. The existing
+`proto.SupportedAgentKind` descriptor supplies kind, availability, version and
+`AgentKindCapabilities`; its schema remains in `internal/agentdaemon/proto`.
+`RegisterKind` resets the Executor and preparation registrations, so call it
+first. `RegisterExecutor` and `RegisterPreparation` derive preparation flags;
+other capability declarations must match verified behavior. Core qualification
+still belongs to the service profile and is not granted by Runtime registration.
 
 1. Pin the upstream source/package version and document the native entry point.
 2. Implement the adapter using its SDK or native protocol. Reuse shared process,

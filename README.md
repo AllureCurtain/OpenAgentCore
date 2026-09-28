@@ -76,7 +76,7 @@ native differences.
 | [API reference](docs/api/README.md) | The `/v1`, `/core/v1` and `/api/v1` namespaces |
 | [Nodes and sandbox backends: operator reference](services/agents-api/HOSTED-SANDBOX-MANAGER.md) | Node protocol, manual registration, placement, maintenance |
 | [Protocol coverage](contracts/agents-api/README.md) and [harness selection](contracts/agents-api/harness-selection.md) | Supported operations and native differences |
-| [Add a Harness](contracts/agents-api/harness-onboarding.md) | Required adapter interfaces, lifecycle, capabilities, registration and acceptance |
+| [Add a Harness](contracts/agents-api/harness-onboarding.md) | Start with [agent/harness.go](apps/parsar-daemon/internal/agent/harness.go): required interfaces, optional capabilities and registration; then follow the guide for acceptance |
 | [Landing page source](site/index.html) | The public site |
 
 ### Maintainers and advanced deployments
