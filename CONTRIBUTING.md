@@ -649,37 +649,39 @@ transaction stores a safe reason with the failed Environment and records
 `environment.failed`, `error` and one `agent.session.failed`; Session reads derive
 `failed`, that reason and the failure time from the same record, and live streams end
 after the failed event. The initializer reports only the integer exit status of a
-failed sandboxed step. Core composes the reason from a fixed step label and that status,
+failed initialization command. Core composes the reason from a fixed step label and that status,
 never from command, package-manager or file output; unknown effects, timeouts and
 receipts without a status keep a generic reason. New input then gets the observed 409
 `conflict_error`; expiry and pending-input settlement keep their behavior.
 Completed environments never reinstall initial files on reconnect or native recovery.
 The typed Runtime preparation protocol carries bounded confidential input. The
-daemon selects fixed trusted initializers; Core supplies no executable or host
-platform field. User setup and package install hooks
-run in the common packaged sandbox, without daemon credentials or native history.
-Files, resolved Skills and inline Plugins precede system, npm/Python packages and ordered setup commands. Initialization has
-provisioning network access; requested network restrictions apply to native tools
-after setup. Confidential env and setup snapshots are encrypted independently of
-ordinary metadata. Adapters apply tool env only after isolation, never to the
-credential-bearing daemon/native harness launcher.
-Reuse the packaged atomic file writer and anchored parent creation across all profiles.
+daemon owns the common Go initialization implementation; Core supplies no
+executable or host-platform field. Initial files and tool configuration precede
+Skill/Plugin bundles, npm/Python packages and ordered setup, followed by capability
+directory capture. Commands run directly with the starting account's permissions
+and host network. Outer Environments own managed isolation; unsupported network
+restrictions must reject rather than silently run unrestricted. Confidential env
+and setup snapshots are encrypted independently of ordinary metadata. Adapters
+apply explicit tool variables without automatically inheriting daemon credentials;
+this does not prevent same-user tools from reading local Runtime state.
+Reuse runtimefs atomic replacement and anchored logical-workspace paths for initial
+files on every platform. Public Files creation keeps its own non-replacement rule.
 
-System packages use one Runtime-owned tool root, separate from trusted daemon and
-harness executables. Build its immutable seed from the base image before adding
-Runtime/harness code or secrets; include the matching package database and base
-tool symlink targets. The shared installer extracts independent inodes and runs
-apt/dpkg inside an unprivileged namespace. Package scripts cannot access Runtime
-credentials, native history or outer processes. Later setup and native tools enter
-the installed root read-only, retaining the authorized workspace and adapter-owned
-scratch. `/workspace` and `/environment/workspace` refer to the same authorized
-workspace inside that root, preserving native working directories. Native adapters
-own entry and existing process cancellation; Core never
-selects an engine or Provider for package initialization. No live filesystem
-snapshot, second lifecycle owner or package-manager framework is introduced.
-Core preserves the system-package requirement in the common execution binding;
-a missing installation receipt fails preparation instead of falling back to base
-tools. This requirement does not add execution prerequisites to Files reads.
+System dependencies must be preinstalled in the managed image/template or by the
+self-hosted user. `packages.system` rejects explicitly, including a supplied null
+or empty list. Runtime does not run apt, sudo, an unprivileged system-root installer
+or any other automatic system-package operation. No daemon privilege increase or
+managed-only exception is permitted. Missing dependencies fail the consuming
+operation. npm and Python use local prefix/target directories; setup requires Bash
+and Windows requires Git Bash, without a substitute shell.
+
+Initialization and package directories default under `OAC_RUNTIME_HOME` and may be
+selected with `OAC_RUNTIME_INITIALIZATION_DIRECTORY` and
+`OAC_RUNTIME_PACKAGE_DIRECTORY`. Packaged Linux images select their existing
+`/environment` layout through those settings. `OAC_RUNTIME_TOOL_ENV_FILE` selects
+explicit configuration. These are resource paths, never Environment-source or OS
+switches in Core. Runtime process ownership waits for exit and I/O settlement;
+confirmed failures retain only a bounded exit status, never command output.
 
 Skills and their immutable versions are Core-owned tenant resources, independent of
 Sessions and native Skill installations. Serialize version allocation and pointer
@@ -711,7 +713,8 @@ installation directories are not portable public paths.
 Inline and referenced Skill ZIPs use the same confidential initialization snapshot and installer.
 Core validates portable manifests and bounded regular-file archives, returns only
 safe Skill metadata, and freezes content before native preparation. The Runtime
-owns `/environment/initialization/capabilities/skills/<name>`; the manifest validates the installed snapshot before reuse. This is state
+owns `skills/<name>` below its configured capability root; the manifest validates
+the installed snapshot before reuse. This is state
 consistency, not protection from the launching user. Public Plugin ZIPs preserve their complete package
 layout and reuse the shared archive and portable Skill parsers. Core keeps safe
 Plugin metadata separate from encrypted archives. Templates inherit or replace
@@ -1476,17 +1479,19 @@ failure when the authorized workspace cannot be reached; it never grants public
 admission merely because an adapter advertises a capability.
 
 Use distinct authorization for callers, devices and environment connections. A
-co-located harness must not expose broader application credentials or other tenants'
-secrets to generated code. Directory bindings and process identities do not provide
-filesystem isolation. Preserve or demonstrably restore native history across
+managed outer Environment must exclude broader application credentials and other
+tenants' secrets. The daemon does not hide its own state from same-user tools.
+Directory bindings and process identities do not provide filesystem isolation.
+Preserve or demonstrably restore native history across
 compute replacement; never silently move a bound Session or replay unknown work.
 Self-hosted compute/files remain caller-owned, with explicit cleanup separate from
 Session deletion. The full Environment implementation remains pending; follow the
 [pinned contract and acceptance sequence](contracts/agents-api/environments.md)
 and the [two-engine placement prerequisites](contracts/agents-api/workspace-placement.md).
-For co-location, qualify both deployment isolation and native tool restrictions.
-Bash sandbox settings alone do not establish file-tool or whole-harness isolation.
-Never enable an environment profile before those boundaries are verified.
+For co-location, qualify the outer deployment boundary and the shared Runtime
+lifecycle. Native tools use the starting account's permissions; do not claim a
+daemon or harness sandbox. Host operators choose their own outer isolation.
+Never enable an execution combination whose required outer behavior is unverified.
 
 The internal Store creates one Environment with an environment-bearing Session in
 its creation transaction. The Session upsert selects the retry winner; retries
@@ -2128,17 +2133,17 @@ Environment of that Project whose Session exists; anything else is 404. The
 Project's principal is the credential's execution principal, its scope stays
 daemon enrollment and connection for that one Environment, and issue, rotate and
 revoke each record an administrator audit entry in the write's transaction without
-the secret. Project API keys cannot issue them. Self-hosted installation reuses
-Docker Runtime isolation, owns no sandbox node or Core allocation, and retains
-user-owned native history after uncertain launches. Report started, connected and real execution success separately.
-Web's install command carries no secret: the installer reads the credential at a
-hidden terminal prompt and verifies against the console's
-`self_hosted_installer_sha256`. On a permanent rejection the self-hosted daemon
-parks (one message, no requests, exit 0 on SIGTERM) rather than exiting into
-Docker's `unless-stopped` restart loop. Rerunning the installer with the same key
-rotated replaces it in the same stopped container through the launcher's
-`replace-credential`, which checks the container's labels, name, volumes and
-private directories; never relaunch or adopt history to recover a credential.
+the secret. Project API keys cannot issue them. Native self-hosted installation runs the daemon on Linux, macOS or Windows with
+its starting account's permissions. It owns no sandbox node or Core allocation,
+adds no isolation and retains user-owned native history after uncertain launches.
+Report started, connected and real execution success separately.
+Native installation uses `oac-daemon install` and `start` with an explicit
+credential-file path and the same `OAC_RUNTIME_HOME` for lifecycle commands. It is
+current-version only and does not adopt an older container installation. Rotation
+replaces the configured credential file for the same key and restarts the daemon;
+never create a replacement Session history to recover a credential. The console's
+older container-installer command remains a distinct packaged workflow, not the
+native installation interface. Report connection and actual execution separately.
 Core-key executor credential lists expose a required connection observation with
 never_enrolled, connected or disconnected status, immutable bound key identity,
 enrollment time and last authenticated heartbeat time. Read credential metadata
@@ -2155,8 +2160,8 @@ using only its restricted executor credential. The read checks the exact live
 Environment/key binding and current authenticated connection; it never enrolls,
 allocates, wakes a sandbox or grants project resource access. It is an `/api/v1`
 machine route that reaches Core directly, never through the console. Bounded
-polling and reruns retain the original container and history; timeout is a
-diagnostic failure, not permission to relaunch. The installation public URL
+polling retains the original Runtime identity and history; timeout is a
+diagnostic failure, not permission to replay initialization or replace history. The installation public URL
 (`public_url` in the installation's `config.json`, seeded by `--public-url`, and
 `OAC_PUBLIC_URL` for Core) is the one origin for
 applications, nodes, sandbox guests and self-hosted executors, and also the console
@@ -3296,7 +3301,7 @@ remain separate. Runtime advertisements alone never enable public operations.
 Shared dispatch checks capability combinations, not a whitelist of engine names.
 Harness onboarding does not require feature equality. Verify common lifecycle
 obligations and use the same public assertions for each declared operation,
-retaining native isolation tests where appropriate. Optional native differences
+qualifying outer isolation where the deployment requires it. Optional native differences
 remain independently prioritized capability/protocol work, not onboarding blockers.
 Keep the complete pinned public protocol target and accepted functionality intact.
 Never equate accepted parameters with applied native behavior.
@@ -3334,32 +3339,34 @@ Runtime recovery then loads the exact owned native history in a new Executor. Do
 profile. See [deployment and acceptance](services/agents-api/deploy/mcode/README.md).
 
 The MiniMax workspace profile builds one CLI from the fixed upstream source and
-lockfile through the existing companion packaging path, and isolates native
-workspace tools behind its standard MCP client. The process and native Session
+lockfile through the existing companion packaging path, and connects native
+workspace tools through its standard MCP client. The process and native Session
 share one private control directory; public workspace files cannot configure that
 process or become privileged project instructions. A trusted adapter-owned bridge
-runs the original six tool implementations in the upstream Linux sandbox, with no
-unsandboxed fallback. Keep native history bound to the control directory and Files/
-Artifacts bound to the public workspace. Core and shared file helpers remain engine
+runs the original six tool implementations with the launching user's ordinary
+permissions. It adds no inner sandbox on any platform. Keep native history bound
+to the control directory and Files/Artifacts bound to the public workspace. Core and shared file helpers remain engine
 neutral. This internal MCP transport does not admit public MCP configuration.
 Record the upstream revision, native admission patch hashes and worker-source
 provenance. The bounded patch checks the shared descendant-task limit inside the
 existing native SQLite admission transaction before start, without another
 scheduler. ACP initialization must acknowledge the applied limit before input.
-The native tool catalog applies the protected workspace policy to every child,
-not only the root's configured profile. Only the Session's authorized internal
+The native tool catalog selects the same admitted workspace tools for every child,
+not only the root's configured profile; this is tool selection, not filesystem
+isolation. Only the Session's authorized internal
 workspace MCP entry crosses the native child selector; this does not grant
-external MCP access or bypass the native profile's read/write restrictions.
-Initialization must acknowledge that protected tool policy before input as well.
-Subagent reads use the Session-private protected native database. Multi-agent
+external MCP access. Initialization must acknowledge the admitted tool inventory
+before input as well. Subagent reads use the Session's native database; the daemon
+does not protect it from other tools running as the same user. Multi-agent
 workspace execution installs only the existing authorized workspace MCP entry in
 that private native configuration so children inherit the same tools; public MCP
 and Environment-origin MCP combinations remain separately qualified. Complete
 [workspace acceptance](contracts/agents-api/mcode-workspace-v1.md) before enabling
 hosted execution. The standalone companion uses its own npm lock; `make check`
 runs its lifecycle tests and script checks, while its exact-source Linux build and
-Docker qualification (including `native.test.mjs` under both network policies)
-are required when the companion changes.
+native qualification for the actual supported platform and outer deployment
+are required when the companion changes. Historical tests of both inner network
+policies do not qualify the current bypass implementation.
 
 Claude hosted functions compose the existing SDK function bridge with the common
 workspace execution profile. Only declared function tools and the verified native tool
@@ -3487,38 +3494,25 @@ Confirmed native cancellation may settle unanswered function calls after result
 admission closes and callbacks drain. A submitted function result still requires
 its native application receipt, including when the MCP request aborts.
 
-`claudesdk.Config.Workspace` is a private, trusted operator binding for one
-qualified placement. It enables native Bash/Read/Edit and declared host functions
-in the existing SDK loop. The entire factory must already run inside an outer mount/process boundary
-that excludes application, daemon and other-tenant credentials and host policy.
-The factory does not create that boundary. The dedicated Docker profile below
-selects this binding at startup; cwd and request options cannot select its policy.
-The workspace, managed history, runtime home, scratch and protected secret roots
-must be pre-existing canonical, separate directories. Runtime code and dependency
-search paths must remain outside those roots and be read-only in the placement.
-The complete packaged runtime directory, including `node_modules`, must not
-overlap any bound root. Its bridge uses the packaged `dist/main.js` layout.
-Node, the bridge entrypoint and its readiness companion must use canonical file
-paths. Dependency aliases outside mutable roots are resolved before use in PATH;
-aliases within mutable roots are rejected even if their current target is safe.
-The operator owns allocation, exclusive use and retention; a binding is not
-per-Session authorization, a tenant boundary or an idle Files owner.
+`claudesdk.Config.Workspace` is an operator binding for the selected workspace and
+native state. It enables native Bash/Read/Edit and admitted host functions in the
+existing SDK loop. Native tools run with the launching user's permissions on all
+platforms; there is no inner sandbox, protected-root deny policy or managed shell
+wrapper. Managed isolation belongs to the outer Environment, which must exclude
+other tenants' and broader application credentials. An ordinary native install
+provides no such boundary. Directory selection is not tenant authorization.
 
-For this profile, `Config.Env` replaces inheritance for both readiness and
-execution, selecting only supported provider/proxy variables. The adapter fixes
-HOME/history/scratch, native enforcement flags and tool inventory; the bridge
-request contains variable names, never credential values. Native Bash uses the
-strict sandbox with no fallback or weaker isolation. Separate native file-tool
-permissions and a session tool hook restrict Read/Edit to the bound workspace
-and deny protected roots; background/unsandboxed Bash requests are rejected.
-The deployment must retain these controls, including the SDK-owned hook.
-External MCP and remote-environment combinations remain rejected in this private
-profile until separately qualified. The existing `none` profile retains its
-behavior. Packaged `workspace_tools` establishes bridge support only, not host
-isolation or a public capability. The dedicated Runtime integration composes
-public preparation, shared placement quotas, command Items and Files ownership.
-`TestLiveClaudeWorkspaceFactory` is explicit real-provider acceptance inside a
-qualified placement, including effects, cancellation and same-history continuation.
+`Config.Env` selects readiness and native process variables. Explicit tool env is
+applied to tool execution, but this is not a guarantee that same-user tools cannot
+read credentials or history from local files. Workspace hooks retain their event,
+identity and lifecycle responsibilities, not security enforcement. Process groups
+and Windows Jobs provide cancellation and descendant cleanup, not isolation.
+Supported MCP and subagent combinations require their own qualification. The
+existing `none` profile keeps its tool inventory. Packaged `workspace_tools`
+establishes bridge support, not outer host isolation or public API admission.
+The dedicated Runtime composes public preparation, placement quotas, command Items
+and Files ownership. Real-provider acceptance verifies effects, cancellation and
+same-history continuation for the actual platform and outer deployment.
 
 The private bridge accepts `executor_prepare` without model input. It freezes
 validated configuration and resume identity, checks required history, and retains

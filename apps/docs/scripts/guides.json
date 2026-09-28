@@ -88,7 +88,14 @@
     "source": "docs/getting-started/self-hosted.md",
     "title": "Self-hosted executors",
     "description": "Connect a user-owned Runtime to its Environment with a restricted executor credential.",
-    "zh": "self_hosted 执行器由用户拥有，Core 不管理它的容器。通过 Web 为对应 Environment 签发 executor 凭据，安装器通过隐藏输入或私有文件读取凭据；不要把凭据放入命令行。"
+    "zh": "self_hosted 执行器由用户拥有，通过 Web 为对应 Environment 签发凭据。Linux、macOS 和 Windows 使用同一 daemon 协议；daemon 以启动账户权限运行，隔离由外层环境负责。凭据通过私有文件提供，不放入命令行。"
+  },
+  {
+    "slug": "self-hosted-native",
+    "source": "docs/self-hosted-native.md",
+    "title": "Native daemon installation",
+    "description": "Install and operate a self-hosted daemon on Linux, macOS or Windows.",
+    "zh": "使用当前平台的 oac-daemon 安装、启动和停止自托管 Runtime。系统依赖需提前安装，运行时不提权。Windows 已通过原生 CI 自动测试，尚未人工实机验收。"
   },
   {
     "slug": "console",

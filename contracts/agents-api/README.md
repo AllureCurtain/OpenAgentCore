@@ -203,7 +203,7 @@ user-managed enrollment remain outside this qualification.
 | Area | Missing or unverified scope |
 | --- | --- |
 | Subagents / multi_agent | Six reads and same-child recovery have three-harness Docker evidence; optional native operations, live child progress, full lifecycle/interactions and tool combinations remain explicit gaps |
-| Environment Templates | Unsupported restricted hostname forms and exact hosted errors remain gaps. Referenced null network and capability-list selection follow [qualified inheritance rules](template-null-selection.md). Template-reference env/files/commands/packages composition follows [qualified field rules](environment-templates.md#template-and-inline-configuration-composition). CRUD/list, files, env/setup/system/npm/Python, inline/referenced Skills, Plugins, workspace capability directories and Session references have recorded coverage. Environment Plugin MCP transport and placement limits are [listed separately](environment-templates.md#environment-origin-mcp-plugins) |
+| Environment Templates | Unsupported restricted hostname forms and exact hosted errors remain gaps. Referenced null network and capability-list selection follow [qualified inheritance rules](template-null-selection.md). Template-reference env/files/commands/packages composition follows [qualified field rules](environment-templates.md#template-and-inline-configuration-composition). CRUD/list, files, env/setup/npm/Python, inline/referenced Skills, Plugins, workspace capability directories and Session references have recorded coverage. System-package and inner-isolation evidence is historical; current `packages.system` rejects and the daemon adds no sandbox. Environment Plugin MCP transport and placement limits are [listed separately](environment-templates.md#environment-origin-mcp-plugins) |
 | Input and configuration | Non-text initial input, broader content/configuration unions and reasoning/verbosity combinations; [structured output](structured-output.md) has qualified Claude function profiles on none and Core-managed Docker openai_hosted, with other combinations remaining gaps |
 | Tools and interactions | [Deferred discovery qualification](tool-search.md), other tool types, effective tool-set enforcement and result/cancel publication ordering; MiniMax public functions and service-origin MCP remain unsupported |
 | Vault and Credentials | Archive semantics, in-flight token withdrawal and exact hosted selection/error behavior; static/OAuth CRUD, replacement and scoped dispatch-time refresh are implemented (see credential guide for qualification) |
@@ -490,15 +490,17 @@ model provider in the request or through a saved Agent; deployment defaults appl
 to `openai_hosted` and `none`, never to `self_hosted` ([model execution](model-execution.md)). Service-origin HTTP MCP is rejected on `self_hosted` and hosted local
 placements. This does not remove separately qualified Environment Plugin MCP.
 The [Docker lifecycle](environments.md#basic-public-docker-hosted-profile) retains
-workspace Files/Artifacts, cancellation and recovery with native isolation.
+workspace Files/Artifacts, cancellation and recovery. Managed isolation belongs to
+the outer Environment; native tools use the starting account's permissions.
 Configure immutable Runtime images explicitly: [Codex](../../services/agents-api/deploy/codex/README.md),
 [Claude](../../services/agents-api/deploy/claude/README.md),
 [MiniMax](../../services/agents-api/deploy/mcode/README.md).
 [E2B packaging](../../services/agents-api/deploy/e2b/README.md) reuses the Runtime
 with the official SDK; the user owns provisioning, renewal and destruction.
 
-The shared initialization path supports env/setup and system/npm/Python packages;
-see the [evidence and limits](environment-templates.md#verification). Remaining
+The shared initialization path supports env/setup and user-directory npm/Python packages;
+`packages.system` rejects explicitly and system dependencies must be preinstalled.
+See the [evidence and limits](environment-templates.md#verification). Remaining
 unsupported startup installations, unqualified restricted hostname forms and hosted
 service-origin HTTP MCP remain outside these accepted profiles. Environment-origin
 MCP Plugins have a separate [Docker qualification and transport matrix](environment-templates.md#environment-origin-mcp-plugins):

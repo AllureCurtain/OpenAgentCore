@@ -101,8 +101,10 @@ apply to `self_hosted` Sessions, and creation without a provider fails with 400
 `model_provider_required`. Core freezes the bundle in the Session's encrypted
 snapshot and sends it only over the connection of the executor enrolled for this
 Environment with a current credential of the Session creator's principal. The
-executor keeps it in the Runtime's native harness home, which tools and public
-Files cannot read; the executor host's owner can. Revocation does not erase a
+executor keeps it in the Runtime's native harness home. Public Files remains
+scoped to the authorized workspace, but native tools and the host owner can read
+whatever the starting account can access. The daemon provides no same-user
+credential isolation. Revocation does not erase a
 bundle already delivered. A saved Agent's provider key is delivered to the
 executor of every `self_hosted` Session created with that Agent in the Project, so
 anyone who can create `self_hosted` Sessions in the Project and run an executor
