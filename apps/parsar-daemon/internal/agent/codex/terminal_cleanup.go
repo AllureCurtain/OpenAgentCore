@@ -15,9 +15,12 @@ func (s *Session) cleanupNativeTerminals(ctx context.Context) error {
 	if thread == "" {
 		return nil
 	}
+	request := func(method string, params any) (json.RawMessage, error) {
+		return s.rpc.request(ctx, method, params, func(frame any) error { return s.rpc.writeFrameContext(ctx, frame) })
+	}
 	seen := map[string]bool{}
 	for {
-		raw, err := s.rpc.Request(ctx, "thread/backgroundTerminals/list", map[string]any{"threadId": thread, "limit": 100})
+		raw, err := request("thread/backgroundTerminals/list", map[string]any{"threadId": thread, "limit": 100})
 		if err != nil {
 			return err
 		}
@@ -41,7 +44,7 @@ func (s *Session) cleanupNativeTerminals(ctx context.Context) error {
 				return errors.New("codex: invalid or retained native terminal identity")
 			}
 			seen[terminal.ProcessID] = true
-			raw, err = s.rpc.Request(ctx, "thread/backgroundTerminals/terminate", map[string]string{"threadId": thread, "processId": terminal.ProcessID})
+			raw, err = request("thread/backgroundTerminals/terminate", map[string]string{"threadId": thread, "processId": terminal.ProcessID})
 			if err != nil {
 				return err
 			}
