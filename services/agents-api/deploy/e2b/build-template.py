@@ -36,11 +36,16 @@ with tempfile.TemporaryDirectory(dir=state) as temporary:
     context = Path(temporary)
     tree = context / 'runtime'
     tree.mkdir()
+    # These public ancestors are synthesized, not extracted from the Runtime.
+    # Keep their archive modes independent of the caller's private umask.
+    for parent in ['usr', 'usr/local', 'etc']:
+        directory = tree / parent
+        directory.mkdir()
+        directory.chmod(0o755)
     container = subprocess.check_output(['docker', 'create', args.image], text=True).strip()
     try:
         for path in ['/usr/local/bin', '/usr/local/codex-resources', '/etc/codex', '/opt']:
             destination = tree / path.lstrip('/')
-            destination.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.TemporaryFile() as copied:
                 result = subprocess.run(['docker', 'cp', container + ':' + path, '-'],
                                         stdout=copied, stderr=subprocess.PIPE)
