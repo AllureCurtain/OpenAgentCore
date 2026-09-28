@@ -129,7 +129,7 @@ func environmentBootstrap(ctx context.Context, prof auth.Profile, remote string)
 	return boot, nil
 }
 
-func runEnvironmentConnect(rc *runContext, profile string, background bool, remote, environment, credentialFile string) error {
+func runEnvironmentConnect(parent context.Context, rc *runContext, profile string, background bool, remote, environment, credentialFile string) error {
 	base, err := environmentBase(remote)
 	if err != nil {
 		return err
@@ -149,29 +149,32 @@ func runEnvironmentConnect(rc *runContext, profile string, background bool, remo
 	parks := !background || daemonize.IsBackgroundChild()
 	rejected := func(err error) error {
 		if message := environmentRejection(err, keyID, environment); parks && message != "" {
-			return parkEnvironment(rc.stderr, message)
+			return parkEnvironment(parent, rc.stderr, message)
 		}
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTimeout)
+	ctx, cancel := context.WithTimeout(parent, bootstrapTimeout)
 	defer cancel()
 	bound, err := enrollEnvironment(ctx, environmentClient(), base, environment, credential)
 	if err != nil {
 		return rejected(err)
 	}
+	if err = parent.Err(); err != nil {
+		return err
+	}
 	if err = bindEnvironmentRuntime(remote, bound, credentialFile); err != nil {
 		return err
 	}
 	if background && !daemonize.IsBackgroundChild() {
-		return spawnBackground(rc, profile, os.Args, nil)
+		return spawnBackground(parent, rc, profile, os.Args, nil)
 	}
 	// Discovery consumes the immutable Runtime binding; it must follow enrollment.
-	discovery, err := preflightAgentCLIs(rc, profile)
+	discovery, err := preflightAgentCLIs(parent, rc, profile)
 	if err != nil {
 		return err
 	}
 	prof := auth.Profile{ServerURL: base, RuntimeID: bound.DeviceID, RunnerCredential: credential}
-	return rejected(mainLoopRemote(rc, profile, prof, discovery, remote))
+	return rejected(mainLoopRemote(parent, rc, profile, prof, discovery, remote))
 }
 
 var (
@@ -200,8 +203,8 @@ func environmentRejection(err error, keyID, environment string) string {
 // until SIGINT or SIGTERM and exits successfully. Docker's unless-stopped policy
 // restarts every exit, so an exit would loop; a parked Runtime still restarts
 // after a reboot, makes one enrollment request and parks again.
-func parkEnvironment(stderr io.Writer, message string) error {
-	ctx, stop := daemonize.NotifyContext(context.Background())
+func parkEnvironment(parent context.Context, stderr io.Writer, message string) error {
+	ctx, stop := daemonize.NotifyContext(parent)
 	defer stop()
 	fmt.Fprintln(stderr, "oac-daemon: "+message)
 	<-ctx.Done()

@@ -22,7 +22,7 @@ type claudeSDKDiscovery struct {
 	Config claudesdk.Config
 }
 
-func discoverClaudeSDK(rc *runContext, profile string, check func(context.Context, claudesdk.Config) (claudesdk.RuntimeInfo, error)) *claudeSDKDiscovery {
+func discoverClaudeSDK(parent context.Context, rc *runContext, profile string, check func(context.Context, claudesdk.Config) (claudesdk.RuntimeInfo, error)) *claudeSDKDiscovery {
 	entrypoint := os.Getenv(claudeSDKEntrypointEnv)
 	if entrypoint == "" {
 		return nil
@@ -81,7 +81,7 @@ func discoverClaudeSDK(rc *runContext, profile string, check func(context.Contex
 	if check == nil {
 		check = claudesdk.CheckRuntime
 	}
-	info, err := check(context.Background(), out.Config)
+	info, err := check(parent, out.Config)
 	if err != nil {
 		return fail(err)
 	}

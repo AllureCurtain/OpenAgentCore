@@ -44,11 +44,11 @@ func defaultAgentCLIChecks() agentCLIChecks {
 	}
 }
 
-func preflightAgentCLIs(rc *runContext, profile string) (agentCLIDiscovery, error) {
-	return discoverAgentCLIs(rc, profile, defaultAgentCLIChecks())
+func preflightAgentCLIs(parent context.Context, rc *runContext, profile string) (agentCLIDiscovery, error) {
+	return discoverAgentCLIs(parent, rc, profile, defaultAgentCLIChecks())
 }
 
-func discoverAgentCLIs(rc *runContext, profile string, checks agentCLIChecks) (agentCLIDiscovery, error) {
+func discoverAgentCLIs(parent context.Context, rc *runContext, profile string, checks agentCLIChecks) (agentCLIDiscovery, error) {
 	if checks.ClaudeCode == nil {
 		checks.ClaudeCode = claudecode.CheckCLIAvailable
 	}
@@ -117,7 +117,7 @@ func discoverAgentCLIs(rc *runContext, profile string, checks agentCLIChecks) (a
 		},
 	}
 
-	claudeCtx, cancelClaude := context.WithTimeout(context.Background(), cliVersionTimeout)
+	claudeCtx, cancelClaude := context.WithTimeout(parent, cliVersionTimeout)
 	claudeVersion, claudeErr := checks.ClaudeCode(claudeCtx, "")
 	cancelClaude()
 	if claudeErr == nil {
@@ -132,7 +132,7 @@ func discoverAgentCLIs(rc *runContext, profile string, checks agentCLIChecks) (a
 		fmt.Fprintf(rc.stderr, "  Re-install or upgrade: %s\n", claudecode.InstallURL)
 	}
 
-	opencodeCtx, cancelOpenCode := context.WithTimeout(context.Background(), cliVersionTimeout)
+	opencodeCtx, cancelOpenCode := context.WithTimeout(parent, cliVersionTimeout)
 	opencodeVersion, opencodeErr := checks.OpenCode(opencodeCtx, "")
 	cancelOpenCode()
 	if opencodeErr == nil {
@@ -147,7 +147,7 @@ func discoverAgentCLIs(rc *runContext, profile string, checks agentCLIChecks) (a
 		fmt.Fprintf(rc.stderr, "  Re-install or upgrade: %s\n", opencodeagent.InstallURL)
 	}
 
-	codexCtx, cancelCodex := context.WithTimeout(context.Background(), cliVersionTimeout)
+	codexCtx, cancelCodex := context.WithTimeout(parent, cliVersionTimeout)
 	codexVersion, codexErr := checks.Codex(codexCtx, "")
 	cancelCodex()
 	if codexErr == nil {
@@ -165,7 +165,7 @@ func discoverAgentCLIs(rc *runContext, profile string, checks agentCLIChecks) (a
 		fmt.Fprintf(rc.stderr, "  Re-install or upgrade: %s\n", codex.InstallURL)
 	}
 
-	piCtx, cancelPi := context.WithTimeout(context.Background(), cliVersionTimeout)
+	piCtx, cancelPi := context.WithTimeout(parent, cliVersionTimeout)
 	piVersion, piErr := checks.Pi(piCtx, "")
 	cancelPi()
 	if piErr == nil {
@@ -180,10 +180,13 @@ func discoverAgentCLIs(rc *runContext, profile string, checks agentCLIChecks) (a
 		fmt.Fprintf(rc.stderr, "  Re-install or upgrade: %s\n", pi.InstallURL)
 	}
 
-	out.MCode = discoverMCode(rc, checks.MCode)
-	discoverMCodeWorkspace(rc, &out)
-	out.ClaudeSDK = discoverClaudeSDK(rc, profile, checks.ClaudeSDK)
+	out.MCode = discoverMCode(parent, rc, checks.MCode)
+	discoverMCodeWorkspace(parent, rc, &out)
+	out.ClaudeSDK = discoverClaudeSDK(parent, rc, profile, checks.ClaudeSDK)
 
+	if err := parent.Err(); err != nil {
+		return out, err
+	}
 	if !out.ClaudeCode.Available && !out.OpenCode.Available && !out.Codex.Available && !out.Pi.Available && !out.MCode.Available && (out.ClaudeSDK == nil || !out.ClaudeSDK.Info.Available) {
 		return out, fmt.Errorf("connect: no supported agent CLI available (install Claude Code, OpenCode, Codex, pi, or mcode, or configure a Claude SDK runtime)")
 	}
