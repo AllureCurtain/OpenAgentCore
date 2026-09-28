@@ -46,7 +46,8 @@ func helperTurnOutput(scanner *bufio.Scanner, id string) (func(bridgeEvent), fun
 		if !reusable {
 			reason = "native_error"
 		}
-		encode(bridgeEvent{Type: "turn_settled", Reusable: &reusable, Reason: reason})
+		confirmed := true
+		encode(bridgeEvent{Type: "turn_settled", Confirmed: &confirmed, Reusable: &reusable, Reason: reason})
 		for scanner.Scan() {
 		}
 	}

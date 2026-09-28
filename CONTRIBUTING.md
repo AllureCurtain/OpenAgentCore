@@ -1601,7 +1601,10 @@ input was submitted. Recheck the same physical peer and current authorization.
 `Turn.Cancel` targets only that Turn and does not close a healthy Executor.
 `AwaitSettlement` applies after both natural completion and cancellation. Success
 means output can no longer be written and the Turn's native events, input,
-functions, interactions and child work have settled. `Reusable=true` additionally
+functions, interactions and child work have settled. Native completion or
+cancellation confirmation is independent of resource retirement: closing a
+transport cannot supply missing native terminal or operation receipts.
+`Reusable=true` additionally
 confirms that the native owner can accept the next Turn. `Reusable=false` requires
 a reason and subsequent confirmed Executor close. An error means settlement is
 unconfirmed; it cannot free ownership or capacity. Caller deadlines stop waiting,
@@ -3213,7 +3216,14 @@ The SDK's per-block assistant snapshots replace draft block text; only native
 Thinking/tool-only messages produce no text Items; interrupted messages retain
 their streamed partial text. No phase is inferred from the final result.
 Turn-owned native work and output draining precede reuse. Executor close releases
-the SDK Query and native process.
+the SDK Query and native process. The private `turn_settled` frame requires
+`confirmed` independently of `reusable`: confirmed native Turn/cancellation
+settlement, confirmed resource cleanup, and reuse eligibility are separate facts.
+Unknown or nonempty interrupt receipts and unsettled input/function/tool work
+remain unconfirmed even after successful teardown. Go rejects cancellation and
+AwaitSettlement when native confirmation is missing or false, or its own receipt
+ledger remains unsettled. A confirmed Turn may be non-reusable after cleanup;
+that state alone does not turn a verified cancellation into an error.
 
 `claudesdk.Config.Workspace` is a private, trusted operator binding for one
 qualified placement. It enables native Bash/Read/Edit and declared host functions

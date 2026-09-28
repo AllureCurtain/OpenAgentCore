@@ -33,7 +33,10 @@ func (s *Session) settleExecutorTurn(startErr error) {
 	// replies. Later frames cannot acquire this Turn or redirect to a successor.
 	if !s.nativeSettled.Load() || startErr != nil || !s.rpc.Alive() {
 		s.cancelFn()
-		s.settlementErr = s.rpc.Close()
+		s.settlementErr = errors.Join(s.settlementErr, s.rpc.Close())
+	}
+	if !s.nativeSettled.Load() {
+		s.settlementErr = errors.Join(s.settlementErr, errors.New("codex: native Turn settlement is unconfirmed"))
 	}
 	s.rpc.detachHandlers()
 	s.operationMu.Lock()
@@ -44,7 +47,7 @@ func (s *Session) settleExecutorTurn(startErr error) {
 	s.stopCodexInteractionTimers()
 	if !s.nativeSettled.Load() || startErr != nil || !s.rpc.Alive() {
 		s.cancelFn()
-		s.settlementErr = s.rpc.Close()
+		s.settlementErr = errors.Join(s.settlementErr, s.rpc.Close())
 		s.settlement = agent.TurnSettlement{Reason: "native_execution_unavailable"}
 	} else {
 		s.settlement = agent.TurnSettlement{Reusable: true}
@@ -57,7 +60,7 @@ func (s *Session) settleExecutorTurn(startErr error) {
 		s.subagents.mu.Unlock()
 		if err != nil {
 			s.settlement = agent.TurnSettlement{Reason: "child_settlement_unconfirmed"}
-			s.settlementErr = errors.Join(err, s.rpc.Close())
+			s.settlementErr = errors.Join(s.settlementErr, err, s.rpc.Close())
 		}
 	}
 	// The terminal callback has returned before detachHandlers completes. A
@@ -70,7 +73,7 @@ func (s *Session) settleExecutorTurn(startErr error) {
 		if s.cancelErr != nil {
 			s.settlement.Reusable = false
 			s.settlement.Reason = "cancellation_unconfirmed"
-			s.settlementErr = errors.Join(s.cancelErr, s.rpc.Close())
+			s.settlementErr = errors.Join(s.settlementErr, s.cancelErr, s.rpc.Close())
 		}
 	}
 	s.cancelFn()

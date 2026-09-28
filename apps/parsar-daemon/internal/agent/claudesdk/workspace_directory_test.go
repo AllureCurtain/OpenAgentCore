@@ -32,7 +32,8 @@ func runWorkspaceDirectoryHelper(scanner *bufio.Scanner, state, mode string) {
 		if req.Type == "turn_cancel" {
 			reusable := false
 			_ = json.NewEncoder(os.Stdout).Encode(bridgeEvent{Type: "error", TurnID: turnID, Code: "cancelled"})
-			_ = json.NewEncoder(os.Stdout).Encode(bridgeEvent{Type: "turn_settled", TurnID: turnID, Reusable: &reusable, Reason: "fixture_closed"})
+			confirmed := true
+			_ = json.NewEncoder(os.Stdout).Encode(bridgeEvent{Type: "turn_settled", Confirmed: &confirmed, TurnID: turnID, Reusable: &reusable, Reason: "fixture_closed"})
 			return
 		}
 		if req.Type == "turn_start" {

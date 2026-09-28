@@ -5,7 +5,7 @@ import { parseMessageInput, type MessageInput } from "./message_input.js";
 export type ExecutorEvent =
   | { type: "executor_ready"; protocol: 3 }
   | { type: "turn_started"; turn_id: string }
-  | { type: "turn_settled"; turn_id: string; reusable: boolean; reason: string };
+  | { type: "turn_settled"; turn_id: string; confirmed: boolean; reusable: boolean; reason: string };
 type WireEvent = { type: string; [key: string]: unknown };
 type Turn = { id: string; inputs: Inputs; cancelled: boolean; interrupt?: Promise<boolean>; callbacks: Set<Promise<unknown>> };
 
@@ -111,12 +111,12 @@ export class ExecutorTurns implements AsyncIterable<SDKUserMessage> {
     const turn = this.active;
     while (turn?.callbacks.size) await Promise.allSettled([...turn.callbacks]);
   }
-  async settled(reusable: boolean, reason: string): Promise<void> {
+  async settled(confirmed: boolean, reusable: boolean, reason: string): Promise<void> {
     const turn = this.active;
     if (!turn) return;
     turn.inputs.close();
     this.active = undefined;
-    await this.output({ type: "turn_settled", turn_id: turn.id, reusable, reason });
+    await this.output({ type: "turn_settled", turn_id: turn.id, confirmed, reusable, reason });
   }
   close(): void { this.ended = true; this.active?.inputs.close(); this.wake?.(); }
   async *[Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {

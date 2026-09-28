@@ -24,7 +24,7 @@ globalThis.startupFixture=async({options})=>{
  options.abortController.signal.addEventListener('abort',close);
  return {close,query(prompt){assert.equal(queried,false);queried=true;process.send({type:'query'});return {
   close,async initializationResult(){return process.argv[1]==="no-hook-report" ? {} : process.argv[1]==="false-hook-report" ? {hooks_applied:false} : {hooks_applied:true}},
-  async interrupt(){process.send({type:'interrupt'});interrupt?.();return process.argv[1]==='unknown' ? undefined : {still_queued:process.argv[1]==='queued' ? ['not-consumed'] : []}},
+  async interrupt(){process.send({type:'interrupt'});interrupt?.();if(process.argv[1]==='rejected')throw new Error('interrupt failed');return process.argv[1]==='unknown' ? undefined : {still_queued:process.argv[1]==='queued' ? ['not-consumed'] : []}},
   async *[Symbol.asyncIterator](){
    for await(const user of prompt){
     number++;
@@ -76,7 +76,7 @@ async function launch(t,mode="normal") {
 
 test("executor retains one native process and one Query over two settled Turns",{timeout:10000},async t=>{
  const {child,events,observations,closed,wait,start}=await launch(t);
- for(const id of ["first","second"]){start(id,"answer");await wait(()=>events.some(event=>event.type==="turn_settled"&&event.turn_id===id));assert.equal(events.find(event=>event.type==="turn_settled"&&event.turn_id===id).reusable,true)}
+ for(const id of ["first","second"]){start(id,"answer");await wait(()=>events.some(event=>event.type==="turn_settled"&&event.turn_id===id));assert.equal(events.find(event=>event.type==="turn_settled"&&event.turn_id===id).confirmed,true);assert.equal(events.find(event=>event.type==="turn_settled"&&event.turn_id===id).reusable,true)}
  assert.equal(observations.filter(event=>event.type==="native").length,1);
  assert.equal(observations.filter(event=>event.type==="query").length,1);
  for(const event of events.filter(event=>event.type!=="executor_ready")) assert.ok(["first","second"].includes(event.turn_id));
@@ -95,6 +95,7 @@ test("public interrupt settles cancellation and stale cancellation cannot stop t
  start("first","hold");await wait(()=>events.some(event=>event.type==="input_ready"));
  send({type:"turn_cancel",turn_id:"first"});
  await wait(()=>events.some(event=>event.type==="turn_settled"));
+ assert.equal(events.find(event=>event.type==="turn_settled").confirmed,true);
  assert.equal(events.find(event=>event.type==="turn_settled").reusable,true);
  assert.ok(events.some(event=>event.type==="error"&&event.code==="cancelled"&&event.turn_id==="first"));
  start("second","hold");await wait(()=>events.some(event=>event.type==="input_ready"&&event.turn_id==="second"));
@@ -106,12 +107,15 @@ test("public interrupt settles cancellation and stale cancellation cannot stop t
  child.stdin.end();assert.deepEqual(await closed,{code:0,signal:null});
 });
 
-for(const mode of ["queued","unknown"])test(`interrupt ${mode} receipt retires native ownership before non-reusable settlement`,{timeout:10000},async t=>{
+for(const mode of ["queued","unknown","rejected"])test(`interrupt ${mode} receipt retires native ownership before non-reusable settlement`,{timeout:10000},async t=>{
  const {events,observations,closed,wait,send,start}=await launch(t,mode);
  start("first","hold");await wait(()=>events.some(event=>event.type==="input_ready"));
  send({type:"turn_cancel",turn_id:"first"});
  await wait(()=>events.some(event=>event.type==="turn_settled"));
- assert.equal(events.find(event=>event.type==="turn_settled").reusable,false);
+ const settlement=events.find(event=>event.type==="turn_settled");
+ assert.equal(settlement.confirmed,false);
+ assert.equal(settlement.reusable,false);
+ assert.equal(settlement.reason,"cancellation_unconfirmed");
  assert.equal(observations.filter(event=>event.type==="native_closed").length,1);
  assert.deepEqual(await closed,{code:0,signal:null});
 });
@@ -125,6 +129,7 @@ test("reused Turns retain functions, native receipts, steering and message bound
   send({type:"function_result",turn_id:id,call_id:"same-native-call",delivery_id:"same-delivery-id",success:true,content:[{type:"input_text",text:"function result"}]});
   await wait(()=>events.some(event=>event.type==="turn_settled"&&event.turn_id===id));
   const own=events.filter(event=>event.turn_id===id);
+  assert.equal(own.find(event=>event.type==="turn_settled").confirmed,true);
   assert.equal(own.find(event=>event.type==="turn_settled").reusable,true);
   assert.equal(own.filter(event=>event.type==="function_applied").length,1);
   assert.equal(own.find(event=>event.type==="input_applied").input_id,"same-input-id");
@@ -138,6 +143,7 @@ for(const mode of ["no-hook-report","false-hook-report"])test("none Executor wit
  const {child,events,closed,wait,start}=await launch(t,mode);
  start("first","answer");
  await wait(()=>events.some(event=>event.type==="turn_settled"));
+ assert.equal(events.find(event=>event.type==="turn_settled").confirmed,true);
  assert.equal(events.find(event=>event.type==="turn_settled").reusable,true);
  child.stdin.end();assert.deepEqual(await closed,{code:0,signal:null});
 });

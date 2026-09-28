@@ -204,7 +204,7 @@ export async function execute(request: Start | Prepare | ExecutorPrepare, emit: 
         if(subagents) for(const event of await subagents.facts()) await emit(event);
         await emit(turns.cancelled ? {type:"error",code:"cancelled"} : result);
         functions.close();
-        await turns.settled(true,"");
+        await turns.settled(true,true,"");
         result=undefined;
       }
     }
@@ -237,7 +237,7 @@ export async function execute(request: Start | Prepare | ExecutorPrepare, emit: 
   if(turns) {
     if(turns.id) {
       await emit({type:"error",code: turns.cancelled && !cancellationFactsFailed ? "cancelled" : "execution_failed"});
-      await turns.settled(false, turns.cancelled ? "cancellation_unconfirmed" : "native_execution_unavailable");
+      await turns.settled(false, false, turns.cancelled ? "cancellation_unconfirmed" : "native_execution_unavailable");
     } else if(failed && !abort.signal.aborted) await ownerEmit({type:"error",code:"execution_failed"});
     return;
   }

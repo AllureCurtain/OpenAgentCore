@@ -119,8 +119,8 @@ func TestWorkspaceCommandCancellationAndBridgeFailuresCloseOnlyPendingCalls(t *t
 								t.Fatal(err)
 							}
 						} else if mode == "commands-cancel" || mode == "commands-drained" {
-							if err := s.Cancel(ctx); err != nil {
-								t.Fatal(err)
+							if err := s.Cancel(ctx); (err == nil) != (mode == "commands-drained") {
+								t.Fatalf("command cancellation confirmation: %v", err)
 							}
 						}
 					}

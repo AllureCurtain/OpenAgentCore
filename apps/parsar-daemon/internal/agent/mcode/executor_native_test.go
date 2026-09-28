@@ -136,10 +136,10 @@ func TestNativeMCodeExecutorReuse(t *testing.T) {
 	cancelErr := interrupted.Cancel(stopCtx)
 	settlement, settleErr := interrupted.AwaitSettlement(stopCtx)
 	stop()
-	if settleErr != nil || !settlement.Reusable {
-		if cancelErr == nil {
-			t.Fatal("uncertain cancellation reported success")
-		}
+	if settleErr != nil || cancelErr != nil {
+		t.Fatal("native cancellation did not settle", cancelErr, settleErr)
+	}
+	if !settlement.Reusable {
 		t.Log("Native cancellation cannot establish reusable settlement; successor must use recovery")
 		successor := make(chan proto.Envelope, 1)
 		next, nextErr := e.StartTurn(ctx, "unsafe-successor", proto.TextInput("must not execute"), successor)
@@ -164,7 +164,7 @@ func TestNativeMCodeExecutorReuse(t *testing.T) {
 		}
 		pid = e.connection.process.Cmd.Process.Pid
 		run("recovery", "What exact marker did I ask you to remember at the beginning? Reply with only that marker.")
-		t.Log("Verified exact history continuation in a replacement native owner after uncertain cancellation")
+		t.Log("Verified exact history continuation in a replacement native owner after nonreusable cancellation")
 		return
 	}
 	if cancelErr != nil {

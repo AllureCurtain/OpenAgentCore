@@ -75,8 +75,8 @@ func TestFunctionFactoryNativeReceipts(t *testing.T) {
 					}
 				case proto.TypeDelta:
 					if mode == "functions-cancel" {
-						if err := running.Cancel(ctx); err != nil {
-							t.Fatal(err)
+						if err := running.Cancel(ctx); err == nil {
+							t.Fatal("unconfirmed function receipts became successful cancellation")
 						}
 					}
 				case proto.TypeError:

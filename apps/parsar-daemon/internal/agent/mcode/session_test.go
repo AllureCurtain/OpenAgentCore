@@ -250,6 +250,11 @@ func TestMCodeProcess(t *testing.T) {
 			}
 		case "session/set_config_option":
 			configurations++
+			if scenario == "executor-backpressure" && configurations > 1 {
+				send(rpcFrame{JSONRPC: "2.0", ID: frame.ID, Result: json.RawMessage("{}")})
+				time.Sleep(time.Minute)
+				os.Exit(0)
+			}
 			if scenario == "executor-preexit" && configurations > 1 {
 				os.Exit(0)
 			}
@@ -327,6 +332,10 @@ func TestMCodeProcess(t *testing.T) {
 			send(rpcFrame{JSONRPC: "2.0", ID: promptID, Result: raw})
 			continue
 		case "mcode/session/steer":
+			if scenario == "executor-steer-unknown" {
+				send(rpcFrame{JSONRPC: "2.0", ID: frame.ID, Error: &rpcError{Code: -32000, Message: "Unknown input outcome"}})
+				continue
+			}
 			if scenario == "steer-lost" {
 				os.Exit(0)
 			}

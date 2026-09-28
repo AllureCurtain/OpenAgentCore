@@ -56,6 +56,7 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 	mcp := mcpState{calls: map[string]proto.ToolObservation{}}
 	commands := commandState{calls: map[string]proto.ToolObservation{}}
 	settlementReceived := false
+	settlementConfirmed := false
 	reusable := false
 	reason := "bridge_interrupted"
 	for raw := range s.frames {
@@ -69,12 +70,12 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 			continue
 		}
 		if event.Type == "turn_settled" {
-			if !terminal || event.Reusable == nil || (!*event.Reusable && event.Reason == "") {
+			if !terminal || event.Reusable == nil || event.Confirmed == nil || (*event.Reusable && !*event.Confirmed) || (!*event.Reusable && event.Reason == "") {
 				failure = fmt.Errorf("claudesdk: invalid Turn settlement")
 				s.invalidate()
 				break
 			}
-			settlementReceived, reusable, reason = true, *event.Reusable, event.Reason
+			settlementReceived, settlementConfirmed, reusable, reason = true, *event.Confirmed, *event.Reusable, event.Reason
 			break
 		}
 		if terminal {
@@ -149,6 +150,7 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 		case "result":
 			if !s.matchesInputSession(event.SessionID) || event.SessionID == "" || start.Resume != "" && event.SessionID != start.Resume || usageSession != "" && event.SessionID != usageSession || !s.functionsComplete() || !s.steeringComplete() || !mcp.complete() || !commands.complete() {
 				failure = fmt.Errorf("claudesdk: invalid native completion or unconfirmed input/result")
+				s.settlementErr = failure
 				s.invalidate()
 			} else {
 				result = &event
@@ -172,7 +174,7 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 		failure = fmt.Errorf("claudesdk: SDK result is missing")
 	}
 	if !s.functionsComplete() || !s.steeringComplete() || !mcp.complete() || !commands.complete() {
-		reusable, reason = false, "unsettled_native_operations"
+		settlementConfirmed, reusable, reason = false, false, "unsettled_native_operations"
 	}
 	mcp.close(start, emit)
 	commands.close(start, emit)
@@ -189,14 +191,14 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 	}
 	s.outcome = proto.DonePayload{Content: content.String(), Usage: usage, Metadata: metadata}
 	// Publish the observed cancellation outcome before terminal delivery.
-	if !settlementReceived || !reusable || outputLost || s.process.Context().Err() != nil {
+	if s.settlementErr != nil || !settlementReceived || !settlementConfirmed || !reusable || outputLost || s.process.Context().Err() != nil {
 		s.owner.retire()
 		reusable = false
 		if reason == "" {
 			reason = "bridge_interrupted"
 		}
 	}
-	if !settlementReceived {
+	if !settlementReceived || !settlementConfirmed {
 		s.settlementErr = fmt.Errorf("claudesdk: native Turn settlement is unconfirmed")
 	}
 	close(s.settled)

@@ -23,6 +23,7 @@ type Session struct {
 	*connection
 	executor                *executor
 	settlement              agent.TurnSettlement
+	settlementErr           error
 	settled                 chan struct{}
 	inputDone               chan struct{}
 	outputCancel            context.CancelFunc
@@ -275,16 +276,21 @@ func (s *Session) call(method string, params any, result any, prompt bool) error
 		return err
 	}
 	if prompt && s.executor != nil {
+		// Serialize the admission check with the wire, but release the owner
+		// mutex before a pipe write so cancellation and Close can stop it.
+		s.connection.writeMu.Lock()
 		s.executor.mu.Lock()
 		s.mu.Lock()
 		cancelled := s.cancelled
 		s.mu.Unlock()
 		if cancelled || s.executor.closed {
 			s.executor.mu.Unlock()
+			s.connection.writeMu.Unlock()
 			return errTurnCancelled
 		}
-		err = s.write(rpcFrame{JSONRPC: "2.0", ID: json.RawMessage(id), Method: method, Params: raw})
 		s.executor.mu.Unlock()
+		err = json.NewEncoder(s.process.Stdin).Encode(rpcFrame{JSONRPC: "2.0", ID: json.RawMessage(id), Method: method, Params: raw})
+		s.connection.writeMu.Unlock()
 	} else {
 		err = s.write(rpcFrame{JSONRPC: "2.0", ID: json.RawMessage(id), Method: method, Params: raw})
 	}

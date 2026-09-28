@@ -140,8 +140,8 @@ func TestExecutorCancellationWithoutRootProofInvalidatesAndLateCancelCannotRetar
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	if err = second.Cancel(ctx); err == nil {
-		t.Fatal("unproven root settlement reported reusable cancellation")
+	if err = second.Cancel(ctx); err != nil {
+		t.Fatal("stopped nonreusable owner reported cancellation failure", err)
 	}
 	settlement, err := second.AwaitSettlement(ctx)
 	if err != nil || settlement.Reusable {
@@ -209,8 +209,8 @@ func TestExecutorStartFailureOwnership(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 		defer cancel()
 		settlement, err := turn.AwaitSettlement(ctx)
-		if err != nil || settlement.Reusable {
-			t.Fatal("exited process remained reusable", settlement, err)
+		if err == nil || settlement.Reusable {
+			t.Fatal("native exit lost its settlement error", settlement, err)
 		}
 		raw, _ := os.ReadFile(record)
 		if strings.Count(string(raw), "session/prompt\n") != 1 {

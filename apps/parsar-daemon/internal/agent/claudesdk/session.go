@@ -55,10 +55,11 @@ func NewFactory(config Config) agent.Factory {
 }
 
 type bridgeEvent struct {
-	TurnID   string `json:"turn_id"`
-	Reusable *bool  `json:"reusable"`
-	Reason   string `json:"reason"`
-	Protocol int    `json:"protocol"`
+	TurnID    string `json:"turn_id"`
+	Reusable  *bool  `json:"reusable"`
+	Confirmed *bool  `json:"confirmed"`
+	Reason    string `json:"reason"`
+	Protocol  int    `json:"protocol"`
 
 	Fact        json.RawMessage             `json:"fact"`
 	InputID     string                      `json:"input_id"`

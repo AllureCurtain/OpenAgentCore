@@ -63,8 +63,18 @@ func runPersistentExecutorHelper() {
 		} else {
 			encode(bridgeEvent{Type: "result", TurnID: active, SessionID: "native-persistent", Text: active})
 		}
-		yes := true
-		encode(bridgeEvent{Type: "turn_settled", TurnID: active, Reusable: &yes})
+		confirmed, reusable, reason := true, true, ""
+		switch os.Getenv("SDK_EXECUTOR_MODE") {
+		case "unknown_cancel", "queued_cancel":
+			confirmed, reusable, reason = false, false, "cancellation_unconfirmed"
+		case "confirmed_closed":
+			reusable, reason = false, "native_closed"
+		}
+		event := bridgeEvent{Type: "turn_settled", TurnID: active, Confirmed: &confirmed, Reusable: &reusable, Reason: reason}
+		if os.Getenv("SDK_EXECUTOR_MODE") == "missing_confirmation" {
+			event.Confirmed = nil
+		}
+		encode(event)
 		old, active = active, ""
 	}
 	for scanner.Scan() {
@@ -89,10 +99,16 @@ func runPersistentExecutorHelper() {
 			encode(bridgeEvent{Type: "turn_started", TurnID: active})
 			encode(bridgeEvent{Type: "input_ready", TurnID: active, SessionID: "native-persistent"})
 			encode(bridgeEvent{Type: "delta", TurnID: active, Delta: "partial"})
+			if os.Getenv("SDK_EXECUTOR_MODE") == "pending_function" {
+				encode(bridgeEvent{Type: "function_call", TurnID: active, Call: &proto.FunctionCallPayload{CallID: "call", Name: "lookup", Arguments: json.RawMessage("{}")}})
+			}
 			if len(command.Input) > 0 && len(command.Input[0].Content) > 0 && command.Input[0].Content[0].Text != nil && *command.Input[0].Content[0].Text == "wait" {
 				continue
 			}
 			settle(false)
+		case "steer":
+			// A full bridge write has happened, but no native input receipt exists.
+			encode(bridgeEvent{Type: "delta", TurnID: active, Delta: "steer-written"})
 		case "turn_cancel":
 			if active == command.TurnID {
 				settle(true)

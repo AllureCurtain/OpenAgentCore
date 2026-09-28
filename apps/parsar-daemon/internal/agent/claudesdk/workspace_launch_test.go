@@ -30,7 +30,7 @@ case "$1" in
     printf '%s\n' '{"type":"executor_ready","protocol":3}'
     IFS= read -r request
     printf '%s\n' '{"type":"result","turn_id":"run","session_id":"native","text":"completed"}'
-    printf '%s\n' '{"type":"turn_settled","turn_id":"run","reusable":true,"reason":""}' ;;
+    printf '%s\n' '{"type":"turn_settled","turn_id":"run","confirmed":true,"reusable":true,"reason":""}' ;;
 esac
 `
 	if err := os.WriteFile(config.Node, []byte(script), 0o700); err != nil {

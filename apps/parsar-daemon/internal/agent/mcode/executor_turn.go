@@ -45,6 +45,9 @@ func (s *Session) runExecutorTurn() {
 	if (s.cancelled && s.req.DisableSubagents) || s.inputUncertain || len(s.permissions) != 0 || len(s.questions) != 0 {
 		reusable = false
 	}
+	if s.inputUncertain && err == nil {
+		err = fmt.Errorf("mcode: native input outcome is unknown")
+	}
 	metadata := map[string]any{proto.DoneMetaAgentSessionType: "mcode", proto.DoneMetaAgentSessionID: s.sessionID}
 	s.outcome = proto.DonePayload{Content: s.content.String(), Metadata: metadata, SourceCompletedAtMS: s.rootCompletedAtMS}
 	outcome := s.outcome
@@ -69,6 +72,7 @@ func (s *Session) runExecutorTurn() {
 	}
 	s.executor.active = nil
 	s.settlement = agent.TurnSettlement{Reusable: reusable}
+	s.settlementErr = err
 	if !reusable {
 		s.settlement.Reason = "native Turn did not establish reusable settlement"
 	}
@@ -100,7 +104,7 @@ func (s *Session) AwaitSettlement(ctx context.Context) (agent.TurnSettlement, er
 	}
 	select {
 	case <-s.settled:
-		return s.settlement, nil
+		return s.settlement, s.settlementErr
 	case <-ctx.Done():
 		return agent.TurnSettlement{}, ctx.Err()
 	}
@@ -124,12 +128,12 @@ func (s *Session) cancelTurn(ctx context.Context) error {
 	// Cancellation releases event backpressure but does not cancel native owner
 	// context. ACP prompt completion and child/tool settlement decide reuse.
 	s.outputCancel()
+	e.mu.Unlock()
 	var err error
 	if first {
 		raw, _ := json.Marshal(map[string]string{"sessionId": s.sessionID})
 		err = s.writeContext(ctx, rpcFrame{JSONRPC: "2.0", Method: "session/cancel", Params: raw})
 	}
-	e.mu.Unlock()
 	if first {
 		if err == nil && s.req.StrictResume && !s.req.DisableSubagents {
 			err = s.stopSubagents(ctx)
@@ -142,12 +146,6 @@ func (s *Session) cancelTurn(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	settlement, err := s.AwaitSettlement(ctx)
-	if err != nil {
-		return err
-	}
-	if !settlement.Reusable {
-		return fmt.Errorf("mcode: cancellation did not establish reusable settlement")
-	}
-	return nil
+	_, err = s.AwaitSettlement(ctx)
+	return err
 }

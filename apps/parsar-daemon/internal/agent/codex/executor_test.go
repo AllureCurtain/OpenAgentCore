@@ -145,8 +145,18 @@ func TestExecutorStartErrorsRetainExactOwnership(t *testing.T) {
 			if turn == nil || err == nil {
 				t.Fatal("uncertain submission lost owner", err)
 			}
-			if awaitExecutorTurn(t, turn, out).Reusable {
-				t.Fatal("failed submission was reusable")
+			settlement, settleErr := turn.AwaitSettlement(t.Context())
+			if settleErr == nil || settlement.Reusable {
+				t.Fatal("failed submission fabricated native settlement", settlement, settleErr)
+			}
+			terminalCount := 0
+			for frame := range out {
+				if frame.Type == proto.TypeDone {
+					terminalCount++
+				}
+			}
+			if terminalCount != 1 {
+				t.Fatalf("failed submission terminal count = %d", terminalCount)
 			}
 		})
 	}
@@ -240,7 +250,10 @@ func TestExecutorCloseTerminatesAfterMissingCancellationTerminal(t *testing.T) {
 		t.Fatal("unresponsive native process or plan still owned after Close")
 	}
 	select {
-	case <-cancelled:
+	case cancelErr := <-cancelled:
+		if cancelErr == nil {
+			t.Fatal("resource cleanup fabricated native cancellation confirmation")
+		}
 	case <-retry.Done():
 		t.Fatal("original cancellation waiter was abandoned")
 	}
