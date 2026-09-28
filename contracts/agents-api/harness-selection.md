@@ -55,10 +55,13 @@ another harness does not choose another image or backend; the selected Runtime
 image must contain and qualify each enabled harness. Capability checks still
 apply.
 
-Node resource/Runtime edits still require no reset and verified zero held resources.
-E2B same-team changes apply online with immutable per-allocation generations. Changing provider requires explicit durable reset, confirmed
-cleanup and a new setup at the resulting generation. Existing Sessions never move
-providers. See the [deployment procedure](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset).
+Same-provider node resource/Runtime edits advance the target online without an
+execution drain or reenrollment. Version 2 nodes prepare independently; retained
+allocations keep their generation, and a qualified older serving generation can
+still accept new Sessions. E2B same-team changes also apply online with immutable
+per-allocation generations. Changing provider requires explicit durable reset,
+confirmed cleanup and a new setup at the resulting generation. Existing Sessions
+never move providers. See the [deployment procedure](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset).
 
 Each engine has at most one deployment default model provider, stored encrypted in
 PostgreSQL and managed with the Core key in Web or through

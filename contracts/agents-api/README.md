@@ -586,9 +586,9 @@ tool-output deltas remain unsupported. Tool output is visible to the Session's
 authenticated tenant and may include the command's or tool's own diagnostic text.
 
 Reads use the durable index without reconstructing native journals. Existing
-indexed history is preserved. Migration 15 requires old unindexed archives to be
-prepared by release `906069e` before upgrade; see the
-[upgrade procedure](../../services/agents-api/README.md#upgrading-archived-item-history).
+indexed history is preserved. Migration 15 refuses unindexed historical Turns.
+Historical database conversion is unsupported; preserve the old data and install
+separately. See [historical Item storage](../../services/agents-api/README.md#historical-item-storage).
 The retired archive format could not recover unrecorded message boundaries or
 outcomes; those limitations remain in already indexed historical Items.
 Other native variants, full reasoning coverage and Items mutation remain gaps.
@@ -603,7 +603,7 @@ Pagination orders by first-observation timestamp, then the Item's immutable
 Session position and public ID. New Items retain observation order even when
 timestamps match. The index also stores a zero-based output index per Turn for
 streaming; inputs do not consume it. Updates and retries do not move Items
-or change output indexes. Existing indexed history retains its pre-upgrade
+or change output indexes. Existing indexed history retains its recorded
 deterministic order rather than guessing an unavailable original source order.
 
 ### No-environment execution
