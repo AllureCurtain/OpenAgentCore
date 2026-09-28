@@ -1976,6 +1976,17 @@ Docker's `unless-stopped` restart loop. Rerunning the installer with the same ke
 rotated replaces it in the same stopped container through the launcher's
 `replace-credential`, which checks the container's labels, name, volumes and
 private directories; never relaunch or adopt history to recover a credential.
+Core-key executor credential lists expose a required connection observation with
+never_enrolled, connected or disconnected status, immutable bound key identity,
+enrollment time and last authenticated heartbeat time. Read credential metadata
+and binding facts in a closed read-only snapshot, then reuse runtimeenrollment's
+current authority and actual gateway peer checks. Recheck executor and device
+authority after reading the peer; rotation, revocation or Environment retirement
+must not inherit a former key's connected state. No gateway means not connected,
+never an authentication bypass. Known authority loss is disconnected; storage
+errors remain errors. Keep digests/device IDs internal and public /v1 unchanged.
+Connection timestamps are history, not execution/native/model readiness.
+
 Self-hosted installation confirms connection through the private daemon transport
 using only its restricted executor credential. The read checks the exact live
 Environment/key binding and current authenticated connection; it never enrolls,

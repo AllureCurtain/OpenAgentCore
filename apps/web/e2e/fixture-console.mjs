@@ -431,7 +431,10 @@ async function executorCredentialRoute(request, response, projectId, environment
   if (!session) return error(response, 404, "No such self-hosted environment.", "not_found_error");
   if (!state.executorCredentials.has(environmentId)) state.executorCredentials.set(environmentId, []);
   const credentials = state.executorCredentials.get(environmentId);
-  if (!keyId && request.method === "GET") return send(response, 200, { data: credentials.map((entry) => ({ ...entry })) });
+  if (!keyId && request.method === "GET") return send(response, 200, {
+    data: credentials.map((entry) => ({ ...entry })),
+    connection: { status: "never_enrolled", bound_key_id: null, enrolled_at: null, last_seen_at: null },
+  });
   if (!keyId && request.method === "POST") {
     // As Core, a body that is not JSON is invalid input like any other: 400 with one message.
     const input = await body(request).catch(() => null);
@@ -611,4 +614,3 @@ http.createServer(async (request, response) => {
     error(response, 500, String(caught));
   }
 }).listen(port, "127.0.0.1", () => console.log(`Console acceptance fixture on http://127.0.0.1:${port}`));
-
