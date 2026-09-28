@@ -1003,5 +1003,11 @@ class NodePrerequisiteTests(unittest.TestCase):
                 installer.micro_home("94be54a1-138c-4f30-bc87-b13686272dbe")
 
 
+class UnsupportedNodeUpdateTests(unittest.TestCase):
+    def test_update_refuses_without_host_operations(self):
+        with self.assertRaisesRegex(installer.InstallError, "not supported;.*reinstall"):
+            installer.main(["--installation-id", "00000000-0000-0000-0000-000000000001", "--update"])
+
+
 if __name__ == "__main__":
     unittest.main()

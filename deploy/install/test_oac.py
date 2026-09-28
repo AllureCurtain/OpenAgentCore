@@ -53,6 +53,27 @@ class OacTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
+    def test_old_paired_core_refuses_apply_without_state_writes(self):
+        self.host.remote_core["https://core.example"] = (200, self.host.core_installation_id)
+        self.install("web-only", **{"web.core_url": "https://core.example"})
+        oac_cli.create_private(self.root / "secrets/core.key.new", "interrupted rotation key")
+        before = {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
+        self.host.remote_core["https://core.example"] = (404, None)
+        with self.assertRaisesRegex(oac_cli.OacError, "not supported;.*reinstall"):
+            self.apply()
+        self.assertEqual(before, {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*") if p.is_file()})
+        self.assertEqual(self.host.recreated, [])
+
+    def test_foreign_operator_refuses_all_mutations_before_lock_creation(self):
+        self.install()
+        (self.root / ".oac.lock").unlink()
+        before = {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*") if p.is_file()}
+        with mock.patch.object(oac_cli, "SOURCE_COMMIT", "b" * 40):
+            for operation in (oac_cli.start, oac_cli.stop, oac_cli.apply, oac_cli.rotate_core_key):
+                with self.subTest(operation=operation.__name__), self.assertRaisesRegex(oac_cli.OacError, "not supported;.*reinstall"):
+                    operation(self.root)
+        self.assertEqual(before, {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob("*") if p.is_file()})
+
     def install(self, mode="all", native=False, **values):
         if native:
             values["ports.database"] = 15432

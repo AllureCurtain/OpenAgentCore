@@ -105,7 +105,7 @@ for file in install.sh install.py configuration.py config_model.py config.schema
 done
 # Web owns the Standard sandbox sizes; the installer's first deployment uses this copy.
 cp apps/web/src/features/sandbox/standard-sizes.json "$bundle/standard-sizes.json"
-python3 scripts/core-distribution-manifest.py bootstraps "$bundle" "$source_epoch"
+python3 scripts/core-distribution-manifest.py bootstraps "$bundle" "$source_epoch" "$revision"
 # The bundled docs (BUNDLED_DOCS); links that leave them point at this commit on GitHub.
 python3 scripts/core-distribution-manifest.py docs . "$bundle" "$revision"
 mkdir -p "$bundle/runtime"

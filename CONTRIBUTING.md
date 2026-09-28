@@ -1860,27 +1860,21 @@ install facts live in tool-written `state.json`. State format 2 uses an `oac-` C
 project; config.json's independent schema format stays 1. The operator command is
 `oac` (`oac_cli.py`, packaged as `oac.pyz`), with default installation directory
 `~/.oac/core`, private `~/.oac`, generated `x-oac` annotations and `.oac.lock`.
-Only `install.sh --convert` reads pre-rename state. Its `rename.py` coordinator first
-validates the source, target, bundle and generated files. The previous Core must
-already be running and readable: do not start an unknown provider to inspect it.
-Keep old-release maintenance, zero-resource and no-registered-node preflight.
-Refuse E2B conversion before any conversion mutation, also on journal resume after
-the original source-bundle guard. Its safe Core-owned upgrade preparation remains
-a release blocker; never patch execution tables or change ordinary migration's
-resume decision to work around it. One explicit confirmation covers legacy layout
-and rename. Never delete a target volume/container without recorded ownership;
-copy the stopped database, retain the old volume and journal across the atomic move.
-Preserve ports, secrets, installation identity and history. Resume only with the
-recorded bundle. The new-Core node-provider leg requires matching identity/provider,
-reset null and zero resources; send one expected-generation PUT of exact bundle
-Runtime and prior resources. Read back exact generation/specification. Reconcile an
-uncertain write through reads, never blind replay or the retired maintenance PATCH.
-Keep native stop proof and interrupted-copy recovery. Node/self-hosted installations
-are outside this converter.
+The project has no historical installation compatibility or in-place version upgrade
+contract. Install only into an empty directory, or repair the exact same source
+revision. Refuse old formats, conversion journals and different revisions before
+installation mutation; retain their data and direct operators to reinstall separately.
+The installer and every mutating `oac` command share the stable `.oac.lock` inode.
+The installer owns this lock across creation, payload/native/launcher repair and
+apply, invoking the already-locked apply implementation without nested locking.
+Never unlink or replace the lock, including after an interrupted fresh install.
+Current-version interrupted apply and rotation retain their existing recovery path.
+The packaged `oac.pyz` entrypoint embeds the build source revision and checks it
+against the existing `state.json.source_commit`; this adds no installation state
+format. Node `--update` is refused; runtime generation operations are unchanged.
  Core process settings use `OAC_*`, Web settings use `OAC_WEB_*`, and shared Go
 logging uses `OAC_LOG_*`. Retired settings fail startup even when empty or when
-the new name is also set; report every matching name without values. Only the
-explicit installer conversion reads pre-rename files. Core and operator executables
+the new name is also set; report every matching name without values. No supported installation entrypoint converts pre-rename files. Core and operator executables
 are `oac-core`, `oac-core-migrate`, `oac-core-device` and
 `oac-core-environment-key`; Web is `oac-web`, and the Core-host E2B helper is
 `oac-e2b-provider` under `/opt/oac/e2b` in the image.
@@ -1896,6 +1890,10 @@ Administrator-issued enrollment approves capacity (default two active/eight
 retained); a node cannot supply or overwrite those limits. Downloaded specification
 copies remain validated against the existing database-owned resources/Runtime
 contract.
+
+The E2B template builder assigns traversable modes only to synthetic public archive
+ancestors. Runtime file and directory permissions, private build contexts, key inputs
+and output umask remain unchanged, including when invoked under umask 077.
 
 The installer packages Core and the Web console together,
 with independent `--core-only` and `--web-only` modes. `site/` is the public static
@@ -2025,7 +2023,7 @@ else with `--web-only`; `docker` prints its weaker isolation and needs a y/N
 confirmation or `--accept-docker-risks` before anything is created) is a one-time
 install action: once the services are healthy, the
 installer POSTs `/core/v1/sandbox/deployment` as Web's setup would, and never on a
-repair or conversion. It is not written to `config.json`; PostgreSQL owns the
+repair. It is not written to `config.json`; PostgreSQL owns the
 selection. E2B needs a non-loopback HTTPS `public_url`, `--e2b-api-key-file` and
 `--e2b-template`, and is refused before anything is installed. A loopback Docker or
 microsandbox selection is saved, but no node can serve it until `public_url` is
@@ -3796,12 +3794,12 @@ rejects renamed settings before any subcommand and reports replacements without
 values; the separate Parsar product integration settings remain unchanged.
 Environment `env` reserves every `OAC_` name. Provider ownership labels use
 `io.oac.*`, and E2B metadata uses `oac_*`; neither accepts old labels as a fallback.
-Before upgrading, use the previous release to drain every hosted allocation,
-including suspended compute and cleanup still awaiting confirmation. Migration
-000078 atomically checks the drain and rewrites the saved microsandbox reference
-to `oac-runtime@sha256:`; its rollback has the same drain requirement. Session
-history and recorded node identities are never rewritten. Replace old E2B
-templates with this release's template builder before resuming admission.
+Historical Runtime and project-version upgrades are not supported. Preserve older
+installations, Runtime files, provider resources and Session history; install the
+current release separately. Use this release's template builder for new E2B
+templates. Landed migration files and historical acceptance evidence remain intact
+as repository history; they do not establish a supported upgrade procedure. Normal
+current-version database initialization still uses the ordinary migration runner.
 
 The dormant Pi adapter retains its `parsar` provider slug because the separate
 Parsar product pins model selections to that external identity. This is a product
@@ -3824,7 +3822,8 @@ Go module and source directory paths, npm and Cargo package identities, public
 unchanged. Persisted credential encryption domains and native-session resume keys
 also remain stable so existing data can be decrypted and Sessions can resume.
 Conversion inputs, retirement diagnostics and historical evidence must still name
-the identifiers they reject or migrate; current examples use the new names.
+the identifiers they reject; historical migration files retain their original
+identifiers as evidence, while current examples use the new names.
 
 
 Core administration error details are scoped by the `/core/v1` router writer mark,

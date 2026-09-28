@@ -243,7 +243,9 @@ OAC_CLI_MODULES = ("oac_cli.py", "config_model.py", "config.schema.json", "confi
                   "native_service.py", "distribution.py", "node_spec.py")
 
 
-def bootstraps(bundle, epoch):
+def bootstraps(bundle, epoch, revision):
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("Invalid operator source revision")
     bundle = pathlib.Path(bundle)
     for source, output in (("node_install.py", "node-install.pyz"),
                            ("self_hosted_install.py", "self-hosted-install.pyz")):
@@ -261,7 +263,7 @@ def bootstraps(bundle, epoch):
     with tempfile.TemporaryDirectory(dir=bundle.parent) as directory:
         for name in OAC_CLI_MODULES:
             shutil.copyfile(bundle / name, pathlib.Path(directory) / name)
-        (pathlib.Path(directory) / "__main__.py").write_text("import oac_cli\n\noac_cli.entry()\n")
+        (pathlib.Path(directory) / "__main__.py").write_text(f"import oac_cli\n\noac_cli.SOURCE_COMMIT = {revision!r}\noac_cli.entry()\n")
         for path in pathlib.Path(directory).iterdir():
             os.utime(path, (int(epoch), int(epoch)))
         zipapp.create_archive(directory, bundle / "oac.pyz", interpreter="/usr/bin/env python3", compressed=True)

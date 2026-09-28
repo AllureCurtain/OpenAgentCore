@@ -29,6 +29,11 @@ import configuration
 import native_service
 
 
+SOURCE_COMMIT = None  # Set by the packaged entrypoint from its build revision.
+UNSUPPORTED_VERSION = ("This installation version or historical conversion is not supported; "
+                       "preserve its data and reinstall into a new empty directory. Nothing was changed.")
+
+
 class OacError(Exception):
     pass
 
@@ -111,8 +116,9 @@ def load_config(root):
 
 def load_state(root):
     state = json.loads(read_private(root / "state.json", "state.json"))
-    if state.get("format") != 2:
-        raise OacError("state.json has an unknown format; use the oac command of this installation's release")
+    if (state.get("format") != 2 or state.get("converted_from") or state.get("renamed_from")
+            or SOURCE_COMMIT is not None and state.get("source_commit") != SOURCE_COMMIT):
+        raise OacError(UNSUPPORTED_VERSION)
     return state
 
 
@@ -122,12 +128,16 @@ def save_state(root, state):
 
 @contextlib.contextmanager
 def locked(root):
+    if (root / "state.json").exists():
+        load_state(root)
     descriptor = os.open(root / ".oac.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise OacError("Another oac command is running for this installation") from None
+        if (root / "state.json").exists():
+            load_state(root)
         yield
     finally:
         os.close(descriptor)
@@ -467,8 +477,8 @@ def check_paired_core(root, config, state, previous, args, interactive, out):
         out("Warning: Core rejects this Web host's Core key; the key is out of date. "
             "Copy secrets/core.key from the Core host, then run oac apply.")
     elif status == 404:
-        out("Note: the paired Core runs an earlier release without /core/v1/installation. Convert or upgrade the "
-            "Core host, then run oac apply here to record which Core Web is paired with.")
+        raise OacError("The paired Core version is not supported; preserve its data and reinstall "
+                       "the current release separately. Nothing was applied.")
     if status != 200:
         return state.get("core_installation_id")
     recorded = state.get("core_installation_id")
@@ -497,9 +507,6 @@ def _apply(root, args, discard_edits, start, interactive, out, rollback=True, re
     state = load_state(root)
     check_fixed(config, state)
     check_secrets(root, config, state)
-    if not args.dry_run:
-        # A rotation that stopped before using its new key leaves only this file.
-        (root / "secrets/core.key.new").unlink(missing_ok=True)
     rendered, disk, previous = render_now(root, config, state)
     edited = edited_files(state, disk, rendered)
     if edited and not discard_edits:
@@ -546,6 +553,9 @@ def _apply(root, args, discard_edits, start, interactive, out, rollback=True, re
     if args.dry_run:
         out("Dry run: nothing was changed.")
         return
+    if not args.dry_run:
+        # A rotation that stopped before using its new key leaves only this file.
+        (root / "secrets/core.key.new").unlink(missing_ok=True)
     if not (changed or removed or restarts or edited):
         state = dict(state, core_installation_id=core_installation_id)
         if record_digests(state, rendered.files) != load_state(root):
@@ -675,7 +685,7 @@ def status(root, out=print):
                 "from the Core host, then run oac apply.")
             healthy = False
         elif code == 404:
-            out("Paired Core: runs an earlier release without /core/v1/installation; upgrade or convert the Core host")
+            out("Paired Core: runs an earlier release without /core/v1/installation; historical versions are unsupported; reinstall the Core separately")
         elif code != 200:
             out("Paired Core: unreachable at " + config["web"]["core_url"])
             healthy = False
@@ -792,8 +802,6 @@ def main(argv=None, root=None, out=print):
     if not (root / "state.json").exists():
         raise OacError(f"{root} is not an installation directory; run the oac command inside it")
     state = load_state(root)
-    if state.get("renamed_from") and not state["renamed_from"].get("finished"):
-        raise OacError(f"Conversion is unfinished; rerun ./install.sh --convert --install-dir {root}")
     if args.command == "apply":
         apply(root, dry_run=args.dry_run, yes=args.yes, discard_edits=args.discard_edits,
               confirm_public_url_change=args.confirm_public_url_change, out=out)

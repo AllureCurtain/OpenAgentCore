@@ -161,159 +161,26 @@ not prove that all provider resources were reclaimed.
 
 ### Upgrade an installation
 
-| Installation | How to upgrade |
-| --- | --- |
-| Before the OpenAgentCore rename: `state.json` format 1 and a `parsar-…` project, or a legacy `installation.json` layout | [Convert it](#convert-an-earlier-installation) with this bundle |
-| OpenAgentCore, same release | Rerun `./install.sh --install-dir DIR` from the same bundle to repair it |
-| OpenAgentCore, another release | General upgrades are not supported yet; keep the installed release |
+In-place version upgrades, downgrades and historical conversions are not supported.
+Keep existing data and installations intact; install the new release into a new,
+empty directory. There is no automatic data migration or history conversion.
 
-There is no downgrade after database migrations. Back up before converting.
+Repair the current release with `./install.sh --install-dir DIR` from the exact
+same bundle. Repair preserves identity, settings, secrets and history. The installer
+and mutating `oac` commands use the same installation lock, including during repair
+and interrupted apply recovery. If another command owns it, retry after it finishes.
+Never remove or replace `.oac.lock` to bypass a busy installation.
 
 ### Convert an earlier installation
 
-Use the old Web and old nodes to drain first: enable maintenance, archive hosted
-Sessions until allocations and pending work are both zero, remove every node on the
-Nodes page, and run each node's uninstall command from the previous release.
-Suspended sandboxes, retained snapshots and uncertain cleanup still count. Archived
-Sessions retain their history but cannot resume their old sandbox. Self-hosted
-executors keep running and are not converted.
-
-Extract the new bundle and run:
-
-```sh
-./install.sh --convert
-```
-
-Without `--install-dir`, this converts `~/.parsar/core` into `~/.oac/core`, or resumes
-an unfinished conversion already moved there. An explicit custom directory converts
-in place. `--yes` skips the one confirmation; `--public-url` only settles a legacy
-layout's conflicting public addresses. Convert the Core host before Web-only hosts.
-The latter rename their directory, project and payload without copying a database.
-
-Preflight reports generated-file edits, invalid configuration, destination conflicts,
-insufficient database-copy space, and every available drain blocker. It reads the
-old Core with its Core key. Start the previous release yourself before conversion:
-a stopped or unreadable Core is refused without starting services. This is required
-to identify the provider before any conversion writes. E2B conversion is currently
-refused, including interrupted journal resumes; keep the previous release until
-the safe Core-owned E2B upgrade transition is available. No installation conversion
-happens before confirmation.
-
-The confirmation prints the backup command for the old project and the directory
-and secret moves. For a config.json installation, take the backup before confirming:
-
-```sh
-docker compose -f "$HOME/.parsar/core/generated/compose.json" exec -T database \
-  pg_dump -U agents_api agents_api > oac-backup.sql
-```
-
-A legacy installation uses `compose.json` at the directory's top level instead.
-Its supported settings move into config.json and secrets move into secrets/ in the
-same run, with no intermediate upgrade or second confirmation. Unknown legacy files
-are reported and left in place; unknown settings and edited derived values refuse.
-
-Conversion stops the old services, copies the stopped database into
-`oac-<same suffix>_database`, removes the old containers and network, and moves the
-default directory atomically. It retains `parsar-<suffix>_database` as a backup.
-An interrupted copy is restarted only after verifying that its target volume and
-copy container belong to this conversion. A foreign same-name resource is refused.
-
-The new state format is 2; config.json's schema format remains 1. Ports, public URL,
-secrets, Core key, installation ID and database contents are preserved. The old
-`parsar` path becomes a stub naming the new `oac` command. New services use `OAC_*`
-settings and `io.oac.inputs` labels. Docker and microsandbox deployments retain
-their resources and replace their Runtime with the bundle's exact release through
-an expected-generation same-provider PUT. New Core must report reset null and zero
-held resources; conversion reads back the exact specification and generation.
-Ordinary migration retires old maintenance and resumes admission, which is why E2B
-conversion remains blocked until its safe upgrade preparation is implemented.
-
-Rerun `./install.sh --convert` with the **same bundle** after any interruption,
-including after the directory move. For a custom directory, repeat `--install-dir`.
-The journal rejects a different bundle or installation identity. It verifies Project
-identities and service health before recording completion. Check retained history,
-then add new nodes through **Nodes → Add node**. Keep the old volume until this
-verification is complete; the final output names its exact `docker volume rm`
-command. Never remove the new volume or use a Docker-wide cleanup.
-
-Before the directory move, the old command can restart the old services against the
-untouched old volume. After the move, finish by rerunning conversion. Once new Core
-migrations run, restoring the old release requires the old bundle, old installation
-files and the pre-conversion backup or retained old volume; this is not a downgrade
-of the new database.
+Historical conversion is not supported. `--convert` refuses without changing the
+installation. Preserve its files and data, and reinstall separately.
 
 ### Upgrade notes
 
-These names are retired. Core and Web refuse to start while a retired setting is
-present, and the installers reject retired flags and variables; each error names the
-replacement:
-
-| Retired | Replacement | Where |
-| --- | --- | --- |
-| `AGENTS_API_EXECUTION_OPTIONS_FILE` | Default models, set per harness in Web (**System**, **Default model**) or with `PUT /core/v1/harnesses/{harness}/model-provider` | `config/core.env`. `--convert` does not carry it over; it leaves the file, which may hold model keys, and reports it. Delete the file once the defaults are set |
-| `AGENTS_API_DAEMON_WS_URL` (a `wss://…/api/v1/agent-daemon/ws` URL) | `OAC_PUBLIC_URL` (the origin, such as `https://core.example`), or `public_url` in `config.json` | `config/core.env` |
-| `AGENTS_API_CONFIG_FILE` | None; delete the line | `config/core.env` |
-| `AGENTS_API_MANAGED_RUNTIMES_FILE` | The sandbox deployment in the database, set in Web | `config/core.env`; see [older file-managed installations](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#older-file-managed-installations) |
-| `admin/sandbox-admin.key`, `admin/digests.json` | `admin/core.key`, `admin/core-key-digests.json` (conversion then moves them to `secrets/` and `generated/`) | Files and their `compose.json` mounts |
-| `AGENTS_API_SANDBOX_ADMIN_DIGESTS_FILE` | `OAC_CORE_KEY_DIGESTS_FILE` | `config/core.env` |
-| `CORE_CONSOLE_ADMIN_TOKEN_FILE`, `install.sh --admin-token-file` | `OAC_WEB_CORE_KEY_FILE`, `--core-key-file` | Web environment; installer flag |
-| `CORE_CONSOLE_AUTH_MODE`, `CORE_CONSOLE_STATE_DIR`, `CORE_CONSOLE_PASSWORD_FILE` | None: Web has no accounts or passwords; sign in with the Core key | Web environment, with their `state/console` and `config/console.password` mounts |
-| `install.sh --sandbox-provider`, `--provider` | `install.sh --sandbox`; add the Core host as a node with Add node | Installer flags |
-| `install.sh --status`, `--stop` | `oac status`, `oac stop` | Installer flags |
-| `PARSAR_NODE_ENROLLMENT_TOKEN` | The token on standard input with `--enrollment-token-stdin`, as Web's Add node command passes it | Node installer; it refuses the variable |
-
-The release also renames the following operator identities. Old process settings
-are refused even when empty; errors name all applicable replacements without values.
-These historical names are inputs only to conversion and retirement diagnostics.
-
-| Before | OpenAgentCore |
-| --- | --- |
-| `AGENTS_API_*` process settings | `OAC_*`; `AGENTS_API_ENGINE` becomes `OAC_DEFAULT_HARNESS`, `AGENTS_API_SANDBOX_INSTALLATION_ID` becomes `OAC_INSTALLATION_ID`, and `AGENTS_API_RUNTIME_HISTORY_FILE` becomes `OAC_HISTORY_SETTINGS_FILE` |
-| `CORE_CONSOLE_*` | `OAC_WEB_*`; `CORE_CONSOLE_UPSTREAM` becomes `OAC_WEB_UPSTREAM` |
-| `PARSAR_LOG_*` | `OAC_LOG_*` |
-| Runtime `PARSAR_*`, including `PARSAR_HOME` | `OAC_RUNTIME_*`, including `OAC_RUNTIME_HOME`; separate Parsar-product hooks are unchanged |
-| Developer/build variables and test database/SDK variables | `OAC_DEV_*` and `OAC_TEST_*`; `OAC_TEST_DATABASE_URL` selects the dedicated test database |
-| `~/.parsar/core`, `parsar`, `parsar_cli.py`, `parsar.pyz`, `.parsar.lock` | `~/.oac/core`, `oac`, `oac_cli.py`, `oac.pyz`, `.oac.lock` |
-| `parsar-<hex>` project, containers, default network and database volume | `oac-<same hex>`; the old database volume is retained as a backup |
-| `parsar-<hex>-core.service`, `PARSAR_INPUTS`, `io.parsar.inputs`, `x-parsar`, `/run/parsar` | `oac-<hex>-core.service`, `OAC_INPUTS`, `io.oac.inputs`, `x-oac`, `/run/oac` |
-| `parsar-core-<commit>-linux-amd64` bundle and artifact prefix | `oac-<commit>-linux-amd64` |
-| `agents-api`, `agents-api-migrate`, `agents-api-device`, `agents-api-environment-key`, `core-console` | `oac-core`, `oac-core-migrate`, `oac-core-device`, `oac-core-environment-key`, `oac-web` |
-| `agents-api-e2b-provider`, `/opt/parsar/e2b` | `oac-e2b-provider`, `/opt/oac/e2b` |
-| `parsar-daemon`, Runtime `agents-api-*` helpers | `oac-daemon`, `oac-*` helpers |
-| `~/.parsar/parsar-daemon`, `/home/runtime/.parsar`, `/run/parsar/daemon-suspend.json` | `~/.oac/daemon`, `/home/runtime/.oac`, `/run/oac/daemon-suspend.json` |
-| `parsar-core-runtime@sha256:…`, `agents-runtime-<hex>` | `oac-runtime@sha256:…`, `oac-runtime-<hex>` |
-| Runtime `io.parsar.agents-api.*`, microsandbox `io.parsar.*`, `parsar.runtime.placement` | `io.oac.*`, `io.oac.*`, `io.oac.placement` |
-| E2B `parsar_*` metadata, `/opt/parsar-e2b`, `/root/.parsar/e2b`, `/etc/parsar-runtime-env.json` | `oac_*`, `/opt/oac-e2b`, `/root/.oac/e2b`, `/etc/oac-runtime-env.json` |
-| Model-visible `parsar_workspace`, `parsar_worker`, `parsar_root`, `parsar/subagents`, Codex provider `parsar` | `oac_workspace`, `oac_worker`, `oac_root`, `oac/subagents`, provider `oac` |
-
-The PostgreSQL database and role remain `agents_api`. Public API routes, Go module
-paths, source directory names and npm package names are unchanged. Historical
-Session content is never rewritten. Nodes and self-hosted executors require their
-own [node](nodes.md) and [self-hosted](self-hosted.md) procedures; the Core converter
-does not rename their stores or adopt their resources.
-
-Before converting, rename or remove only the names from before the Core key:
-`admin/sandbox-admin.key`, `admin/digests.json`, `AGENTS_API_SANDBOX_ADMIN_DIGESTS_FILE`
-and the retired `CORE_CONSOLE_*` settings. Leave `AGENTS_API_DAEMON_WS_URL`,
-`AGENTS_API_CONFIG_FILE` and `AGENTS_API_EXECUTION_OPTIONS_FILE` to `--convert`, which
-maps or reports them. Don't add `AGENTS_API_PUBLIC_URL` by hand to a legacy installation: when it is present,
-conversion takes it as the address Core uses and skips the check against the sandbox
-deployment's Core address that keeps existing nodes bound. Hosted and self-hosted
-Sessions that relied on the retired options file
-have no model provider of their own and can't start new work after the upgrade. Count
-them before converting, from the new bundle:
-
-```sh
-python3 model_provider_sessions.py --install-dir "$HOME/.parsar/core"
-```
-
-Recreate them with `x_agents_core.model_provider` or an Agent that has one saved.
-
-The deployment no longer stores a Core address; nodes keep the one they enrolled with.
-For a Core you run without the installer, read `GET /core/v1/sandbox/deployment` with
-the Core key before upgrading and set `OAC_PUBLIC_URL` to its `core_url`; with
-any other value, every existing node counts as bound to another address and must be
-added again.
+Retired process settings remain rejected. Configure a fresh installation using the
+current [configuration reference](../configuration.md); do not copy old generated
+files into it.
 
 #### Node connections at /api/v1
 

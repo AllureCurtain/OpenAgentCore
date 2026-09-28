@@ -1454,7 +1454,7 @@ def main(argv=None):
     parser.add_argument("--generation-action", choices=("prepare", "collect"), help=argparse.SUPPRESS)
     parser.add_argument("--generation", type=int, help=argparse.SUPPRESS)
     parser.add_argument("--specification-digest", help=argparse.SUPPRESS)
-    parser.add_argument("--update", action="store_true", help="Update this node program while preserving its identity and Runtime state")
+    parser.add_argument("--update", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--uninstall", action="store_true", help="Remove this host's node after it was removed on the Nodes page")
     parser.add_argument("--force", action="store_true", help="With --uninstall: skip the Core check, for a Core that no longer exists")
     args = parser.parse_args(argv)
@@ -1463,8 +1463,9 @@ def main(argv=None):
                        "--enrollment-token-stdin.\n")
     if str(uuid.UUID(args.installation_id)) != args.installation_id:
         raise InstallError("Installation ID must be a canonical UUID")
-    if args.update and (args.uninstall or args.force or args.enrollment_token_stdin or args.generation_action):
-        parser.error("--update cannot enroll, uninstall, force removal, or execute a generation action")
+    if args.update:
+        raise InstallError("Node version updates are not supported; preserve the existing state and reinstall "
+                           "separately. Nothing was changed.")
     if args.generation_action:
         if args.generation is None or not 1 <= args.generation <= 9223372036854775807 or not re.fullmatch(r"[0-9a-f]{64}", args.specification_digest or ""):
             parser.error("Invalid generation authorization")
@@ -1485,9 +1486,6 @@ def main(argv=None):
         parser.error("--source-url (or --bundle) and --core-url are required")
     if args.bundle is not None and (not args.bundle.is_absolute() or args.bundle.resolve() != args.bundle):
         raise InstallError("Local bundle must be an absolute directory without symlinks")
-    if args.update:
-        node_update.update(args, sys.modules[__name__])
-        return
     token = read_token(args)
     if len(token) > 4096 or any(c.isspace() for c in token):
         raise InstallError("A valid one-time enrollment credential is required")

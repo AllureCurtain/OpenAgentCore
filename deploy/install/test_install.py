@@ -20,6 +20,8 @@ import install
 import node_spec
 from installer_fakes import MANIFEST, STANDARD_SIZES, FakeHost, make_bundle, run_installer
 
+REAL_RUN = subprocess.run
+
 BUILD = "base:0f6c1e8e-7d3a-4b8e-9a51-2b7f7f0c9d11"
 
 
@@ -53,6 +55,82 @@ class InstallerTests(unittest.TestCase):
         path.write_text(contents)
         path.chmod(mode)
         return path
+
+    def test_install_and_repair_hold_same_lock_before_all_writes(self):
+        original_create = install.create
+        original_finish = install.finish
+        inodes = []
+
+        def assert_busy():
+            inodes.append((self.root / ".oac.lock").stat().st_ino)
+            probe = "import fcntl,sys; f=open(sys.argv[1], 'r+');\ntry: fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)\nexcept BlockingIOError: sys.exit(73)"
+            result = REAL_RUN([sys.executable, "-c", probe, str(self.root / ".oac.lock")],
+                                    capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 73, result.stderr)
+            with self.assertRaisesRegex(install.oac_cli.OacError, "Another oac"):
+                self.install()
+            with self.assertRaisesRegex(install.oac_cli.OacError, "Another oac"):
+                with install.oac_cli.locked(self.root):
+                    self.fail("A second operation acquired the installation lock")
+
+        def create(*args, **kwargs):
+            assert_busy()
+            return original_create(*args, **kwargs)
+
+        def finish(*args, **kwargs):
+            assert_busy()
+            return original_finish(*args, **kwargs)
+
+        with mock.patch.object(install, "create", create), mock.patch.object(install, "finish", finish):
+            self.install()
+            before = self.document("state.json")
+            keys = {p.name: p.read_bytes() for p in (self.root / "secrets").iterdir()}
+            self.install()
+        self.assertEqual(len(set(inodes)), 1)
+        self.assertEqual(before["installation_id"], self.document("state.json")["installation_id"])
+        self.assertEqual(keys, {p.name: p.read_bytes() for p in (self.root / "secrets").iterdir()})
+
+    def test_repair_contention_changes_no_installation_bytes(self):
+        self.install()
+        before = self.snapshot()
+        with install.oac_cli.locked(self.root):
+            with self.assertRaisesRegex(install.oac_cli.OacError, "Another oac"):
+                self.install()
+        self.assertEqual(before, self.snapshot())
+
+    def test_interrupted_finish_repairs_with_original_identity_and_lock(self):
+        with mock.patch.object(install, "prepare_node_payload", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.install()
+        before = self.document("state.json")
+        inode = (self.root / ".oac.lock").stat().st_ino
+        secret = (self.root / "secrets/core.key").read_bytes()
+        self.install()
+        self.assertEqual(before["installation_id"], self.document("state.json")["installation_id"])
+        self.assertEqual(inode, (self.root / ".oac.lock").stat().st_ino)
+        self.assertEqual(secret, (self.root / "secrets/core.key").read_bytes())
+
+    def test_web_repair_refuses_old_paired_core_before_payload_or_state_writes(self):
+        self.host.remote_core["https://core.example"] = (200, self.host.core_installation_id)
+        self.install("--web-only", "--core-url", "https://core.example", "--core-key-file", self.key_file())
+        before = self.snapshot()
+        self.host.remote_core["https://core.example"] = (404, None)
+        with self.assertRaisesRegex(install.InstallError, "not supported;.*reinstall"):
+            self.install()
+        self.assertEqual(before, self.snapshot())
+
+    def test_different_revision_and_conversion_refuse_before_mutation(self):
+        self.install()
+        state = self.document("state.json")
+        state["source_commit"] = "b" * 40
+        install.oac_cli.save_state(self.root, state)
+        before = self.snapshot()
+        with self.assertRaisesRegex(install.InstallError, "not supported;.*reinstall"):
+            self.install()
+        self.assertEqual(before, self.snapshot())
+        with self.assertRaises(SystemExit):
+            self.install("--convert")
+        self.assertEqual(before, self.snapshot())
 
     def test_fresh_install_writes_config_json_and_the_layout(self):
         previous = os.umask(0)
@@ -124,7 +202,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual((self.root / "oac").read_bytes(), (self.bundle / "oac.pyz").read_bytes())
         self.assertEqual(self.host.recreated, ["web"])
         other, _ = make_bundle(self.work / "other", MANIFEST, commit="b" * 40)
-        with self.assertRaisesRegex(install.InstallError, "oac upgrade"):
+        with self.assertRaisesRegex(install.InstallError, "not supported;.*reinstall"):
             with contextlib.redirect_stdout(self.output):
                 run_installer(install, other, ["--install-dir", self.root])
 
@@ -146,7 +224,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("--core-key-file", output.getvalue())
         self.root.mkdir()
         (self.root / "installation.json").write_text("{}")
-        with self.assertRaisesRegex(install.InstallError, "predates config.json; run ./install.sh --convert"):
+        with self.assertRaisesRegex(install.InstallError, "not supported;.*reinstall"):
             self.install()
         # A fresh install stopped before config.json started nothing: starting over is safe.
         (self.root / "installation.json").unlink()
@@ -154,7 +232,8 @@ class InstallerTests(unittest.TestCase):
         with self.assertRaisesRegex(install.InstallError, "stopped before writing config.json"):
             self.install()
         (self.root / "state.json").write_text('{"format": 1, "generated": {}}')
-        with self.assertRaisesRegex(install.InstallError, "stopped before writing config.json"):
+        (self.root / "state.json").chmod(0o600)
+        with self.assertRaisesRegex(install.oac_cli.OacError, "not supported;.*reinstall"):
             self.install()
 
     def test_a_live_installation_missing_config_json_is_never_told_to_start_over(self):
@@ -344,7 +423,7 @@ class InstallerTests(unittest.TestCase):
             install.prepare_node_payload(self.root, self.document("state.json"), bundle, replace=True)
         self.assertEqual(json.loads((payload / "active.json").read_text()), {"source_commit": "b" * 40})
 
-    def test_legacy_flat_payload_is_preserved_before_publication(self):
+    def test_legacy_flat_payload_is_refused_without_conversion(self):
         import shutil
         self.install()
         payload = self.root / "node-payload"
@@ -357,9 +436,10 @@ class InstallerTests(unittest.TestCase):
         shutil.rmtree(payload / "releases")
         (payload / "active.json").unlink()
         bundle, _ = make_bundle(self.work / "bundle-b", dict(MANIFEST, source_commit="b" * 40))
-        install.prepare_node_payload(self.root, self.document("state.json"), bundle, replace=True)
-        self.assertEqual((old / "node-install.pyz").read_bytes(), (self.bundle / "node-install.pyz").read_bytes())
-        self.assertEqual(json.loads((payload / "active.json").read_text()), {"source_commit": "b" * 40})
+        before = self.snapshot()
+        with self.assertRaisesRegex(install.InstallError, "not supported;.*reinstall"):
+            install.prepare_node_payload(self.root, self.document("state.json"), bundle, replace=True)
+        self.assertEqual(before, self.snapshot())
 
     def test_bundle_verifies_transferred_bytes_and_checksum_list(self):
         self.assertEqual(install.verify_bundle(self.bundle)["source_commit"], "a" * 40)
@@ -391,7 +471,7 @@ class InstallerTests(unittest.TestCase):
                 if "inspect" in arguments else original(arguments, **kwargs))):
             with self.assertRaisesRegex(distribution.DistributionError, "identity or platform"):
                 self.install()
-        self.assertFalse(self.root.exists())
+        self.assertEqual({p.name for p in self.root.iterdir()}, {".oac.lock"})
 
     def test_cli_failure_does_not_print_external_command_secrets(self):
         secret = "synthetic-sensitive-command-value"

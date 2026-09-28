@@ -270,13 +270,10 @@ existing allocations and suspended VMs keep their original generation. A qualifi
 older serving generation can still accept new Sessions when it has capacity,
 including while a newer target is preparing or has failed.
 
-Version 1 nodes report `update_required` for a newer target while retaining their
-qualified original serving generation. Run the verified current installer with
-`--update`, the same installation ID, Core/source URLs and original installation
-user (or sudo mode); do not provide another enrollment token. The update preserves
-node identity, retained Runtime files and running VMs. Its original v1 generation
-is conservatively retained locally because old helpers were not protected by the
-new generation lock. This retained disk usage is not reported as completed GC.
+Node program version updates are not supported. `--update` refuses without changing
+node state. Preserve an older installation and its Runtime data; provision a fresh
+node separately through **Add node**. Current Runtime generation operations below
+are independent of program version upgrades.
 
 Fresh v2 preparation keeps a private recovery plan until the actual provider image
 identity is resolved and its final configuration is published. Restart does not
