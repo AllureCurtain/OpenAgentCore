@@ -48,21 +48,31 @@ def descendants(pid):
         owned.update(children)
 
 
-def stop_child(process):
-    owned = descendants(process.pid)
-    def send(sig):
-        # A process group also catches children created after the snapshot.
-        try:
-            os.killpg(process.pid, sig)
-        except ProcessLookupError:
-            pass
-        for pid, birth in owned.items():
+def stop_child(process, *, own_group=True):
+    """Reap foreground work; explicit detached background resources are retained."""
+    if own_group:
+        def send(sig):
             try:
-                actual = (Path('/proc') / str(pid) / 'stat').read_text().rsplit(')', 1)[1].split()[19]
-                if actual == birth:
-                    os.kill(pid, sig)
-            except (OSError, IndexError):
+                os.killpg(process.pid, sig)
+            except ProcessLookupError:
                 pass
+    else:
+        # Nested commands inherit their enclosing foreground group. Never kill
+        # that whole group here: its outside owner performs final group cleanup.
+        owned = descendants(process.pid)
+        group = os.getpgrp()
+        def send(sig):
+            # The top-level sender can run on macOS without /proc. Its direct
+            # SSH child is still owned and must always receive cancellation.
+            if process.poll() is None:
+                process.send_signal(sig)
+            for pid, birth in owned.items():
+                try:
+                    actual = (Path('/proc') / str(pid) / 'stat').read_text().rsplit(')', 1)[1].split()[19]
+                    if actual == birth and os.getpgid(pid) == group:
+                        os.kill(pid, sig)
+                except (OSError, IndexError):
+                    pass
     send(signal.SIGTERM)
     try:
         process.wait(timeout=10)
@@ -73,15 +83,17 @@ def stop_child(process):
 
 
 def run_child(argv, payload, stdout, stderr, timeout, **kwargs):
+    """Outside owner for one foreground group, cleaned on every exit path."""
     with subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=stdout, stderr=stderr,
                           start_new_session=True, **kwargs) as process:
         try:
             process.communicate(payload, timeout=timeout)
-        except BaseException:
+            if process.returncode:
+                raise ValueError('Qualification child failed; retain private receipts')
+        finally:
+            # The direct child may already be gone. Its foreground descendants
+            # remain addressable by group even after timeout or SIGKILL orphaning.
             stop_child(process)
-            raise
-        if process.returncode:
-            raise ValueError('Qualification child failed; retain private receipts')
 
 
 class Lifeline:
@@ -143,7 +155,7 @@ def transport(argv, request, timeout=86400):
     payload = json.dumps(request, sort_keys=True, separators=(',', ':')).encode()+b'\n'
     with cancellable(), tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
         with subprocess.Popen(argv, stdin=subprocess.PIPE, stdout=output, stderr=errors,
-                              start_new_session=True) as process:
+                              start_new_session=False) as process:
             try:
                 process.stdin.write(payload)
                 process.stdin.flush()
@@ -164,7 +176,7 @@ def transport(argv, request, timeout=86400):
                     process.stdin.close()  # Remote EOF stops any later stage.
                 except OSError:
                     pass
-                stop_child(process)
+                stop_child(process, own_group=False)
                 raise
             finally:
                 try:

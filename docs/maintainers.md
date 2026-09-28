@@ -126,8 +126,12 @@ The run ID is a canonical UUID string. `qualification_control.py` is part of the
 reviewed tooling bytes and the pinned private package. The sender holds the same
 SSH stdin open, sends heartbeats every five seconds and never reloads a pass file.
 The receiver stops later work on EOF or a thirty-second heartbeat timeout. Signal
-handlers enter the same owned-child cleanup path. Nested SSH workers use this
-protocol too; closing a local SSH process alone is insufficient. A write already
+handlers enter the same cleanup path. Each stage or remote worker has a foreground
+process group with a waiting owner outside it. The owner cleans the group on every
+exit, including success and nonzero exit, so an inner timeout or SIGKILL cannot
+leave same-group foreground descendants running. Foreground commands inherit the
+group; only recorded background resources may create separate sessions and remain
+running. Nested SSH workers use this protocol too; closing a local SSH process alone is insufficient. A write already
 sent may still have an unknown result; retain its intent and resources without
 replay or a rollback claim. Child stdout/stderr remain private files;
 nonzero exit, timeout, changed bytes or mismatched identity stops the sequence.

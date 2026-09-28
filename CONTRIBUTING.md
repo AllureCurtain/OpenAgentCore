@@ -1986,8 +1986,13 @@ a supplied pass file, skipped check or old report cannot release the candidate.
 Verify package and candidate bytes again after each stage. The small shared
 `qualification_control.py` is pinned to the reviewed tooling commit and private
 package. A live SSH stdin channel carries the request then heartbeats; EOF, timeout,
-SIGTERM or SIGHUP stops later work and cleans up owned foreground children,
-including detached descendants. Private nested workers use the same channel.
+SIGTERM or SIGHUP stops later work. Each local stage or remote worker has one
+foreground process group and a waiting owner outside that group. The owner cleans
+the group on success, nonzero exit, timeout and cancellation, including foreground
+descendants orphaned by an inner timeout or SIGKILL. Nested foreground commands
+inherit the group; only explicitly recorded background resources may detach.
+Those retained background resources are outside foreground cleanup. Private nested
+workers use the same channel.
 Already-issued writes may have unknown outcomes: retain intents/resources and do
 not replay or claim rollback. Control tests exercise
 short-lived fixture children only and never establish live qualification.
