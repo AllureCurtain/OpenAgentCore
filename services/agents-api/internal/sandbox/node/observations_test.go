@@ -37,7 +37,7 @@ func observationTarget(r sandbox.Reference, installation string) runtimeobs.Targ
 		Instance:   runtimeobs.Instance{AllocationID: r.AllocationID, ProviderKey: installation, AllocationState: "running", ComputePhase: "running", ProviderState: json.RawMessage(`{"current":{"id":"exact-incarnation","generation":3}}`)},
 		TokenUsage: &runtimeobs.TokenUsage{InputTokens: 123, OutputTokens: 456}}
 }
-func runObservationNode(t *testing.T, hub *Hub, url string, id Identity, provider sandbox.Provider) context.CancelFunc {
+func runObservationNode(t *testing.T, hub *Hub, url string, id Identity, provider sandbox.SandboxProvider) context.CancelFunc {
 	t.Helper()
 	dir := stateDir(t)
 	stored, err := InitIdentity(dir, url, id)
@@ -140,7 +140,7 @@ func TestObservationWirePreservesUnavailableAndRejectsMismatchedIdentity(t *test
 	q := request{ID: uuid.NewString(), ConnectionID: uuid.NewString(), Operation: "observe", Reference: r, Observation: &target, TimeoutMillis: 1000}
 	providers := []struct {
 		name     string
-		provider sandbox.Provider
+		provider sandbox.SandboxProvider
 		want     error
 	}{
 		{"unsupported", &fakeProvider{}, runtimeobs.ErrUnavailable},

@@ -217,7 +217,7 @@ func TestFailedInventoryRetirementClosesAdmissionAndRetainsGate(t *testing.T) {
 }
 
 // No provider method is called by the retirement ownership fixture.
-type drainFixtureProvider struct{ sandbox.Provider }
+type drainFixtureProvider struct{ sandbox.SandboxProvider }
 
 // Done is evaluated only after lockMutation's initial admission check, letting
 // this test close admission while a request is already waiting for its gate.

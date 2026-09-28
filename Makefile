@@ -158,3 +158,8 @@ check-e2b-provider:
 .PHONY: check-docs
 check-docs: node-deps
 	pnpm check:docs
+
+# These packages are also exercised by check-agents-api in the full gate.
+.PHONY: check-sandbox-provider-contract
+check-sandbox-provider-contract:
+	go test ./services/agents-api/internal/sandbox/... -count=1

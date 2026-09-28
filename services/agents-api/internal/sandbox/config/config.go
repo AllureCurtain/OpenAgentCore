@@ -65,7 +65,7 @@ func Load(file string) (Config, error) {
 
 type Built struct {
 	SpecificationDigest                string
-	Provider                           sandbox.Provider
+	Provider                           sandbox.SandboxProvider
 	InstallationID, BackendFingerprint string
 	Probe                              func(context.Context) error
 }

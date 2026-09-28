@@ -111,7 +111,7 @@ func (m *runtimeManager) ensureDeployment(parent context.Context) (bool, error) 
 	if err != nil || config == nil {
 		return false, err
 	}
-	if config.InstallationID != m.setupInstallationID || config.LocalNodeID != "" || config.loadDeployment != nil || (config.ProviderKind != "docker" && config.ProviderKind != "microsandbox" && config.ProviderKind != "e2b") {
+	if config.InstallationID != m.setupInstallationID || config.LocalNodeID != "" || config.loadDeployment != nil || config.ProviderKind == "" {
 		return false, sandbox.ErrInvalid
 	}
 	copied, err := validatedRuntimeProvider(config, m.registry)

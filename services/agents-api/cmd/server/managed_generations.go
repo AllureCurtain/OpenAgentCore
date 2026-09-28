@@ -27,7 +27,7 @@ type e2bGenerationRouter struct {
 	store generationStore
 }
 
-func (p *e2bGenerationRouter) route(ctx context.Context, r sandbox.Reference) (sandbox.Provider, func(), error) {
+func (p *e2bGenerationRouter) route(ctx context.Context, r sandbox.Reference) (sandbox.SandboxProvider, func(), error) {
 	release, err := p.setup.e2bCalls.Enter(ctx)
 	if err != nil {
 		return nil, nil, err

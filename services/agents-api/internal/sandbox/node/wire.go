@@ -271,7 +271,7 @@ func (q request) validate() error {
 	}
 	return sandbox.ErrInvalid
 }
-func execute(ctx context.Context, p sandbox.Provider, q request) response {
+func execute(ctx context.Context, p sandbox.SandboxProvider, q request) response {
 	out := response{ID: q.ID, ConnectionID: q.ConnectionID}
 	err := q.validate()
 	if err != nil {

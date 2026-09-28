@@ -59,6 +59,25 @@ isolation remain separate work.
   the pinned public API, or authorize unrelated refactors or live Session
   configuration switching.
 
+### Sandbox Provider contract
+
+The canonical Sandbox Provider entry point is
+[`sandbox_provider.go`](services/agents-api/internal/sandbox/sandbox_provider.go),
+with integration and operation semantics in [the onboarding guide](docs/sandbox-provider.md).
+Use `sandbox.SandboxProvider` for compute lifecycle and bounded bootstrap operations;
+checkpoint and read-only observation remain separate optional interfaces.
+Registration/construction owns vendor configuration. Core's common lifecycle
+selects optional behavior by interface capability, not a provider name.
+
+Retain the persisted allocation identity and cleanup responsibility after unknown
+results. Never replay Create or initialization commands on transport failure.
+Compute running, authenticated Runtime connection, prepared capabilities and Turn
+acceptance are separate facts. A confirmed Kill cannot by itself settle an
+outstanding Create. Capability preparation belongs to Runtime, and releasing an
+executor does not reclaim its Environment. Do not add provider-specific execution
+or preparation paths. New adapters must run the shared Sandbox Provider contract
+suite through their native boundary and qualify their real resource behavior.
+
 ## Core–Runtime integration contract
 
 The [Core–Runtime protocol](docs/runtime-protocol.md) is the integration entry

@@ -22,7 +22,7 @@ type AgentConfig struct {
 	StateDirectory string
 	Identity       Identity
 	Credential     string
-	Provider       sandbox.Provider
+	Provider       sandbox.SandboxProvider
 	Probe          func(context.Context) (Health, error)
 	// Dialer is optional, primarily for an operator-supplied TLS trust configuration.
 	Dialer *websocket.Dialer
@@ -68,7 +68,7 @@ func (c *agentConnection) write(f frame) error {
 type work struct {
 	request    request
 	connection *agentConnection
-	provider   sandbox.Provider
+	provider   sandbox.SandboxProvider
 	release    func()
 	ready      bool
 }

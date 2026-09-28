@@ -67,7 +67,7 @@ type Provider struct {
 	now    func() time.Time
 }
 
-var _ sandbox.Provider = (*Provider)(nil)
+var _ sandbox.SandboxProvider = (*Provider)(nil)
 
 func validID(value string) bool {
 	id, err := uuid.Parse(value)

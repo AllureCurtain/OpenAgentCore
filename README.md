@@ -83,6 +83,7 @@ native differences.
 | [Protocol coverage](contracts/agents-api/README.md) and [harness selection](contracts/agents-api/harness-selection.md) | Supported operations and native differences |
 | [Core–Runtime protocol](docs/runtime-protocol.md) | Runtime integration, messages, receipts, failure ownership and contract checks |
 | [Add a Harness](contracts/agents-api/harness-onboarding.md) | Required adapter interfaces, lifecycle, capabilities, registration and acceptance |
+| [Add a Sandbox Provider](docs/sandbox-provider.md) | Required lifecycle, optional capabilities, registration, ownership and contract tests |
 | [Landing page source](site/index.html) | The public site |
 
 ### Maintainers and advanced deployments
