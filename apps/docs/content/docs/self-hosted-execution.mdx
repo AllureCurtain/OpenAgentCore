@@ -51,8 +51,10 @@ Otherwise creation fails with 400 `model_provider_required`.
 2. In Web, open **Session log**, then the Session's **Executor credentials**
    section. Choose **Issue credential**, then **Download credential file**. Core
    returns the credential only once; retain it privately before choosing **Done**.
-3. On the host, run `oac-daemon install` with the returned `remote_url`, Environment
-   ID, matching workspace and absolute credential-file path, then `oac-daemon start`.
+3. Extract the native distribution and run `oac-daemon install --interactive`
+   (or supply all options with `--non-interactive --harness`). Use the returned
+   remote URL, Environment ID, matching workspace and credential file path, then
+   start the installed `bin/oac-daemon`.
    The [native guide](/self-hosted-native#install-and-start) has Linux/macOS and
    PowerShell examples. No Docker installation is required for this native path.
 
