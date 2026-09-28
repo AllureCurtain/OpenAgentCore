@@ -14,7 +14,9 @@ Normal delivery and terminal journal draining use the same extraction rule.
 Accepted codes are `authentication_error`, `rate_limit_exceeded`,
 `usage_limit_exceeded`, `server_overloaded`, `server_error`, `invalid_request`,
 `resource_not_found`, `request_timeout`, `context_length_exceeded`, `cyber_policy`
-and `connection_failed`. Only `connection_failed` retains an integer HTTP status
+and `connection_failed`. Core diagnostics expose these categories only for failed
+`engine_failed` Turns. Their params are empty except `connection_failed`, whose
+`http_status` is a valid integer or null. Only `connection_failed` retains an integer HTTP status
 in 100..599; all other status metadata is discarded. Missing, malformed and unknown
 optional values degrade to unclassified metadata without discarding Usage or Done.
 Old Runtime frames remain generic harness failures. Old readers ignore new fields.

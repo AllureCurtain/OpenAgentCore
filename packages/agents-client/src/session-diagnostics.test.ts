@@ -58,3 +58,21 @@ it.each([
   const value = { ...session, failure: { source: "environment", code: "environment_provisioning_failed", params, failed_at: time } };
   expect(() => projectSessionDiagnostics(value, id)).toThrow();
 });
+
+it.each(["authentication_error", "rate_limit_exceeded", "usage_limit_exceeded", "server_overloaded", "server_error", "invalid_request", "resource_not_found", "request_timeout", "context_length_exceeded", "cyber_policy", "connection_failed"])("projects finite native category %s", (code) => {
+  const params = code === "connection_failed" ? { http_status: 503 } : {};
+  const failed = { ...failure, code, params };
+  expect(projectTurnDiagnostics({ ...snapshot, failure: failed }, id, turn).failure).toEqual(failed);
+  expect(projectSessionDiagnostics({ ...session, failure: { ...failed, source: "turn", turn_id: turn } }, id).failure?.code).toBe(code);
+  expect(() => projectSessionDiagnostics({ ...session, failure: { ...failed, source: "environment_input" } }, id)).toThrow();
+});
+it.each([null, 100, 429, 599])("preserves safe connection status %s", (http_status) => {
+  const failed = { ...failure, code: "connection_failed", params: { http_status } };
+  expect(projectTurnDiagnostics({ ...snapshot, failure: failed }, id, turn).failure).toEqual(failed);
+});
+it.each([{}, { http_status: 99 }, { http_status: 600 }, { http_status: 503.5 }, { http_status: "503" }, { http_status: 503, message: "secret-canary" }])("rejects unsafe connection parameters", (params) => {
+  expect(() => projectTurnDiagnostics({ ...snapshot, failure: { ...failure, code: "connection_failed", params } }, id, turn)).toThrow();
+});
+it("rejects HTTP status parameters on nonconnection categories", () => {
+  expect(() => projectTurnDiagnostics({ ...snapshot, failure: { ...failure, code: "authentication_error", params: { http_status: 401 } } }, id, turn)).toThrow();
+});

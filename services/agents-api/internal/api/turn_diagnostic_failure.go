@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 )
 
@@ -10,16 +11,30 @@ func turnDiagnosticFailure(turn store.Turn) *DiagnosticFailure {
 	if turn.Status != store.TurnFailed {
 		return nil
 	}
-	var outcome struct {
-		Code string `json:"error_code"`
-	}
-	if json.Unmarshal(turn.Outcome, &outcome) != nil {
-		outcome.Code = ""
+	var outcome map[string]json.RawMessage
+	var coreCode string
+	if json.Unmarshal(turn.Outcome, &outcome) == nil {
+		_ = json.Unmarshal(outcome["error_code"], &coreCode)
 	}
 	code := "internal_error"
-	switch outcome.Code {
+	params := CoreErrorDetails{}
+	switch coreCode {
 	case "engine_failed":
 		code = "harness_error"
+		// Optional malformed metadata cannot hide the authoritative Core error.
+		var nativeCode string
+		var nativeStatus *int
+		_ = json.Unmarshal(outcome["engine_error_code"], &nativeCode)
+		_ = json.Unmarshal(outcome["engine_http_status"], &nativeStatus)
+		if classified, status := proto.NormalizeEngineFailure(nativeCode, nativeStatus); classified != "" {
+			code = classified
+			if code == "connection_failed" {
+				params["http_status"] = CoreErrorNull()
+				if status != nil {
+					params["http_status"] = CoreErrorNumber(float64(*status))
+				}
+			}
+		}
 	case "model_provider_required":
 		code = "model_provider_required"
 	case "execution_device_unavailable", "execution_unavailable":
@@ -39,5 +54,5 @@ func turnDiagnosticFailure(turn store.Turn) *DiagnosticFailure {
 	case "event_persistence_failed", "artifact_capture_failed":
 		code = "core_storage_failed"
 	}
-	return &DiagnosticFailure{Code: code, Params: CoreErrorDetails{}, FailedAt: diagnosticTime(turn.CompletedAt)}
+	return &DiagnosticFailure{Code: code, Params: params, FailedAt: diagnosticTime(turn.CompletedAt)}
 }

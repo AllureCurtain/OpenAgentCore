@@ -121,6 +121,17 @@ inside a successful HTTP 200 snapshot, not the operation error envelope. Public
 | Code | Stored cause or safe meaning |
 | --- | --- |
 | `harness_error` | `engine_failed` without a native classification |
+| `authentication_error` | Native provider authentication rejected |
+| `rate_limit_exceeded` | Native rate limit classification |
+| `usage_limit_exceeded` | Native billing or usage limit classification |
+| `server_overloaded` | Native overload classification |
+| `server_error` | Native server failure classification |
+| `invalid_request` | Native request rejection |
+| `resource_not_found` | Native resource/model not found |
+| `request_timeout` | Reserved neutral timeout category; no current adapter producer |
+| `context_length_exceeded` | Native context limit classification |
+| `cyber_policy` | Native cyber policy rejection |
+| `connection_failed` | Native connection failure; params contain `http_status`, an integer in 100–599 or null |
 | `model_provider_required` | Missing frozen model provider |
 | `runtime_unavailable` | `execution_device_unavailable`, `execution_unavailable` |
 | `runtime_disconnected` | `device_disconnected`, `event_stream_incomplete` |
@@ -139,3 +150,12 @@ inside a successful HTTP 200 snapshot, not the operation error envelope. Public
 reader is not configured; it has no details. A database failure remains an error,
 never a healthy or empty diagnostic snapshot. Historical provisioning reasons and
 private native messages are not parsed for categories or parameters.
+
+Native categories apply only to a failed Turn with top-level
+`error_code: engine_failed`. Only the finite `engine_error_code` allowlist is
+accepted; unknown,
+malformed and absent metadata retains `harness_error`. Only `connection_failed`
+uses `engine_http_status`. Nested metadata and provider prose never classify a
+failure. Core persistence, incomplete-stream and cancellation failures retain
+priority, and cancelled/completed Turns have no failure. See
+[native classification](native-error-classification.md) for adapter coverage.

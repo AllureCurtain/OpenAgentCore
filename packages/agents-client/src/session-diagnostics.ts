@@ -1,16 +1,18 @@
 import { canonicalUuid, exactFields, isRecord, sameResourceId } from "./response-projection";
 import { invalidAdminResponse } from "./admin-projection";
 
-export type DiagnosticFailureCode = "harness_error" | "model_provider_required" | "runtime_unavailable" | "runtime_disconnected" | "runtime_preparation_failed" | "execution_interrupted" | "delivery_unconfirmed" | "input_rejected" | "executor_protocol_error" | "core_storage_failed" | "internal_error" | "environment_connection_timeout" | "environment_unavailable" | "environment_provisioning_failed";
+export type NativeFailureCode = "authentication_error" | "rate_limit_exceeded" | "usage_limit_exceeded" | "server_overloaded" | "server_error" | "invalid_request" | "resource_not_found" | "request_timeout" | "context_length_exceeded" | "cyber_policy" | "connection_failed";
+export type DiagnosticFailureCode = NativeFailureCode | "harness_error" | "model_provider_required" | "runtime_unavailable" | "runtime_disconnected" | "runtime_preparation_failed" | "execution_interrupted" | "delivery_unconfirmed" | "input_rejected" | "executor_protocol_error" | "core_storage_failed" | "internal_error" | "environment_connection_timeout" | "environment_unavailable" | "environment_provisioning_failed";
 export type ProvisioningFailureParams = { step: "setup" | "python" | "npm" | "system" | "file" | "skill" | null; index: number | null; exit_code: number | null };
-export type DiagnosticFailure = { code: DiagnosticFailureCode; params: Record<string, never> | ProvisioningFailureParams; failed_at: string | null };
+export type ConnectionFailureParams = { http_status: number | null };
+export type DiagnosticFailure = { code: DiagnosticFailureCode; params: Record<string, never> | ProvisioningFailureParams | ConnectionFailureParams; failed_at: string | null };
 export type SessionDiagnosticFailure = DiagnosticFailure & { source: "turn" | "environment" | "environment_input"; turn_id?: string };
 export type SessionDiagnostics = { object: "core.session_diagnostics"; session_id: string; status: "idle" | "in_progress" | "requires_action" | "failed"; failure: SessionDiagnosticFailure | null };
 /** Core receipt intervals, distinct from the public tool-reported duration_ms. */
 export type ItemDiagnosticTiming = { item_id: string; started_at: string; completed_at: string | null; observed_duration_ms: number | null };
 export type TurnDiagnostics = { object: "core.turn_diagnostics"; session_id: string; turn_id: string; status: string; failure: DiagnosticFailure | null; items: ItemDiagnosticTiming[]; items_truncated: boolean };
 
-const turnCodes = new Set(["harness_error", "model_provider_required", "runtime_unavailable", "runtime_disconnected", "runtime_preparation_failed", "execution_interrupted", "delivery_unconfirmed", "input_rejected", "executor_protocol_error", "core_storage_failed", "internal_error"]);
+const turnCodes = new Set(["authentication_error", "rate_limit_exceeded", "usage_limit_exceeded", "server_overloaded", "server_error", "invalid_request", "resource_not_found", "request_timeout", "context_length_exceeded", "cyber_policy", "connection_failed", "harness_error", "model_provider_required", "runtime_unavailable", "runtime_disconnected", "runtime_preparation_failed", "execution_interrupted", "delivery_unconfirmed", "input_rejected", "executor_protocol_error", "core_storage_failed", "internal_error"]);
 const inputCodes = new Set(["environment_connection_timeout", "environment_unavailable", "model_provider_required", "internal_error"]);
 const turnStatuses = new Set(["queued", "in_progress", "waiting", "completed", "failed", "cancelled"]);
 const fields = (...values: string[]) => new Set(values);
@@ -27,6 +29,10 @@ function failure(value: unknown, codes: Set<string>, session = false): Diagnosti
         (p.index !== null && (!Number.isSafeInteger(p.index) || (p.index as number) < 0 || p.step !== "setup")) ||
         (p.exit_code !== null && (!Number.isSafeInteger(p.exit_code) || (p.exit_code as number) < 1 || (p.exit_code as number) > 255 || !["setup", "python", "npm", "system"].includes(String(p.step))))) return invalidAdminResponse();
     params = { step: p.step as ProvisioningFailureParams["step"], index: p.index as number | null, exit_code: p.exit_code as number | null };
+  } else if (value.code === "connection_failed") {
+    const p = value.params;
+    if (!exactFields(p, fields("http_status")) || (p.http_status !== null && (!Number.isSafeInteger(p.http_status) || (p.http_status as number) < 100 || (p.http_status as number) > 599))) return invalidAdminResponse();
+    params = { http_status: p.http_status as number | null };
   } else if (Object.keys(value.params).length !== 0) return invalidAdminResponse();
   return { code: value.code as DiagnosticFailureCode, params, failed_at: value.failed_at as string | null };
 }

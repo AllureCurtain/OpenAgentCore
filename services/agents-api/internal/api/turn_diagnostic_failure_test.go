@@ -42,3 +42,56 @@ func TestDiagnosticFailureWhitelist(t *testing.T) {
 		}
 	}
 }
+
+func TestDiagnosticNativeClassification(t *testing.T) {
+	codes := []string{"authentication_error", "rate_limit_exceeded", "usage_limit_exceeded", "server_overloaded", "server_error", "invalid_request", "resource_not_found", "request_timeout", "context_length_exceeded", "cyber_policy", "connection_failed"}
+	catalog, err := os.ReadFile("../../../../contracts/agents-api/core-errors.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, code := range codes {
+		t.Run(code, func(t *testing.T) {
+			if !strings.Contains(string(catalog), "`"+code+"`") {
+				t.Fatal("uncatalogued code", code)
+			}
+			for _, status := range []any{nil, 100, 429, 599, 99, 600, 503.5, "503", true, map[string]any{"token": "secret-canary"}} {
+				raw, _ := json.Marshal(map[string]any{"error_code": "engine_failed", "error": "secret-canary", "engine_error_code": code, "engine_http_status": status})
+				got := turnDiagnosticFailure(store.Turn{Status: store.TurnFailed, Outcome: raw})
+				encoded, _ := json.Marshal(got)
+				if got.Code != code || strings.Contains(string(encoded), "canary") {
+					t.Fatal(string(encoded))
+				}
+				params, _ := json.Marshal(got.Params)
+				want := `{}`
+				if code == "connection_failed" {
+					want = `{"http_status":null}`
+					if n, ok := status.(int); ok && n >= 100 && n <= 599 {
+						b, _ := json.Marshal(map[string]int{"http_status": n})
+						want = string(b)
+					}
+				}
+				if string(params) != want {
+					t.Fatalf("status=%v params=%s want=%s", status, params, want)
+				}
+			}
+		})
+	}
+	for _, optional := range []string{``, `,"engine_error_code":null`, `,"engine_error_code":17`, `,"engine_error_code":{"code":"authentication_error"}`, `,"engine_error_code":"secret-canary"`, `,"done":{"engine_error_code":"authentication_error"}`, `,"Engine_Error_Code":"authentication_error"`} {
+		got := turnDiagnosticFailure(store.Turn{Status: store.TurnFailed, Outcome: json.RawMessage(`{"error_code":"engine_failed"` + optional + `}`)})
+		if got.Code != "harness_error" || len(got.Params) != 0 {
+			t.Fatal(optional, got)
+		}
+	}
+	for core, want := range map[string]string{"event_persistence_failed": "core_storage_failed", "artifact_capture_failed": "core_storage_failed", "event_stream_incomplete": "runtime_disconnected", "cancel_unconfirmed": "delivery_unconfirmed", "invalid_executor_result": "executor_protocol_error", "secret-canary": "internal_error"} {
+		raw, _ := json.Marshal(map[string]any{"error_code": core, "engine_error_code": "connection_failed", "engine_http_status": 503})
+		got := turnDiagnosticFailure(store.Turn{Status: store.TurnFailed, Outcome: raw})
+		if got.Code != want || len(got.Params) != 0 {
+			t.Fatal(got)
+		}
+	}
+	for _, status := range []string{store.TurnQueued, store.TurnInProgress, store.TurnWaiting, store.TurnCompleted, store.TurnCancelled} {
+		if got := turnDiagnosticFailure(store.Turn{Status: status, Outcome: json.RawMessage(`{"error_code":"engine_failed","engine_error_code":"authentication_error"}`)}); got != nil {
+			t.Fatal(status, got)
+		}
+	}
+}

@@ -67,8 +67,11 @@ nullable integer `observed_duration_ms`.
 
 The public successful Turn completion time may originate at the native executor;
 that public timestamp remains unchanged. Public Session, Turn, Item, SSE and
-`duration_ms` contracts are unchanged. Subagent diagnostics and native failure
-classification are separate work.
+`duration_ms` contracts are unchanged. Subagent diagnostics are separate work.
+Native failure classification uses only
+the finite top-level outcome metadata of a failed `engine_failed` Turn; see
+[native classification](native-error-classification.md). Connection failure params
+contain `http_status` (100–599 or null); other native categories have empty params.
 
 The typed client exposes `retrieveSessionDiagnostics` and
 `retrieveTurnDiagnostics` on `AdminClient`, retaining request cancellation and
