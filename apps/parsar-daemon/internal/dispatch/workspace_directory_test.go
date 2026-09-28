@@ -33,7 +33,7 @@ func TestWorkspaceDirectoryRetainsEnvironmentAndTransferredOwner(t *testing.T) {
 			t.Fatal(got)
 		}
 		if phase == "idle" {
-			_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionStart, "prepare", proto.ExecutionStartPayload{Handle: ready.Handle, RunID: "run", Input: proto.TextInput("start")}))
+			_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionStart, "prepare", proto.ExecutionStartPayload{Handle: ready.Handle, ExecutorID: ready.ExecutorID, RunID: "run", Input: proto.TextInput("start")}))
 			waitPreparationStatus(t, sender, "prepare", "started", "")
 			_ = r.Handle(t.Context(), mustEnv(t, proto.TypeWorkspaceRead, "stale", request))
 			if got := waitWorkspaceRead(t, sender, "stale"); got.Outcome != "rejected" {

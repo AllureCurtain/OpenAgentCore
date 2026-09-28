@@ -31,7 +31,7 @@ func TestDeletedSessionWaitingTurnSettlesWithoutStoppingWorker(t *testing.T) {
 		}
 	}()
 	input := h.message("start", "Run")
-	h.read(proto.TypePromptRequest)
+	h.read(testExecutionRequest)
 	h.write(input.TurnID, proto.TypeFunctionCall, proto.FunctionCallPayload{CallID: "pending", Name: "lookup_ticket", Arguments: json.RawMessage(`{}`)})
 	state := functionState(t, h, 1)
 	if err := h.s.DeleteSession(ctx, h.tenant, h.session.ID); !errors.Is(err, store.ErrSessionNotIdle) {
@@ -63,7 +63,7 @@ func TestDeletedSessionWaitingTurnSettlesWithoutStoppingWorker(t *testing.T) {
 	}
 	h.session = publicSession(t, h, "unrelated")
 	next := h.message("next", "Unrelated work")
-	h.read(proto.TypePromptRequest)
+	h.read(testExecutionRequest)
 	h.write(next.TurnID, proto.TypeDone, proto.DonePayload{Content: "unaffected"})
 	waitTurn(t, h, next.TurnID, store.TurnCompleted)
 }
@@ -120,7 +120,7 @@ func TestWaitingSessionCancelsThenDeletesThroughWorker(t *testing.T) {
 		}
 	}()
 	input := h.message("start", "Run")
-	h.read(proto.TypePromptRequest)
+	h.read(testExecutionRequest)
 	h.write(input.TurnID, proto.TypeFunctionCall, proto.FunctionCallPayload{CallID: "pending", Name: "lookup_ticket", Arguments: json.RawMessage(`{}`)})
 	state := functionState(t, h, 1)
 	if err := h.s.DeleteSession(ctx, h.tenant, h.session.ID); !errors.Is(err, store.ErrSessionNotIdle) {
@@ -165,7 +165,7 @@ func TestWaitingSessionCancelsThenDeletesThroughWorker(t *testing.T) {
 	}
 	h.session = publicSession(t, h, "unrelated")
 	next := h.message("next", "Unrelated work")
-	h.read(proto.TypePromptRequest)
+	h.read(testExecutionRequest)
 	h.write(next.TurnID, proto.TypeDone, proto.DonePayload{Content: "unaffected"})
 	waitTurn(t, h, next.TurnID, store.TurnCompleted)
 }

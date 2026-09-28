@@ -91,11 +91,13 @@ type JSONRPCClient struct {
 	pendingMu sync.Mutex
 	pending   map[string]*pendingRequest
 
+	handlerWork       sync.WaitGroup
 	handlersMu        sync.RWMutex
 	notifHandlers     map[string][]NotificationHandler
 	serverReqHandlers map[string]ServerRequestHandler
 	anyNotifHandler   NotificationHandler
 
+	readers   sync.WaitGroup
 	closeOnce sync.Once
 	doneCh    chan struct{}
 }
@@ -206,8 +208,9 @@ func (c *JSONRPCClient) Start(ctx context.Context, init InitializeParams) (Initi
 	c.alive = true
 	c.mu.Unlock()
 
-	go c.readStdoutLoop()
-	go c.pumpStderr()
+	c.readers.Add(2)
+	go func() { defer c.readers.Done(); c.readStdoutLoop() }()
+	go func() { defer c.readers.Done(); c.pumpStderr() }()
 	go c.waitChild()
 
 	initCtx, cancel := context.WithTimeout(ctx, rpcInitTimeout)
@@ -415,7 +418,13 @@ func (c *JSONRPCClient) handleNotification(method string, rawFrame []byte) {
 	c.handlersMu.RLock()
 	handlers := append([]NotificationHandler{}, c.notifHandlers[method]...)
 	any := c.anyNotifHandler
+	if len(handlers) > 0 || any != nil {
+		c.handlerWork.Add(1)
+	}
 	c.handlersMu.RUnlock()
+	if len(handlers) > 0 || any != nil {
+		defer c.handlerWork.Done()
+	}
 	if len(handlers) == 0 && any == nil {
 		c.cfg.Logger.Debug("codex rpc unhandled notification", "tag", c.cfg.LogTag, "method", method)
 		return
@@ -438,6 +447,9 @@ func (c *JSONRPCClient) handleServerRequest(rawFrame []byte, rawID json.RawMessa
 
 	c.handlersMu.RLock()
 	h, ok := c.serverReqHandlers[method]
+	if ok {
+		c.handlerWork.Add(1)
+	}
 	c.handlersMu.RUnlock()
 	if !ok {
 		// Method-not-found per JSON-RPC 2.0 — codex hangs if we drop it.
@@ -445,6 +457,7 @@ func (c *JSONRPCClient) handleServerRequest(rawFrame []byte, rawID json.RawMessa
 		return
 	}
 	go func() {
+		defer c.handlerWork.Done()
 		defer func() {
 			if r := recover(); r != nil {
 				_ = c.SendServerError(id, -32603, fmt.Sprintf("panic in %s handler: %v", method, r), nil)
@@ -524,4 +537,26 @@ func truncate(b []byte, n int) []byte {
 		return b
 	}
 	return b[:n]
+}
+
+// detachHandlers fences registration before joining captured callbacks, including
+// asynchronous server replies. New notifications have no Turn destination.
+func (c *JSONRPCClient) detachHandlers() {
+	c.handlersMu.Lock()
+	clear(c.notifHandlers)
+	clear(c.serverReqHandlers)
+	c.anyNotifHandler = nil
+	c.handlersMu.Unlock()
+	c.handlerWork.Wait()
+}
+
+func (c *JSONRPCClient) awaitReaders(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() { c.readers.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

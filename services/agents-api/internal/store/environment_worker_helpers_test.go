@@ -63,6 +63,11 @@ func workerFrames(t *testing.T, runtimes ...*dispatchHarness) <-chan proto.Envel
 				if h.conn.ReadJSON(&env) != nil {
 					return
 				}
+				var keep bool
+				env, keep = h.executionFrame(env)
+				if !keep {
+					continue
+				}
 				select {
 				case frames <- env:
 				case <-t.Context().Done():

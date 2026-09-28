@@ -22,6 +22,7 @@ type Worker struct {
 	lease               *store.ExecutionLease
 	directoryReads      chan directoryReadRequest
 	fileWrites          chan fileWriteRequest
+	scheduleWake        chan struct{}
 	stopped             chan struct{}
 	stopOnce            sync.Once
 	runtimes            *runtimeManager
@@ -38,7 +39,8 @@ func StartWorker(ctx context.Context, dispatcher *Dispatcher) (*Worker, error) {
 	}
 	owned := *dispatcher
 	owned.Store = lease.Store()
-	worker := &Worker{concurrency: dispatcher.MaxConcurrentExecutions, dispatcher: &owned, admission: dispatcher.Store, lease: lease, directoryReads: make(chan directoryReadRequest), fileWrites: make(chan fileWriteRequest), stopped: make(chan struct{}), enrolledConnections: make(map[string]*runtimeConnection)}
+	owned.notifications = &executionNotifications{}
+	worker := &Worker{concurrency: dispatcher.MaxConcurrentExecutions, dispatcher: &owned, admission: dispatcher.Store, lease: lease, directoryReads: make(chan directoryReadRequest), fileWrites: make(chan fileWriteRequest), stopped: make(chan struct{}), scheduleWake: make(chan struct{}, 1), enrolledConnections: make(map[string]*runtimeConnection)}
 	worker.runtimes, err = newRuntimeManager(owned.Store, owned.Registry, owned.ManagedRuntimes)
 	if err != nil {
 		_ = lease.Close(context.Background())
@@ -105,7 +107,7 @@ func (w *Worker) SubmitInputs(ctx context.Context, tenant, session, key string, 
 	if !w.dispatcher.canAdmitInputs(value.Engine, value.Configuration) {
 		return nil, store.ErrInvalidInput
 	}
-	return w.admission.SubmitInputs(ctx, tenant, session, key, inputs)
+	return w.admitInputs(ctx, tenant, session, key, inputs)
 }
 
 // CreateSession validates execution support before reserving or admitting initial work.
@@ -113,7 +115,11 @@ func (w *Worker) CreateSession(ctx context.Context, tenant string, input store.C
 	if err := w.validateCreation(ctx, input); err != nil {
 		return store.Session{}, err
 	}
-	return w.admission.CreateSession(ctx, tenant, input)
+	session, err := w.admission.CreateSession(ctx, tenant, input)
+	if err == nil && len(input.InitialInputs) > 0 {
+		w.wakeScheduler()
+	}
+	return session, err
 }
 
 // CreateSessionStream applies the same execution admission before creating a stream.
@@ -121,7 +127,11 @@ func (w *Worker) CreateSessionStream(ctx context.Context, tenant string, input s
 	if err := w.validateCreation(ctx, input); err != nil {
 		return store.SessionCreation{}, err
 	}
-	return w.admission.CreateSessionStream(ctx, tenant, input)
+	creation, err := w.admission.CreateSessionStream(ctx, tenant, input)
+	if err == nil && len(input.InitialInputs) > 0 {
+		w.wakeScheduler()
+	}
+	return creation, err
 }
 
 // Run retains queued work across restarts, but never replays an uncertain claim.
@@ -174,7 +184,12 @@ func (w *Worker) Run(ctx context.Context) (runErr error) {
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	schedule := workerSchedule{}
+	// A hint can encounter occupied slots or a preceding execution finishing
+	// on the same Session. Allow one immediate retry when a slot is released;
+	// failed preparations still wait for polling instead of spinning.
+	rescanOnCompletion := false
 	for {
+		maintenance := false
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -192,10 +207,15 @@ func (w *Worker) Run(ctx context.Context) (runErr error) {
 				defer running.Done()
 				writesCompleted <- writeCompletion{request: request, result: w.runFileWrite(ctx, request)}
 			}()
+			continue
 		case write := <-writesCompleted:
 			delete(active, write.request.environment.SessionID)
 			w.observeSlots(len(active))
 			write.request.result <- write.result
+			if !rescanOnCompletion {
+				continue
+			}
+			rescanOnCompletion = false
 		case request := <-w.directoryReads:
 			if request.ctx.Err() != nil || reads == w.executionConcurrency() || (!active[request.environment.SessionID] && len(active) == w.executionConcurrency()) {
 				request.reply(directoryReadResult{err: ErrExecutionUnavailable})
@@ -217,6 +237,7 @@ func (w *Worker) Run(ctx context.Context) (runErr error) {
 				}
 				readsCompleted <- readCompletion{id: id, request: request, result: result}
 			}()
+			continue
 		case read := <-readsCompleted:
 			reads--
 			if read.id != "" {
@@ -224,20 +245,33 @@ func (w *Worker) Run(ctx context.Context) (runErr error) {
 				w.observeSlots(len(active))
 			}
 			read.request.reply(read.result)
+			if read.id == "" || !rescanOnCompletion {
+				continue
+			}
+			rescanOnCompletion = false
 		case result := <-completed:
 			delete(active, result.id)
 			w.observeSlots(len(active))
 			if result.err != nil {
 				return result.err
 			}
-		case <-ticker.C:
-			check, stop := context.WithTimeout(ctx, 5*time.Second)
-			err := w.CheckOwnership(check)
-			stop()
-			if err != nil {
-				w.observeSchedulerPoll(0, err)
-				return err
+			if !rescanOnCompletion {
+				continue
 			}
+			rescanOnCompletion = false
+		case <-w.scheduleWake:
+			rescanOnCompletion = true
+		case <-ticker.C:
+			maintenance = true
+		}
+		check, stop := context.WithTimeout(ctx, 5*time.Second)
+		err := w.CheckOwnership(check)
+		stop()
+		if err != nil {
+			w.observeSchedulerPoll(0, err)
+			return err
+		}
+		if maintenance {
 			if _, err := w.dispatcher.Store.ExpireEnvironmentInputs(ctx); err != nil {
 				w.observeSchedulerPoll(0, err)
 				return err
@@ -246,35 +280,40 @@ func (w *Worker) Run(ctx context.Context) (runErr error) {
 				w.observeSchedulerPoll(0, err)
 				return err
 			}
-			if len(active) == w.executionConcurrency() {
-				w.observeSchedulerPoll(0, nil)
-				continue
-			}
-			devices := w.dispatcher.Registry.Devices()
-			if len(devices) == 0 {
-				w.observeSchedulerPoll(0, nil)
-				continue
-			}
-			work, err := schedule.selectWork(ctx, w, devices, active)
-			w.observeSlots(len(active))
-			if err != nil {
-				w.observeSchedulerPoll(0, err)
-				return err
-			}
-			w.observeSchedulerPoll(len(work), nil)
-			for _, item := range work {
-				running.Add(1)
-				go func() {
-					defer running.Done()
-					var err error
-					if item.reservationID != "" {
-						err = w.runEnvironmentInput(ctx, item)
-					} else {
-						err = w.runClaim(ctx, item.ExecutionWork)
-					}
-					completed <- completion{id: item.SessionID, err: err}
-				}()
-			}
+		}
+		if len(active) == w.executionConcurrency() {
+			w.observeSchedulerPoll(0, nil)
+			continue
+		}
+		devices := w.dispatcher.Registry.Devices()
+		if len(devices) == 0 {
+			w.observeSchedulerPoll(0, nil)
+			continue
+		}
+		if !maintenance {
+			schedule.nextEnvironmentScan = time.Time{}
+		}
+		work, err := schedule.selectWork(ctx, w, devices, active)
+		w.observeSlots(len(active))
+		if err != nil {
+			w.observeSchedulerPoll(0, err)
+			return err
+		}
+		w.observeSchedulerPoll(len(work), nil)
+		rescanOnCompletion = rescanOnCompletion && (len(active) > len(work) || len(active) == w.executionConcurrency())
+		for _, item := range work {
+			running.Add(1)
+			go func() {
+				defer running.Done()
+				var err error
+				if item.reservationID != "" {
+					err = w.runEnvironmentInput(ctx, item)
+				} else {
+					err = w.runClaim(ctx, item.ExecutionWork)
+				}
+				w.dispatcher.notifications.notify(item.TenantID, item.SessionID)
+				completed <- completion{id: item.SessionID, err: err}
+			}()
 		}
 	}
 }

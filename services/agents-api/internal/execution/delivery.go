@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"time"
 
@@ -50,6 +51,8 @@ func abort(peer *gateway.Session, runID string) {
 }
 
 func (d *Dispatcher) deliver(ctx context.Context, tenantID, sessionID string, peer *gateway.Session, request proto.PromptRequestPayload, first int64, prepared *preparedStart) (result Result, status string) {
+	changed, unsubscribeChanges := d.notifications.subscribe(tenantID, sessionID)
+	defer unsubscribeChanges()
 	status = store.TurnFailed
 	result.AppliedThrough = first
 	subscription, err := peer.SubscribeDurable(request.RunID)
@@ -80,6 +83,9 @@ func (d *Dispatcher) deliver(ctx context.Context, tenantID, sessionID string, pe
 		}
 	}()
 	var preparationEvents <-chan proto.Envelope
+	var executorRetried, nativeObserved bool
+	inputStarted := time.Now()
+	firstTextObserved := false
 	if prepared != nil {
 		preparationEvents = prepared.sub.Events
 		err = prepared.start(ctx, request)
@@ -92,6 +98,8 @@ func (d *Dispatcher) deliver(ctx context.Context, tenantID, sessionID string, pe
 	}
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
+	workReady := make(chan struct{}, 1)
+	workReady <- struct{}{}
 	flushTicker := time.NewTicker(100 * time.Millisecond)
 	defer flushTicker.Stop()
 	var pending *pendingInput
@@ -118,6 +126,31 @@ func (d *Dispatcher) deliver(ctx context.Context, tenantID, sessionID string, pe
 			}
 			started, err := prepared.started(env, request.RunID)
 			if err != nil {
+				var rejection *preparationRejection
+				if errors.As(err, &rejection) && rejection.operation == proto.TypeExecutionStart && rejection.code == "executor_unavailable" && !executorRetried && !nativeObserved && cancelReply == nil {
+					// This receipt guarantees no native input was submitted and
+					// the previous owner was closed. Unknown delivery is never retried.
+					executorRetried = true
+					prepared.close()
+					currentPeer, peerErr := d.authorizedPeer(ctx, peer.DeviceID)
+					if peerErr != nil || currentPeer != peer {
+						result.ErrorCode = "device_disconnected"
+						return
+					}
+					replacement, prepareErr := d.prepareTurnExecutor(ctx, peer, tenantID, sessionID, request.RunID, request, store.TurnInProgress)
+					if prepareErr != nil {
+						result.ErrorCode = "executor_recovery_failed"
+						return
+					}
+					prepared = replacement
+					defer prepared.close()
+					preparationEvents = prepared.sub.Events
+					if prepared.start(ctx, request) != nil {
+						result.ErrorCode = "delivery_unknown"
+						return
+					}
+					continue
+				}
 				// Cancellation owns the receipt even when it interrupts native Start.
 				if cancelReply != nil {
 					preparationEvents = nil
@@ -164,6 +197,11 @@ func (d *Dispatcher) deliver(ctx context.Context, tenantID, sessionID string, pe
 			if !ok {
 				result.ErrorCode = "device_disconnected"
 				return
+			}
+			nativeObserved = true
+			if !firstTextObserved && hasText(env) {
+				firstTextObserved = true
+				recordFirstText(ctx, sessionID, request.RunID, inputStarted)
 			}
 			writeErr := journal.observe(ctx, env)
 			if result.mergeObservation(env) != nil {
@@ -223,6 +261,16 @@ func (d *Dispatcher) deliver(ctx context.Context, tenantID, sessionID string, pe
 				return
 			}
 		case <-ticker.C:
+			select {
+			case workReady <- struct{}{}:
+			default:
+			}
+		case <-changed:
+			select {
+			case workReady <- struct{}{}:
+			default:
+			}
+		case <-workReady:
 			if !cancelSent.IsZero() {
 				if time.Since(cancelSent) > 15*time.Second {
 					result.ErrorCode = "cancel_unconfirmed"
@@ -233,6 +281,9 @@ func (d *Dispatcher) deliver(ctx context.Context, tenantID, sessionID string, pe
 			turn, err := d.Store.GetTurn(ctx, tenantID, sessionID, request.RunID)
 			if err != nil {
 				result.ErrorCode = "execution_state_unavailable"
+				if ctx.Err() != nil {
+					result.ErrorCode = "execution_interrupted"
+				}
 				return
 			}
 			if turn.Status != store.TurnInProgress && turn.Status != store.TurnWaiting {
@@ -255,6 +306,9 @@ func (d *Dispatcher) deliver(ctx context.Context, tenantID, sessionID string, pe
 				inputs, err := d.Store.ListTurnInputs(ctx, tenantID, sessionID, request.RunID, result.AppliedThrough, 1)
 				if err != nil {
 					result.ErrorCode = "execution_state_unavailable"
+					if ctx.Err() != nil {
+						result.ErrorCode = "execution_interrupted"
+					}
 					return
 				}
 				if len(inputs) == 0 {

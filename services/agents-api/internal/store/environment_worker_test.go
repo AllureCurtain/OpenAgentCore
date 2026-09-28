@@ -38,7 +38,7 @@ func TestWorkerEnvironmentSharesCapacityThroughClaimAndCleanup(t *testing.T) {
 		select {
 		case frame := <-frames:
 			switch frame.Type {
-			case proto.TypePromptRequest:
+			case testExecutionRequest:
 				normal = append(normal, frame)
 			case proto.TypeExecutionPrepare:
 				preparing = append(preparing, frame)
@@ -96,7 +96,7 @@ func TestWorkerEnvironmentSharesCapacityThroughClaimAndCleanup(t *testing.T) {
 					t.Fatal("duplicate preparation release")
 				}
 				release = frame
-			case proto.TypePromptRequest:
+			case testExecutionRequest:
 				if resumed.ID != "" {
 					t.Fatal("cleanup freed more than one capacity slot")
 				}
@@ -140,7 +140,7 @@ func TestWorkerEnvironmentRetriesPendingWithoutExtendingDeadline(t *testing.T) {
 	nextWorkerFrame(t, frames, proto.TypeExecutionRelease)
 	h.session = publicSession(t, h, "unrelated")
 	receipt := h.message("ordinary", "make progress after preparation failure")
-	request := nextWorkerFrame(t, frames, proto.TypePromptRequest)
+	request := nextWorkerFrame(t, frames, testExecutionRequest)
 	if request.ID != receipt.TurnID {
 		t.Fatal("preparation failure blocked ordinary work")
 	}

@@ -3,10 +3,10 @@
 package claudesdk
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -119,8 +119,8 @@ func TestWorkspaceCommandCancellationAndBridgeFailuresCloseOnlyPendingCalls(t *t
 								t.Fatal(err)
 							}
 						} else if mode == "commands-cancel" || mode == "commands-drained" {
-							if err := s.Cancel(ctx); err != nil {
-								t.Fatal(err)
+							if err := s.Cancel(ctx); (err == nil) != (mode == "commands-drained") {
+								t.Fatalf("command cancellation confirmation: %v", err)
 							}
 						}
 					}
@@ -155,13 +155,7 @@ func TestWorkspaceCommandCancellationAndBridgeFailuresCloseOnlyPendingCalls(t *t
 	}
 }
 
-func runCommandsHelper(request startRequest, mode string, emit func(bridgeEvent)) {
-	var stopping chan os.Signal
-	if mode == "commands-cancel" || mode == "commands-drained" {
-		stopping = make(chan os.Signal, 1)
-		signal.Notify(stopping, syscall.SIGTERM)
-		defer signal.Stop(stopping)
-	}
+func runCommandsHelper(request startRequest, mode string, scanner *bufio.Scanner, emit func(bridgeEvent)) {
 	if mode != "commands-before-ready" {
 		emit(bridgeEvent{Type: "input_ready", SessionID: request.Resume})
 	}
@@ -181,7 +175,9 @@ func runCommandsHelper(request startRequest, mode string, emit func(bridgeEvent)
 	}
 	switch mode {
 	case "commands-cancel", "commands-drained":
-		<-stopping
+		if !scanner.Scan() {
+			return
+		}
 		if mode == "commands-drained" {
 			interrupted := commandEvent("pending", "after", "incomplete", "sleep 30")
 			interrupted.Observation.Output = json.RawMessage(`"observed while draining"`)

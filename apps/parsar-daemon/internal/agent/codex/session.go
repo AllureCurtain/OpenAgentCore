@@ -63,6 +63,15 @@ func Factory(ctx context.Context, req proto.PromptRequestPayload, out chan<- pro
 //  5. turn/completed emits TypeDone + closes out. Cancel can short-cut
 //     this by killing the child early.
 type Session struct {
+	retiredTurns              map[string]bool
+	executor                  *Executor
+	outputDone                chan struct{}
+	nativeSettled             atomic.Bool
+	settlement                agent.TurnSettlement
+	settlementErr             error
+	operationMu               sync.Mutex
+	operations                sync.WaitGroup
+	operationsClosed          bool
 	toolEnvironment           bool
 	nativeHome                string
 	subagents                 *subagentObservations
@@ -152,14 +161,14 @@ func (s *Session) registerHandlers() {
 	rpc.OnNotification("error", s.onErrorNotif)
 	rpc.OnNotification("hook/completed", s.onToolEnvironmentHook)
 
-	rpc.OnServerRequest("item/commandExecution/requestApproval", s.handleCodexCommandApproval)
-	rpc.OnServerRequest("item/fileChange/requestApproval", s.handleCodexFileApproval)
-	rpc.OnServerRequest("item/permissions/requestApproval", s.handleCodexPermissionsApproval)
+	s.onServerRequest("item/commandExecution/requestApproval", s.handleCodexCommandApproval)
+	s.onServerRequest("item/fileChange/requestApproval", s.handleCodexFileApproval)
+	s.onServerRequest("item/permissions/requestApproval", s.handleCodexPermissionsApproval)
 	// Older app-server releases used this unseparated method name.
-	rpc.OnServerRequest("item/permissionsRequestApproval", s.handleCodexPermissionsApproval)
-	rpc.OnServerRequest("item/tool/requestUserInput", s.handleCodexUserInput)
-	rpc.OnServerRequest("item/tool/call", s.handleFunctionCall)
-	rpc.OnServerRequest("mcpServer/elicitation/request", s.handleCodexMCPElicitation)
+	s.onServerRequest("item/permissionsRequestApproval", s.handleCodexPermissionsApproval)
+	s.onServerRequest("item/tool/requestUserInput", s.handleCodexUserInput)
+	s.onServerRequest("item/tool/call", s.handleFunctionCall)
+	s.onServerRequest("mcpServer/elicitation/request", s.handleCodexMCPElicitation)
 }
 
 func (s *Session) onTurnStarted(raw json.RawMessage) {
@@ -193,6 +202,7 @@ func (s *Session) onTurnCompleted(raw json.RawMessage) {
 	if json.Unmarshal(raw, &p) != nil || !s.isRootTurn(p.ThreadID, p.Turn.ID) {
 		return
 	}
+	s.nativeSettled.Store(true)
 	s.stopSteering()
 
 	usage := p.Turn.Usage
@@ -396,6 +406,9 @@ func (s *Session) emitTerminal(message string, asError bool) {
 }
 
 func (s *Session) emitTerminalFailure(message string, asError bool, failure proto.ErrorPayload) {
+	if s.executor != nil {
+		defer s.finishAfterTerminal()
+	}
 	if !s.terminal.CompareAndSwap(false, true) {
 		return
 	}
@@ -447,6 +460,9 @@ func (s *Session) closeOut() {
 		s.outMu.Lock()
 		s.outClosed = true
 		close(s.out)
+		if s.outputDone != nil {
+			close(s.outputDone)
+		}
 		s.outMu.Unlock()
 	})
 }

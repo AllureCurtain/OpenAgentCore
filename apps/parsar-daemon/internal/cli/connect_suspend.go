@@ -55,10 +55,8 @@ func newSuspendedRouter(conn *transport.Conn, registry *agent.Registry) (*suspen
 	return &suspendedRouter{router: router, bridge: bridge, sender: sender, registry: wrapped, local: local}, nil
 }
 
-func (s *suspendedRouter) shutdown() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	return s.router.Shutdown(ctx)
+func (s *suspendedRouter) shutdown() {
+	shutdownRouterUntilConfirmed(s.router.Shutdown, time.Second)
 }
 
 // runSuspendLoop uses the ordinary connection authentication and dispatch chain.
@@ -78,10 +76,7 @@ func runSuspendLoop(ctx context.Context, dial transport.DialFn, registry *agent.
 			return err
 		}
 		err = serveSuspendLifecycle(ctx, conn, dial, state, boot, discovery, control)
-		closeErr := state.shutdown()
-		if closeErr != nil {
-			return errors.Join(err, closeErr)
-		}
+		state.shutdown()
 		if ctx.Err() != nil {
 			return nil
 		}

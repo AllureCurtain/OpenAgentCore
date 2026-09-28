@@ -16,7 +16,7 @@ import (
 )
 
 func TestClassifiedBridgeFailurePreservesTerminalEvidence(t *testing.T) {
-	for _, mode := range []string{"valid", "wrong-session", "wrong-result", "success-usage", "cancelled", "unknown", "malformed-code", "after-terminal", "scanner-error", "process-error"} {
+	for _, mode := range []string{"valid", "unconfirmed", "wrong-session", "wrong-result", "success-usage", "cancelled", "unknown", "malformed-code", "after-terminal", "scanner-error", "process-error"} {
 		t.Run(mode, func(t *testing.T) {
 			root := t.TempDir()
 			t.Setenv("OAC_RUNTIME_HOME", root)
@@ -45,8 +45,13 @@ func TestClassifiedBridgeFailurePreservesTerminalEvidence(t *testing.T) {
 					_ = event.DecodePayload(&done)
 				}
 			}
+			if mode == "unconfirmed" {
+				if _, err := s.(*session).AwaitSettlement(ctx); err == nil {
+					t.Fatal("native diagnostic fabricated confirmed Turn settlement")
+				}
+			}
 			want := ""
-			if mode == "valid" {
+			if mode == "valid" || mode == "unconfirmed" {
 				want = "authentication_error"
 			}
 			if errors != 1 || dones != 1 || usage != 1 || failure.Code != want || done.Metadata[proto.DoneMetaAgentSessionID] != "native-session" || done.Usage.Raw["claude_sdk_result"] == nil {
@@ -78,6 +83,11 @@ func runClassifiedFailureHelper(request startRequest, mode string, encode func(b
 		e.EngineErrorCode = json.RawMessage(`{"secret":"value"}`)
 	}
 	encode(e)
+	if mode == "unconfirmed" {
+		confirmed, reusable := false, false
+		encode(bridgeEvent{Type: "turn_settled", Confirmed: &confirmed, Reusable: &reusable, Reason: "native_execution_unavailable"})
+		os.Exit(0)
+	}
 	if mode == "process-error" {
 		os.Exit(7)
 	}

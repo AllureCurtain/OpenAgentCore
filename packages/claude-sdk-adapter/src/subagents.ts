@@ -14,6 +14,11 @@ export class Subagents {
   constructor(private readonly cwd: string, private readonly limit: number, private resume: string | undefined) {
     if (!Number.isSafeInteger(limit) || limit < 1) throw new Error("invalid_request");
   }
+  get complete(): boolean { return this.pending.size === 0 && this.running.size === 0; }
+  beginTurn(): void {
+    if (!this.complete) throw new Error("native child work is unsettled");
+    this.observedCalls.clear(); this.admitted.clear();
+  }
   expectSession(id: string | undefined): void { this.resume = id; }
   permitsActor(id?: string): boolean { return id === undefined || this.known.has(id); }
   isCoordination(name: string): boolean { return ["Agent", "Task", "SendMessage"].includes(name); }

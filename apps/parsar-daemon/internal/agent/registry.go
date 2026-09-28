@@ -58,6 +58,7 @@ type Registry struct {
 	mu        sync.RWMutex
 	factories map[string]Factory
 	preparers map[string]PreparationFactory
+	executors map[string]ExecutorFactory
 	kinds     map[string]proto.SupportedAgentKind
 }
 
@@ -65,6 +66,7 @@ func NewRegistry() *Registry {
 	return &Registry{
 		factories: make(map[string]Factory),
 		preparers: make(map[string]PreparationFactory),
+		executors: make(map[string]ExecutorFactory),
 		kinds:     make(map[string]proto.SupportedAgentKind),
 	}
 }
@@ -90,6 +92,7 @@ func (r *Registry) RegisterKind(info proto.SupportedAgentKind, f Factory) {
 	defer r.mu.Unlock()
 	r.factories[kind] = f
 	delete(r.preparers, kind)
+	delete(r.executors, kind)
 	info.Capabilities.Preparation = false
 	info.Capabilities.WorkspaceReadPreparation = false
 	r.kinds[kind] = info

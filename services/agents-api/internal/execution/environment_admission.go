@@ -85,7 +85,7 @@ func (w *Worker) submitEnvironmentInputs(ctx context.Context, session store.Sess
 	}
 	if (kind == "cancel" || kind == "tool_result") && !slices.ContainsFunc(inputs, func(input store.Input) bool { return input.Kind != kind }) {
 		// Neither kind creates a Turn. The Session lock preserves target and retry identity.
-		return w.admission.SubmitInputs(ctx, session.TenantID, session.ID, key, inputs)
+		return w.admitInputs(ctx, session.TenantID, session.ID, key, inputs)
 	}
 	// Messages start work. A Session from before deployment defaults moved into
 	// Core may have no frozen provider; reject it here instead of queueing work
@@ -94,12 +94,15 @@ func (w *Worker) submitEnvironmentInputs(ctx context.Context, session store.Sess
 	if json.Unmarshal(session.Configuration, &snapshot) != nil || !snapshot.ModelProviderConfigured {
 		return nil, store.ErrModelProviderRequired
 	}
+	changed, unsubscribe := w.dispatcher.notifications.subscribe(session.TenantID, session.ID)
+	defer unsubscribe()
 	reserve, cancel := context.WithTimeout(ctx, 5*time.Second)
 	reservation, err := w.admission.ReserveEnvironmentInput(reserve, session.TenantID, session.ID, key, inputs)
 	cancel()
 	if err != nil {
 		return nil, err
 	}
+	w.wakeScheduler()
 	if reservation.State == store.EnvironmentInputPending && !reservation.IsInitial {
 		w.hintRuntimeWake(ctx, session)
 	}
@@ -120,6 +123,7 @@ func (w *Worker) submitEnvironmentInputs(ctx context.Context, session store.Sess
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		case <-ticker.C:
+		case <-changed:
 		}
 		if err := w.checkAdmissionOwnership(ctx); err != nil {
 			return nil, err

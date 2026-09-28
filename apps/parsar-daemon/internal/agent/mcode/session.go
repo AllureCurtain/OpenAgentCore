@@ -1,15 +1,12 @@
 package mcode
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,22 +17,30 @@ import (
 )
 
 type Session struct {
-	ctx                     context.Context
-	req                     proto.PromptRequestPayload
-	opts                    launchOptions
-	process                 *clirunner.Process
+	ctx  context.Context
+	req  proto.PromptRequestPayload
+	opts launchOptions
+	*connection
+	executor                *executor
+	settlement              agent.TurnSettlement
+	settlementErr           error
+	settled                 chan struct{}
+	inputDone               chan struct{}
+	outputCancel            context.CancelFunc
+	operations              sync.WaitGroup
+	closing                 bool
+	cancelled               bool
+	inputUncertain          bool
 	out                     chan<- proto.Envelope
 	frames                  chan rpcFrame
-	exited                  chan struct{}
 	finished                chan struct{}
-	writeMu                 sync.Mutex
 	mu                      sync.Mutex
 	sessionID               string
+	nativeModel             string
+	outputContext           context.Context
+	outcome                 proto.DonePayload
 	permissions             map[string]pendingPermission
 	questions               map[string]pendingQuestion
-	exitErr                 error
-	nextID                  int
-	responses               map[string]chan rpcFrame
 	steeringReady           bool
 	steeringTurn            string
 	sequence                uint64
@@ -70,7 +75,7 @@ func newSession(ctx context.Context, req proto.PromptRequestPayload, out chan<- 
 	if err != nil {
 		return nil, err
 	}
-	go s.run(nil)
+	go s.run()
 	return s, nil
 }
 
@@ -79,56 +84,18 @@ func launch(ctx context.Context, req proto.PromptRequestPayload, opts launchOpti
 	if err != nil {
 		return nil, err
 	}
-	s := &Session{ctx: ctx, req: req, opts: opts, process: process, out: out, frames: make(chan rpcFrame, 32), exited: make(chan struct{}), finished: make(chan struct{}), responses: map[string]chan rpcFrame{}, permissions: map[string]pendingPermission{}, questions: map[string]pendingQuestion{}, tools: map[string]toolUpdate{}, completedTools: map[string]bool{}}
-	go func() { _, _ = io.Copy(io.Discard, process.Stderr) }()
-	go s.read()
+	c := &connection{process: process, exited: make(chan struct{}), responses: map[string]chan rpcFrame{}}
+	s := newTurnSession(ctx, req, opts, c, out)
+	c.current = s
+	go c.read()
 	return s, nil
 }
 
-func (s *Session) read() {
-	defer close(s.exited)
-	defer close(s.frames)
-	scanner := bufio.NewScanner(s.process.Stdout)
-	scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
-	var readErr error
-	for scanner.Scan() {
-		var frame rpcFrame
-		if err := json.Unmarshal(scanner.Bytes(), &frame); err != nil {
-			readErr = fmt.Errorf("mcode: malformed ACP response")
-			s.process.Cancel()
-			break
-		}
-		if frame.Method == "" {
-			s.mu.Lock()
-			response := s.responses[string(frame.ID)]
-			s.mu.Unlock()
-			if response != nil {
-				select {
-				case response <- frame:
-				default:
-				}
-				continue
-			}
-		}
-		select {
-		case s.frames <- frame:
-		case <-s.finished:
-		case <-s.process.Context().Done():
-		}
-	}
-	if scanner.Err() != nil {
-		readErr = fmt.Errorf("mcode: ACP stream read failed")
-		s.process.Cancel()
-	}
-	waitErr := s.process.Wait()
-	if readErr != nil {
-		s.exitErr = readErr
-	} else {
-		s.exitErr = waitErr
-	}
+func newTurnSession(ctx context.Context, req proto.PromptRequestPayload, opts launchOptions, c *connection, out chan<- proto.Envelope) *Session {
+	return &Session{ctx: ctx, req: req, opts: opts, connection: c, out: out, frames: make(chan rpcFrame, 32), finished: make(chan struct{}), permissions: map[string]pendingPermission{}, questions: map[string]pendingQuestion{}, tools: map[string]toolUpdate{}, completedTools: map[string]bool{}}
 }
 
-func (s *Session) run(p *prepared) {
+func (s *Session) run() {
 	defer func() {
 		if s.out != nil {
 			close(s.out)
@@ -136,9 +103,6 @@ func (s *Session) run(p *prepared) {
 	}()
 	defer close(s.finished)
 	err := s.prepareNative()
-	if p != nil {
-		err = p.awaitStart(err)
-	}
 	if err == nil {
 		if s.req.StrictResume && !s.req.DisableSubagents {
 			var snapshot nativeSubagentSnapshot
@@ -166,7 +130,7 @@ func (s *Session) run(p *prepared) {
 			err = observationErr
 		}
 	}
-	if p != nil || err != nil {
+	if err != nil {
 		s.process.Cancel()
 		<-s.exited
 	}
@@ -241,6 +205,7 @@ func (s *Session) prepareNative() error {
 	if err != nil {
 		return err
 	}
+	s.nativeModel = model
 	if err := s.call("session/set_config_option", map[string]any{"sessionId": session.SessionID, "configId": "model", "value": model}, nil, false); err != nil {
 		return err
 	}
@@ -263,6 +228,12 @@ func (s *Session) executePrompt() error {
 	s.mu.Unlock()
 	if err != nil {
 		return err
+	}
+	s.mu.Lock()
+	cancelled := s.cancelled
+	s.mu.Unlock()
+	if result.StopReason == "cancelled" && cancelled {
+		return nil
 	}
 	if result.StopReason != "end_turn" {
 		return fmt.Errorf("mcode: prompt stopped (%s)", result.StopReason)
@@ -304,7 +275,26 @@ func (s *Session) call(method string, params any, result any, prompt bool) error
 	if err != nil {
 		return err
 	}
-	if err := s.write(rpcFrame{JSONRPC: "2.0", ID: json.RawMessage(id), Method: method, Params: raw}); err != nil {
+	if prompt && s.executor != nil {
+		// Serialize the admission check with the wire, but release the owner
+		// mutex before a pipe write so cancellation and Close can stop it.
+		s.connection.writeMu.Lock()
+		s.executor.mu.Lock()
+		s.mu.Lock()
+		cancelled := s.cancelled
+		s.mu.Unlock()
+		if cancelled || s.executor.closed {
+			s.executor.mu.Unlock()
+			s.connection.writeMu.Unlock()
+			return errTurnCancelled
+		}
+		s.executor.mu.Unlock()
+		err = json.NewEncoder(s.process.Stdin).Encode(rpcFrame{JSONRPC: "2.0", ID: json.RawMessage(id), Method: method, Params: raw})
+		s.connection.writeMu.Unlock()
+	} else {
+		err = s.write(rpcFrame{JSONRPC: "2.0", ID: json.RawMessage(id), Method: method, Params: raw})
+	}
+	if err != nil {
 		return err
 	}
 	ctx := s.process.Context()
@@ -317,6 +307,8 @@ func (s *Session) call(method string, params any, result any, prompt bool) error
 		select {
 		case <-ctx.Done():
 			return fmt.Errorf("mcode: %s: %w", method, ctx.Err())
+		case <-s.exited:
+			return fmt.Errorf("mcode: ACP process exited: %v", s.exitErr)
 		case frame, ok := <-s.frames:
 			if !ok {
 				<-s.exited
@@ -344,24 +336,30 @@ func (s *Session) call(method string, params any, result any, prompt bool) error
 	}
 }
 
-func (s *Session) write(frame rpcFrame) error {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	return json.NewEncoder(s.process.Stdin).Encode(frame)
-}
-
 func (s *Session) emit(kind string, payload any) {
+	ctx := s.ctx
+	if s.outputContext != nil {
+		ctx = s.outputContext
+	}
 	env, err := proto.NewEnvelope(kind, s.req.RunID, payload)
 	if err != nil {
 		return
 	}
 	select {
 	case s.out <- env:
-	case <-s.ctx.Done():
+		return
+	default:
+	}
+	select {
+	case s.out <- env:
+	case <-ctx.Done():
 	}
 }
 
 func (s *Session) Cancel(ctx context.Context) error {
+	if s.executor != nil {
+		return s.cancelTurn(ctx)
+	}
 	if s.req.StrictResume && !s.req.DisableSubagents {
 		if err := s.cancelSubagents(ctx); err != nil {
 			s.process.Cancel()
@@ -408,19 +406,4 @@ func (s *Session) SubmitPermission(_ context.Context, id string, decision proto.
 	}
 	delete(s.permissions, id)
 	return nil
-}
-
-func (s *Session) reserveResponse() (string, chan rpcFrame) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.nextID++
-	id := strconv.Itoa(s.nextID)
-	reply := make(chan rpcFrame, 1)
-	s.responses[id] = reply
-	return id, reply
-}
-func (s *Session) removeResponse(id string) {
-	s.mu.Lock()
-	delete(s.responses, id)
-	s.mu.Unlock()
 }

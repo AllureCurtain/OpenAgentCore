@@ -86,6 +86,9 @@ func (p Policy) engineCapabilities(peer *gateway.Session, engine string, snapsho
 	if !known || !found || !info.Available || !caps.Streaming || !caps.Steering || !caps.DurableTurns || !caps.DurableInputReceipts {
 		return fail("device must advertise streaming, steering and durable turns for this engine")
 	}
+	if !caps.Preparation {
+		return fail("device must advertise executor preparation")
+	}
 	if !caps.ExecutionControls {
 		return fail("device must advertise execution_controls")
 	}

@@ -98,8 +98,8 @@ func (r *Router) queueSteering(ctx context.Context, env proto.Envelope, input pr
 		return &ack
 	}
 	if input.DurableReceipt {
-		if _, ok := session.(agent.DurableSteerer); !ok || !state.releaseOnCompletion {
-			ack.ErrorCode, ack.Error = "unsupported", "Durable input receipts require a supported release-on-completion run."
+		if _, ok := session.(agent.DurableSteerer); !ok || (!state.releaseOnCompletion && state.preparedHandoff == nil) {
+			ack.ErrorCode, ack.Error = "unsupported", "Durable input receipts require a supported Turn settlement contract."
 			return &ack
 		}
 	}

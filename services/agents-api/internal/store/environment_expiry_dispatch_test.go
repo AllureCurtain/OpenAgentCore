@@ -11,7 +11,7 @@ import (
 func enableEnvironmentExpiryDispatch(h *dispatchHarness) {
 	h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{SupportedAgentKinds: []proto.SupportedAgentKind{{Kind: "codex", Available: true, Capabilities: proto.AgentKindCapabilities{
 		Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: true, EnvironmentNone: true, WebSearchControl: true, TextVerbosity: true, ExecutionControls: true, SubagentControl: true, ToolObservations: true,
-	}}}})
+		Preparation: true}}}})
 }
 
 func TestWorkerEnvironmentExpiryAtFullExecutionCapacity(t *testing.T) {
@@ -26,7 +26,7 @@ func TestWorkerEnvironmentExpiryAtFullExecutionCapacity(t *testing.T) {
 		if _, err := worker.SubmitInputs(t.Context(), h.tenant, session.ID, key, []store.Input{{Kind: "message", Payload: json.RawMessage(`{"text":"remain active"}`)}}); err != nil {
 			t.Fatal(err)
 		}
-		requests = append(requests, h.read(proto.TypePromptRequest))
+		requests = append(requests, h.read(testExecutionRequest))
 		sessions = append(sessions, session)
 	}
 	tenant, due := newEnvironmentExpiryReservation(t, h.s)
@@ -70,7 +70,7 @@ func TestWorkerEnvironmentExpirySkipsBusySessionAndAllowsDispatch(t *testing.T) 
 		t.Fatal(err)
 	}
 	waitEnvironmentExpiry(t, h.s, otherTenant, other)
-	request := h.read(proto.TypePromptRequest)
+	request := h.read(testExecutionRequest)
 	if request.ID != receipt[0].TurnID {
 		t.Fatal("unrelated dispatch mismatch", request.ID)
 	}

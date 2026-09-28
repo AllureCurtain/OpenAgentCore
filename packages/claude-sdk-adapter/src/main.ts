@@ -1,3 +1,4 @@
+import { ExecutorTurns } from "./executor_protocol.js";
 import { WorkspaceDirectories } from "./workspace_directories.js";
 import { WorkspaceReads } from "./workspace_reads.js";
 import { Inputs } from "./inputs.js";
@@ -12,7 +13,7 @@ const stop = () => abort.abort();
 process.once("SIGTERM", stop);
 process.once("SIGINT", stop);
 lines.once("close", stop);
-const emit = (event: Event): Promise<void> => new Promise((resolve, reject) => {
+const emit = (event: Event | {type:string;[key:string]:unknown}): Promise<void> => new Promise((resolve, reject) => {
   process.stdout.write(JSON.stringify(event) + "\n", error => error ? reject(error) : resolve());
 });
 try {
@@ -30,6 +31,7 @@ try {
   const reads = new WorkspaceReads(output, abort);
   const directories = new WorkspaceDirectories(output, abort);
   const prompts = new Inputs(immediateInput(request));
+  const turns=request.type==="executor_prepare" ? new ExecutorTurns(emit,abort) : undefined;
   const incoming = (async () => {
     try {
       for await (const line of { [Symbol.asyncIterator]: () => input }) {
@@ -39,6 +41,12 @@ try {
           reads.submit(value as Record<string, unknown>);
         } else if (value && typeof value === "object" && "type" in value && value.type === "workspace_directory") {
           directories.submit(value as Record<string, unknown>);
+        } else if(turns) {
+          if(!value || typeof value!=="object" || Array.isArray(value)) throw new Error("invalid_request");
+          const control=value as Record<string,unknown>;
+          if(control.type==="turn_start") await turns.start(control);
+          else if(control.type==="turn_cancel") await turns.cancel(control);
+          else await turns.submit(control);
         } else if (request.type === "prepare" && phase !== "running") {
           if (phase !== "prepared" || abort.signal.aborted) throw new Error("invalid_request");
           prompts.release(preparedInput(value));
@@ -50,7 +58,7 @@ try {
     }
     catch { invalid = request.type === "prepare"; abort.abort(); }
   })();
-  try { await execute(request, output, abort, functions, prompts, reads, directories); }
+  try { await execute(request, output, abort, functions, prompts, reads, directories, turns); }
   catch { await output({ type: "error", code: "execution_failed" }); }
   finally {
     prompts.close();

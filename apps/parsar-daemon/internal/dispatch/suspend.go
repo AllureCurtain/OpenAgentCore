@@ -49,6 +49,12 @@ func (r *Router) Quiesce(ctx context.Context, request proto.EnvironmentSuspendPa
 			}
 		}
 	}
+	for _, owner := range r.executors {
+		if owner.invalid || owner.preparing || owner.run != nil || owner.admission != nil || owner.environmentID != request.EnvironmentID {
+			r.mu.Unlock()
+			return ErrRouterBusy
+		}
+	}
 	r.suspension = &request
 	for _, p := range r.preparations {
 		if p.timer != nil {
@@ -61,6 +67,12 @@ func (r *Router) Quiesce(ctx context.Context, request proto.EnvironmentSuspendPa
 			if state.idleTimer != nil {
 				state.idleTimer.Stop()
 			}
+		}
+	}
+	for _, owner := range r.executors {
+		owner.idleLease++
+		if owner.timer != nil {
+			owner.timer.Stop()
 		}
 	}
 	r.mu.Unlock()
@@ -89,6 +101,9 @@ func (r *Router) Resume(request proto.EnvironmentSuspendPayload, sender Sender) 
 	}
 	r.sender = sender
 	r.suspension = nil
+	for _, owner := range r.executors {
+		r.scheduleExecutorIdleLocked(owner)
+	}
 	for _, states := range r.idle {
 		for state := range states {
 			r.scheduleIdleLocked(state)
