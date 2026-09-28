@@ -73,7 +73,12 @@ message, template name, key or unlisted-resource count is returned in details.
 
 Missing or unsettled Create receipts are uncertainty, never evidence of a different
 team or released compute. The typed client projects these codes to fixed local
-messages. It also projects `409 sandbox_configuration_error` to fixed public-URL
+messages. It preserves the three nonnull fields above only when the response
+status, code and param exactly match the table; all other params on these fixed
+errors become null. Numeric details remain limited to `current_generation` for
+`sandbox_generation_stale` and `allocations`/`pending` for `sandbox_in_use`. Unknown
+credential-bearing errors become `sandbox_configuration_unconfirmed` without replay.
+It also projects `409 sandbox_configuration_error` to fixed public-URL
 guidance, even when a PUT omitted its key; arbitrary upstream text is never echoed.
 
 ## Operation validation

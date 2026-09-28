@@ -352,12 +352,16 @@ export class SandboxAdminClient {
           e2b_template_build_invalid: "Select a ready immutable E2B template build with matching resources.",
           e2b_request_unconfirmed: "E2B verification could not be confirmed. Refresh before submitting again.",
         };
-        if (error.code && messages[error.code]) {
+        if (error.code && Object.hasOwn(messages, error.code)) {
           // Credential-bearing errors expose fixed local copy and allowlisted
-          // numeric facts only; never echo arbitrary message, param or details.
+          // numeric facts plus exact status/code/field matches only.
           const fields = error.code === "sandbox_generation_stale" ? ["current_generation"] : error.code === "sandbox_in_use" ? ["allocations", "pending"] : [];
           const details = Object.fromEntries(fields.filter(field => isNonnegativeInteger(error.details?.[field])).map(field => [field, Number(error.details![field])]));
-          throw new AgentCoreError(messages[error.code]!, error.status, error.code, null, undefined, Object.keys(details).length ? details : undefined);
+          const safeParam = error.status === 400
+            ? error.code === "e2b_api_key_invalid" ? "e2b.api_key" : error.code === "e2b_template_build_invalid" ? "e2b.template" : null
+            : error.status === 409 && error.code === "e2b_team_mismatch" ? "e2b.api_key" : null;
+          const param = error.param === safeParam ? safeParam : null;
+          throw new AgentCoreError(messages[error.code]!, error.status, error.code, param, undefined, Object.keys(details).length ? details : undefined);
         }
       }
       // This code has one fixed Core meaning. Never forward its raw message or
