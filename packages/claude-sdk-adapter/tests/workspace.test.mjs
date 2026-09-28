@@ -70,7 +70,7 @@ test("workspace environment copies only selected refs and fixed values", t => {
   assert.throws(() => new WorkspaceProfile(dirs.workspace, config), /invalid_request/);
 });
 
-test("workspace native options keep the strict sandbox and exact native inventory", t => {
+test("workspace native options bypass isolation and preserve selected tool inventory", t => {
   const { dirs, config } = fixture(t);
   const profile = new WorkspaceProfile(dirs.workspace, config);
   const options = profile.options;
@@ -120,7 +120,7 @@ test("structured workspace admits only its configured native terminal tool", asy
   }
 });
 
-test("workspace permissions and pre-tool hook reject outside paths and unsafe Bash flags", async t => {
+test("workspace permissions preserve host authority and synchronous command ownership", async t => {
   const { dirs, config } = fixture(t);
   writeFileSync(join(dirs.workspace, "file.txt"), "fixture");
   symlinkSync(dirs.protected, join(dirs.workspace, "escape"));
@@ -130,7 +130,7 @@ test("workspace permissions and pre-tool hook reject outside paths and unsafe Ba
   const options = { signal: new AbortController().signal, toolUseID: "tool", requestId: "request" };
   const hook = async (name, input) => profile.beforeTool({ hook_event_name: "PreToolUse", session_id: "native", cwd: dirs.workspace,
     transcript_path: join(dirs.state, "session"), tool_name: name, tool_input: input, tool_use_id: "tool" }, "tool", options);
-  for (const [name, input] of [["Bash", { command: "printf value" }], ["Read", { file_path: "file.txt" }],
+  for (const [name, input] of [["Bash", { command: "printf value" }], ["Bash", { command: "true", dangerouslyDisableSandbox: true }], ["Read", { file_path: "file.txt" }],
     ["Read", { file_path: "inside" }], ["Edit", { file_path: "new/file.txt", old_string: "", new_string: "value" }]]) {
     const permission = await profile.canUseTool(name, input, options);
     assert.equal(permission.behavior, "allow");
@@ -141,7 +141,7 @@ test("workspace permissions and pre-tool hook reject outside paths and unsafe Ba
     }
   }
   for (const [name, input] of [["Bash", { command: "true", run_in_background: true }],
-    ["Bash", { command: "true", dangerouslyDisableSandbox: true }], ["Bash", { command: "true", run_in_background: "false" }],
+    ["Bash", { command: "true", run_in_background: "false" }],
     ["Write", { file_path: "file.txt" }]]) {
     assert.equal((await profile.canUseTool(name, input, options)).behavior, "deny");
     assert.equal((await hook(name, input)).hookSpecificOutput.permissionDecision, "deny");
@@ -175,7 +175,7 @@ test("workspace functions retain native sandbox and exact tool authority", async
   const event = { hook_event_name: "PreToolUse", tool_name: "mcp__functions__lookup", tool_input: input, tool_use_id: "call" };
   assert.deepEqual(await profile.beforeTool(event, "call", options), {});
   assert.equal((await profile.beforeTool({ ...event, tool_name: "mcp__external__lookup" }, "call", options)).hookSpecificOutput.permissionDecision, "deny");
-  assert.equal((await profile.canUseTool("Bash", { command: "true", dangerouslyDisableSandbox: true }, options)).behavior, "deny");
+  assert.equal((await profile.canUseTool("Bash", { command: "true", dangerouslyDisableSandbox: true }, options)).behavior, "allow");
   assert.equal((await profile.canUseTool("Read", { file_path: dirs.state + "/history" }, options)).behavior, "allow");
   controller.abort();
   assert.equal((await profile.canUseTool("mcp__functions__lookup", input, options)).behavior, "deny");

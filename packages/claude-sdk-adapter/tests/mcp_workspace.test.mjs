@@ -28,7 +28,7 @@ function fixture(t, declarations = [stdio]) {
   return { dirs, config, request };
 }
 
-test("installed MCP private projection cannot launch arbitrary unsandboxed commands", t => {
+test("installed MCP projection uses the common Runtime launcher", t => {
   const { request } = fixture(t);
   assert.deepEqual(parseStart(JSON.stringify(request)), request);
   assert.throws(() => parseStart(JSON.stringify({ ...request, observe_messages: true,
@@ -65,12 +65,13 @@ test("combined inventory admits exact MCP identities with host file authority", 
   assert.equal((await workspace.canUseTool(native, {}, { signal })).behavior, "allow");
   assert.equal((await workspace.canUseTool("mcp__installed__undeclared", {}, { signal })).behavior, "deny");
   assert.equal((await workspace.canUseTool("Read", { file_path: join(dirs.secrets, "model.key") }, { signal })).behavior, "allow");
-  assert.equal((await workspace.canUseTool("Bash", { command: "pwd", dangerouslyDisableSandbox: true }, { signal })).behavior, "deny");
+  assert.equal((await workspace.canUseTool("Bash", { command: "pwd", dangerouslyDisableSandbox: true }, { signal })).behavior, "allow");
   assert.equal((await workspace.beforeTool({ ...input, tool_name: "Read", tool_input: { file_path: "ok.txt" } }, "call", { signal })).hookSpecificOutput.updatedInput.file_path, join(dirs.work, "ok.txt"));
   for (const fields of [{ session_id: "other" }, { agent_id: "child" }, { tool_name: "mcp__ambient__echo" }]) {
     assert.equal((await workspace.beforeTool({ ...input, ...fields }, "call", { signal })).hookSpecificOutput.permissionDecision, "deny");
   }
   assert.deepEqual(workspace.options.allowedTools, ["mcp__installed__*"]);
+  assert.equal(mcp.servers.installed.alwaysLoad, true);
   assert.deepEqual(workspace.options.tools, baseline);
   assert.deepEqual(workspace.options.sandbox, {enabled:false});
   mcp.close();

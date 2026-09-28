@@ -24,17 +24,17 @@ type EnvironmentPackagesInput struct {
 
 // EnvironmentTemplate returns safe configuration metadata only.
 type EnvironmentTemplate struct {
-	ID                    string              `json:"id" binding:"required"`
-	Object                string              `json:"object" binding:"required" enums:"agent.environment.template"`
-	Name                  *string             `json:"name" extensions:"x-nullable"`
-	CreatedAt             int64               `json:"created_at" binding:"required"`
-	UpdatedAt             int64               `json:"updated_at" binding:"required"`
-	CapabilityDirectories []string            `json:"capability_directories" binding:"required"`
-	Network               EnvironmentNetwork  `json:"network" binding:"required"`
-	Packages              EnvironmentPackages `json:"packages" binding:"required"`
-	Files                 []json.RawMessage   `json:"files" binding:"required" swaggertype:"array,object"`
-	Plugins               []json.RawMessage   `json:"plugins" binding:"required" swaggertype:"array,object"`
-	Skills                []json.RawMessage   `json:"skills" binding:"required" swaggertype:"array,object"`
+	ID                    string                      `json:"id" binding:"required"`
+	Object                string                      `json:"object" binding:"required" enums:"agent.environment.template"`
+	Name                  *string                     `json:"name" extensions:"x-nullable"`
+	CreatedAt             int64                       `json:"created_at" binding:"required"`
+	UpdatedAt             int64                       `json:"updated_at" binding:"required"`
+	CapabilityDirectories []string                    `json:"capability_directories" binding:"required"`
+	Network               EnvironmentNetwork          `json:"network" binding:"required"`
+	Packages              EnvironmentPackagesResponse `json:"packages" binding:"required"`
+	Files                 []json.RawMessage           `json:"files" binding:"required" swaggertype:"array,object"`
+	Plugins               []json.RawMessage           `json:"plugins" binding:"required" swaggertype:"array,object"`
+	Skills                []json.RawMessage           `json:"skills" binding:"required" swaggertype:"array,object"`
 }
 
 type EnvironmentTemplateList struct {

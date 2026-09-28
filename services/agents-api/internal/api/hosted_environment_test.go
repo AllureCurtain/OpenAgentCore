@@ -62,7 +62,7 @@ func TestHostedEnvironmentResponseHasPinnedShapeAndNoConnectionAction(t *testing
 	if json.Unmarshal(raw, &got) != nil {
 		t.Fatal("invalid environment JSON")
 	}
-	expected := map[string]any{"id": "environment", "type": "openai_hosted", "capability_directories": []any{}, "files": []any{}, "plugins": []any{}, "skills": []any{}, "packages": map[string]any{"npm": []any{}, "python": []any{}}, "network": map[string]any{"access": "enabled", "allowed_domains": []any{}}}
+	expected := map[string]any{"id": "environment", "type": "openai_hosted", "capability_directories": []any{}, "files": []any{}, "plugins": []any{}, "skills": []any{}, "packages": map[string]any{"npm": []any{}, "python": []any{}, "system": []any{}}, "network": map[string]any{"access": "enabled", "allowed_domains": []any{}}}
 	if !reflect.DeepEqual(got, expected) {
 		t.Fatal("hosted response shape changed", string(raw))
 	}
