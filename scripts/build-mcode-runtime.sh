@@ -6,8 +6,7 @@ runtime_root="${OAC_DEV_HOME:-$HOME/.oac}"
 output="${AGENTS_RUNTIME_BUILD_DIR:-$runtime_root/build/mcode-runtime}"
 companion="${MCODE_HARNESS_BUILD_DIR:?Set MCODE_HARNESS_BUILD_DIR to the built companion}"
 native="$companion/native"
-helpers="${AGENTS_EXECUTOR_BUILD_DIR:-$runtime_root/build/agents-executor}"
-for directory in "$runtime_root" "$output" "$native" "$companion" "$helpers"; do
+for directory in "$runtime_root" "$output" "$native" "$companion"; do
   [[ "$directory" == /* ]] || { printf 'Absolute build directories are required\n' >&2; exit 1; }
 done
 test -f "$companion/provenance.json"
@@ -23,10 +22,6 @@ cp -RL "$companion/." "$context/mcode-harness/"
   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=readonly -trimpath \
     -o "$context/oac-daemon" ./apps/parsar-daemon/cmd/parsar-daemon
 )
-for helper in oac-codex-directory oac-codex-write oac-workspace-export; do
-  test -x "$helpers/$helper"
-  cp "$helpers/$helper" "$context/"
-done
 cp "$repo_root/services/agents-api/deploy/mcode/Dockerfile" "$context/Dockerfile"
 mkdir -p "$output"
 cp -R "$context/." "$output/"

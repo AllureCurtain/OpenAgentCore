@@ -41,8 +41,7 @@ is not acceptance.
 
 ## Managed Runtime image and Docker adapter
 
-Build the existing Rust filesystem helpers with `make build-agents-executor`, and
-extract the official npm package `@openai/codex@0.153.4-linux-x64` beneath
+Extract the official npm package `@openai/codex@0.153.4-linux-x64` beneath
 `~/.oac/`. Set `AGENTS_RUNTIME_CODEX_PACKAGE` to its extracted `package` directory
 and run `scripts/build-agents-runtime.sh`. It builds the existing daemon and
 prepares a binary-only Docker context at `~/.oac/build/agents-runtime`; build

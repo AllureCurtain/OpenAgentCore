@@ -59,7 +59,7 @@ func discoverMCodeWorkspace(rc *runContext, discovery *agentCLIDiscovery) {
 		fail(err)
 		return
 	}
-	c, err := mcode.ConfigureLocal(binary, node, os.Getenv("OAC_RUNTIME_MCODE_WORKSPACE_BRIDGE"), root, os.Getenv("OAC_RUNTIME_WORKSPACE"), binding.NetworkPolicy(), os.Getenv("OAC_RUNTIME_STAGING"))
+	c, err := mcode.ConfigureLocal(binary, node, os.Getenv("OAC_RUNTIME_MCODE_WORKSPACE_BRIDGE"), root, os.Getenv("OAC_RUNTIME_WORKSPACE"), binding.NetworkPolicy())
 	if err == nil {
 		err = mcode.CheckWorkspace(context.Background(), c)
 	}

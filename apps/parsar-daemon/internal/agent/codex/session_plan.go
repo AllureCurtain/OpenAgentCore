@@ -36,13 +36,8 @@ func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg
 		plan.ApprovalPolicy = AskForApproval{String: "never"}
 	}
 
-	if req.LocalEnvironment != nil && req.LocalEnvironment.ToolEnvironment {
-		binding, err := localworkspace.Load()
-		if err != nil || binding == nil {
-			plan.Cleanup()
-			return SessionPlan{}, nil, fmt.Errorf("codex: native Runtime binding unavailable")
-		}
-		values, err := binding.ReadToolEnvironment()
+	if req.LocalEnvironment != nil {
+		values, err := localworkspace.ReadOptionalToolEnvironment()
 		if err != nil {
 			plan.Cleanup()
 			return SessionPlan{}, nil, err

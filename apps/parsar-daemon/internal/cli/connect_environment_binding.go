@@ -76,7 +76,7 @@ func bindEnvironmentRuntime(remote string, bound environmentEnrollment, credenti
 	if capabilityDirectory == "" {
 		capabilityDirectory = localworkspace.CapabilityDirectory
 	}
-	if _, err := localworkspace.NewWithCapabilityDirectory(bound.EnvironmentID, bound.SessionID, workspace, os.Getenv("OAC_RUNTIME_DIRECTORY_HELPER"), capabilityDirectory); err != nil {
+	if _, err := localworkspace.NewWithCapabilityDirectory(bound.EnvironmentID, bound.SessionID, workspace, capabilityDirectory); err != nil {
 		return errors.New("connect: local Runtime layout unavailable")
 	}
 	want := environmentBinding{RemoteURL: remote, Enrollment: bound, LocalWorkspace: workspace, CapabilityDirectory: capabilityDirectory}

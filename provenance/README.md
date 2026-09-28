@@ -15,7 +15,6 @@ The source repository was not modified or stripped of Core.
 | `apps/parsar-daemon` | Native execution daemon and existing adapters |
 | `internal/agentdaemon`, `internal/agentskill`, `internal/runtimecrypto`, `internal/obs/log` | Shared execution protocol, placement, assets, crypto and logging |
 | `packages/agents-client` | Core HTTP client and protocol tests, independent of product business code |
-| `packages/codex-executor`, `packages/codex-harness` | Pinned native helpers and Harness artifact builder |
 | `packages/claude-sdk-adapter`, `packages/mcode-harness`, `packages/tsconfig` | Existing alternative native execution adapters and their build dependencies |
 | Selected `scripts` and workflows | API/runtime build, packaging, database/protocol and native checks |
 

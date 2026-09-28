@@ -19,7 +19,7 @@ type WorkspaceConfig struct {
 	AllowedDomains                                    []string
 }
 
-func ConfigureLocal(binary, node, bridge, root, workspace string, network agentnetwork.Policy, staging string) (WorkspaceConfig, error) {
+func ConfigureLocal(binary, node, bridge, root, workspace string, network agentnetwork.Policy) (WorkspaceConfig, error) {
 	c := WorkspaceConfig{Binary: binary, Node: node, Bridge: bridge, Directory: workspace, Network: network.Access, AllowedDomains: network.Hosts(),
 		Scratch: filepath.Join(root, "runtime", "mcode-tools", "scratch")}
 	if runtime.GOOS == "windows" || network.Access != "enabled" || len(network.AllowedDomains) != 0 {
@@ -109,12 +109,8 @@ func prepareWorkspaceOptions(ctx context.Context, c WorkspaceConfig, req proto.P
 	profile := map[string]any{"capabilityRoot": req.LocalEnvironment.CapabilityRoot, "workspace": "/workspace", "scratch": c.Scratch, "network": c.Network, "allowedDomains": (agentnetwork.Policy{Access: c.Network, AllowedDomains: c.AllowedDomains}).Hosts(), "skills": len(req.LocalEnvironment.Skills) > 0}
 
 	profile["workspace"] = c.Directory
-	if req.LocalEnvironment.ToolEnvironment {
-		binding, err := localworkspace.Load()
-		if err != nil || binding == nil {
-			return opts, fmt.Errorf("mcode: Runtime binding unavailable")
-		}
-		values, err := binding.ReadToolEnvironment()
+	{
+		values, err := localworkspace.ReadOptionalToolEnvironment()
 		if err != nil {
 			return opts, err
 		}

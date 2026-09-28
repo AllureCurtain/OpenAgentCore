@@ -71,7 +71,7 @@ async function codexSmoke(root) {
     } finally { clearTimeout(timer); pending = undefined; }
   };
   try {
-    await request('initialize', { clientInfo: { name: 'parsar-native-smoke', version: '1' }, capabilities: { experimentalApi: true } });
+    await request('initialize', { clientInfo: { name: 'oac-native-smoke', version: '1' }, capabilities: { experimentalApi: true } });
     child.stdin.write(JSON.stringify({ method: 'initialized' }) + '\n');
     const result = await request('thread/start', { cwd: workspace, approvalPolicy: 'never', sandbox: 'danger-full-access', persistExtendedHistory: true });
     if (typeof result?.thread?.id !== 'string' || !result.thread.id) throw failure('codex_thread_identity');
@@ -101,7 +101,7 @@ async function claudeSmoke() {
   return { status: 'passed', sdk: info.sdk, native: info.native };
 }
 
-const root = await realpath(await mkdtemp(join(tmpdir(), 'parsar-native-smoke-')));
+const root = await realpath(await mkdtemp(join(tmpdir(), 'oac-native-smoke-')));
 const report = { platform: process.platform, arch: process.arch, model_requests: 0 };
 try {
   for (const [name, run] of [['codex', () => codexSmoke(root)], ['claude', claudeSmoke]]) {

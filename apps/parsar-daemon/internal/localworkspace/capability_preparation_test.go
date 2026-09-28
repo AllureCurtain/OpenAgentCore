@@ -39,7 +39,7 @@ func TestPreparationFreezesLocalContentsAcrossReconnect(t *testing.T) {
 		t.Fatalf("first preparation: %v", err)
 	}
 	writeSourceSkill(t, source, "second")
-	reconnect, err := New(b.environment, b.capabilityIdentity().SessionID, b.workspace, b.helper)
+	reconnect, err := New(b.environment, b.capabilityIdentity().SessionID, b.workspace)
 	if err != nil {
 		t.Fatal(err)
 	}

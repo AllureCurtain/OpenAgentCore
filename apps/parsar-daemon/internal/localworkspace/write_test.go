@@ -11,63 +11,6 @@ import (
 	"testing"
 )
 
-func writableBinding(t *testing.T, script string) *Binding {
-	t.Helper()
-	b, _ := testBinding(t)
-	// macOS test roots may contain /var aliases. Writer deployment paths must be canonical.
-	parent, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	b.workspace = filepath.Join(parent, "workspace")
-	staging := filepath.Join(parent, "staging")
-	for _, p := range []string{b.workspace, staging} {
-		if err := os.Mkdir(p, 0700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	helper, err := filepath.EvalSymlinks(b.helper)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\n"+script), 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := b.bindWriter(helper, staging); err != nil {
-		t.Fatal(err)
-	}
-	return b
-}
-
-func TestWriteReceiptValidation(t *testing.T) {
-	for _, response := range []string{
-		`{"version":1,"outcome":"completed"}`,
-		`{"version":1,"outcome":"completed","size_bytes":0,"error":"write_failed"}`,
-		`{"version":1,"outcome":"failed","size_bytes":0,"error":"write_failed"}`,
-		`{"version":1,"outcome":"unknown","error":"write_failed"}`,
-		`{"version":1,"outcome":"failed","error":"other"}`,
-		`{"version":1,"outcome":"completed","size_bytes":0} {}`,
-		`{"version":1,"outcome":"completed","size_bytes":0,"extra":true}`,
-		`{"version":1,"outcome":"unknown","error":"unsafe_destination"}`,
-		`{"version":1,"outcome":"failed","size_bytes":0,"error":"destination_directory"}`,
-	} {
-		if _, err := decodeWrite([]byte(response), 0); !errors.Is(err, agent.ErrWorkspaceWriteUncertain) {
-			t.Fatalf("unsafe receipt %s: %v", response, err)
-		}
-	}
-	for code, want := range map[string]error{
-		"invalid_input":         agent.ErrWorkspaceWriteRejected,
-		"write_failed":          agent.ErrWorkspaceWriteRejected,
-		"destination_directory": agent.ErrWorkspaceWriteDirectory,
-		"unsafe_destination":    agent.ErrWorkspaceWriteUnsafe,
-	} {
-		_, err := decodeWrite([]byte(fmt.Sprintf(`{"version":1,"outcome":"failed","error":%q}`, code)), 0)
-		if err != want || !errors.Is(err, agent.ErrWorkspaceWriteRejected) {
-			t.Fatal(code, err)
-		}
-	}
-}
-
 func nativeFileBinding(t *testing.T) *Binding {
 	t.Helper()
 	return &Binding{workspace: t.TempDir(), writer: &fileWriter{}}

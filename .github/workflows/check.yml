@@ -30,10 +30,6 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      CARGO_HOME: /home/runner/.oac/cache/executor-cargo
-      CARGO_TARGET_DIR: /home/runner/.oac/cache/executor-target
-      CARGO_BUILD_JOBS: 4
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
@@ -47,13 +43,6 @@ jobs:
           npm install --global pnpm@10.30.3
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libssl-dev
-          rustup toolchain install 1.95.0 --profile minimal --component rustfmt --component clippy
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.oac/cache/executor-cargo
-            ~/.oac/cache/executor-target
-          key: core-executor-${{ runner.os }}-${{ hashFiles('packages/codex-executor/Cargo.lock') }}
       - name: Install Web acceptance browser
         run: |
           pnpm install --frozen-lockfile

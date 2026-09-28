@@ -33,11 +33,7 @@ func (s *capabilitiesTestSender) Send(ctx context.Context, env proto.Envelope) e
 func capabilitiesTestRouter(t *testing.T) (*Router, *capabilitiesTestSender, string, string) {
 	t.Helper()
 	environment, session := uuid.NewString(), uuid.NewString()
-	helper := filepath.Join(t.TempDir(), "helper")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	binding, err := localworkspace.New(environment, session, t.TempDir(), helper)
+	binding, err := localworkspace.New(environment, session, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
