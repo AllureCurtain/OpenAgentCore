@@ -66,8 +66,9 @@ Neither opener adopts a missing identity, replaces its inode, or erases
 it after GC. Initialization interrupted before the identity is durable refuses
 re-adoption; preserve the installation for inspection. A removed identity or an
 owned replacement 0600 lease still refuses, even when its current fstat/lstat agree.
-The approved v1 update initializes this new fence before starting v2 but retains
-its separate legacy-unfenced marker for already-running old helpers.
+Historical v1 installations and their `legacy-unfenced` records are retained
+for inspection; the current installer does not adopt or upgrade them. Do not
+create a new fence to bypass a missing historical lease identity.
 
 A dropped generation cannot be prepared or used again; a future rollback
 would require a new generation and a separate policy.
@@ -151,8 +152,9 @@ metadata refuse cleanup. Interruption resumes under the same collection journal.
 The current node executable, preparer, identity, base provider configuration and
 manifests remain, so restart can read its enrolled identity and construct a newer
 retained provider after the original Runtime bytes have gone. Shared native paths
-are compared across all retained configurations before removal. The v1
-legacy-unfenced marker still prevents any collection of its original payload.
+are compared across all retained configurations before removal. A historical
+`legacy-unfenced` marker remains a reason to retain its original payload, not
+evidence that upgrading or serving the historical installation is supported.
 
 New preparation has two distinct records. Before downloads, `.preparing` holds the
 immutable installation/generation/specification identity, private provider paths
@@ -176,7 +178,9 @@ collection precedes any import attempt, the preparation journal proves that this
 generation has no imported native image. An older or interrupted generation whose
 native executable is missing and whose import may have started remains retained;
 missing files do not prove native absence. Receipt/store history and a
-legacy-unfenced generation are never erased using an empty native inventory.
+historical `legacy-unfenced` record are never erased using an empty native
+inventory. These retention checks do not authorize historical installation
+conversion or adoption.
 
 Preparation diagnostics preserve fixed typed causes. Only artifact transfer,
 checksum or release-provenance failures report `runtime_download_failed`. A private
@@ -190,45 +194,25 @@ then may atomically add only absent, checksum-matched declared artifacts. This
 supports thin-release completion and retained HTTP artifact repair. Any existing
 conflict prevents all additions; repair never overwrites a conflicting artifact.
 
-## Identity-preserving program updates
+## Node program version policy
 
-Run the checksum-verified `node-install.pyz --update` as the original installation
-owner, with the same installation ID and Core URL and the selected release's
-`--source-url` or `--bundle`. Do not supply a new enrollment token. The installer
-first authenticates the retained node through a read-only configuration request.
-It verifies and stages the new node executable and matching private preparer,
-checks the executable's `protocol-version`, and persists a resume journal before
-stopping the fixed service unit. This capability check is not Runtime readiness.
+Node program upgrades, historical conversion and adoption are not supported.
+`node-install.pyz --update` refuses before changing the installation. Preserve old
+installation files, credentials, Runtime stores, provider resources and history;
+install the current program separately through the ordinary fresh-node enrollment
+flow. Reinstallation does not automatically delete or migrate existing data.
 
-The journal pins the staged file hashes. Rerunning an interrupted update resumes
-those files even if the console has since published another release. Atomic file
-replacement changes the node program and preparer; the enrolled provider,
-credential, Runtime identity, resource files and retained generation state remain.
-The previous executable is preserved separately from Runtime releases. Core must
-confirm connection and provider readiness before the journal becomes complete.
-An unavailable Core or failed restart leaves recoverable files and journal; rerun
-the same command after resolving the reported error.
-
-The existing units use `KillMode=process`: update stops and restarts their main
-node process without terminating native VMs or helper processes. System-mode
-updates reuse the existing recorded service account; all user-owned files and
-programs are handled after dropping privileges. Root controls only the fixed
-root-owned service unit and host installation lock.
-
-A v1-to-v2 update cannot retrospectively add a file lock to an already-running v1
-helper. Before stopping v1, it durably marks precisely the original enrolled
-generation `legacy-unfenced`. Automatic collection retains that generation's local
-payload and store across interruptions and node restarts. Unknown original
-generation identity refuses the update. Neither an empty allocation list nor PID
-absence clears this marker. It is a single-generation disk-retention limitation,
-not a Core resource, serving-readiness or admission claim. Fresh v2 installations
-and subsequent generations use normal flock-based collection. No historical VM
-or daemon is killed to clear the marker.
+Current Runtime generation changes operate within an installation of the current
+node program. They do not upgrade that program or establish compatibility with
+historical node installations. A historical `legacy-unfenced` marker records that
+older helpers did not share the current lease protocol. Preserve its files and
+resources for inspection; do not clear it, recreate its lease, or infer safe
+collection from an empty allocation list, process absence or a node restart.
 
 ## Qualification boundary
 
 Protocol and process tests do not qualify Runtime readiness, VM coexistence,
-native image/store locking, or identity-preserving updates. Those require the
-separate exact-artifact KVM and Docker acceptance matrix. In particular, immutable
-legacy helper descendant FD behavior must be recorded against its actual artifact;
-absence of local test coverage is not evidence of successful garbage collection.
+or native image/store locking. Current-version Runtime behavior requires the
+separate exact-artifact KVM and Docker acceptance matrix. Historical helper
+behavior remains historical evidence, not a supported upgrade workflow; absence
+of local test coverage is not evidence of successful garbage collection.
