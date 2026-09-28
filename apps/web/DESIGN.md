@@ -502,6 +502,8 @@ Every resource list, the Session log and the project list share one grammar:
   interactive installation asks for a privately saved credential file and local
   installation choices. Link the native guide instead of inventing a release
   download URL. Requirements and reconnection details belong in the title help.
+  Reconnection after credential rotation requires `stop`, replacement of the
+  configured credential file, then `start`; disconnection does not imply process exit.
   Installation does not start the daemon; connection status comes only from Core.
   Missing connection facts show a note instead of a command. Loopback ws is valid
   for native local connections. Archived projects require an existing credential.

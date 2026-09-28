@@ -120,7 +120,7 @@ test("shows a self-hosted Session's install command, issues its credential once,
   await credentials.getByRole("button", { name: /^Restore credential / }).click();
   const rotation = page.getByRole("dialog", { name: "Restore credential?" });
   await expect(rotation).toContainText("generating a new secret for the same credential");
-  await expect(rotation).toContainText("Replace the configured credential file on the host");
+  await expect(rotation).toContainText("Run the installed daemon’s stop command, replace the configured credential file on the host, then run start to reconnect.");
   await rotation.getByRole("button", { name: "Restore" }).click();
   const restored = page.getByRole("dialog", { name: "Executor credential" });
   await expect(restored.getByLabel("Executor credential file")).toContainText("exec_fixture_2");
@@ -181,7 +181,7 @@ test("issues a new executor credential after the unanswered one was rotated from
   const credentials = section.getByRole("table", { name: "Executor credentials" });
   await credentials.getByRole("button", { name: /^Rotate credential / }).click();
   // Rotating an active credential disconnects its host until the command is rerun with the new one.
-  await expect(page.getByRole("dialog", { name: "Rotate credential?" })).toContainText("The host disconnects. Replace its configured credential file");
+  await expect(page.getByRole("dialog", { name: "Rotate credential?" })).toContainText("The host disconnects. Run the installed daemon’s stop command, replace its configured credential file, then run start.");
   await page.getByRole("dialog", { name: "Rotate credential?" }).getByRole("button", { name: "Rotate" }).click();
   await page.getByRole("dialog", { name: "Executor credential" }).getByRole("button", { name: "Done" }).click();
 

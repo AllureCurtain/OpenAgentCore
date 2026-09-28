@@ -217,7 +217,8 @@ workbench.
   disconnected, bound credential revoked, and unknown are distinct; a recent
   heartbeat alone never proves connectivity. Only a fresh connected read marks
   Host connected. Stale or failed reads withhold completion. Recovery rotates
-  the bound key, replaces the host credential file and starts the installed daemon.
+  the bound key, stops the installed daemon, replaces the host credential file
+  and starts the daemon again.
 - **Connect a host.** Native Linux/macOS and PowerShell installation instructions
   depend on the Session's remote URL, Environment ID and workspace, not console
   installer flags or served Python assets. Users privately save the issued JSON,
@@ -225,8 +226,9 @@ workbench.
   interactive install command from its root. Installation asks for the credential
   file path and does not automatically start the daemon. Run the installed binary
   in the installation's bin directory with `start`. No model readiness is implied.
-  Credential rotation requires replacing the configured file and starting that
-  same installed daemon. A new key cannot reconnect an already-bound Environment.
+  Credential rotation requires stopping the installed daemon, replacing the
+  configured file and starting that same daemon again. A disconnected daemon may
+  still be running; `start` alone does not replace it. A new key cannot reconnect an already-bound Environment.
   Accept wss or loopback ws; withhold commands for missing or invalid facts.
 - **Typed write errors.** Known Core codes use shared bilingual copy and safe
   typed details. Exact Core field paths attach definite refusals to the relevant
