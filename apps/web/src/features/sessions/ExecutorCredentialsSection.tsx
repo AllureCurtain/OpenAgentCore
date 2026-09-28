@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { EmptyState, Section, StatusDot } from "../../components/console-ui";
+import { EmptyState, HelpTip, Section, StatusDot } from "../../components/console-ui";
 import { ErrorDialog } from "../../components/ErrorDialog";
 import { CopyableId, RowActions } from "../../components/list-ui";
 import { Modal } from "../../components/Modal";
@@ -17,7 +17,7 @@ import { admin, useProjects } from "../../lib/projects";
 import { ExecutorInstallPanel, useExecutorInstall } from "./ExecutorInstallPanel";
 import { CredentialFile } from "./executor-credential-file";
 import { executorConnectionQuery } from "./executor-connection-query";
-import { executorConnectionState } from "./executor-connection";
+import { boundExecutorCredential, executorConnectionState } from "./executor-connection";
 import { ExecutorConnectionPanel } from "./ExecutorConnectionPanel";
 
 /** An issuance that gets no answer in this time has an unknown outcome. */
@@ -86,6 +86,7 @@ export function ExecutorCredentialsSection({ projectId, sessionId, environmentId
   const credentials = query.data?.data ?? null;
   const connectionStale = failedLast(query) || query.isStale;
   const connectionState = executorConnectionState(query.data, connectionStale);
+  const boundCredential = boundExecutorCredential(query.data);
   const { refetch } = query;
   const reread = () => { void refetch(); };
   useFailureToast(credentials && failedLast(query) ? message(query.error) : null, t("executor.refreshFailed"), "executor-credentials-read");
@@ -224,7 +225,7 @@ export function ExecutorCredentialsSection({ projectId, sessionId, environmentId
   let body;
   if (!credentials) {
     body = query.isError
-      ? <EmptyState title={t("executor.loadFailed")} description={message(query.error)} action={<button className="button outline" type="button" onClick={reread}>{t("detail.retry")}</button>} />
+      ? <EmptyState title={t("executor.loadFailed")} description={message(query.error)} />
       : <TableSkeleton label={t("executor.loading")} rows={2} columns={4} />;
   } else if (!credentials.length) {
     body = <EmptyState title={t("executor.empty")} />;
@@ -243,10 +244,17 @@ export function ExecutorCredentialsSection({ projectId, sessionId, environmentId
           <tbody>
             {credentials.map((credential) => {
               const revoked = credential.revoked_at !== null;
+              const bound = boundCredential?.key_id === credential.key_id;
               const id = shortId(credential.key_id);
               return (
                 <tr key={credential.key_id} className={revoked ? "executor-credential-revoked" : undefined}>
-                  <th scope="row"><span className="name-cell"><CopyableId id={credential.key_id} compact label={t("executor.copyKeyId")} /></span></th>
+                  <th scope="row"><span className="name-cell">
+                    <CopyableId id={credential.key_id} compact label={t("executor.copyKeyId")} />
+                    {bound ? <span className="executor-credential-binding">
+                      <span className="pill">{t("executor.connection.boundKey")}</span>
+                      <HelpTip>{t(revoked ? "executor.connection.restore" : "executor.connection.bound", { id })}</HelpTip>
+                    </span> : null}
+                  </span></th>
                   <td className="session-nowrap">{formatDateTime(seconds(credential.created_at), locale)}</td>
                   <td>
                     <span className="executor-credential-status">
@@ -258,8 +266,8 @@ export function ExecutorCredentialsSection({ projectId, sessionId, environmentId
                     {revoked && archived ? null : (
                       <RowActions>
                         {archived ? null : (
-                          <button className="text-action" type="button" aria-label={t(revoked ? "executor.restoreLabel" : "executor.rotateLabel", { id })} disabled={busy} onClick={() => openRotation(credential.key_id, revoked ? "revoked" : "active")}>
-                            {t(revoked ? "executor.restore" : "executor.rotate")}
+                          <button className="text-action" type="button" aria-label={bound ? t(revoked ? "executor.connection.rotateRestore" : "executor.connection.rotateBound") : t(revoked ? "executor.restoreLabel" : "executor.rotateLabel", { id })} disabled={busy || (bound && connectionStale)} onClick={() => openRotation(credential.key_id, revoked ? "revoked" : "active")}>
+                            {bound ? t(revoked ? "executor.connection.rotateRestore" : "executor.connection.rotateBound") : t(revoked ? "executor.restore" : "executor.rotate")}
                           </button>
                         )}
                         {revoked ? null : (
@@ -292,7 +300,7 @@ export function ExecutorCredentialsSection({ projectId, sessionId, environmentId
           <div><button className="button outline" type="button" onClick={finishShown}>{t("executor.issued.done")}</button></div>
         </section>
       ) : null}
-      <ExecutorConnectionPanel read={query.data} stale={connectionStale} failed={failedLast(query)} refreshing={query.isFetching} archived={archived} busy={busy} onRefresh={reread} onRotate={openRotation} />
+      <ExecutorConnectionPanel read={query.data} stale={connectionStale} failed={failedLast(query)} refreshing={query.isFetching} onRefresh={reread} />
       {body}
       <ExecutorInstallPanel install={install} archived={archived} connected={connectionState === "connected"} />
       <Modal

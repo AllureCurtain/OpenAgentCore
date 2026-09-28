@@ -30,6 +30,7 @@ export function SandboxDeploymentSettings({ deployment, disabled, fresh, onReset
   const { t: tNavigation } = useTranslation("sandboxNavigation");
   const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
   const [changing, setChanging] = useState(false);
+  const [editKey, setEditKey] = useState(0);
   const spec = deployment.specification;
   // An E2B selection may adopt its template build's size instead of saving one.
   const size = sandboxSize(deployment);
@@ -71,12 +72,13 @@ export function SandboxDeploymentSettings({ deployment, disabled, fresh, onReset
     <SandboxRolloutSummary deployment={deployment} stale={!fresh} />
     {!deployment.reset ? <>
       <div className="sandbox-actions">
-        <button type="button" className="button outline" disabled={disabled || !canEdit || changing} onClick={() => setChanging(true)}>{t("Change resources")}</button>
+        <button type="button" className="button outline" disabled={disabled || !canEdit || changing} onClick={() => { setEditKey((key) => key + 1); setChanging(true); }}>{t("Change resources")}</button>
         <HelpTip>{t("Changes keep this backend and existing Sessions and nodes. Core prepares the new target for future work; placement may continue on qualified earlier generations.")}</HelpTip>
       </div>
 
       <Modal open={changing} title={t("Change resources")} wide onClose={() => { if (!pending) setChanging(false); }} footer={<><RefreshButton onClick={onRefresh} refreshing={refreshing} disabled={pending} label={t("Refresh sandbox state")} /><button type="button" className="button outline" disabled={pending} onClick={() => setChanging(false)}>{t("Cancel editing")}</button></>}>
         <SandboxSetupWizard
+          key={editKey}
           coreUrl={deployment.core_url}
           expectedGeneration={deployment.generation}
           current={deployment.provider ? { provider: deployment.provider, specification: deployment.specification, e2bTemplate: deployment.e2b?.template } : undefined}

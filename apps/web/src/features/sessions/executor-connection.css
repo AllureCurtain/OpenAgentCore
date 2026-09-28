@@ -2,10 +2,7 @@
 .executor-connection-heading { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .executor-connection-heading h3 { margin: 0; font-size: 13px; font-weight: 600; }
 .executor-connection-heading .refresh-button { margin-left: auto; }
-.executor-connection-facts { display: flex; gap: 24px; flex-wrap: wrap; margin: 12px 0 0; }
-.executor-connection-facts > div { display: flex; align-items: center; gap: 8px; }
-.executor-connection-facts dt { color: var(--ink-muted); }
-.executor-connection-facts dd { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; }
 .executor-connection-warning { margin: 10px 0 0; color: var(--warning); }
 .executor-install-progress { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; color: var(--ink-muted); }
 .executor-install-progress.is-done { color: var(--success); }
+.executor-credential-binding { display: inline-flex; align-items: center; gap: 6px; }
