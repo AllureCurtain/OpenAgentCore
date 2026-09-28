@@ -22,7 +22,7 @@ if (profile.capabilityRoot && (typeof profile.capabilityRoot !== 'string' || !is
 if (profile.skills && !profile.capabilityRoot) throw new Error('Missing capability root');
 let child;
 let cancelled=false;
-const cancel=()=>{cancelled=true;child?.kill('SIGKILL');};
+const cancel=()=>{cancelled=true;child?.kill('SIGTERM');};
 process.on('SIGTERM',cancel);process.on('SIGINT',cancel);
 try {
  mkdirSync(profile.scratch,{recursive:true});

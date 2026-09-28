@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 const limit = 16 * 1024 * 1024;
 const launcher = fileURLToPath(new URL('./launch.mjs', import.meta.url));
 
-// One bridge owns every launcher until its stdio and sandbox have settled.
+// One bridge owns every launcher until its stdio and native tools have settled.
 export class ToolExecutor {
   #calls = new Set();
   #closed = false;

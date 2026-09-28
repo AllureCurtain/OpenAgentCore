@@ -3,6 +3,7 @@ import { LocalGrepTool } from '@native/local-grep';
 import { LocalGlobTool } from '@native/local-glob';
 import { toRuntimeTool, isRuntimeToolInputValid } from '@mavis/agent-core/tools';
 import { readFileSync } from 'node:fs';
+import { killTrackedDetachedChildren } from '@pi/utils/shell';
 import { isAbsolute } from 'node:path';
 
 const root = process.argv[2];
@@ -15,6 +16,15 @@ if (process.argv[3] === '--describe') {
     description: t.def.description, inputSchema: t.def.schema }))) + '\n');
   process.exit(0);
 }
+const abort = new AbortController();
+const cancel = () => {
+  abort.abort();
+  // Native Bash owns a detached process group outside the daemon's group.
+  // Keep the worker alive to settle its tool after stopping that owned group.
+  killTrackedDetachedChildren();
+};
+process.on('SIGTERM', cancel);
+process.on('SIGINT', cancel);
 const request = JSON.parse(readFileSync(0, 'utf8'));
 const tool = tools.find(value => value.def.name === request.tool);
 if (!tool || !request.input || typeof request.input !== 'object' || Array.isArray(request.input) ||
@@ -23,10 +33,13 @@ if (!tool || !request.input || typeof request.input !== 'object' || Array.isArra
 const context = { sessionId: 'worker', turnId: 'call', allowBashAutoPromotion: false,
   canConsumeBackgroundBashOutput: false };
 try {
-  const result = await tool.impl.execute(context, request.input);
+  const result = await tool.impl.execute(context, request.input, abort.signal);
   process.stdout.write(JSON.stringify(result) + '\n');
 } catch (error) {
   process.stdout.write(JSON.stringify({ tool_name: request.tool, isError: true,
     text: error instanceof Error ? error.message : String(error), content: [] }) + '\n');
   process.exitCode = 1;
+} finally {
+  process.removeListener('SIGTERM', cancel);
+  process.removeListener('SIGINT', cancel);
 }
