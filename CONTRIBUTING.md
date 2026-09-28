@@ -3013,6 +3013,15 @@ or containment of descendants that deliberately leave the group.
 
 ### Harness qualification and onboarding
 
+`apps/parsar-daemon/internal/agent/harness.go` is the single source entry point
+for Harness authors. Keep required lifecycle declarations, separate optional
+interfaces and the existing registration methods there. Operation result types,
+errors and Registry lookup/storage implementation may remain in focused files.
+Use the existing `proto.SupportedAgentKind` and `AgentKindCapabilities` schema;
+do not introduce a second capability descriptor or a combined optional interface.
+Core service qualification remains separate from Runtime registration. Keep the
+README and onboarding guide linked to this entry point.
+
 Codex, Claude and future harnesses have equal architectural status. The common
 Runtime wire protocol and Executor/Turn interfaces own lifecycle,
 input receipts, cancellation, recovery and resource access; each native adapter
