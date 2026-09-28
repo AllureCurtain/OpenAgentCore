@@ -34,15 +34,18 @@ export function ExecutorConnectionPanel({ read, stale, failed, refreshing, archi
       {stale && read ? <p className="executor-connection-warning" role="status">{t(failed ? "executor.connection.stale" : "executor.connection.refreshing")}</p> : null}
       {!read && failed ? <p className="executor-connection-warning" role="status">{t("executor.connection.failed")}</p> : null}
       <dl className="executor-connection-facts">
-        <div><dt>{t("executor.connection.boundKey")}</dt><dd>{connection?.bound_key_id ? <CopyableId id={connection.bound_key_id} compact label={t("executor.copyKeyId")} /> : t(connection?.status === "never_enrolled" ? "executor.connection.notBound" : "executor.connection.status.unknown")}</dd></div>
+        <div>
+          <dt>{t("executor.connection.boundKey")}</dt>
+          <dd>
+            {connection?.bound_key_id ? <>
+              <CopyableId id={connection.bound_key_id} compact label={t("executor.copyKeyId")} />
+              {bound && !archived ? <button type="button" className="text-action" disabled={busy || stale} onClick={() => onRotate(bound.key_id, bound.revoked_at ? "revoked" : "active")}>{t(bound.revoked_at ? "executor.connection.rotateRestore" : "executor.connection.rotateBound")}</button> : null}
+              <HelpTip>{t(bound?.revoked_at ? "executor.connection.restore" : "executor.connection.bound", { id: shortId(connection.bound_key_id) })}</HelpTip>
+            </> : t(connection?.status === "never_enrolled" ? "executor.connection.notBound" : "executor.connection.status.unknown")}
+          </dd>
+        </div>
         <div><dt>{t("executor.connection.lastSeen")}</dt><dd>{connection?.last_seen_at ? formatDateTime(Date.parse(connection.last_seen_at) / 1000, i18n.resolvedLanguage) : t(connection ? "executor.connection.noHeartbeat" : "executor.connection.status.unknown")}</dd></div>
       </dl>
-      {connection?.bound_key_id ? (
-        <div className="executor-connection-guidance">
-          <p>{t(bound?.revoked_at ? "executor.connection.restore" : "executor.connection.bound", { id: shortId(connection.bound_key_id) })}</p>
-          {bound && !archived ? <button type="button" className="button outline" disabled={busy || stale} onClick={() => onRotate(bound.key_id, bound.revoked_at ? "revoked" : "active")}>{t(bound.revoked_at ? "executor.connection.rotateRestore" : "executor.connection.rotateBound")}</button> : null}
-        </div>
-      ) : null}
     </section>
   );
 }
