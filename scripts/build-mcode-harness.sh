@@ -20,6 +20,12 @@ if [[ "$(git -C "$source" rev-parse HEAD)" != "$revision" ]]; then
 fi
 mkdir "$context/upstream"
 git -C "$source" archive "$revision" | tar -x -C "$context/upstream"
+# Upstream validates the cached archive and embedded tool hashes before use.
+# Preserve this single optional download cache across fresh source exports.
+if [[ -f "$source/.cache/artifacts/code-0.3.11.tgz" ]]; then
+  mkdir -p "$context/upstream/.cache/artifacts"
+  cp "$source/.cache/artifacts/code-0.3.11.tgz" "$context/upstream/.cache/artifacts/"
+fi
 printf '%s\n' "$revision" > "$context/upstream/.oac-source-revision"
 cp "$package/"*.mjs "$package/"*.ts "$package/"*.json "$context/"
 test "$(node "$native/cli.js" --version)" = 0.4.12
