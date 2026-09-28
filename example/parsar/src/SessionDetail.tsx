@@ -24,16 +24,21 @@ import { useSendTiming, timingLabel } from "./lib/session-timing";
 import { Help } from "./components/shared";
 import { useLiveSession } from "./lib/live-session";
 import { Composer } from "./Composer";
+import { ConnectMachine } from "./ConnectMachine";
+import type { SessionRecord } from "./lib/product";
 
 export function SessionDetail({
   id,
   agentId,
+  machine,
 }: {
   id: string;
   agentId: string;
+  machine?: SessionRecord["self_hosted"];
 }) {
   const timing = useSendTiming(id);
   const [info, setInfo] = useState(false);
+  const [machineConnected, setMachineConnected] = useState(false);
   const viewport = useRef<HTMLDivElement>(null);
   const followOutput = useRef(true);
   const query = useQuery({
@@ -83,6 +88,13 @@ export function SessionDetail({
           <Info />
         </Button>
       </header>
+      {session && machine && (
+        <ConnectMachine
+          session={session}
+          machine={machine}
+          onConnected={setMachineConnected}
+        />
+      )}
       {live.reconnecting && (
         <p role="status" className="px-6 py-2 text-base text-fg-muted">
           正在重连实时回复，历史仍会自动更新。
@@ -162,6 +174,7 @@ export function SessionDetail({
               </div>
             )}
             <Composer
+              connectionPending={Boolean(machine) && !machineConnected}
               key={id}
               turnId={data.turns[0]?.id}
               session={data.session}

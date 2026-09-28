@@ -13,9 +13,11 @@ import { ErrorNotice } from "./components/shared";
 export function Composer({
   session,
   turnId,
+  connectionPending = false,
 }: {
   session: AgentSession;
   turnId?: string;
+  connectionPending?: boolean;
 }) {
   const cache = useQueryClient();
   const storageKey = `oac-example-message-${session.id}`;
@@ -94,7 +96,8 @@ export function Composer({
         className="rounded-2xl bg-surface-muted p-4 focus-within:ring-1 focus-within:ring-line-strong"
         onSubmit={(e) => {
           e.preventDefault();
-          if (text.trim() && !running && !send.isPending) send.mutate();
+          if (!connectionPending && text.trim() && !running && !send.isPending)
+            send.mutate();
         }}
       >
         <textarea
@@ -133,7 +136,10 @@ export function Composer({
               type="submit"
               aria-label={pending ? "重试发送" : "发送"}
               disabled={
-                !text.trim() || send.isPending || session.status === "failed"
+                connectionPending ||
+                !text.trim() ||
+                send.isPending ||
+                session.status === "failed"
               }
               className="flex h-9 w-9 items-center justify-center rounded-full bg-surface-emphasis text-fg-on-emphasis disabled:opacity-40"
             >

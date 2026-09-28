@@ -8,6 +8,98 @@ import { unzipSync, strFromU8 } from "fflate";
 import { openStore, dataPath, AppError } from "../server/store.mjs";
 import { productAPI } from "../server/product.mjs";
 
+test("native runtimes keep host paths, freeze provider secrets, and create without running a Turn", async (t) => {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  let fail = true,
+    sent;
+  const { api, put, model, agent } = await setup(
+    store,
+    async (_path, _method, body) => {
+      sent = body;
+      if (fail) throw new Error("network");
+      return { id: randomUUID() };
+    },
+  );
+  const provider = store.get("providers", model.provider_id);
+  await put(
+    "providers",
+    {
+      ...provider,
+      base_url: "https://provider.example/v1",
+      api_key: "provider-secret",
+    },
+    provider.id,
+  );
+  const config = await put(
+    "agents",
+    { ...agent, harness: "codex", skill_ids: [], mcp_ids: [] },
+    agent.id,
+  );
+  for (const [platform, directory] of [
+    ["linux", "/home/user/project"],
+    ["macos", "/Users/user/project"],
+    ["windows", "C:\\Users\\user\\project"],
+  ]) {
+    const runtime = await put("runtimes", {
+      name: platform,
+      environment: "self_hosted",
+      platform,
+      workspace_directory: directory,
+      capability_directories: [directory],
+    });
+    const id = randomUUID();
+    fail = true;
+    await assert.rejects(
+      put(
+        "sessions",
+        { name: "Native", agent_id: config.id, runtime_id: runtime.id },
+        id,
+      ),
+      /network/,
+    );
+    assert.equal(sent.input, undefined);
+    assert.equal(sent.environment.workspace_directory, directory);
+    assert.deepEqual(sent.environment.capability_directories, [directory]);
+    assert.equal(sent.x_agents_core.model_provider.api_key, "provider-secret");
+    assert.equal(
+      JSON.stringify(await api("GET", `/app/sessions/${id}`)).includes(
+        "provider-secret",
+      ),
+      false,
+    );
+    assert.equal(
+      JSON.stringify(await api("GET", "/app/sessions")).includes(
+        "provider-secret",
+      ),
+      false,
+    );
+    fail = false;
+    const record = await put("sessions", {}, id);
+    assert.equal(record.self_hosted.platform, platform);
+    assert.equal(record.request, undefined);
+  }
+  for (const [platform, directory] of [
+    ["linux", "relative"], ["linux", "/tmp/work/"], ["linux", "/tmp//work"],
+    ["linux", "/tmp/../work"], ["linux", "/tmp/a\tb"],
+    ["windows", "\\work"], ["windows", "C:\\work\\"], ["windows", "C:\\a?b"],
+  ]) {
+    await assert.rejects(put("runtimes", {
+      name: "bad", environment: "self_hosted", platform, workspace_directory: directory,
+    }), /绝对目录/);
+  }
+  const runtime = await put("runtimes", {
+    name: "Local", environment: "self_hosted", platform: "linux", workspace_directory: "/workspace",
+  });
+  await put("agents", { ...config, mcp_ids: agent.mcp_ids }, config.id);
+  sent = undefined;
+  await assert.rejects(put("sessions", {
+    name: "Unsupported MCP", agent_id: config.id, runtime_id: runtime.id,
+  }), /本地 Plugin/);
+  assert.equal(sent, undefined);
+
+});
+
 test("Provider discovery uses only its credential; selected and custom models save together", async () => {
   const store = openStore(":memory:");
   const id = randomUUID();

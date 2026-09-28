@@ -1,4 +1,5 @@
 import { providerAPI, publicProvider } from "./providers.mjs";
+import { runtimeProfile } from "./runtime-profile.mjs";
 import { sessionAPI } from "./sessions.mjs";
 import { AppError, text, uuid } from "./store.mjs";
 
@@ -40,6 +41,14 @@ export function productAPI(store, core, fetchImpl = fetch) {
     }
   }
   const sessions = sessionAPI(store, core);
+  const publicRow = (kind, row) => {
+    if (kind === "providers") return publicProvider(row);
+    if (kind === "sessions") {
+      const { request, ...record } = row;
+      return record;
+    }
+    return row;
+  };
   const providers = providerAPI(store, fetchImpl);
   const touchProviders = (...ids) => {
     for (const id of new Set(ids.filter(Boolean))) {
@@ -69,10 +78,7 @@ export function productAPI(store, core, fetchImpl = fetch) {
       throw new AppError(404, "Not found.");
     const [, kind, id] = match;
     if (method === "GET") {
-      if (!id)
-        return store
-          .list(kind)
-          .map((row) => (kind === "providers" ? publicProvider(row) : row));
+      if (!id) return store.list(kind).map((row) => publicRow(kind, row));
       const value = store.get(kind, id);
       if (!value) throw new AppError(404, "记录不存在。");
       return kind === "providers"
@@ -82,7 +88,7 @@ export function productAPI(store, core, fetchImpl = fetch) {
               .list("models")
               .filter((model) => model.provider_id === id),
           }
-        : value;
+        : publicRow(kind, value);
     }
     if (!id) throw new AppError(405, "Method not allowed.");
     if (kind === "sessions") {
@@ -151,9 +157,7 @@ export function productAPI(store, core, fetchImpl = fetch) {
         throw new AppError(400, "MCP 标识仅支持字母、数字、下划线和连字符。");
     }
     if (kind === "runtimes") {
-      if (!["openai_hosted", "none"].includes(body.environment))
-        throw new AppError(400, "运行环境无效。");
-      value.environment = body.environment;
+      Object.assign(value, runtimeProfile(body));
     }
     if (kind === "agents") {
       value.model_id = requireReference("models", body.model_id);

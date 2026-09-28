@@ -34,14 +34,19 @@ For a built version, run `pnpm --filter @oac/parsar-example build` and then
    sends only that Provider's key and does not follow redirects. The list expects
    the OpenAI-shaped `data: [{id: "..."}]` response. Discovery failures leave manual
    entry available. This imports the catalog only: Core still owns execution
-   connections, so selected model IDs must also be configured there.
+   connections for hosted/text-only Sessions. Self-hosted Sessions instead pass
+   this Provider URL/key explicitly to Core, using the selected harness protocol.
 2. **Skills:** create a SKILL.md resource or upload a ZIP. Inspect versions,
    upload a new version, and choose the default. Core validates and stores bundles.
 3. **MCP:** save anonymous HTTPS endpoints and bind them to Agents. Hosted
    Sessions install an inline environment Plugin; text-only Sessions use Core's
    service-origin MCP. Hosted HTTP MCP supports Claude Code and Codex, not MiniMax
    Code. Authentication, Vault management and OAuth setup are not included.
-4. **Runtimes:** name a Core-managed hosted sandbox or text-only configuration.
+4. **Runtimes:** choose a Core-managed sandbox, text-only environment, or user
+   machine. User machines select Linux/macOS/Windows and an existing absolute
+   workspace path, plus an optional local capability directory. Each Session gets
+   its own daemon installation and credential; choosing the same workspace path
+   shares the host's files, so use distinct paths for isolated work.
    These are placement configurations, not online machine identities. Machine
    enrollment, fixed-node routing and self-hosted registration are omitted.
 5. **Agents:** combine a model, harness, instructions, Skills and MCP services.
@@ -125,3 +130,35 @@ application pages are local adaptations. Navigation animation adapts
 [Motion Primitives](https://github.com/ibelick/motion-primitives), with reduced-motion
 support and its [MIT notice](MOTION-PRIMITIVES-LICENSE). Multica's resource and
 Agent organization informs the product flow; no Multica code is copied.
+
+## Connect a user machine
+
+This branch builds on `codex/qualified-release-promotion-20260928` (native daemon
+support). Run a matching Core and daemon version; the older preview Core does not
+qualify this workflow. The optional unified Harness installer PR is not included.
+
+Create a user-machine runtime and start a Session with an Agent using Codex or
+Claude Code. No initial Turn is sent. Open **Connect user machine**, obtain the
+Session's executor credential in Core Web (Session log), save the credential on
+the host as instructed, and run the generated platform-specific install/start
+command. The daemon binary and native harness must already be installed. Windows
+Claude Code also requires Git Bash. The page reads Core's public Environment
+status and enables sending after it reports connected. The example backend does
+not need or accept the administrator Core key.
+
+The selected model Provider needs an HTTPS Base URL and API key. Its protocol is
+Responses for Codex and Anthropic for Claude Code. Core freezes and delivers the
+configuration to the enrolled executor. Local pending creation requests contain
+that configuration but browser Session responses omit the entire pending request.
+
+Self-hosted capability sources are local directories under the current Core API.
+Managed Skill bindings fail explicitly; configure local Skills/Plugins in the
+runtime's capability directory before connecting. Bound HTTP MCP services also
+fail explicitly for self-hosted Sessions; configure them in local Plugins instead. MiniMax Code self-hosted configuration is not
+included in this example because its required token limits are not exposed.
+
+The daemon runs with the starting user's permissions and adds no sandbox. Runtime
+home is separate per Session; stopping it preserves local files. Credential
+rotation and revocation remain Core console operations. Native install commands
+are for fresh installations; restart an existing one with the same Runtime home
+and `start`, without rerunning `install`.

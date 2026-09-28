@@ -36,6 +36,9 @@ export function NewSession({
     agent_id: agent.id,
     runtime_id: "",
   }));
+  const selfHosted =
+    runtimes.data?.find((runtime) => runtime.id === form.runtime_id)
+      ?.environment === "self_hosted";
   const startedAt = useRef<number>(0);
   const [uncertain, setUncertain] = useState(false);
   const save = useMutation({
@@ -54,7 +57,7 @@ export function NewSession({
       void cache.invalidateQueries({ queryKey: ["sessions"] });
     },
     onSuccess: (session) => {
-      if (session.core_session_id) {
+      if (session.core_session_id && !session.self_hosted) {
         beginTiming(
           session.core_session_id,
           form.id,
@@ -116,17 +119,19 @@ export function NewSession({
               </a>
             )}
           </Field>
-          <Field label="第一条消息" id="session-input">
-            <Textarea
-              disabled={save.isPending || uncertain}
-              id="session-input"
-              required
-              rows={5}
-              value={form.input}
-              onChange={(e) => setForm({ ...form, input: e.target.value })}
-              placeholder="希望 Agent 做什么？"
-            />
-          </Field>
+          {!selfHosted && (
+            <Field label="第一条消息" id="session-input">
+              <Textarea
+                disabled={save.isPending || uncertain}
+                id="session-input"
+                required
+                rows={5}
+                value={form.input}
+                onChange={(e) => setForm({ ...form, input: e.target.value })}
+                placeholder="希望 Agent 做什么？"
+              />
+            </Field>
+          )}
           <ErrorNotice error={save.error || runtimes.error} />
           {uncertain && (
             <p>如请求结果未确定，可关闭弹窗，在会话列表中恢复同一次创建。</p>
@@ -134,7 +139,8 @@ export function NewSession({
         </form>
         <DialogFooter>
           <Help>
-            此会话使用当前 Agent
+            用户机器需要先创建会话，再按连接指引启动
+            daemon，连接后发送消息。此会话使用当前 Agent
             配置的副本。托管会话有独立工作区；继续同一会话可保留历史和仍在运行的工作区。纯文本运行时不提供工作区。
           </Help>
           <Button
@@ -145,7 +151,7 @@ export function NewSession({
               save.isPending ||
               !form.runtime_id ||
               !form.name.trim() ||
-              !form.input.trim()
+              (!selfHosted && !form.input.trim())
             }
           >
             {save.isPending ? "启动中…" : "开始"}

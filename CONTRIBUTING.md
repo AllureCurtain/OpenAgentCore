@@ -17,8 +17,9 @@ belong to that database. An Agent contains model, harness, instructions, Skills
 and MCP bindings; it excludes the runtime. Starting a Session selects a runtime
 and passes an inline Agent/configuration snapshot to the public Core API. One
 Agent may have many independent Sessions. Existing Sessions keep their original
-configuration and history; only continuation within the same live hosted Session
-reuses its workspace. There is no shared-workspace mechanism or task layer.
+configuration and history. Hosted Sessions have independent workspaces; native
+Sessions use the selected host directory, so selecting the same path shares files.
+There is no task layer or automatic workspace coordination.
 Providers are explicit catalog groups without default groups. Each model references
 one Provider. The example can fetch an OpenAI-shaped model list from a user-entered
 Provider Base URL using that Provider's key, then save checked/custom models and
@@ -27,7 +28,9 @@ its models as one snapshot; individual model changes advance the owning Provider
 revision. Provider keys stay in the local restricted
 SQLite file and are omitted from every browser response. Discovery uses only the
 Provider credential, never the Core Project key, and never follows redirects.
-This catalog import does not reconfigure Core execution credentials or routing.
+Catalog import does not reconfigure deployment routing. Self-hosted Session creation
+uses the selected Provider's URL/key in the explicit Session model-provider bundle;
+Core freezes and delivers it. Pending requests are never serialized to browsers.
 Core owns Skills and all execution/history state. SQLite stores Session references
 and freezes pending creation requests with stable idempotency keys for retry;
 confirmed requests are removed from local storage. Earlier example templates and
@@ -42,7 +45,16 @@ disconnection aborts the upstream stream, never the running Session. Send latenc
 measurements are browser-local observations (request return and first nonempty
 text delta), not inferred Core execution timings.
 Product resources use `/app/` and never become Core API or database conventions.
-No scheduler, machine enrollment or user permissions are included. SQLite uses
+The example supports native self-hosted runtime profiles with a platform and existing
+absolute workspace/capability paths. Create an empty Session first, issue its credential
+in Core Web, then run the displayed native install/start command. The example never
+holds a Core key or issues machine credentials; Core's public Environment status gates
+message sending. Core-only credential issuance remains in the operator console.
+Native Skills come from local capability directories: managed Skill references are
+rejected explicitly rather than ignored. Bound service-origin MCP is also rejected
+for self-hosted Sessions; use local Plugin capability directories. This example supports Codex and Claude Code on user machines; MiniMax Code's
+required token-limit configuration is not exposed here. No scheduler or user permissions
+are included. SQLite uses
 Node's built-in module (Node 22.13+), lives outside the checkout, and is isolated by
 Core origin and Project key fingerprint. The example is excluded from Core
 distributions and cannot become a service dependency.

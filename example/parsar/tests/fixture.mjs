@@ -1,5 +1,6 @@
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";
+let executorConnected = false;
 let agents = [],
   templates = [],
   skills = [],
@@ -69,10 +70,26 @@ createServer(async (req, res) => {
     for (const peers of streams.values()) for (const peer of peers) peer.end();
     return reply({});
   }
+  if (url.pathname === "/connect-executor") {
+    executorConnected = true;
+    return reply({});
+  }
+  if (/^\/v1\/agents\/environments\/[^/]+$/.test(url.pathname)) {
+    return reply({
+      id: url.pathname.split("/").at(-1),
+      object: "agent.environment",
+      type: "self_hosted",
+      status: executorConnected ? "connected" : "pending",
+      files: [],
+      plugins: [],
+      skills: [],
+    });
+  }
   if (url.pathname === "/health") return reply({ fixture: true });
   if (url.pathname === "/reset") {
     for (const peers of streams.values()) for (const peer of peers) peer.end();
     streams.clear();
+    executorConnected = false;
     agents = [];
     sessions = [];
     histories = new Map();
@@ -221,16 +238,25 @@ createServer(async (req, res) => {
       environment:
         body.environment.type === "none"
           ? { type: "none" }
-          : {
-              type: "openai_hosted",
-              id: randomUUID(),
-              capability_directories: [],
-              network: { access: "enabled", allowed_domains: [] },
-              packages: { npm: [], python: [], system: [] },
-              files: [],
-              plugins: [],
-              skills: [],
-            },
+          : body.environment.type === "self_hosted"
+            ? {
+                type: "self_hosted",
+                id: randomUUID(),
+                remote_url: "wss://core.example/api/v1/agent-daemon/ws",
+                workspace_directory: body.environment.workspace_directory,
+                capability_directories:
+                  body.environment.capability_directories || [],
+              }
+            : {
+                type: "openai_hosted",
+                id: randomUUID(),
+                capability_directories: [],
+                network: { access: "enabled", allowed_domains: [] },
+                packages: { npm: [], python: [], system: [] },
+                files: [],
+                plugins: [],
+                skills: [],
+              },
       status: "idle",
       error: null,
       metadata: body.metadata,
@@ -272,7 +298,8 @@ createServer(async (req, res) => {
         "已检查登录流程并补充验证。\n\n## 结果\n\n- 修复了会话过期后的跳转。\n- 12 项测试通过。\n\n```ts\nconst session = await restoreSession();\n```\n\n可以继续检查移动端表现。",
       ),
     ]);
-    turns.set(session.id, [turn]);
+    turns.set(session.id, body.input ? [turn] : []);
+    if (!body.input) histories.set(session.id, []);
     sessions.push(session);
     receipts.set(key, session);
     if (loseCreation) {

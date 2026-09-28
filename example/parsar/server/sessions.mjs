@@ -13,8 +13,40 @@ function requestFor(store, id, body) {
   if (new Set(mcps.map((mcp) => mcp.label)).size !== mcps.length)
     throw new AppError(400, "绑定的 MCP 服务标识不能重复。");
   const environment = { type: runtime.environment };
+  const selfHosted = environment.type === "self_hosted";
+  let modelProvider;
+  if (selfHosted) {
+    if (agent.skill_ids.length)
+      throw new AppError(
+        400,
+        "用户机器使用本地能力目录，当前 Core 不接受托管 Skill 引用。请使用未绑定托管 Skill 的 Agent，并在运行时填写本地能力目录。",
+      );
+    if (mcps.length)
+      throw new AppError(
+        400,
+        "用户机器的 MCP 请通过本地 Plugin 能力目录配置。当前 Core 不接受此处的 MCP 服务绑定，请使用未绑定 MCP 的 Agent。",
+      );
+    if (agent.harness === "mcode")
+      throw new AppError(
+        400,
+        "此示例的用户机器接入先支持 Codex 和 Claude Code，请选择其中一个执行引擎。",
+      );
+    const provider = store.get("providers", model.provider_id);
+    if (!provider?.base_url?.startsWith("https://") || !provider.api_key)
+      throw new AppError(
+        400,
+        "用户机器需要模型 Provider 的 HTTPS Base URL 和 API Key，请先在模型页面配置。",
+      );
+    modelProvider = {
+      protocol: agent.harness === "codex" ? "responses" : "anthropic",
+      base_url: provider.base_url,
+      api_key: provider.api_key,
+    };
+    environment.workspace_directory = runtime.workspace_directory;
+    environment.capability_directories = runtime.capability_directories || [];
+  }
   const tools = [{ type: "web_search", mode: "disabled" }];
-  if (environment.type === "none") {
+  if (environment.type === "none" || selfHosted) {
     if (agent.skill_ids.length)
       throw new AppError(400, "Skills 需要托管运行环境。");
     tools.push(
@@ -67,13 +99,21 @@ function requestFor(store, id, body) {
     }
   }
   const name = text(body.name, "会话名称", 80, true);
-  const input = text(body.input, "消息", 100000, true);
+  const input = selfHosted ? undefined : text(body.input, "消息", 100000, true);
   return {
     id,
     name,
     agent_id: agent.id,
     runtime_id: runtime.id,
     created_at: Math.floor(Date.now() / 1000),
+    ...(selfHosted
+      ? {
+          self_hosted: {
+            platform: runtime.platform,
+            workspace_directory: runtime.workspace_directory,
+          },
+        }
+      : {}),
     request: {
       agent: {
         model: model.model,
@@ -84,7 +124,10 @@ function requestFor(store, id, body) {
         tools,
       },
       environment,
-      input,
+      ...(input ? { input } : {}),
+      ...(modelProvider
+        ? { x_agents_core: { model_provider: modelProvider } }
+        : {}),
       metadata: {
         application: "parsar-example",
         agent_id: agent.id,

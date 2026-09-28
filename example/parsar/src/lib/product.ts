@@ -18,7 +18,10 @@ export interface MCPProfile extends NamedResource {
   url: string;
 }
 export interface RuntimeProfile extends NamedResource {
-  environment: "none" | "openai_hosted";
+  environment: "none" | "openai_hosted" | "self_hosted";
+  platform?: "linux" | "macos" | "windows";
+  workspace_directory?: string;
+  capability_directories?: string[];
 }
 export interface AgentProfile extends NamedResource {
   model_id: string;
@@ -34,6 +37,10 @@ export interface SessionRecord {
   runtime_id: string;
   created_at: number;
   core_session_id?: string;
+  self_hosted?: {
+    platform: "linux" | "macos" | "windows";
+    workspace_directory: string;
+  };
 }
 export class ProductError extends Error {
   constructor(

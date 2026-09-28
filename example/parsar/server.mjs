@@ -10,6 +10,7 @@ import { productAPI } from "./server/product.mjs";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const routes = [
+  [/^\/v1\/agents\/environments\/[a-f0-9-]{36}$/, ["GET"]],
   [/^\/v1\/agents\/sessions\/[a-f0-9-]{36}$/, ["GET"]],
   [/^\/v1\/agents\/sessions\/[a-f0-9-]{36}\/(items|turns)$/, ["GET"]],
   [/^\/v1\/agents\/sessions\/[a-f0-9-]{36}\/events$/, ["GET", "POST"]],

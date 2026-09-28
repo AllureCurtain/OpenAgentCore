@@ -92,6 +92,67 @@ test.beforeEach(async ({ request }) => {
   store.close();
   await request.post("http://127.0.0.1:18181/reset");
 });
+
+test("self-hosted Session shows native connection instructions and waits before sending", async ({
+  page,
+  request,
+}) => {
+  await resources(page);
+  await navigate(page, "模型");
+  await page.getByRole("button", { name: "编辑 Provider Moonshot" }).click();
+  await page.getByLabel("Base URL").fill("https://provider.example/v1");
+  await page.getByRole("button", { name: "手动选择", exact: true }).click();
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await navigate(page, "运行时");
+  await page.getByRole("button", { name: "添加运行时" }).click();
+  await page.getByLabel("名称", { exact: true }).fill("我的 Mac");
+  await page.getByLabel("环境类型").click();
+  await page.getByRole("option", { name: "用户机器", exact: true }).click();
+  await page.getByLabel("机器平台").click();
+  await page.getByRole("option", { name: "macOS", exact: true }).click();
+  await page
+    .getByLabel("工作目录", { exact: true })
+    .fill("/Users/example/project");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await navigate(page, "Agents");
+  await page.getByRole("button", { name: "新建 Agent" }).click();
+  await page.getByLabel("Agent 名称").fill("本机助手");
+  await page.getByLabel("模型", { exact: true }).click();
+  await page
+    .getByRole("option", { name: "Moonshot / Kimi", exact: true })
+    .click();
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByRole("link", { name: "打开", exact: true }).click();
+  await page.getByRole("button", { name: "开始会话", exact: true }).click();
+  await page.getByLabel("会话名称").fill("本地会话");
+  await page.getByLabel("运行时", { exact: true }).click();
+  await page.getByRole("option", { name: "我的 Mac", exact: true }).click();
+  await expect(page.getByLabel("第一条消息")).toHaveCount(0);
+  await page.getByRole("button", { name: "开始", exact: true }).click();
+  await expect(page.getByText("等待连接", { exact: true })).toBeVisible();
+  await page.getByLabel("继续对话").fill("hello");
+  await expect(
+    page.getByRole("button", { name: "发送", exact: true }),
+  ).toBeDisabled();
+  await page.getByRole("button", { name: "连接用户机器", exact: true }).click();
+  await expect(page.getByRole("dialog")).toContainText("oac-daemon install");
+  await expect(page.getByRole("dialog")).toContainText(
+    "/Users/example/project",
+  );
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  await request.post("http://127.0.0.1:18181/connect-executor");
+  await expect(page.getByText("已连接", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "发送", exact: true }),
+  ).toBeEnabled();
+  await page.reload();
+  await expect(
+    page.getByRole("button", { name: "连接用户机器", exact: true }),
+  ).toBeVisible();
+});
 test("Agent to multiple independent Sessions, continuation and cancellation", async ({
   page,
   request,
