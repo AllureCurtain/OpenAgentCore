@@ -123,23 +123,14 @@ func TestBindingAllowsRetainedExecutor(t *testing.T) {
 	}
 }
 
-func TestCapabilityLayoutExcludesWritableAndPrivateRoots(t *testing.T) {
+func TestCapabilityLayoutUsesOperatorDirectories(t *testing.T) {
 	b, _ := testBinding(t)
-	private := os.Getenv("OAC_RUNTIME_HOME")
-	for _, directory := range []string{b.workspace, filepath.Join(b.workspace, "caps"), private, filepath.Join(private, "caps"), PackageDirectory, filepath.Join(PackageDirectory, "caps"), "/"} {
-		if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, b.helper, directory); err == nil {
-			t.Fatal("unsafe installation layout accepted")
+	for _, directory := range []string{filepath.Join(b.workspace, "capabilities"), filepath.Join(os.Getenv("OAC_RUNTIME_HOME"), "capabilities")} {
+		if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, "", directory); err != nil {
+			t.Fatal(err)
 		}
 	}
-	root := t.TempDir()
-	alias := filepath.Join(root, "alias")
-	if err := os.Symlink(t.TempDir(), alias); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, b.helper, filepath.Join(alias, "new")); err == nil {
-		t.Fatal("installation parent alias accepted")
-	}
-	if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, b.helper, t.TempDir()); err != nil {
-		t.Fatal(err)
+	if _, err := NewWithCapabilityDirectory(b.environment, b.capabilityIdentity().SessionID, b.workspace, "", "relative"); err == nil {
+		t.Fatal("relative installation path accepted")
 	}
 }

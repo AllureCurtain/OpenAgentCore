@@ -6,10 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"io/fs"
-	"os/exec"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
@@ -19,29 +16,7 @@ func (b *Binding) ListWorkspaceDirectory(ctx context.Context, path string, limit
 	if limit < 1 || limit > proto.WorkspaceDirectoryMaxEntries || len(path) > 4096 || strings.ContainsAny(path, "\\\x00\r\n") || (path != "" && (path == "." || !fs.ValidPath(path))) {
 		return agent.WorkspaceDirectoryResult{}, agent.ErrWorkspaceReadInvalid
 	}
-	operation, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(operation, b.helper, b.workspace, path, strconv.Itoa(limit))
-	cmd.Dir = "/"
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8"}
-	cmd.WaitDelay = time.Second
-	pipe, err := cmd.StdoutPipe()
-	if err != nil {
-		return agent.WorkspaceDirectoryResult{}, agent.ErrWorkspaceReadUnavailable
-	}
-	if err := cmd.Start(); err != nil {
-		return agent.WorkspaceDirectoryResult{}, agent.ErrWorkspaceReadUnavailable
-	}
-	const maxOutput = 4 << 20
-	data, err := io.ReadAll(io.LimitReader(pipe, maxOutput+1))
-	if err != nil || len(data) > maxOutput {
-		_ = cmd.Process.Kill()
-	}
-	waitErr := cmd.Wait()
-	if err != nil || waitErr != nil || len(data) > maxOutput {
-		return agent.WorkspaceDirectoryResult{}, agent.ErrWorkspaceReadUncertain
-	}
-	return decodeDirectory(data, limit)
+	return b.listNativeDirectory(ctx, path, limit)
 }
 
 func decodeDirectory(data []byte, limit int) (agent.WorkspaceDirectoryResult, error) {

@@ -1,0 +1,46 @@
+name: native-daemon
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Build the native daemon
+        run: go build -o "$RUNNER_TEMP/oac-daemon${{ runner.os == 'Windows' && '.exe' || '' }}" ./apps/parsar-daemon/cmd/parsar-daemon
+      - name: Native filesystem, authentication and process lifecycle
+        run: >-
+          go test -race -count=1
+          ./internal/runtimefs
+          ./apps/parsar-daemon/internal/auth
+          ./apps/parsar-daemon/internal/paths
+          ./apps/parsar-daemon/internal/daemonize
+          ./apps/parsar-daemon/internal/agent/clirunner
+      - name: Native capability snapshots, files and installation
+        run: >-
+          go test -race -count=1
+          ./apps/parsar-daemon/internal/localworkspace
+          ./apps/parsar-daemon/internal/cli
+          -run 'TestNative|TestPreparationFreezesLocalContentsAcrossReconnect|TestSnapshotMarker'
+      - uses: actions/upload-artifact@v6
+        with:
+          name: oac-daemon-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/oac-daemon*
+          if-no-files-found: error

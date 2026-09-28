@@ -138,14 +138,14 @@ func TestExecutorCredentialFile(t *testing.T) {
 	if err := os.Symlink(path, link); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := executorCredential(link, environment); err == nil {
-		t.Fatal("symlink accepted")
+	if _, _, err := executorCredential(link, environment); err != nil {
+		t.Fatal("operator symlink rejected", err)
 	}
 	if err := os.Chmod(path, 0644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := executorCredential(path, environment); err == nil {
-		t.Fatal("public credential accepted")
+	if _, _, err := executorCredential(path, environment); err != nil {
+		t.Fatal("operator permissions rejected", err)
 	}
 }
 
@@ -186,7 +186,7 @@ func TestEnvironmentBindingPreservesIdentityAndHistory(t *testing.T) {
 	}
 }
 
-func TestEnvironmentBindingAllowsPackagedFilesAndRejectsUnsafeReceipt(t *testing.T) {
+func TestEnvironmentBindingAllowsOperatorFilePermissions(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Chmod(root, 0700); err != nil {
 		t.Fatal(err)
@@ -202,8 +202,8 @@ func TestEnvironmentBindingAllowsPackagedFilesAndRejectsUnsafeReceipt(t *testing
 	if err := os.Chmod(path, 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := saveEnvironmentBinding(root, want); err == nil {
-		t.Fatal("public receipt accepted")
+	if err := saveEnvironmentBinding(root, want); err != nil {
+		t.Fatal("operator permissions rejected", err)
 	}
 }
 

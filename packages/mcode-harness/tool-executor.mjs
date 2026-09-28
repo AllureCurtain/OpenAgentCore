@@ -19,8 +19,8 @@ export class ToolExecutor {
     signal?.throwIfAborted();
     const request = JSON.stringify({ tool, input });
     if (Buffer.byteLength(request) > limit) throw new Error('Workspace tool input exceeds limit');
-    const child = spawn(process.execPath, [this.entrypoint, this.profile, '/workspace'], {
-      env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: '/tmp', LANG: 'C.UTF-8' },
+    const child = spawn(process.execPath, [this.entrypoint, this.profile], {
+      env: process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const call = { stop: () => child.kill('SIGTERM') };

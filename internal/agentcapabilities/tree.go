@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentbundle"
+	"github.com/MiniMax-AI-Dev/parsar/internal/runtimefs"
 )
 
 // ReadTree stays inside an already-owned root and rejects aliases/special files.
@@ -124,13 +125,12 @@ func writeFile(root *os.Root, name string, body []byte, mode fs.FileMode) error 
 }
 
 func syncDirectory(root *os.Root, name string) error {
-	file, err := root.Open(name)
+	directory, err := root.OpenRoot(name)
 	if err != nil {
 		return ErrInvalid
 	}
-	err = file.Sync()
-	closeErr := file.Close()
-	if err != nil || closeErr != nil {
+	defer directory.Close()
+	if runtimefs.SyncDirectory(directory) != nil {
 		return ErrInvalid
 	}
 	return nil

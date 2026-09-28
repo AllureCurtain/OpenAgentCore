@@ -6,8 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
+	"runtime"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
@@ -16,15 +15,21 @@ import (
 
 // WorkspaceConfig is frozen deployment input, separate from public Agent options.
 type WorkspaceConfig struct {
+	ExecutionMode                                     string
 	Binary, Node, Bridge, Directory, Network, Scratch string
-	ProtectedDirs                                     []string
 	AllowedDomains                                    []string
 }
 
 func ConfigureLocal(binary, node, bridge, root, workspace string, network agentnetwork.Policy, staging string) (WorkspaceConfig, error) {
 	c := WorkspaceConfig{Binary: binary, Node: node, Bridge: bridge, Directory: workspace, Network: network.Access, AllowedDomains: network.Hosts(),
-		Scratch:       filepath.Join(root, "runtime", "mcode-tools", "scratch"),
-		ProtectedDirs: []string{filepath.Join(root, "daemon"), filepath.Join(root, "runtime", "mcode"), filepath.Dir(workspace), staging}}
+		Scratch: filepath.Join(root, "runtime", "mcode-tools", "scratch")}
+	binding, bindingErr := localworkspace.Load()
+	if bindingErr == nil && binding != nil {
+		c.ExecutionMode = binding.ExecutionMode()
+	}
+	if runtime.GOOS == "windows" || network.Access != "enabled" || len(network.AllowedDomains) != 0 {
+		return c, fmt.Errorf("mcode: native execution requires Linux or macOS and unrestricted host access")
+	}
 	if network.Validate() != nil {
 		return c, fmt.Errorf("mcode: explicit workspace network policy is required")
 	}
@@ -34,16 +39,16 @@ func ConfigureLocal(binary, node, bridge, root, workspace string, network agentn
 		}
 	}
 	for _, path := range []string{binary, node, bridge} {
-		resolved, err := filepath.EvalSymlinks(path)
-		if err != nil || resolved != path || strings.HasPrefix(path, workspace+"/") || strings.HasPrefix(path, "/workspace/") {
-			return c, fmt.Errorf("mcode: runtime programs must be canonical paths outside the workspace")
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() {
+			return c, fmt.Errorf("mcode: runtime program unavailable")
 		}
 	}
 	bound, err := os.Stat(workspace)
-	public, publicErr := os.Stat("/workspace")
-	if err != nil || publicErr != nil || !bound.IsDir() || !os.SameFile(bound, public) {
-		return c, fmt.Errorf("mcode: public workspace alias does not match the Runtime binding")
+	if err != nil || !bound.IsDir() {
+		return c, fmt.Errorf("mcode: workspace directory unavailable")
 	}
+
 	if err := os.MkdirAll(c.Scratch, 0700); err != nil {
 		return c, err
 	}
@@ -51,6 +56,12 @@ func ConfigureLocal(binary, node, bridge, root, workspace string, network agentn
 }
 
 func prepareWorkspaceOptions(ctx context.Context, c WorkspaceConfig, req proto.PromptRequestPayload) (launchOptions, error) {
+	if req.LocalEnvironment != nil && req.LocalEnvironment.ExecutionMode != c.ExecutionMode {
+		return launchOptions{}, fmt.Errorf("mcode: execution mode mismatch")
+	}
+	if c.Network != "enabled" || len(c.AllowedDomains) != 0 {
+		return launchOptions{}, fmt.Errorf("mcode: Runtime does not implement network isolation")
+	}
 	if !req.StrictResume || req.LocalEnvironment == nil || req.WorkDir != c.Directory || req.DisableExecutionEnvironment || !(agentnetwork.Policy{Access: c.Network, AllowedDomains: c.AllowedDomains}).Equal(agentnetwork.Policy{Access: req.LocalEnvironment.NetworkAccess, AllowedDomains: req.LocalEnvironment.AllowedDomains}) || req.WorkspaceReadOnly {
 		return launchOptions{}, fmt.Errorf("mcode: execution does not match the dedicated workspace")
 	}
@@ -103,18 +114,21 @@ func prepareWorkspaceOptions(ctx context.Context, c WorkspaceConfig, req proto.P
 	if err = os.WriteFile(filepath.Join(opts.DataDir, "config.yaml"), raw, 0600); err != nil {
 		return opts, err
 	}
-	profile := map[string]any{"capabilityRoot": req.LocalEnvironment.CapabilityRoot, "workspace": "/workspace", "scratch": c.Scratch, "network": c.Network, "allowedDomains": (agentnetwork.Policy{Access: c.Network, AllowedDomains: c.AllowedDomains}).Hosts(), "protectedDirs": slices.Clone(c.ProtectedDirs), "skills": len(req.LocalEnvironment.Skills) > 0}
+	profile := map[string]any{"capabilityRoot": req.LocalEnvironment.CapabilityRoot, "workspace": "/workspace", "scratch": c.Scratch, "network": c.Network, "allowedDomains": (agentnetwork.Policy{Access: c.Network, AllowedDomains: c.AllowedDomains}).Hosts(), "skills": len(req.LocalEnvironment.Skills) > 0}
+
+	profile["workspace"] = c.Directory
 	if req.LocalEnvironment.ToolEnvironment {
-		if err := localworkspace.VerifyToolEnvironment(req.LocalEnvironment.SystemPackages); err != nil {
+		binding, err := localworkspace.Load()
+		if err != nil || binding == nil {
+			return opts, fmt.Errorf("mcode: Runtime binding unavailable")
+		}
+		values, err := binding.ReadToolEnvironment()
+		if err != nil {
 			return opts, err
 		}
-		profile["toolEnvironment"] = true
-		profile["systemPackages"] = req.LocalEnvironment.SystemPackages
-		// Initialization exposes only user env/packages; private staging and
-		// daemon/native history remain explicitly denied.
-		protected := slices.Clone(c.ProtectedDirs)
-		profile["protectedDirs"] = slices.DeleteFunc(protected, func(path string) bool { return path == "/environment" })
+		profile["toolEnv"] = values
 	}
+
 	raw, err = json.Marshal(profile)
 	if err != nil {
 		return opts, err

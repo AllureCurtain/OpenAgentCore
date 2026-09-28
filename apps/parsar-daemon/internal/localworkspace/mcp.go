@@ -2,6 +2,7 @@ package localworkspace
 
 import (
 	"errors"
+	"os"
 	"strings"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
@@ -10,10 +11,13 @@ import (
 
 const MCPInitializer = "/usr/local/bin/oac-runtime-initialize"
 
-// MCPStdioCommand contains only installed identities. The server's executable,
-// arguments and selected user variables are resolved after entering isolation.
+// MCPStdioCommand resolves the common installed manifest in the daemon.
 func MCPStdioCommand(server proto.EnvironmentMCP) (string, []string) {
-	return "/usr/bin/python3", []string{"-I", "-S", MCPInitializer, "stdio", server.InstallationRoot, server.WorkspaceRoot, server.PackageRoot, server.Server.Name}
+	executable, err := os.Executable()
+	if err != nil {
+		return "", nil
+	}
+	return executable, []string{"runtime-mcp-exec", server.InstallationRoot, server.PackageRoot, server.Server.Name}
 }
 
 func resolveEnvironmentMCP(installed []agentcapabilities.InstalledMCP, values map[string]string) ([]proto.EnvironmentMCP, error) {

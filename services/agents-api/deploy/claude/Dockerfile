@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY build-system-seed.py /tmp/build-system-seed.py
 RUN python3 -I -S /tmp/build-system-seed.py && rm /tmp/build-system-seed.py
 COPY --chmod=0555 tool-root.py /usr/local/bin/oac-tool-root
-COPY --chmod=0555 shell-prefix.py /usr/local/bin/oac-claude-shell-prefix
 COPY --chmod=0555 oac-daemon oac-codex-directory oac-codex-write oac-workspace-export /usr/local/bin/
 COPY claude-sdk /opt/claude-sdk
 COPY --chmod=0444 runtime-initialize.py /usr/local/bin/oac-runtime-initialize

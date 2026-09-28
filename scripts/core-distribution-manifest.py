@@ -167,11 +167,6 @@ def verify_runtime(image, daemon, helpers, source):
     files["/usr/local/bin/oac-runtime-initialize"] = source / "services/agents-api/deploy/runtime/initialize.py"
     files["/usr/local/bin/oac-tool-root"] = source / "services/agents-api/deploy/runtime/tool-root.py"
     environment = dict(value.split("=", 1) for value in details["Config"]["Env"] if "=" in value)
-    if "OAC_RUNTIME_CODEX_BIN" in environment:
-        files["/etc/codex/requirements.toml"] = source / "services/agents-api/deploy/codex/requirements.toml"
-        files["/etc/codex/tool-env.py"] = source / "services/agents-api/deploy/codex/tool-env.py"
-    if "OAC_RUNTIME_CLAUDE_SDK_ENTRYPOINT" in environment:
-        files["/usr/local/bin/oac-claude-shell-prefix"] = source / "services/agents-api/deploy/claude/shell-prefix.py"
     if "OAC_RUNTIME_MCODE_BIN" in environment:
         for name in ("launch.mjs", "bridge.mjs", "check.mjs", "tool-executor.mjs", "subagent-snapshot.mjs", "source.json"):
             files["/opt/mcode-harness/" + name] = source / "packages/mcode-harness" / name

@@ -1,111 +1,100 @@
 package localworkspace
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
 
-func exportBinding(t *testing.T, program string) *Binding {
+func outputBinding(t *testing.T) *Binding {
 	t.Helper()
-	b, _ := testBinding(t)
-	b.exportHelper = b.helper
-	if err := os.WriteFile(b.helper, []byte("#!/bin/sh\n"+program+"\n"), 0700); err != nil {
+	b := nativeFileBinding(t)
+	if _, err := b.WriteWorkspaceFile(t.Context(), "outputs/nested/proof.bin", []byte{0, 255, 17}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.WriteWorkspaceFile(t.Context(), "outputs/empty", nil); err != nil {
 		t.Fatal(err)
 	}
 	return b
 }
-
-type heldExportWriter struct {
-	bytes.Buffer
-	entered chan struct{}
-	release chan struct{}
-}
-
-func (w *heldExportWriter) Write(p []byte) (int, error) {
-	if w.entered != nil {
-		close(w.entered)
-		w.entered = nil
-		<-w.release
-	}
-	return w.Buffer.Write(p)
-}
-
-func TestExportOutputsAllowsConsumerBackpressureAfterHelperExit(t *testing.T) {
-	b := exportBinding(t, "head -c 3072 /dev/zero")
-	entered, release := make(chan struct{}), make(chan struct{})
-	w := &heldExportWriter{entered: entered, release: release}
-	done := make(chan error, 1)
-	go func() { done <- b.ExportOutputs(t.Context(), w) }()
-	select {
-	case <-entered:
-	case <-time.After(3 * time.Second):
-		close(release)
-		t.Fatal("helper produced no output")
-	}
-	// The helper can exit while the pull transport is waiting for its consumer.
-	time.Sleep(1500 * time.Millisecond)
-	close(release)
-	if err := <-done; err != nil {
+func TestNativeOutputArchive(t *testing.T) {
+	b := outputBinding(t)
+	var output bytes.Buffer
+	if err := b.ExportOutputs(t.Context(), &output); err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Equal(w.Bytes(), make([]byte, 3072)) {
-		t.Fatalf("incomplete output: %d bytes", w.Len())
-	}
-}
-
-func TestExportOutputsRequiresSuccessfulHelperExit(t *testing.T) {
-	b := exportBinding(t, "printf complete-prefix; exit 7")
-	var output bytes.Buffer
-	if err := b.ExportOutputs(t.Context(), &output); err == nil || output.String() != "complete-prefix" {
-		t.Fatalf("failed helper accepted: output=%q error=%v", output.String(), err)
-	}
-}
-
-func TestExportOutputsBoundsInheritedPipeAfterHelperExit(t *testing.T) {
-	pidFile := filepath.Join(t.TempDir(), "descendant.pid")
-	b := exportBinding(t, "sleep 30 &\necho $! > '"+pidFile+"'\nprintf prefix")
-	t.Cleanup(func() {
-		data, err := os.ReadFile(pidFile)
+	reader := tar.NewReader(&output)
+	got := map[string][]byte{}
+	for {
+		header, err := reader.Next()
+		if err == io.EOF {
+			break
+		}
 		if err != nil {
-			return
+			t.Fatal(err)
 		}
-		pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-		if err == nil {
-			if process, err := os.FindProcess(pid); err == nil {
-				_ = process.Kill()
-			}
+		if header.Typeflag != tar.TypeReg {
+			t.Fatal(header)
 		}
-	})
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer cancel()
+		raw, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got[header.Name] = raw
+	}
+	if len(got) != 2 || !bytes.Equal(got["outputs/nested/proof.bin"], []byte{0, 255, 17}) {
+		t.Fatal(got)
+	}
+}
+func TestNativeExportMissingOutputsAndBound(t *testing.T) {
+	b := nativeFileBinding(t)
 	var output bytes.Buffer
-	err := b.ExportOutputs(ctx, &output)
-	if !errors.Is(err, os.ErrDeadlineExceeded) || ctx.Err() != nil || output.String() != "prefix" {
-		t.Fatalf("inherited pipe not bounded: output=%q error=%v context=%v", output.String(), err, ctx.Err())
+	if err := b.ExportOutputs(t.Context(), &output); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tar.NewReader(&output).Next(); err != io.EOF {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(b.workspace, "outputs"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Create(filepath.Join(b.workspace, "outputs", "large"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = f.Truncate(artifactFileBytes + 1); err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+	if err = b.ExportOutputs(t.Context(), io.Discard); err == nil {
+		t.Fatal("oversize artifact accepted")
 	}
 }
 
-func TestExportOutputsCancellationUsesConsumerCloseContract(t *testing.T) {
-	b := exportBinding(t, "printf prefix; exec sleep 30")
+type failedExportWriter struct{ err error }
+
+func (w failedExportWriter) Write([]byte) (int, error) { return 0, w.err }
+func TestNativeExportCancellationAndConsumerFailure(t *testing.T) {
+	b := outputBinding(t)
+	want := errors.New("consumer rejected")
+	if err := b.ExportOutputs(t.Context(), failedExportWriter{want}); !errors.Is(err, want) {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithCancel(t.Context())
-	defer cancel()
 	reader, writer := io.Pipe()
 	defer reader.Close()
-	// The dispatch owner closes the consumer on cancellation, releasing Write.
 	stop := context.AfterFunc(ctx, func() { _ = reader.CloseWithError(ctx.Err()) })
 	defer stop()
 	done := make(chan error, 1)
 	go func() { err := b.ExportOutputs(ctx, writer); _ = writer.CloseWithError(err); done <- err }()
-	got := make([]byte, 1)
-	if _, err := reader.Read(got); err != nil {
+	var prefix [1]byte
+	if _, err := reader.Read(prefix[:]); err != nil {
 		t.Fatal(err)
 	}
 	cancel()
@@ -114,21 +103,35 @@ func TestExportOutputsCancellationUsesConsumerCloseContract(t *testing.T) {
 		if err == nil {
 			t.Fatal("cancelled export succeeded")
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("cancellation did not settle exporter")
+	case <-time.After(time.Second):
+		t.Fatal("export did not settle")
 	}
 }
 
-type failedExportWriter struct{ err error }
+type changingOutput struct {
+	bytes.Buffer
+	change func()
+}
 
-func (w failedExportWriter) Write([]byte) (int, error) { return 0, w.err }
-
-func TestExportOutputsConsumerFailureStopsHelper(t *testing.T) {
-	b := exportBinding(t, "printf prefix; exec sleep 30")
-	want := errors.New("consumer rejected output")
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer cancel()
-	if err := b.ExportOutputs(ctx, failedExportWriter{want}); !errors.Is(err, want) || ctx.Err() != nil {
-		t.Fatalf("consumer failure did not stop helper: %v context=%v", err, ctx.Err())
+func (w *changingOutput) Write(data []byte) (int, error) {
+	if w.change != nil {
+		change := w.change
+		w.change = nil
+		change()
+	}
+	return w.Buffer.Write(data)
+}
+func TestNativeExportRejectsChangedFile(t *testing.T) {
+	b := nativeFileBinding(t)
+	if _, err := b.WriteWorkspaceFile(t.Context(), "outputs/file", []byte("before")); err != nil {
+		t.Fatal(err)
+	}
+	w := &changingOutput{change: func() {
+		if err := os.WriteFile(filepath.Join(b.workspace, "outputs", "file"), []byte("changed-length"), 0600); err != nil {
+			t.Error(err)
+		}
+	}}
+	if err := b.ExportOutputs(t.Context(), w); err == nil {
+		t.Fatal("changed artifact accepted")
 	}
 }

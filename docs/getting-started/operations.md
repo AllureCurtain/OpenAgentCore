@@ -222,11 +222,14 @@ sign-in sessions live in Web's memory and last 12 hours.
 
 microsandbox uses an explicit network policy: public egress, the Core and DNS ports the
 Runtime needs, and no inbound or private-network access. Private model or MCP endpoints
-need an explicit policy change. A Session's own network policy is separate.
+need an explicit policy change. The daemon does not enforce Session-level
+`disabled` or `restricted` networking. Combinations without the required outer
+network enforcement are unsupported; a requested mode is not an isolation guarantee.
 
-The Docker node uses the nested-sandbox Runtime policy. Its service account needs the
-host's Docker daemon, and Core has no Docker socket. Install nodes on trusted hosts and
-don't share their Docker access with untrusted users.
+Docker isolates the Runtime at the outer container boundary. The daemon does not
+add an inner filesystem, permission or network sandbox. The node's service account
+needs the host's Docker daemon, and Core has no Docker socket. Install nodes on
+trusted hosts and do not share their Docker access with untrusted users.
 
 A Core restart leaves node services and resident microVMs running. A host reboot, the
 end of a user manager or the loss of a running microVM is not a Core restart and is not

@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package clirunner
 
@@ -12,7 +12,6 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -161,25 +160,6 @@ func waitChild(t *testing.T, dir string) int {
 	}
 	t.Fatal("child did not start")
 	return 0
-}
-
-func waitExited(t *testing.T, pid int) {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		value, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
-		if os.IsNotExist(err) {
-			return
-		}
-		if err == nil {
-			fields := strings.Fields(string(value)[strings.LastIndex(string(value), ")")+1:])
-			if len(fields) > 0 && fields[0] == "Z" {
-				return
-			}
-		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	t.Fatalf("child %d is still running", pid)
 }
 
 func TestOwnedGroupHelper(t *testing.T) {

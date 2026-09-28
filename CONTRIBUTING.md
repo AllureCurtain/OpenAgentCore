@@ -34,9 +34,17 @@ local directories. Core resolves configuration, versions
 and resources; Runtime uses one parser and `installed.json` snapshot to supply
 Skill paths and MCP declarations to adapters. Preparation must complete before
 execution; reconnect reuses installed contents, and new Sessions freeze a new
-configuration snapshot. The protocol is platform-neutral; the implementation uses the existing packaged
-Linux Runtime layout for both environment origins. Windows/macOS installation and
-isolation remain separate work.
+configuration snapshot. The protocol is platform-neutral. Self-hosted daemons run natively on Linux,
+Windows and macOS; managed Providers remain Linux-only. The daemon executes with
+its launching user's permissions. It does not sandbox tools, files or networks,
+including on Linux. Managed isolation belongs to the outer Docker/E2B Environment,
+created by Core through a Provider. Harness adapters use bypass execution on all
+platforms. Runtime authentication, process cleanup and state consistency remain
+required; none constitutes isolation from tools running as the same user.
+Installation layout may differ, but Core preparation and execution cannot branch
+on operating system or Environment source. Windows acceptance requires native CI
+builds and automated tests; cross-compilation alone is insufficient. Record the
+absence of manual Windows acceptance until an actual machine is tested.
 
 - Keep component boundaries explicit through shared interfaces and versioned
   protocols. Register implementations behind those interfaces. Adding an

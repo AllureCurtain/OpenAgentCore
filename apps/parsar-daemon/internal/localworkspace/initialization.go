@@ -10,11 +10,11 @@ import (
 // ReadToolEnvironment selects the immutable user configuration. It never reads
 // process environment or introduces live-execution prerequisites for Files.
 func ReadToolEnvironment() (map[string]string, error) {
-	info, err := os.Lstat(ToolEnvironmentJSON)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0222 != 0 || info.Size() > 1<<20 {
+	info, err := os.Stat(toolEnvironmentPath())
+	if err != nil || !info.Mode().IsRegular() || info.Size() > 1<<20 {
 		return nil, errors.New("initialized user environment unavailable")
 	}
-	body, err := os.ReadFile(ToolEnvironmentJSON)
+	body, err := os.ReadFile(toolEnvironmentPath())
 	var values map[string]string
 	if err != nil || json.Unmarshal(body, &values) != nil || values == nil {
 		return nil, errors.New("initialized user environment unavailable")
@@ -50,7 +50,7 @@ func VerifyToolEnvironment(systemPackages bool) error {
 			if !info.IsDir() {
 				return errors.New("initialized tool directory unavailable")
 			}
-		} else if !info.Mode().IsRegular() || info.Mode().Perm()&0222 != 0 || info.Size() > 1024*1024 {
+		} else if !info.Mode().IsRegular() || info.Size() > 1024*1024 {
 			return errors.New("initialized tool configuration is not immutable")
 		}
 	}
@@ -69,8 +69,17 @@ func VerifyToolEnvironment(systemPackages bool) error {
 // ReadOptionalToolEnvironment permits a directory-only Runtime without user
 // variables. Declared MCP variables still require the immutable explicit file.
 func ReadOptionalToolEnvironment() (map[string]string, error) {
-	if _, err := os.Lstat(ToolEnvironmentJSON); errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(toolEnvironmentPath()); errors.Is(err, os.ErrNotExist) {
 		return map[string]string{}, nil
 	}
 	return ReadToolEnvironment()
+}
+
+// Native installations can select an explicit tool configuration file. Packaged
+// installations retain their existing resource layout, without a sandbox.
+func toolEnvironmentPath() string {
+	if path := os.Getenv("OAC_RUNTIME_TOOL_ENV_FILE"); path != "" {
+		return path
+	}
+	return ToolEnvironmentJSON
 }

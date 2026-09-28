@@ -63,6 +63,22 @@ create, copy or edit arbitrary assets, start a Session, send an event, cancel
 work, or read stored credentials. Project keys share all assets within their
 Project; nothing is shared or copied across Projects.
 
+## Runtime and outer isolation
+
+The same daemon and Core protocol serve self-hosted Linux, macOS and Windows.
+OS differences belong to Runtime implementations; harness differences belong to
+adapters. Managed Providers remain Linux-only. Runtime prepares capabilities and
+executes work; Providers create, bootstrap and reclaim outer Environments.
+
+The daemon runs tools with its launching user's permissions. It does not add a
+filesystem, permission or network sandbox, including on Linux. Outer Docker/E2B/
+microsandbox Environments provide managed isolation. Credential authentication,
+ordinary private storage, atomic writes, locks and process cleanup remain required,
+but do not protect Runtime data from tools running as the same user. Local
+capability snapshots share the managed parser and do not create a second security
+boundary. See the [native Runtime guide](self-hosted-native.md) for current platform
+validation limits.
+
 ## Secrets and evidence
 
 Credential values, model credentials and confidential template initialization are

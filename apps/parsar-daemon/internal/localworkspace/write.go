@@ -3,15 +3,11 @@ package localworkspace
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
-	"os/exec"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
@@ -47,27 +43,8 @@ func (b *Binding) WriteWorkspaceFile(ctx context.Context, path string, data []by
 		return result, agent.ErrWorkspaceWriteUncertain
 	}
 	defer func() { w.uncertain = errors.Is(err, agent.ErrWorkspaceWriteUncertain) }()
-	// Once admitted, observer cancellation cannot turn a possible commit into a
-	// rejection. Missing results poison this Runtime writer, even after local reap.
-	operation, cancel := context.WithTimeout(context.WithoutCancel(ctx), 65*time.Second)
-	defer cancel()
-	digest := sha256.Sum256(data)
-	// This writer serves only public Files.create, so it always selects the
-	// helper's create mode: create missing parents and never replace.
-	cmd := exec.CommandContext(operation, w.helper, b.workspace, path, strconv.Itoa(len(data)), w.staging, "create")
-	cmd.Dir = "/"
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8"}
-	cmd.Stdin = io.MultiReader(bytes.NewReader(data), bytes.NewReader(digest[:]))
-	output := &writeOutput{}
-	cmd.Stdout = output
-	cmd.WaitDelay = time.Second
-	if err := cmd.Start(); err != nil {
-		return result, agent.ErrWorkspaceWriteUnavailable
-	}
-	if err := cmd.Wait(); err != nil {
-		return result, agent.ErrWorkspaceWriteUncertain
-	}
-	return decodeWrite(output.Bytes(), len(data))
+	// Once admitted, finish this synchronous mutation before returning ownership.
+	return b.writeNativeFile(context.WithoutCancel(ctx), path, data)
 }
 
 // A malformed helper cannot grow the daemon's output buffer without bound.

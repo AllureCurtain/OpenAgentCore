@@ -8,6 +8,7 @@ import (
 // LocalEnvironment names a frozen workspace selection. Runtime must verify it
 // against the bound local root before resolving capabilities or native execution.
 type LocalEnvironment struct {
+	ExecutionMode      string                   `json:"-"`
 	CapabilityRoot     string                   `json:"-"`
 	ID                 string                   `json:"id"`
 	WorkspaceDirectory string                   `json:"workspace_directory"`
@@ -31,6 +32,7 @@ type LocalEnvironment struct {
 // EnvironmentMCP is transient Runtime configuration. Do not log it: HTTP headers
 // and the selected user bearer may be confidential. It is not agent.tools MCP.
 type EnvironmentMCP struct {
+	ExecutionMode    string `json:"-"`
 	InstallationRoot string
 	WorkspaceRoot    string
 	PackageRoot      string

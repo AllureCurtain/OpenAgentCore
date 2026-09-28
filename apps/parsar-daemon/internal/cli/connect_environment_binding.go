@@ -1,17 +1,15 @@
 package cli
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
+	"github.com/MiniMax-AI-Dev/parsar/internal/runtimefs"
 )
 
 // This receipt contains identity only; executor credentials remain in their file.
@@ -40,27 +38,7 @@ func checkEnvironmentTarget(remote, environment string) error {
 }
 
 func readEnvironmentPrivateFile(path string) ([]byte, error) {
-	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
-		return nil, errors.New("absolute private file required")
-	}
-	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	info, err := f.Stat()
-	if err != nil {
-		return nil, err
-	}
-	st, ok := info.Sys().(*syscall.Stat_t)
-	if !ok || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 || st.Uid != uint32(os.Getuid()) || st.Nlink != 1 {
-		return nil, errors.New("private owned regular file required")
-	}
-	raw, err := io.ReadAll(io.LimitReader(f, 16*1024+1))
-	if err != nil || len(raw) > 16*1024 {
-		return nil, errors.New("private file exceeds limit")
-	}
-	return raw, nil
+	return runtimefs.ReadPrivatePath(path, 16*1024)
 }
 
 func bindEnvironmentRuntime(remote string, bound environmentEnrollment, credentialFile string) error {
@@ -68,29 +46,19 @@ func bindEnvironmentRuntime(remote string, bound environmentEnrollment, credenti
 	if err != nil || !filepath.IsAbs(root) {
 		return errors.New("connect: absolute Runtime state directory required")
 	}
-	if err = os.MkdirAll(root, 0700); err != nil {
+	if err = runtimefs.EnsurePrivateDir(root); err != nil {
 		return errors.New("connect: Runtime state directory unavailable")
 	}
 	workspace := os.Getenv("OAC_RUNTIME_WORKSPACE")
 	if workspace == "/" || agentcapabilities.ValidateLocalDirectories([]string{workspace}) != nil {
 		return errors.New("connect: clean absolute Runtime workspace required")
 	}
-	canonical, err := filepath.EvalSymlinks(workspace)
 	info, statErr := os.Stat(workspace)
-	if err != nil || canonical != workspace || statErr != nil || !info.IsDir() {
-		return errors.New("connect: existing canonical Runtime workspace directory required")
+	if statErr != nil || !info.IsDir() {
+		return errors.New("connect: existing Runtime workspace required")
 	}
 	if bound.WorkspaceDirectory != "/workspace" && bound.WorkspaceDirectory != workspace {
 		return errors.New("connect: enrollment does not match the Runtime workspace")
-	}
-	initialization := localworkspace.InitializationDirectory
-	if resolved, resolveErr := filepath.EvalSymlinks(initialization); resolveErr == nil {
-		initialization = resolved
-	} else if !errors.Is(resolveErr, os.ErrNotExist) {
-		return errors.New("connect: protected initialization directory unavailable")
-	}
-	if environmentPathsOverlap(workspace, initialization) {
-		return errors.New("connect: Runtime workspace overlaps protected initialization")
 	}
 	for key, value := range map[string]string{
 		"OAC_RUNTIME_ENVIRONMENT_ID": bound.EnvironmentID,
@@ -103,30 +71,6 @@ func bindEnvironmentRuntime(remote string, bound environmentEnrollment, credenti
 	}
 	if domains := os.Getenv("OAC_RUNTIME_ALLOWED_DOMAINS"); domains != "" && domains != "[]" {
 		return errors.New("connect: conflicting Runtime network domains")
-	}
-	resolvedRoot, err := filepath.Abs(root)
-	if err != nil {
-		return errors.New("connect: Runtime state directory unavailable")
-	}
-	for _, path := range []string{resolvedRoot, credentialFile} {
-		resolved, e := filepath.EvalSymlinks(path)
-		if e != nil {
-			return errors.New("connect: private Runtime path unavailable")
-		}
-		for _, public := range []string{"/workspace", workspace} {
-			if environmentPathsOverlap(public, resolved) {
-				return errors.New("connect: private Runtime state cannot overlap the workspace")
-			}
-		}
-	}
-	private, err := filepath.EvalSymlinks(filepath.Join(root, "daemon"))
-	credentialPath, credentialErr := filepath.EvalSymlinks(credentialFile)
-	if err != nil || credentialErr != nil {
-		return errors.New("connect: protected daemon credential directory required")
-	}
-	relative, err := filepath.Rel(private, credentialPath)
-	if err != nil || !filepath.IsLocal(relative) || relative == "." {
-		return errors.New("connect: executor credential must be inside the protected daemon directory")
 	}
 	capabilityDirectory := os.Getenv("OAC_RUNTIME_CAPABILITY_DIRECTORY")
 	if capabilityDirectory == "" {
@@ -146,7 +90,7 @@ func bindEnvironmentRuntime(remote string, bound environmentEnrollment, credenti
 	}
 	local, err := localworkspace.Load()
 	if err != nil || local == nil {
-		return errors.New("connect: packaged Runtime binding or helpers unavailable")
+		return errors.New("connect: Runtime binding unavailable")
 	}
 	return nil
 }
@@ -163,19 +107,20 @@ func environmentPathsOverlap(first, second string) bool {
 }
 
 func saveEnvironmentBinding(root string, want environmentBinding) error {
-	// All three native sandboxes protect this existing daemon state directory.
+	// Store the binding with the other daemon state.
 	dir := filepath.Join(root, "daemon")
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	if err := runtimefs.EnsurePrivateDir(dir); err != nil {
 		return errors.New("connect: Runtime state directory unavailable")
 	}
 	for _, path := range []string{root, dir} {
-		info, e := os.Lstat(path)
-		if e != nil || !info.IsDir() || info.Mode().Perm()&0077 != 0 {
-			return errors.New("connect: Runtime state directory must be private")
+		held, err := os.OpenRoot(path)
+		if err != nil {
+			return errors.New("connect: Runtime state directory unavailable")
 		}
-		st, ok := info.Sys().(*syscall.Stat_t)
-		if !ok || st.Uid != uint32(os.Getuid()) {
-			return errors.New("connect: Runtime state directory must be owned")
+		err = runtimefs.PrivateDirectory(held)
+		held.Close()
+		if err != nil {
+			return errors.New("connect: Runtime state directory must be private and owned")
 		}
 	}
 	path := filepath.Join(dir, "environment.json")
@@ -206,14 +151,19 @@ func saveEnvironmentBinding(root string, want environmentBinding) error {
 			}
 		}
 		data, _ := json.Marshal(want)
-		f, e := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0600)
+		held, e := os.OpenRoot(dir)
+		if e != nil {
+			return errors.New("connect: Runtime binding directory unavailable")
+		}
+		defer held.Close()
+		f, e := runtimefs.OpenPrivate(held, "environment.json", os.O_WRONLY|os.O_CREATE|os.O_EXCL)
 		if errors.Is(e, os.ErrExist) {
 			return saveEnvironmentBinding(root, want)
 		}
 		if e != nil {
 			return errors.New("connect: could not establish Runtime binding")
 		}
-		_, e = io.Copy(f, bytes.NewReader(data))
+		_, e = f.Write(data)
 		if e == nil {
 			e = f.Sync()
 		}

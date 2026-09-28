@@ -48,16 +48,8 @@ func configureTextExecution(config map[string]any) {
 	config["beta"] = map[string]bool{"browserUseTooling": false, "mcodeTools": false, "threadGoal": false}
 }
 
-// Only process and model-network essentials cross into the native child.
-func executionEnvironment() []string {
-	var env []string
-	for _, key := range []string{"PATH", "LANG", "LC_ALL", "TMPDIR", "TMP", "TEMP", "HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR", "NODE_EXTRA_CA_CERTS"} {
-		if value, ok := os.LookupEnv(key); ok {
-			env = append(env, key+"="+value)
-		}
-	}
-	return env
-}
+// Harness children use the daemon user's ordinary environment.
+func executionEnvironment() []string { return os.Environ() }
 
 // ACP commands are only recognized for a single text block. Public input must
 // remain user text; ordinary product Sessions retain their native command behavior.

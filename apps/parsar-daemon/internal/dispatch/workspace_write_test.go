@@ -16,31 +16,11 @@ import (
 	"github.com/google/uuid"
 )
 
-func localWriterRouter(t *testing.T, response string) (*dispatch.Router, *recSender, proto.WorkspaceWritePayload, string) {
+func localWriterRouter(t *testing.T) (*dispatch.Router, *recSender, proto.WorkspaceWritePayload, string) {
 	t.Helper()
-	parent, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	workspace, staging := filepath.Join(parent, "workspace"), filepath.Join(parent, "staging")
-	for _, p := range []string{workspace, staging} {
-		if err := os.Mkdir(p, 0700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	helperRoot, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	helper := filepath.Join(helperRoot, "helper")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\ncat >/dev/null\ntouch \"$1/invoked\"\nprintf '%s' '"+response+"'\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
+	workspace := t.TempDir()
 	environment, session := uuid.NewString(), uuid.NewString()
-	for k, v := range map[string]string{"OAC_RUNTIME_ENVIRONMENT_ID": environment, "OAC_RUNTIME_SESSION_ID": session, "OAC_RUNTIME_WORKSPACE": workspace, "OAC_RUNTIME_DIRECTORY_HELPER": helper, "OAC_RUNTIME_WRITE_HELPER": helper, "OAC_RUNTIME_STAGING": staging} {
-		t.Setenv(k, v)
-	}
-	binding, err := localworkspace.Load()
+	binding, err := localworkspace.New(environment, session, workspace, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +61,7 @@ func waitWorkspaceWrite(t *testing.T, sender *recSender, id, outcome string) pro
 }
 
 func TestLocalUploadRequiresExactScopeAndCompleteBody(t *testing.T) {
-	r, sender, request, workspace := localWriterRouter(t, `{"version":1,"outcome":"completed","size_bytes":3}`)
+	r, sender, request, workspace := localWriterRouter(t)
 	for _, field := range []string{"environment", "session"} {
 		bad := request
 		if field == "environment" {
@@ -108,8 +88,8 @@ func TestLocalUploadRequiresExactScopeAndCompleteBody(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(workspace, "invoked")); !os.IsNotExist(err) {
-		t.Fatal("helper started before commit")
+	if _, err := os.Stat(filepath.Join(workspace, "file")); !os.IsNotExist(err) {
+		t.Fatal("file created before commit")
 	}
 	if err := r.Handle(t.Context(), mustEnv(t, proto.TypeWorkspaceWrite, id, proto.WorkspaceWritePayload{Step: "commit"})); err != nil {
 		t.Fatal(err)
@@ -117,15 +97,15 @@ func TestLocalUploadRequiresExactScopeAndCompleteBody(t *testing.T) {
 	if got := waitWorkspaceWrite(t, sender, id, "completed"); got.SizeBytes != 3 {
 		t.Fatal(got)
 	}
-	if _, err := os.Stat(filepath.Join(workspace, "invoked")); err != nil {
-		t.Fatal("helper not called", err)
+	if data, err := os.ReadFile(filepath.Join(workspace, "file")); err != nil || string(data) != "abc" {
+		t.Fatal("committed bytes differ", err)
 	}
 }
 
 func TestLocalUploadRejectsReorderedOrCorruptBodiesWithoutMutation(t *testing.T) {
 	for _, mode := range []string{"offset", "digest", "short"} {
 		t.Run(mode, func(t *testing.T) {
-			r, sender, request, workspace := localWriterRouter(t, `{"version":1,"outcome":"completed","size_bytes":3}`)
+			r, sender, request, workspace := localWriterRouter(t)
 			id := uuid.NewString()
 			_ = r.Handle(t.Context(), mustEnv(t, proto.TypeWorkspaceWrite, id, request))
 			chunk := proto.WorkspaceWritePayload{Step: "chunk", Data: []byte("abc")}
@@ -140,29 +120,10 @@ func TestLocalUploadRejectsReorderedOrCorruptBodiesWithoutMutation(t *testing.T)
 			_ = r.Handle(t.Context(), mustEnv(t, proto.TypeWorkspaceWrite, id, chunk))
 			_ = r.Handle(t.Context(), mustEnv(t, proto.TypeWorkspaceWrite, id, proto.WorkspaceWritePayload{Step: "commit"}))
 			waitWorkspaceWrite(t, sender, id, "rejected")
-			if _, err := os.Stat(filepath.Join(workspace, "invoked")); !os.IsNotExist(err) {
-				t.Fatal("bad transfer invoked helper")
+			if _, err := os.Stat(filepath.Join(workspace, "file")); !os.IsNotExist(err) {
+				t.Fatal("bad transfer mutated workspace")
 			}
 		})
-	}
-}
-
-func TestLocalUploadUnknownRetainsOwner(t *testing.T) {
-	r, sender, request, _ := localWriterRouter(t, `{"version":1,"outcome":"unknown","error":"write_failed"}`)
-	id := uuid.NewString()
-	for _, p := range []proto.WorkspaceWritePayload{request, {Step: "chunk", Data: []byte("abc")}, {Step: "commit"}} {
-		if err := r.Handle(t.Context(), mustEnv(t, proto.TypeWorkspaceWrite, id, p)); err != nil {
-			t.Fatal(err)
-		}
-	}
-	waitWorkspaceWrite(t, sender, id, "unknown")
-	next := uuid.NewString()
-	_ = r.Handle(t.Context(), mustEnv(t, proto.TypeWorkspaceWrite, next, request))
-	if got := waitWorkspaceWrite(t, sender, next, "rejected"); got.ErrorCode != "write_capacity" {
-		t.Fatal(got)
-	}
-	if err := r.Shutdown(t.Context()); err == nil {
-		t.Fatal("shutdown declared uncertain mutation settled")
 	}
 }
 
@@ -173,7 +134,22 @@ func TestLocalUploadReportsDestinationConflictsAndReleasesOwner(t *testing.T) {
 		"write_failed":          "",
 	} {
 		t.Run(helperError, func(t *testing.T) {
-			r, sender, request, _ := localWriterRouter(t, `{"version":1,"outcome":"failed","error":"`+helperError+`"}`)
+			r, sender, request, workspace := localWriterRouter(t)
+			switch helperError {
+			case "destination_directory":
+				if err := os.Mkdir(filepath.Join(workspace, "file"), 0700); err != nil {
+					t.Fatal(err)
+				}
+			case "unsafe_destination":
+				if err := os.WriteFile(filepath.Join(workspace, "file"), []byte("existing"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "write_failed":
+				if err := os.WriteFile(filepath.Join(workspace, "parent"), nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+				request.Path = "parent/file"
+			}
 			id := uuid.NewString()
 			for _, p := range []proto.WorkspaceWritePayload{request, {Step: "chunk", Data: []byte("abc")}, {Step: "commit"}} {
 				if err := r.Handle(t.Context(), mustEnv(t, proto.TypeWorkspaceWrite, id, p)); err != nil {

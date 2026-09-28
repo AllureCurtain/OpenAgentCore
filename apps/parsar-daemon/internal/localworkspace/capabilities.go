@@ -6,11 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
-	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
+	"github.com/MiniMax-AI-Dev/parsar/internal/runtimefs"
 )
 
 // Prepare runs under the admitted executor's lifetime, before native startup.
@@ -46,11 +45,12 @@ func (b *Binding) Prepare(ctx context.Context, r proto.PromptRequestPayload) (pr
 	}
 	local := *r.LocalEnvironment
 	local.Skills, local.MCP, local.CapabilityRoot = manifest.Skills, nil, b.capabilityRoot
+	local.ExecutionMode = b.ExecutionMode()
 	for i := range local.Skills {
 		local.Skills[i].InstallationRoot = b.capabilityRoot
 	}
 	if local.ToolEnvironment {
-		if err = VerifyToolEnvironment(local.SystemPackages); err != nil {
+		if _, err = b.ReadToolEnvironment(); err != nil {
 			return r, err
 		}
 	}
@@ -58,7 +58,7 @@ func (b *Binding) Prepare(ctx context.Context, r proto.PromptRequestPayload) (pr
 		if b.NetworkPolicy().Access != "enabled" {
 			return r, agentcapabilities.ErrInvalid
 		}
-		values, readErr := ReadOptionalToolEnvironment()
+		values, readErr := b.ReadToolEnvironment()
 		if readErr != nil {
 			return r, readErr
 		}
@@ -66,6 +66,7 @@ func (b *Binding) Prepare(ctx context.Context, r proto.PromptRequestPayload) (pr
 		for i := range local.MCP {
 			local.MCP[i].InstallationRoot = b.capabilityRoot
 			local.MCP[i].WorkspaceRoot = b.workspace
+			local.MCP[i].ExecutionMode = b.ExecutionMode()
 		}
 		if err != nil {
 			return r, err
@@ -155,7 +156,7 @@ func (b *Binding) openCapabilities(ctx context.Context, completed bool) (*os.Roo
 	if err := ctx.Err(); err != nil {
 		return nil, nil, err
 	}
-	if b.capabilityRoot == "" || !filepath.IsAbs(b.capabilityRoot) || !canonicalExistingParent(b.capabilityRoot) {
+	if b.capabilityRoot == "" || runtimefs.ValidateLocalPath(b.capabilityRoot) != nil {
 		return nil, nil, agentcapabilities.ErrInvalid
 	}
 	if !completed {
@@ -163,25 +164,16 @@ func (b *Binding) openCapabilities(ctx context.Context, completed bool) (*os.Roo
 			return nil, nil, agentcapabilities.ErrInvalid
 		}
 	}
-	actual, err := filepath.EvalSymlinks(b.capabilityRoot)
-	if err != nil || actual != b.capabilityRoot {
-		return nil, nil, agentcapabilities.ErrInvalid
-	}
 	root, err := os.OpenRoot(b.capabilityRoot)
 	if err != nil {
 		return nil, nil, agentcapabilities.ErrInvalid
 	}
-	dir, err := root.Open(".")
+	unlock, err := runtimefs.LockDirectory(root)
 	if err != nil {
 		root.Close()
 		return nil, nil, agentcapabilities.ErrInvalid
 	}
-	if err = syscall.Flock(int(dir.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		dir.Close()
-		root.Close()
-		return nil, nil, agentcapabilities.ErrInvalid
-	}
-	return root, func() { _ = syscall.Flock(int(dir.Fd()), syscall.LOCK_UN); dir.Close(); root.Close() }, nil
+	return root, func() { unlock(); root.Close() }, nil
 }
 
 func containsPath(parent, child string) bool {
@@ -196,26 +188,9 @@ func (b *Binding) resolveCapabilityDirectory(source string) (*os.Root, error) {
 	if source == "/workspace" || strings.HasPrefix(source, "/workspace/") {
 		source = filepath.Join(b.workspace, strings.TrimPrefix(source, "/workspace"))
 	}
-	actual, err := filepath.EvalSymlinks(source)
-	if err != nil || actual != source {
+	// Refuse recursive installation into the selected source itself.
+	if containsPath(source, b.capabilityRoot) || containsPath(b.capabilityRoot, source) {
 		return nil, agentcapabilities.ErrInvalid
-	}
-	private, err := paths.Root()
-	if err != nil || !filepath.IsAbs(private) {
-		return nil, agentcapabilities.ErrInvalid
-	}
-	// Protect both descendants and ancestors: selecting a parent must not copy
-	// credentials, native history, installed capabilities or initialization env.
-	for _, protected := range []string{private, b.capabilityRoot, InitializationDirectory} {
-		canonical, e := filepath.EvalSymlinks(protected)
-		if e == nil {
-			protected = canonical
-		} else if !errors.Is(e, os.ErrNotExist) {
-			return nil, agentcapabilities.ErrInvalid
-		}
-		if containsPath(source, protected) || containsPath(protected, source) {
-			return nil, agentcapabilities.ErrInvalid
-		}
 	}
 	root, err := os.OpenRoot(source)
 	if err != nil {

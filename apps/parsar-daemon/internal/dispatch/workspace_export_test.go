@@ -1,7 +1,10 @@
 package dispatch
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -26,23 +29,25 @@ func (s exportSender) Send(ctx context.Context, env proto.Envelope) error {
 
 func exporterRouter(t *testing.T, program string) (*Router, exportSender, proto.WorkspaceExportPayload) {
 	t.Helper()
-	workspace, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
+	workspace := t.TempDir()
+	if err := os.Mkdir(filepath.Join(workspace, "outputs"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	dir, err := filepath.EvalSymlinks(t.TempDir())
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(workspace, "outputs", "a"), make([]byte, 131089), 0600); err != nil {
 		t.Fatal(err)
 	}
-	helper := filepath.Join(dir, "export")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\n"+program+"\n"), 0700); err != nil {
-		t.Fatal(err)
+	if program == "failure" {
+		f, err := os.Create(filepath.Join(workspace, "outputs", "z"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = f.Truncate(201 << 20); err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
 	}
 	environment, session := uuid.NewString(), uuid.NewString()
-	for key, value := range map[string]string{"OAC_RUNTIME_ENVIRONMENT_ID": environment, "OAC_RUNTIME_SESSION_ID": session, "OAC_RUNTIME_WORKSPACE": workspace, "OAC_RUNTIME_DIRECTORY_HELPER": helper, "OAC_RUNTIME_EXPORT_HELPER": helper, "OAC_RUNTIME_WRITE_HELPER": "", "OAC_RUNTIME_STAGING": "", "OAC_RUNTIME_NETWORK_ACCESS": ""} {
-		t.Setenv(key, value)
-	}
-	binding, err := localworkspace.Load()
+	binding, err := localworkspace.New(environment, session, workspace, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +97,7 @@ func readExport(t *testing.T, s exportSender) proto.WorkspaceExportResultPayload
 }
 
 func TestWorkspaceExportUsesExactReadPreparationAndPullsBoundedBytes(t *testing.T) {
-	r, s, request := exporterRouter(t, "head -c 131089 /dev/zero")
+	r, s, request := exporterRouter(t, "normal")
 	for _, field := range []string{"environment", "handle"} {
 		bad := request
 		if field == "environment" {
@@ -108,6 +113,7 @@ func TestWorkspaceExportUsesExactReadPreparationAndPullsBoundedBytes(t *testing.
 	id := uuid.NewString()
 	sendExport(t, r, id, request)
 	var offset int64
+	var archive bytes.Buffer
 	for {
 		p := readExport(t, s)
 		if p.Offset != offset {
@@ -119,11 +125,7 @@ func TestWorkspaceExportUsesExactReadPreparationAndPullsBoundedBytes(t *testing.
 		if p.Outcome != "chunk" || len(p.Data) == 0 || len(p.Data) > proto.WorkspaceExportChunkBytes {
 			t.Fatal("invalid chunk")
 		}
-		for _, b := range p.Data {
-			if b != 0 {
-				t.Fatal("wrong byte")
-			}
-		}
+		archive.Write(p.Data)
 		offset += int64(len(p.Data))
 		select {
 		case <-s.replies:
@@ -132,27 +134,43 @@ func TestWorkspaceExportUsesExactReadPreparationAndPullsBoundedBytes(t *testing.
 		}
 		sendExport(t, r, id, proto.WorkspaceExportPayload{Step: "next", Offset: offset})
 	}
-	if offset != 131089 {
-		t.Fatal("truncated export", offset)
+	reader := tar.NewReader(&archive)
+	header, err := reader.Next()
+	if err != nil || header.Name != "outputs/a" || header.Size != 131089 {
+		t.Fatal("invalid archive", header, err)
+	}
+	data, err := io.ReadAll(reader)
+	if err != nil || !bytes.Equal(data, make([]byte, 131089)) {
+		t.Fatal("truncated artifact", err)
+	}
+	if _, err = reader.Next(); err != io.EOF {
+		t.Fatal("unexpected extra artifact", err)
 	}
 }
 
 func TestWorkspaceExportFailureAfterBytesCannotComplete(t *testing.T) {
-	r, s, request := exporterRouter(t, "printf abc; exit 1")
+	r, s, request := exporterRouter(t, "failure")
 	id := uuid.NewString()
 	sendExport(t, r, id, request)
-	p := readExport(t, s)
-	if p.Outcome != "chunk" || string(p.Data) != "abc" {
-		t.Fatal("missing prefix", p)
-	}
-	sendExport(t, r, id, proto.WorkspaceExportPayload{Step: "next", Offset: 3})
-	if p := readExport(t, s); p.Outcome != "failed" {
-		t.Fatal("failed process appeared complete", p)
+	var offset int64
+	for {
+		p := readExport(t, s)
+		if p.Outcome == "failed" {
+			if offset == 0 {
+				t.Fatal("no prefix before failure")
+			}
+			break
+		}
+		if p.Outcome != "chunk" || p.Offset != offset {
+			t.Fatal("failed export appeared complete", p)
+		}
+		offset += int64(len(p.Data))
+		sendExport(t, r, id, proto.WorkspaceExportPayload{Step: "next", Offset: offset})
 	}
 }
 
-func TestWorkspaceExportCancelUnblocksProcessAndReleasesCapacity(t *testing.T) {
-	r, _, request := exporterRouter(t, "exec sleep 30")
+func TestWorkspaceExportCancelUnblocksWriterAndReleasesCapacity(t *testing.T) {
+	r, _, request := exporterRouter(t, "normal")
 	id := uuid.NewString()
 	sendExport(t, r, id, request)
 	sendExport(t, r, id, proto.WorkspaceExportPayload{Step: "cancel"})

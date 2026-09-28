@@ -83,27 +83,22 @@ func TestPreparationFreezesLocalContentsAcrossReconnect(t *testing.T) {
 	}
 }
 
-func TestPreparationRejectsPrivateSourcesAndLeavesFailuresInert(t *testing.T) {
+func TestPreparationUsesOperatorSourcesAndLeavesFailuresInert(t *testing.T) {
 	b, req := testBinding(t)
 	private := t.TempDir()
 	t.Setenv("OAC_RUNTIME_HOME", private)
 	writeSourceSkill(t, private, "private")
-	for _, source := range []string{private, filepath.Dir(private), b.capabilityRoot, InitializationDirectory} {
-		if root, err := b.resolveCapabilityDirectory(source); err == nil {
-			root.Close()
-			t.Fatal("protected source accepted")
-		}
+	held, err := b.resolveCapabilityDirectory(private)
+	if err != nil {
+		t.Fatal("operator source rejected", err)
+	}
+	held.Close()
+	if held, err = b.resolveCapabilityDirectory(b.capabilityRoot); err == nil {
+		held.Close()
+		t.Fatal("recursive snapshot source accepted")
 	}
 	source := filepath.Join(b.workspace, "selected")
 	writeSourceSkill(t, source, "valid")
-	link := filepath.Join(b.workspace, "link")
-	if err := os.Symlink(source, link); err != nil {
-		t.Fatal(err)
-	}
-	if root, err := b.resolveCapabilityDirectory(link); err == nil {
-		root.Close()
-		t.Fatal("source alias accepted")
-	}
 	root, err := b.resolveCapabilityDirectory("/workspace/selected")
 	if err != nil {
 		t.Fatal("logical workspace source rejected", err)

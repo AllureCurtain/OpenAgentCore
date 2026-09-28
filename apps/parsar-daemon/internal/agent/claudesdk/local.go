@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentnetwork"
 )
 
@@ -14,11 +15,12 @@ import (
 func ConfigureLocal(config Config, root, workspace string, network agentnetwork.Policy, staging string) (Config, error) {
 	config.StateDir = filepath.Join(root, "runtime", "claude-sdk", "history")
 	config.Workspace = &WorkspaceConfig{
-		Directory: workspace, PublicDirectory: "/workspace", NetworkAccess: network.Access, AllowedDomains: network.Hosts(),
-		HomeDir:        filepath.Join(root, "runtime", "claude-sdk", "home"),
-		ScratchDir:     filepath.Join(root, "runtime", "claude-sdk", "scratch"),
-		ProtectedDirs:  []string{filepath.Join(root, "daemon"), staging},
-		DependencyPath: "/usr/local/bin:/usr/bin:/bin",
+		Directory: workspace, PublicDirectory: workspace, NetworkAccess: network.Access, AllowedDomains: network.Hosts(),
+		HomeDir:    filepath.Join(root, "runtime", "claude-sdk", "home"),
+		ScratchDir: filepath.Join(root, "runtime", "claude-sdk", "scratch"),
+	}
+	if binding, err := localworkspace.Load(); err == nil && binding != nil {
+		config.Workspace.ExecutionMode = binding.ExecutionMode()
 	}
 	if network.Validate() != nil {
 		return Config{}, fmt.Errorf("claudesdk: dedicated Runtime requires an explicit network policy")

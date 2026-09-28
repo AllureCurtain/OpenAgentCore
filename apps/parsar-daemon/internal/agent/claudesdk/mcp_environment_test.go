@@ -2,6 +2,7 @@ package claudesdk
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 
@@ -27,7 +28,8 @@ func TestEnvironmentMCPUsesInstalledLauncherAndSelectedCredential(t *testing.T) 
 		t.Fatal("environment declarations changed authority")
 	}
 	stdio := start.Workspace.MCP[0]
-	if stdio.Command != "/usr/bin/python3" || len(stdio.Args) != 8 || stdio.Args[4] != "/private/runtime/capabilities" || stdio.Args[5] != "/private/runtime/workspace" || stdio.Args[6] != "plugins/local" || stdio.Args[7] != "local" {
+	executable, _ := os.Executable()
+	if stdio.Command != executable || len(stdio.Args) != 4 || stdio.Args[0] != "runtime-mcp-exec" || stdio.Args[1] != "/private/runtime/capabilities" || stdio.Args[2] != "plugins/local" || stdio.Args[3] != "local" {
 		t.Fatal("stdio bypassed the shared installed entry")
 	}
 	raw, _ := json.Marshal(start)
@@ -41,9 +43,6 @@ func TestEnvironmentMCPUsesInstalledLauncherAndSelectedCredential(t *testing.T) 
 	for _, entry := range env {
 		if entry == reference+"="+token {
 			found = true
-		}
-		if strings.Contains(entry, "unselected-native-token") {
-			t.Fatal("inherited native credential")
 		}
 	}
 	if !found || !strings.HasPrefix(reference, "OAC_RUNTIME_MCP_BEARER_") || len(start.declaredMCP()) != 2 {

@@ -81,6 +81,12 @@ Resource-specific boundaries:
 
 ## Executor credentials
 
+The credential operations below also serve the native daemon on Linux, macOS and
+Windows. The existing **Connect a host** download command is the Linux container
+installer; use the [native installation guide](../self-hosted-native.md) for
+`oac-daemon install` and lifecycle commands. Native credential rotation replaces
+the configured credential file and restarts the daemon, without rerunning install.
+
 Core issues the credentials of a self_hosted executor, and the console is
 where the administrator does it: the **Executor credentials** section of a
 Session page, shown only when the Session's environment is `self_hosted`, for

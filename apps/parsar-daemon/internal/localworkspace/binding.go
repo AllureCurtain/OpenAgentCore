@@ -12,11 +12,11 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentnetwork"
-	"github.com/google/uuid"
 )
 
 // Binding freezes operator-owned identity and paths for one Runtime lifetime.
 type Binding struct {
+	executionMode  string
 	environment    string
 	networkAccess  string
 	allowedDomains []string
@@ -30,48 +30,27 @@ type Binding struct {
 }
 
 func New(environment, session, workspace, helper string) (*Binding, error) {
-	for _, id := range []string{environment, session} {
-		parsed, err := uuid.Parse(id)
-		if err != nil || parsed == uuid.Nil || parsed.String() != id {
-			return nil, errors.New("local workspace requires canonical resource identities")
-		}
-	}
-	for _, name := range []string{workspace, helper} {
-		if !filepath.IsAbs(name) || filepath.Clean(name) != name || name == "/" || strings.ContainsAny(name, "\x00\r\n\\") {
-			return nil, errors.New("local workspace requires clean absolute deployment paths")
-		}
-	}
-	root, err := os.Lstat(workspace)
-	if err != nil || !root.IsDir() || root.Mode()&os.ModeSymlink != 0 {
-		return nil, errors.New("local workspace root must be an existing directory")
-	}
-	program, err := os.Stat(helper)
-	if err != nil || !program.Mode().IsRegular() || program.Mode().Perm()&0111 == 0 || strings.HasPrefix(helper, workspace+string(filepath.Separator)) {
-		return nil, errors.New("local workspace helper must be executable outside the workspace")
-	}
-	return &Binding{environment: environment, stateKey: "agents-api-" + session, workspace: workspace, helper: helper, capabilityRoot: CapabilityDirectory}, nil
-}
-
-// NewWithCapabilityDirectory freezes an operator-owned installation layout.
-// Core and capability transfer messages cannot choose this destination.
-func NewWithCapabilityDirectory(environment, session, workspace, helper, directory string) (*Binding, error) {
-	b, err := New(environment, session, workspace, helper)
+	root, err := paths.Root()
 	if err != nil {
 		return nil, err
 	}
-	if agentcapabilities.ValidateLocalDirectories([]string{directory}) != nil || directory == "/" || containsPath(workspace, directory) || containsPath(directory, workspace) || containsPath(PackageDirectory, directory) || containsPath(directory, PackageDirectory) {
-		return nil, agentcapabilities.ErrInvalid
+	b, err := newNativeBinding(environment, session, workspace, filepath.Join(root, "capabilities"))
+	if err != nil {
+		return nil, err
 	}
-	private, err := paths.Root()
-	if err != nil || !filepath.IsAbs(private) || containsPath(private, directory) || containsPath(directory, private) {
-		return nil, agentcapabilities.ErrInvalid
+	b.helper = helper
+	b.executionMode = os.Getenv("OAC_RUNTIME_EXECUTION_MODE")
+	return b, nil
+}
+
+// NewWithCapabilityDirectory freezes paths selected by the Runtime operator.
+func NewWithCapabilityDirectory(environment, session, workspace, helper, directory string) (*Binding, error) {
+	b, err := newNativeBinding(environment, session, workspace, directory)
+	if err != nil {
+		return nil, err
 	}
-	for _, name := range []string{workspace, private, directory} {
-		if !canonicalExistingParent(name) {
-			return nil, agentcapabilities.ErrInvalid
-		}
-	}
-	b.capabilityRoot = directory
+	b.helper = helper
+	b.executionMode = os.Getenv("OAC_RUNTIME_EXECUTION_MODE")
 	return b, nil
 }
 
@@ -97,22 +76,9 @@ func Load() (*Binding, error) {
 	}
 	b.networkAccess = network
 	b.allowedDomains = policy.Hosts()
-	if exportHelper != "" {
-		// Reuse the startup executable/root checks; this grants no caller authority.
-		if _, err := New(values[0], values[1], values[2], exportHelper); err != nil {
-			return nil, err
-		}
-		resolved, err := filepath.EvalSymlinks(exportHelper)
-		if err != nil || resolved != exportHelper {
-			return nil, errors.New("workspace exporter must be a canonical executable")
-		}
-		b.exportHelper = exportHelper
-	}
-	if writeHelper != "" || staging != "" {
-		if err := b.bindWriter(writeHelper, staging); err != nil {
-			return nil, err
-		}
-	}
+	b.exportHelper = exportHelper
+	b.writer.helper, b.writer.staging = writeHelper, staging
+
 	return b, nil
 }
 
@@ -134,6 +100,7 @@ func (b *Binding) Configure(r proto.PromptRequestPayload) (proto.PromptRequestPa
 	}
 	if !r.WorkspaceReadOnly {
 		local := *r.LocalEnvironment
+		local.ExecutionMode = b.ExecutionMode()
 		if local.WorkspaceDirectory != "/workspace" && local.WorkspaceDirectory != b.workspace {
 			return r, errors.New("request does not match the local workspace selection")
 		}

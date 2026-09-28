@@ -20,8 +20,7 @@ type mcpInvocation struct {
 	env     []string
 }
 
-// runRuntimeMCP executes only inside the packaged initializer's sandbox. It
-// never consumes MCP stdin, opens a daemon connection or owns a child process.
+// runRuntimeMCP forwards stdio to the selected installed MCP server.
 func runRuntimeMCP(_ *runContext, args []string) error {
 	if len(args) != 3 || args[0] == "/" || agentcapabilities.ValidateLocalDirectories([]string{args[0]}) != nil {
 		return errRuntimeMCP
@@ -58,14 +57,16 @@ func resolveMCPInvocation(manifest agentcapabilities.Manifest, installationRoot,
 		if server.Type != "stdio" {
 			return mcpInvocation{}, errRuntimeMCP
 		}
-		// Defaults locate installed dependencies. Other user values require an
-		// explicit env_vars declaration; the native launcher's env is never read.
-		env := map[string]string{
-			"PATH":       "/environment/packages/npm/bin:/environment/packages/python/bin:/usr/local/bin:/usr/bin:/bin",
-			"PYTHONPATH": "/environment/packages/python",
-			"HOME":       "/tmp",
-			"LANG":       "C.UTF-8",
+		// MCP runs under the same user environment as the daemon. Explicit
+		// capability variables override inherited values.
+		env := map[string]string{}
+		for _, entry := range os.Environ() {
+			key, value, ok := strings.Cut(entry, "=")
+			if ok {
+				env[key] = value
+			}
 		}
+
 		for _, key := range server.EnvVars {
 			value, exists := values[key]
 			if !exists || strings.ContainsRune(value, 0) {

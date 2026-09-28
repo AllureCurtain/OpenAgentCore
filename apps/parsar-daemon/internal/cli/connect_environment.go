@@ -11,9 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/auth"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/daemonize"
@@ -207,7 +205,7 @@ func environmentRejection(err error, keyID, environment string, selfHosted bool)
 // restarts every exit, so an exit would loop; a parked Runtime still restarts
 // after a reboot, makes one enrollment request and parks again.
 func parkEnvironment(stderr io.Writer, message string) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := daemonize.NotifyContext(context.Background())
 	defer stop()
 	fmt.Fprintln(stderr, "oac-daemon: "+message)
 	<-ctx.Done()

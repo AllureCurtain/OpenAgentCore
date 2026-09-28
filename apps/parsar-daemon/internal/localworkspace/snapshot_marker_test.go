@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
@@ -29,7 +30,7 @@ func markerPath(b *Binding) string {
 	identity := b.capabilityIdentity()
 	return filepath.Join(os.Getenv("OAC_RUNTIME_HOME"), "daemon", "capability-installations", identity.EnvironmentID+"-"+identity.SessionID+".json")
 }
-func TestSnapshotMarkerPrivateRoundTrip(t *testing.T) {
+func TestSnapshotMarkerRoundTrip(t *testing.T) {
 	b, _ := markerBinding(t)
 	m, err := b.openSnapshotMarker()
 	if err != nil {
@@ -43,7 +44,7 @@ func TestSnapshotMarkerPrivateRoundTrip(t *testing.T) {
 	}
 	m.close()
 	info, err := os.Stat(markerPath(b))
-	if err != nil || info.Mode().Perm() != 0600 {
+	if err != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatal("marker not private", err)
 	}
 	raw, err := os.ReadFile(markerPath(b))
@@ -151,8 +152,8 @@ func TestSnapshotMarkerBackfillsOnlyVerifiedManifest(t *testing.T) {
 	b.capabilityRoot = previousRoot
 }
 
-func TestSnapshotMarkerRefusesDamagedOrAliasedPrivateState(t *testing.T) {
-	for _, kind := range []string{"corrupt", "foreign root", "public file", "symlink file", "hardlink file", "symlink directory", "symlink private root"} {
+func TestSnapshotMarkerRefusesDamagedState(t *testing.T) {
+	for _, kind := range []string{"corrupt", "foreign root"} {
 		t.Run(kind, func(t *testing.T) {
 			b, request := markerBinding(t)
 			if _, err := b.Prepare(t.Context(), request); err != nil {
@@ -168,36 +169,7 @@ func TestSnapshotMarkerRefusesDamagedOrAliasedPrivateState(t *testing.T) {
 				if err := os.WriteFile(name, []byte("{\"capability_root\":\"/another\"}\n"), 0600); err != nil {
 					t.Fatal(err)
 				}
-			case "public file":
-				if err := os.Chmod(name, 0644); err != nil {
-					t.Fatal(err)
-				}
-			case "symlink file":
-				saved := filepath.Join(t.TempDir(), "saved")
-				if err := os.Rename(name, saved); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Symlink(saved, name); err != nil {
-					t.Fatal(err)
-				}
-			case "hardlink file":
-				if err := os.Link(name, filepath.Join(t.TempDir(), "linked")); err != nil {
-					t.Fatal(err)
-				}
-			case "symlink directory":
-				saved := filepath.Join(filepath.Dir(filepath.Dir(name)), "moved")
-				if err := os.Rename(filepath.Dir(name), saved); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.Symlink(saved, filepath.Dir(name)); err != nil {
-					t.Fatal(err)
-				}
-			case "symlink private root":
-				alias := filepath.Join(t.TempDir(), "private")
-				if err := os.Symlink(os.Getenv("OAC_RUNTIME_HOME"), alias); err != nil {
-					t.Fatal(err)
-				}
-				t.Setenv("OAC_RUNTIME_HOME", alias)
+
 			}
 			before, _ := os.ReadFile(name)
 			if _, err := b.Prepare(t.Context(), request); err == nil {

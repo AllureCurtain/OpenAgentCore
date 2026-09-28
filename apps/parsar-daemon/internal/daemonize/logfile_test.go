@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -11,7 +12,7 @@ import (
 )
 
 func TestTailReturnsLastNLinesAndExitsWithoutFollow(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateTempDir(t)
 	path := filepath.Join(dir, "tail.log")
 	var b strings.Builder
 	for i := 1; i <= 10; i++ {
@@ -35,7 +36,7 @@ func TestTailReturnsLastNLinesAndExitsWithoutFollow(t *testing.T) {
 }
 
 func TestTailLastLinesZeroPrintsNothingHistorical(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateTempDir(t)
 	path := filepath.Join(dir, "tail.log")
 	if err := os.WriteFile(path, []byte("a\nb\nc\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -51,7 +52,7 @@ func TestTailLastLinesZeroPrintsNothingHistorical(t *testing.T) {
 }
 
 func TestTailLastLinesGreaterThanFilePrintsAll(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateTempDir(t)
 	path := filepath.Join(dir, "tail.log")
 	if err := os.WriteFile(path, []byte("a\nb\nc\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -66,7 +67,7 @@ func TestTailLastLinesGreaterThanFilePrintsAll(t *testing.T) {
 }
 
 func TestTailFollowPicksUpAppendedBytes(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateTempDir(t)
 	path := filepath.Join(dir, "tail.log")
 	if err := os.WriteFile(path, []byte("initial\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -128,14 +129,14 @@ func TestTailFollowPicksUpAppendedBytes(t *testing.T) {
 
 func TestTailErrorsOnMissingFile(t *testing.T) {
 	var buf bytes.Buffer
-	err := Tail(filepath.Join(t.TempDir(), "nope.log"), TailOptions{LastLines: 1}, nil, &buf)
+	err := Tail(filepath.Join(privateTempDir(t), "nope.log"), TailOptions{LastLines: 1}, nil, &buf)
 	if err == nil {
 		t.Fatalf("Tail on missing file succeeded")
 	}
 }
 
 func TestEnsureLogFileCreatesEmpty0600(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateTempDir(t)
 	path := filepath.Join(dir, "fresh.log")
 	if err := EnsureLogFile(path); err != nil {
 		t.Fatalf("EnsureLogFile: %v", err)
@@ -147,13 +148,13 @@ func TestEnsureLogFileCreatesEmpty0600(t *testing.T) {
 	if info.Size() != 0 {
 		t.Errorf("size = %d, want 0", info.Size())
 	}
-	if info.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Errorf("mode = %o, want 0600", info.Mode().Perm())
 	}
 }
 
 func TestEnsureLogFileIdempotentOnExisting(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateTempDir(t)
 	path := filepath.Join(dir, "exists.log")
 	if err := os.WriteFile(path, []byte("preexisting\n"), 0o600); err != nil {
 		t.Fatalf("seed: %v", err)
@@ -171,7 +172,7 @@ func TestEnsureLogFileCreatesMissingParentDir(t *testing.T) {
 	// Regression: first-ever `oac-daemon connect -b` on a host without
 	// ~/.oac/daemon/<profile>/ used to fail with ENOENT —
 	// O_CREATE only creates the file leaf.
-	dir := t.TempDir()
+	dir := privateTempDir(t)
 	path := filepath.Join(dir, "missing", "deeper", "fresh.log")
 	if err := EnsureLogFile(path); err != nil {
 		t.Fatalf("EnsureLogFile on missing parent: %v", err)
@@ -182,7 +183,7 @@ func TestEnsureLogFileCreatesMissingParentDir(t *testing.T) {
 }
 
 func TestMustWriteLineAppendsTrailingNewline(t *testing.T) {
-	dir := t.TempDir()
+	dir := privateTempDir(t)
 	path := filepath.Join(dir, "ml.log")
 	if err := MustWriteLine(path, "no-newline"); err != nil {
 		t.Fatalf("MustWriteLine: %v", err)

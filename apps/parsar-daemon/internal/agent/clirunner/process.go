@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -50,7 +51,7 @@ func Start(opts StartOptions) (*Process, error) {
 		opts.KillTimeout = 3 * time.Second
 	}
 
-	if opts.OwnProcessGroup {
+	if opts.OwnProcessGroup || runtime.GOOS == "windows" {
 		return startProcessGroup(opts)
 	}
 

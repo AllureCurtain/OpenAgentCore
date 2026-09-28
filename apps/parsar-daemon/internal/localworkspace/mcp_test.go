@@ -1,6 +1,7 @@
 package localworkspace
 
 import (
+	"os"
 	"slices"
 	"testing"
 
@@ -32,7 +33,11 @@ func TestMCPStdioLauncherContainsOnlyInstalledIdentity(t *testing.T) {
 		Name: "package_tool", Type: "stdio", Command: "untrusted-command", Args: []string{"private-argument"},
 	}}
 	command, args := MCPStdioCommand(server)
-	if command != "/usr/bin/python3" || !slices.Equal(args, []string{"-I", "-S", MCPInitializer, "stdio", "/private/runtime/capabilities", "/private/runtime/workspace", "plugins/0", "package_tool"}) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != executable || !slices.Equal(args, []string{"runtime-mcp-exec", "/private/runtime/capabilities", "plugins/0", "package_tool"}) {
 		t.Fatal("native configuration included untrusted process configuration")
 	}
 }
