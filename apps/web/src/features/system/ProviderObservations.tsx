@@ -19,7 +19,7 @@ export function ProviderObservations({ provider, name, stale }: { provider: Harn
   const activeError = activeProviderError(provider);
   const date = (value: string | null) => value === null ? t("providerUnknown") : formatDateTime(Date.parse(value) / 1000, i18n.resolvedLanguage);
   return <>
-    <div className="system-model-actions">
+    <div className="system-model-observations">
       {stale ? <StatusDot tone="neutral" label={t("providerStale")} /> : activeError ? <StatusDot tone="warning" label={t("providerError")} /> : null}
       <button type="button" className="text-action" onClick={() => setOpen(true)}>{t("providerDetails")}</button>
     </div>
