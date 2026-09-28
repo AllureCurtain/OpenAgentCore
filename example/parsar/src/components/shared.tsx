@@ -89,7 +89,7 @@ export function Field({
 }) {
   return (
     <div className="space-y-1.5">
-      <label htmlFor={id} className="block text-xs text-fg-muted">
+      <label htmlFor={id} className="block text-base text-fg-muted">
         {label}
       </label>
       {children}

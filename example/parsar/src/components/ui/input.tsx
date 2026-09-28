@@ -1,5 +1,5 @@
-import * as React from "react"
-import { cn } from "../../lib/utils"
+import * as React from "react";
+import { cn } from "../../lib/utils";
 
 /**
  * The one text field. 28px, paper, strong hairline, control shadow;
@@ -9,7 +9,7 @@ export const Input = React.forwardRef<
   HTMLInputElement,
   Omit<React.InputHTMLAttributes<HTMLInputElement>, "size"> & {
     /** `lg` (36px) is for the entry surfaces; the console stays at 28px. */
-    size?: "default" | "lg"
+    size?: "default" | "lg";
   }
 >(({ className, type, size = "default", ...props }, ref) => {
   return (
@@ -24,6 +24,6 @@ export const Input = React.forwardRef<
       ref={ref}
       {...props}
     />
-  )
-})
-Input.displayName = "Input"
+  );
+});
+Input.displayName = "Input";

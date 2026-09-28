@@ -27,23 +27,23 @@
    * The ledger uses five of them: xl (page title), base (UI / body),
    * sm (rows, buttons, inputs), xs (labels, metadata, mono).
    * ---------------------------------------------------------- */
-  --text-2xs: 0.6875rem;  /* 11px — compact file trees only, never functional UI text */
-  --text-xs:   0.75rem;    /* 12px — labels, metadata, mono ids, column headers */
-  --text-sm:   0.8125rem;  /* 13px — list rows, buttons, inputs, property values */
-  --text-base: 0.875rem;   /* 14px — sidebar nav, body copy, dialogs */
-  --text-lg:   1rem;       /* 16px — page section heads, dialog headings */
-  --text-xl:   1.25rem;    /* 20px — page title (the only 600 on a screen) */
-  --text-2xl:  1.375rem;   /* 22px — secondary headings on account pages */
-  --text-3xl:  1.75rem;    /* 28px — hero titles on setup / login */
+  --text-2xs: 0.6875rem; /* 11px — compact file trees only, never functional UI text */
+  --text-xs: 0.75rem; /* 12px — labels, metadata, mono ids, column headers */
+  --text-sm: 0.8125rem; /* 13px — list rows, buttons, inputs, property values */
+  --text-base: 0.875rem; /* 14px — sidebar nav, body copy, dialogs */
+  --text-lg: 1rem; /* 16px — page section heads, dialog headings */
+  --text-xl: 1.25rem; /* 20px — page title (the only 600 on a screen) */
+  --text-2xl: 1.375rem; /* 22px — secondary headings on account pages */
+  --text-3xl: 1.75rem; /* 28px — hero titles on setup / login */
 
   --text-2xs--line-height: 0.875rem;
-  --text-xs--line-height:   1rem;
-  --text-sm--line-height:   1.125rem;
+  --text-xs--line-height: 1rem;
+  --text-sm--line-height: 1.125rem;
   --text-base--line-height: 1.25rem;
-  --text-lg--line-height:   1.5rem;
-  --text-xl--line-height:   1.5rem;
-  --text-2xl--line-height:  1.875rem;
-  --text-3xl--line-height:  2.25rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl--line-height: 1.5rem;
+  --text-2xl--line-height: 1.875rem;
+  --text-3xl--line-height: 2.25rem;
 
   /* ------------------------------------------------------------
    * Semantic colors. Every color used in TSX MUST go through one
@@ -60,56 +60,56 @@
    * `status-*` — status icon colours. Never text.
    * ---------------------------------------------------------- */
 
-  --color-fg:          #37352f;   /* warm ink */
+  --color-fg: #37352f; /* warm ink */
   --color-fg-emphasis: #37352f;
-  --color-fg-muted:    #787774;
-  --color-fg-subtle:   #787774;
-  --color-fg-faint:    #787774;
+  --color-fg-muted: #787774;
+  --color-fg-subtle: #787774;
+  --color-fg-faint: #787774;
   --color-fg-on-emphasis: #ffffff;
 
-  --color-surface:          #ffffff;
-  --color-surface-subtle:   #fafafa;   /* panel: sidebar, rail */
-  --color-surface-muted:    #f1f1f0;   /* pressed / active tint, chips */
-  --color-surface-emphasis: #37352f;   /* ink as a background */
-  --color-surface-inverse:  #191919;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #fafafa; /* panel: sidebar, rail */
+  --color-surface-muted: #f1f1f0; /* pressed / active tint, chips */
+  --color-surface-emphasis: #37352f; /* ink as a background */
+  --color-surface-inverse: #191919;
 
-  --color-line:         #e9e9ec;
-  --color-line-muted:   #efeff1;
-  --color-line-strong:  #d6d7dc;
+  --color-line: #e9e9ec;
+  --color-line-muted: #efeff1;
+  --color-line-strong: #d6d7dc;
 
-  --color-danger:           #dc2626;
-  --color-danger-emphasis:  #b91c1c;
-  --color-danger-subtle:    #fef2f2;
-  --color-danger-border:    #fecaca;
+  --color-danger: #dc2626;
+  --color-danger-emphasis: #b91c1c;
+  --color-danger-subtle: #fef2f2;
+  --color-danger-border: #fecaca;
 
-  --color-warning:          #d97706;
+  --color-warning: #d97706;
   --color-warning-emphasis: #b45309;
-  --color-warning-subtle:   #fffbeb;
-  --color-warning-border:   #fde68a;
+  --color-warning-subtle: #fffbeb;
+  --color-warning-border: #fde68a;
 
-  --color-success:          #16a34a;
+  --color-success: #16a34a;
   --color-success-emphasis: #15803d;
-  --color-success-subtle:   #f0fdf4;
-  --color-success-border:   #bbf7d0;
+  --color-success-subtle: #f0fdf4;
+  --color-success-border: #bbf7d0;
 
-  --color-info:             #4f46e5;
-  --color-info-emphasis:    #4338ca;
-  --color-info-subtle:      #eef2ff;
-  --color-info-border:      #c7d2fe;
+  --color-info: #4f46e5;
+  --color-info-emphasis: #4338ca;
+  --color-info-subtle: #eef2ff;
+  --color-info-border: #c7d2fe;
 
   /* Accent = indigo. Selection marker, focus ring, primary button. */
-  --color-accent:           #4f46e5;
-  --color-accent-emphasis:  #4338ca;
-  --color-accent-fg:        #ffffff;
+  --color-accent: #4f46e5;
+  --color-accent-emphasis: #4338ca;
+  --color-accent-fg: #ffffff;
 
   /* Status icon colours (icon-only; the status word stays in ink). */
-  --color-status-queued:      #9a9ca4;
-  --color-status-running:     #d97706;
-  --color-status-completed:   #16a34a;
-  --color-status-failed:      #dc2626;
-  --color-status-cancelled:   #9a9ca4;
+  --color-status-queued: #9a9ca4;
+  --color-status-running: #d97706;
+  --color-status-completed: #16a34a;
+  --color-status-failed: #dc2626;
+  --color-status-cancelled: #9a9ca4;
   --color-status-interrupted: #ea580c;
-  --color-status-track:       #d4d4d8;
+  --color-status-track: #d4d4d8;
 
   /* Motion. Spring for entrances and toggles, settle for hover / colour. */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -140,7 +140,8 @@ html[data-theme="light"] {
   --app-selected: rgb(79 70 229 / 3%);
   --app-tile: rgb(55 53 47 / 7%);
   --app-shadow-control: 0 1px 2px rgb(0 0 0 / 6%);
-  --app-shadow-floating: 0 1px 2px rgb(24 24 27 / 4%), 0 8px 24px -12px rgb(24 24 27 / 18%);
+  --app-shadow-floating:
+    0 1px 2px rgb(24 24 27 / 4%), 0 8px 24px -12px rgb(24 24 27 / 18%);
   --app-chat-canvas: var(--color-surface);
   --app-chat-user-bubble: var(--color-surface-muted);
   --app-chat-agent-text: var(--color-fg);
@@ -150,54 +151,54 @@ html[data-theme="light"] {
 html[data-theme="dark"] {
   color-scheme: dark;
 
-  --color-fg:          #d4d4d4;
+  --color-fg: #d4d4d4;
   --color-fg-emphasis: #ededed;
-  --color-fg-muted:    #9b9b9b;
-  --color-fg-subtle:   #9b9b9b;
-  --color-fg-faint:    #9b9b9b;
+  --color-fg-muted: #9b9b9b;
+  --color-fg-subtle: #9b9b9b;
+  --color-fg-faint: #9b9b9b;
   --color-fg-on-emphasis: #191919;
 
-  --color-surface:          #191919;   /* grey night ground, never black */
-  --color-surface-subtle:   #202020;   /* panel */
-  --color-surface-muted:    #2a2a2a;
+  --color-surface: #191919; /* grey night ground, never black */
+  --color-surface-subtle: #202020; /* panel */
+  --color-surface-muted: #2a2a2a;
   --color-surface-emphasis: #d4d4d4;
-  --color-surface-inverse:  #ededed;
+  --color-surface-inverse: #ededed;
 
-  --color-line:         rgb(255 255 255 / 9%);
-  --color-line-muted:   rgb(255 255 255 / 6%);
-  --color-line-strong:  rgb(255 255 255 / 16%);
+  --color-line: rgb(255 255 255 / 9%);
+  --color-line-muted: rgb(255 255 255 / 6%);
+  --color-line-strong: rgb(255 255 255 / 16%);
 
-  --color-danger:           #f05252;
-  --color-danger-emphasis:  #f87171;
-  --color-danger-subtle:    #2a1c1c;
-  --color-danger-border:    #4a2626;
+  --color-danger: #f05252;
+  --color-danger-emphasis: #f87171;
+  --color-danger-subtle: #2a1c1c;
+  --color-danger-border: #4a2626;
 
-  --color-warning:          #f5a524;
+  --color-warning: #f5a524;
   --color-warning-emphasis: #fbbf24;
-  --color-warning-subtle:   #2a2418;
-  --color-warning-border:   #4a3a1a;
+  --color-warning-subtle: #2a2418;
+  --color-warning-border: #4a3a1a;
 
-  --color-success:          #3fb950;
+  --color-success: #3fb950;
   --color-success-emphasis: #4ade80;
-  --color-success-subtle:   #1a2a1e;
-  --color-success-border:   #24452c;
+  --color-success-subtle: #1a2a1e;
+  --color-success-border: #24452c;
 
-  --color-info:             #8b90f6;
-  --color-info-emphasis:    #a5a9f8;
-  --color-info-subtle:      #1f2035;
-  --color-info-border:      #33355e;
+  --color-info: #8b90f6;
+  --color-info-emphasis: #a5a9f8;
+  --color-info-subtle: #1f2035;
+  --color-info-border: #33355e;
 
-  --color-accent:           #8b90f6;
-  --color-accent-emphasis:  #a5a9f8;
-  --color-accent-fg:        #14142b;
+  --color-accent: #8b90f6;
+  --color-accent-emphasis: #a5a9f8;
+  --color-accent-fg: #14142b;
 
-  --color-status-queued:      #71737b;
-  --color-status-running:     #f5a524;
-  --color-status-completed:   #3fb950;
-  --color-status-failed:      #f05252;
-  --color-status-cancelled:   #71737b;
+  --color-status-queued: #71737b;
+  --color-status-running: #f5a524;
+  --color-status-completed: #3fb950;
+  --color-status-failed: #f05252;
+  --color-status-cancelled: #71737b;
   --color-status-interrupted: #fb8a3c;
-  --color-status-track:       #3f3f3f;
+  --color-status-track: #3f3f3f;
 
   --app-sidebar-fg: #bdbdbd;
   --app-selection-bg: rgb(139 144 246 / 28%);
@@ -209,7 +210,8 @@ html[data-theme="dark"] {
   --app-selected: rgb(139 144 246 / 4%);
   --app-tile: rgb(255 255 255 / 10%);
   --app-shadow-control: 0 1px 2px rgb(0 0 0 / 40%);
-  --app-shadow-floating: 0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px -12px rgb(0 0 0 / 55%);
+  --app-shadow-floating:
+    0 1px 2px rgb(0 0 0 / 30%), 0 8px 24px -12px rgb(0 0 0 / 55%);
   --app-chat-canvas: var(--color-surface);
   --app-chat-user-bubble: var(--color-surface-muted);
   --app-chat-agent-text: var(--color-fg);
@@ -217,62 +219,130 @@ html[data-theme="dark"] {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @keyframes rail-in {
-  from { transform: translateX(16px); opacity: 0; }
-  to { transform: none; opacity: 1; }
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
 }
 
 /* Rail → modal: the modal springs in from the rail's side of the screen
    and flies back on collapse; the rail itself stays put. Centring lives in
    the keyframes, never in a translate utility, so the two never stack. */
 @keyframes modal-in {
-  from { transform: translate(calc(-50% + 34vw), -50%) scale(0.35); opacity: 0; }
-  40% { opacity: 1; }
-  to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  from {
+    transform: translate(calc(-50% + 34vw), -50%) scale(0.35);
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  to {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
 }
 
 @keyframes modal-out {
-  from { transform: translate(-50%, -50%) scale(1); opacity: 1; }
-  to { transform: translate(calc(-50% + 34vw), -50%) scale(0.45); opacity: 0; }
+  from {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translate(calc(-50% + 34vw), -50%) scale(0.45);
+    opacity: 0;
+  }
 }
 
 /* Level-one pages (sidebar views) rise in; level-two pages (a detail
    reached from a list) are pushed in from the right, like a stack. */
 @keyframes detail-in {
-  from { opacity: 0; transform: translateX(28px); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 @keyframes page-in {
-  from { opacity: 0; transform: translateY(10px) scale(0.995); }
-  to { opacity: 1; transform: none; }
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.995);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-@keyframes overlay-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes overlay-out { from { opacity: 1; } to { opacity: 0; } }
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
 
 /* Centre a fixed modal from its own transform; animations that end on
    translate(-50%, -50%) hand off to this resting state. */
-.app-modal-center { transform: translate(-50%, -50%); }
+.app-modal-center {
+  transform: translate(-50%, -50%);
+}
 
 /* Every entrance has its exit: pop-out and rail-out mirror pop-in and
    rail-in on the settle curve, so nothing simply vanishes. */
 @keyframes pop-out {
-  from { transform: none; opacity: 1; }
-  to { transform: scale(0.97); opacity: 0; }
+  from {
+    transform: none;
+    opacity: 1;
+  }
+  to {
+    transform: scale(0.97);
+    opacity: 0;
+  }
 }
 
 @keyframes rail-out {
-  from { transform: none; opacity: 1; }
-  to { transform: translateX(16px); opacity: 0; }
+  from {
+    transform: none;
+    opacity: 1;
+  }
+  to {
+    transform: translateX(16px);
+    opacity: 0;
+  }
 }
 
 @keyframes pop-in {
-  from { transform: scale(0.96); opacity: 0; }
-  to { transform: none; opacity: 1; }
+  from {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
 }
 
 :root {
@@ -283,8 +353,8 @@ html[data-theme="dark"] {
      the network. */
   --font-sans:
     -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
-    "Segoe UI", "Microsoft YaHei", "Noto Sans SC", "Helvetica Neue",
-    Helvetica, Arial, sans-serif;
+    "Segoe UI", "Microsoft YaHei", "Noto Sans SC", "Helvetica Neue", Helvetica,
+    Arial, sans-serif;
   --font-display: var(--font-sans);
   --font-mono:
     ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono",
@@ -469,15 +539,33 @@ samp,
 /* Hover / pressed / selected tints as utilities (variant-capable, e.g.
    `hover:app-hover`, `data-[state=active]:app-pressed`), so components
    share one value in both themes. */
-@utility app-hover { background-color: var(--app-hover); }
-@utility app-pressed { background-color: var(--app-pressed); }
-@utility app-selected { background-color: var(--app-selected); }
-@utility app-tile { background-color: var(--app-tile); }
+@utility app-hover {
+  background-color: var(--app-hover);
+}
+@utility app-pressed {
+  background-color: var(--app-pressed);
+}
+@utility app-selected {
+  background-color: var(--app-selected);
+}
+@utility app-tile {
+  background-color: var(--app-tile);
+}
 /* Opaque twin of the hover tint, for overlays that must hide what is
    beneath them (row action clusters) while matching the hovered row. */
-@utility app-hover-solid { background-color: color-mix(in srgb, var(--color-surface), var(--color-fg) 4%); }
-@utility app-shadow-control { box-shadow: var(--app-shadow-control); }
-@utility app-shadow-floating { box-shadow: var(--app-shadow-floating); }
+@utility app-hover-solid {
+  background-color: color-mix(
+    in srgb,
+    var(--color-surface),
+    var(--color-fg) 4%
+  );
+}
+@utility app-shadow-control {
+  box-shadow: var(--app-shadow-control);
+}
+@utility app-shadow-floating {
+  box-shadow: var(--app-shadow-floating);
+}
 
 /* Conversation surface (assistant-ui) keeps its own canvas variables. */
 .conversation-app {

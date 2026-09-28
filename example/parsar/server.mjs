@@ -3,16 +3,25 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildDirectory } from "./paths.mjs";
+import { openStore, dataPath, AppError } from "./server/store.mjs";
+import { productAPI } from "./server/product.mjs";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const routes = [
   [/^\/v1\/agents$/, ["GET", "POST"]],
   [/^\/v1\/agents\/[a-f0-9-]{36}$/, ["GET", "POST"]],
-  [/^\/v1\/agents\/sessions$/, ["GET", "POST"]],
-  [/^\/v1\/agents\/sessions\/[a-f0-9-]{36}$/, ["GET"]],
-  [/^\/v1\/agents\/sessions\/[a-f0-9-]{36}\/(items|turns)$/, ["GET"]],
-  [/^\/v1\/agents\/sessions\/[a-f0-9-]{36}\/events$/, ["POST"]],
 ];
+routes.push(
+  [/^\/v1\/skills$/, ["GET", "POST"]],
+  [
+    /^\/v1\/skills\/skill_[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/,
+    ["GET", "POST", "DELETE"],
+  ],
+  [
+    /^\/v1\/skills\/skill_[A-Za-z0-9][A-Za-z0-9_-]{0,127}\/versions$/,
+    ["GET", "POST"],
+  ],
+);
 const mime = {
   ".html": "text/html",
   ".js": "text/javascript",
@@ -56,7 +65,34 @@ function fail(res, status, message) {
   res.end(JSON.stringify({ error: { message } }));
 }
 
-export function createHandler(config, { fetchImpl = fetch, frontend } = {}) {
+export function createHandler(
+  config,
+  { fetchImpl = fetch, frontend, store } = {},
+) {
+  const product =
+    store &&
+    productAPI(store, async (path, method, body) => {
+      const response = await fetchImpl(`${config.target}${path}`, {
+        method,
+        body: JSON.stringify(body),
+        redirect: "manual",
+        signal: AbortSignal.timeout(30_000),
+        headers: {
+          Authorization: `Bearer ${config.key}`,
+          "OpenAI-Beta": "agents=v1",
+          "Content-Type": "application/json",
+        },
+      });
+      if (response.status >= 300 && response.status < 400)
+        throw new AppError(502, "Core returned a redirect.");
+      const value = await response.json();
+      if (!response.ok)
+        throw new AppError(
+          response.status,
+          value.error?.message || "Core request failed.",
+        );
+      return value;
+    });
   return async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
@@ -74,6 +110,48 @@ export function createHandler(config, { fetchImpl = fetch, frontend } = {}) {
       );
     }
     const url = new URL(req.url, `http://${req.headers.host}`);
+    if (url.pathname.startsWith("/app/")) {
+      if (
+        req.method !== "GET" &&
+        req.headers.origin !== `http://${req.headers.host}`
+      )
+        return fail(
+          res,
+          403,
+          "A same-origin Origin header is required for writes.",
+        );
+      try {
+        if (!product) return fail(res, 404, "Product storage unavailable.");
+        const chunks = [];
+        let size = 0;
+        for await (const chunk of req) {
+          size += chunk.length;
+          if (size > 1024 * 1024) return fail(res, 413, "Request too large.");
+          chunks.push(chunk);
+        }
+        let body = {};
+        try {
+          if (size) body = JSON.parse(Buffer.concat(chunks));
+        } catch {
+          throw new AppError(400, "Invalid JSON.");
+        }
+        if (!body || typeof body !== "object" || Array.isArray(body))
+          throw new AppError(400, "Invalid request.");
+        const value = await product(req.method, url.pathname, body);
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+        });
+        res.end(JSON.stringify(value));
+      } catch (error) {
+        fail(
+          res,
+          error instanceof AppError ? error.status : 502,
+          error instanceof AppError ? error.message : "无法完成请求，请重试。",
+        );
+      }
+      return;
+    }
     if (
       url.pathname.startsWith("/v1/") ||
       url.pathname.startsWith("/core/") ||
@@ -105,14 +183,22 @@ export function createHandler(config, { fetchImpl = fetch, frontend } = {}) {
         let size = 0;
         for await (const chunk of req) {
           size += chunk.length;
-          if (size > 1024 * 1024) return fail(res, 413, "Request too large.");
+          if (
+            size >
+            (url.pathname.startsWith("/v1/skills")
+              ? 8 * 1024 * 1024
+              : 1024 * 1024)
+          )
+            return fail(res, 413, "Request too large.");
           chunks.push(chunk);
         }
         const headers = {
           Authorization: `Bearer ${config.key}`,
           "OpenAI-Beta": "agents=v1",
-          "Content-Type": "application/json",
+          "Content-Type": req.headers["content-type"] || "application/json",
         };
+        if (url.pathname.startsWith("/v1/skills"))
+          delete headers["OpenAI-Beta"];
         if (req.headers["idempotency-key"])
           headers["Idempotency-Key"] = req.headers["idempotency-key"];
         const upstream = await fetchImpl(
@@ -186,15 +272,23 @@ if (
   const vite = process.argv.includes("--dev")
     ? await (
         await import("vite")
-      ).createServer({ root, server: { middlewareMode: true, hmr: { server } }, appType: "spa" })
+      ).createServer({
+        root,
+        server: { middlewareMode: true, hmr: { server } },
+        appType: "spa",
+      })
     : undefined;
-  server.on("request", createHandler(config, { frontend: vite?.middlewares }));
+  const store = openStore(dataPath(config));
+  server.on(
+    "request",
+    createHandler(config, { frontend: vite?.middlewares, store }),
+  );
   server.listen(config.port, "127.0.0.1", () => {
     process.stdout.write(`Parsar: http://127.0.0.1:${config.port}\n`);
   });
   for (const signal of ["SIGINT", "SIGTERM"])
     process.on(signal, () => {
-      server.close();
+      server.close(() => store.close());
       void vite?.close();
     });
 }

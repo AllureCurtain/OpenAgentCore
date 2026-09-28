@@ -9,7 +9,7 @@ test("oversized writes return a definite 413 without contacting Core", async (t)
     called = true;
     return Response.json({});
   });
-  const response = await fetch(`${url}/v1/agents/sessions`, {
+  const response = await fetch(`${url}/v1/agents`, {
     method: "POST",
     headers: { origin: url },
     body: "x".repeat(1024 * 1024 + 1),
@@ -38,7 +38,7 @@ test("server injects only the project key and preserves request identity", async
   let called = false;
   const url = await serve(t, async (target, init) => {
     called = true;
-    assert.equal(target, "https://core.example/v1/agents/sessions");
+    assert.equal(target, "https://core.example/v1/agents");
     assert.equal(init.headers.Authorization, "Bearer server-only-secret");
     assert.equal(init.headers["Idempotency-Key"], "same-operation");
     assert.equal(init.headers["OpenAI-Beta"], "agents=v1");
@@ -46,7 +46,7 @@ test("server injects only the project key and preserves request identity", async
     assert.equal(init.headers.cookie, undefined);
     return Response.json({ id: "session" }, { status: 201 });
   });
-  const result = await fetch(`${url}/v1/agents/sessions`, {
+  const result = await fetch(`${url}/v1/agents`, {
     method: "POST",
     body: "{}",
     headers: {

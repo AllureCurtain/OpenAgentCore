@@ -6,7 +6,7 @@ export default defineConfig({
   testDir: "tests",
   testMatch: "*.spec.ts",
   workers: 1,
-  timeout: 30_000,
+  timeout: 60_000,
   outputDir: join(
     process.env.OAC_DEV_HOME || join(homedir(), ".oac"),
     "tests",
@@ -33,6 +33,13 @@ export default defineConfig({
         OAC_EXAMPLE_CORE_URL: "http://127.0.0.1:18181",
         OAC_EXAMPLE_PROJECT_KEY: "fixture-project-key",
         OAC_EXAMPLE_PORT: "18180",
+        OAC_EXAMPLE_DATA_DIR: join(
+          homedir(),
+          ".oac",
+          "tests",
+          "parsar-example",
+          "fixture-store",
+        ),
       },
       reuseExistingServer: false,
     },

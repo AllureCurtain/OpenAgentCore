@@ -1,5 +1,5 @@
-import * as React from "react"
-import { cn } from "../../lib/utils"
+import * as React from "react";
+import { cn } from "../../lib/utils";
 
 /** Multi-line field styled like Input: paper, strong hairline, control shadow, indigo focus. */
 export const Textarea = React.forwardRef<
@@ -15,6 +15,6 @@ export const Textarea = React.forwardRef<
       )}
       {...props}
     />
-  )
-})
-Textarea.displayName = "Textarea"
+  );
+});
+Textarea.displayName = "Textarea";

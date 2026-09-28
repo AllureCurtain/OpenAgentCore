@@ -1,125 +1,168 @@
 import { test, expect, type Page } from "@playwright/test";
-
-async function createAgent(page: Page) {
-  await page.goto("/#/agents");
-  await page.getByRole("button", { name: "新建 Agent", exact: true }).click();
-  await page.getByLabel("名称", { exact: true }).fill("代码助手");
-  await page.getByLabel("模型", { exact: true }).fill("fixture-model");
-  await page
-    .getByLabel("指令", { exact: true })
-    .fill("先检查，再修改。说明验证结果。");
+async function navigate(page: Page, name: string) {
+  await page.getByRole("link", { name, exact: true }).click();
+}
+async function resources(page: Page) {
+  await page.goto("/#/models");
+  await page.getByRole("button", { name: "添加模型", exact: true }).click();
+  await page.getByLabel("显示名称").fill("Kimi");
+  await page.getByLabel("模型 ID").fill("kimi-k2.6");
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(page.getByRole("option", { name: /代码助手/ })).toBeVisible();
+  await navigate(page, "运行时");
+  await page.getByRole("button", { name: "添加运行时" }).click();
+  await page.getByLabel("名称", { exact: true }).fill("开发沙箱");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await navigate(page, "MCP");
+  await page.getByRole("button", { name: "添加MCP" }).click();
+  await page.getByLabel("名称", { exact: true }).fill("文档服务");
+  await page.getByLabel("服务标识").fill("docs");
+  await page.getByLabel("MCP 地址").fill("https://mcp.example/docs");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await navigate(page, "Skills");
+  await page.getByRole("button", { name: "创建 Skill" }).click();
+  await page.getByLabel("技能名称").fill("code-review");
+  await page.getByLabel("用途").fill("检查代码质量");
+  await page
+    .getByLabel("执行方法")
+    .fill("Inspect changed files and report actionable issues.");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 }
-
-async function newTask(
-  page: Page,
-  prompt = "检查登录流程，补充测试，并给出修改总结。",
-) {
-  await page.getByRole("link", { name: "任务", exact: true }).click();
-  await page.getByRole("button", { name: "新建任务" }).click();
-  await page.getByLabel("任务名称").fill("检查登录流程");
-  await page.getByLabel("Agent", { exact: true }).click();
-  await page.getByRole("option", { name: "代码助手" }).click();
-  await page.getByLabel("任务内容").fill(prompt);
-  await page.getByRole("button", { name: "开始任务" }).click();
+async function template(page: Page) {
+  await navigate(page, "模板");
+  await page.getByRole("button", { name: "新建模板" }).click();
+  await page.getByLabel("模板名称").fill("审查助手");
+  await page.getByLabel("模型", { exact: true }).click();
+  await page.getByRole("option", { name: "Kimi", exact: true }).click();
+  await page
+    .getByLabel("指令", { exact: true })
+    .fill("Read the code and report findings.");
+  await page.getByLabel("code-review", { exact: true }).check();
+  await page.getByLabel("文档服务", { exact: true }).check();
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 }
-
+async function instance(page: Page) {
+  await page.getByRole("button", { name: "创建 Agent", exact: true }).click();
+  await page.getByLabel("Agent 名称").fill("Ada");
+  await page.getByLabel("运行时", { exact: true }).click();
+  await page.getByRole("option", { name: "开发沙箱", exact: true }).click();
+  await page.getByRole("button", { name: "创建", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Ada", exact: true }),
+  ).toBeVisible();
+}
 test.beforeEach(async ({ request }) => {
+  for (const kind of ["instances", "templates", "models", "mcps", "runtimes"]) {
+    const rows = await (await request.get(`/app/${kind}`)).json();
+    for (const row of rows)
+      await request.delete(`/app/${kind}/${row.id}`, {
+        headers: { origin: "http://127.0.0.1:18180" },
+      });
+  }
   await request.post("http://127.0.0.1:18181/reset");
 });
-
-test("oversized creation and continuation remain editable after rejection", async ({
-  page,
-}) => {
-  await createAgent(page);
-  await newTask(page, "x".repeat(1024 * 1024));
-  await expect(page.getByRole("alert")).toContainText("Request too large");
-  await expect(page.getByLabel("任务内容")).toBeEditable();
-  await page.getByLabel("任务内容").fill("Shorter request");
-  await page.getByRole("button", { name: "开始任务" }).click();
-  await expect(page.getByText("已完成", { exact: true })).toBeVisible();
-  await page.getByLabel("继续对话").fill("x".repeat(1024 * 1024));
-  await page.getByRole("button", { name: "发送", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("exceeds 1 MiB");
-  await expect(page.getByLabel("继续对话")).toBeEditable();
-  await page.getByLabel("继续对话").fill("Shorter follow-up");
-  await page.getByRole("button", { name: "发送", exact: true }).click();
-  await expect(page.getByRole("button", { name: "取消执行" })).toBeVisible();
-});
-
-test("Agent, task, history recovery, follow-up and cancellation through the server", async ({
-  page,
-}, testInfo) => {
-  const errors: string[] = [];
-  page.on("pageerror", (error) => errors.push(error.message));
-  await createAgent(page);
-  await newTask(page);
-  await expect(
-    page.getByRole("heading", { name: "检查登录流程", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByText("12 项测试通过。")).toBeVisible();
-  await page.reload();
-  await expect(page.getByText("12 项测试通过。")).toBeVisible();
-  await page.getByText("npm test", { exact: true }).click();
-  await expect(page.getByText("12 tests passed")).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("task-light.png"),
-    fullPage: true,
-  });
-  await page.getByRole("button", { name: "切换深色" }).click();
-  await expect(page.locator('img[src="/parsar-mark-dark.png"]')).toBeVisible();
-  await page
-    .locator('img[src="/parsar-mark-dark.png"]')
-    .evaluate((image: HTMLImageElement) => image.decode());
-  await page.screenshot({
-    path: testInfo.outputPath("task-dark.png"),
-    fullPage: true,
-  });
-  await page.getByLabel("继续对话").fill("继续检查移动端");
-  await page.getByRole("button", { name: "发送", exact: true }).click();
-  await expect(page.getByRole("button", { name: "取消执行" })).toBeVisible();
-  await page.getByRole("button", { name: "取消执行" }).click();
-  await expect(page.getByText("已取消", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "任务详情", exact: true }).click();
-  await expect(page.getByRole("dialog")).toContainText("fixture-model");
-  expect(errors).toEqual([]);
-});
-
-test("a lost creation response can be recovered after reload without duplicating a task", async ({
+test("resources to template to independent Agent, with real Core-shaped bindings", async ({
   page,
   request,
-}) => {
-  await createAgent(page);
-  await request.post("http://127.0.0.1:18181/lose-creation");
-  await newTask(page);
-  await expect(page.getByRole("alert")).toContainText("creation response lost");
-  await page.reload();
-  await page.getByRole("button", { name: "新建任务" }).click();
-  await expect(page.getByLabel("任务内容")).toBeDisabled();
-  await page.getByRole("button", { name: "重试", exact: true }).click();
+}, testInfo) => {
+  await resources(page);
+  await template(page);
+  await instance(page);
+  await expect(page.getByText("kimi-k2.6", { exact: true })).toBeVisible();
+  await expect(page.getByText("code-review", { exact: true })).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "检查登录流程", exact: true }),
+    page.getByText("https://mcp.example/docs", { exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Ada", exact: true }),
+  ).toBeVisible();
+  const core = await (
+    await request.get("http://127.0.0.1:18181/counts")
+  ).json();
+  expect(core.sessions).toBe(0);
+  expect(core.agents[0].tools[1].server_label).toBe("docs");
+  expect(core.templates[0].skills[0].skill_id).toBe(core.skills[0].id);
+  await page.screenshot({ path: testInfo.outputPath("agent-light.png") });
+  await page.getByRole("button", { name: "切换深色" }).click();
+  await page
+    .locator("img")
+    .evaluate((image: HTMLImageElement) => image.decode());
+  await page.screenshot({ path: testInfo.outputPath("agent-dark.png") });
+  await navigate(page, "模板");
+  await page.getByRole("button", { name: "编辑 审查助手" }).click();
+  await page
+    .getByLabel("指令", { exact: true })
+    .fill("New template instructions");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await navigate(page, "Agents");
+  await page.getByRole("link", { name: /Ada/ }).click();
+  await expect(
+    page.getByText("Read the code and report findings.", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "编辑配置" }).click();
+  await page
+    .getByLabel("指令", { exact: true })
+    .fill("Independent Agent instructions");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(
+    page.getByText("Independent Agent instructions", { exact: true }),
+  ).toBeVisible();
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "删除 Agent", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Agents", exact: true }),
   ).toBeVisible();
   expect(
-    await (await request.get("http://127.0.0.1:18181/counts")).json(),
-  ).toMatchObject({ sessions: 1 });
+    (await (await request.get("http://127.0.0.1:18181/counts")).json()).agents,
+  ).toHaveLength(0);
 });
-
-test("compact navigation, one primary action and keyboard-accessible help", async ({
+test("model edits persist and bound resources cannot be removed", async ({
+  page,
+}) => {
+  await resources(page);
+  await template(page);
+  await navigate(page, "模型");
+  await page.getByRole("button", { name: "编辑 Kimi" }).click();
+  await page.getByLabel("显示名称").fill("常用 Kimi");
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "常用 Kimi" })).toBeVisible();
+  await page.reload();
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.getByRole("button", { name: "移除 常用 Kimi" }).click();
+  await expect(page.getByRole("alert")).toContainText("仍被引用");
+});
+test("Skill version upload and default selection", async ({ page }) => {
+  await resources(page);
+  await page.getByRole("button", { name: /code-review v1/ }).click();
+  await page.getByLabel("上传 Skill 新版本").setInputFiles({
+    name: "review.zip",
+    mimeType: "application/zip",
+    buffer: Buffer.from("fixture bundle"),
+  });
+  await expect(
+    page.getByRole("dialog").getByText("v2", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "设为默认" }).click();
+  await expect(
+    page.getByRole("dialog").getByText("v1", { exact: true }).locator(".."),
+  ).toContainText("默认版本");
+});
+test("mobile navigation, help and single creation action", async ({
   page,
 }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await createAgent(page);
-  await page.getByRole("link", { name: "任务", exact: true }).click();
+  await page.goto("/#/agents");
   await expect(
-    page.getByRole("heading", { name: "任务", exact: true }),
-  ).toBeVisible();
-  await expect(page.getByRole("button", { name: "新建任务" })).toHaveCount(1);
-  await page.getByRole("button", { name: "新建任务" }).focus();
+    page.getByRole("button", { name: "创建 Agent", exact: true }),
+  ).toHaveCount(1);
+  await page.getByRole("button", { name: "创建 Agent", exact: true }).focus();
   await page.keyboard.press("Shift+Tab");
-  await expect(page.getByRole("button", { name: "了解更多" })).toBeFocused();
   await expect(page.getByRole("tooltip")).toBeVisible();
   await page.keyboard.press("Escape");
   expect(
@@ -127,8 +170,5 @@ test("compact navigation, one primary action and keyboard-accessible help", asyn
       () => document.documentElement.scrollWidth <= innerWidth,
     ),
   ).toBe(true);
-  await page.screenshot({
-    path: testInfo.outputPath("mobile.png"),
-    fullPage: true,
-  });
+  await page.screenshot({ path: testInfo.outputPath("mobile.png") });
 });

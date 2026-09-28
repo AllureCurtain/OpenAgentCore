@@ -1,128 +1,133 @@
 import { chromium, expect } from "@playwright/test";
 import { mkdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
-
-const baseURL = process.env.OAC_EXAMPLE_LIVE_URL;
+import { homedir } from "node:os";
+import assert from "node:assert/strict";
+const base = process.env.OAC_EXAMPLE_LIVE_URL;
 const model = process.env.OAC_EXAMPLE_LIVE_MODEL;
-if (!baseURL || !model)
-  throw new Error(
-    "Set OAC_EXAMPLE_LIVE_URL and OAC_EXAMPLE_LIVE_MODEL; the example server must use a dedicated live Project.",
-  );
-const output = join(
-  process.env.OAC_DEV_HOME || join(homedir(), ".oac"),
-  "tests",
-  "parsar-example-live",
-);
-await mkdir(output, { recursive: true });
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+if (!base || !model)
+  throw new Error("Set OAC_EXAMPLE_LIVE_URL and OAC_EXAMPLE_LIVE_MODEL.");
+const directory = join(homedir(), ".oac", "tests", "parsar-agent-live");
+await mkdir(directory, { recursive: true });
+const browser = await chromium.launch({ channel: "chrome" });
 const page = await browser.newPage({
   viewport: { width: 1440, height: 960 },
-  baseURL,
+  reducedMotion: "reduce",
 });
-const name = `Live acceptance ${Date.now()}`;
-try {
-  await page.goto("/#/agents");
-  await page.getByRole("button", { name: "新建 Agent", exact: true }).click();
-  await page.getByLabel("名称", { exact: true }).fill(name);
-  await page.getByLabel("模型", { exact: true }).fill(model);
-  await page.getByLabel("运行引擎", { exact: true }).click();
-  await page
-    .getByRole("option", {
-      name: process.env.OAC_EXAMPLE_LIVE_HARNESS || "Claude Code",
-      exact: true,
-    })
-    .click();
+const suffix = Date.now().toString().slice(-6);
+const modelName = `Kimi ${suffix}`,
+  runtimeName = `开发沙箱 ${suffix}`,
+  mcpName = `DeepWiki ${suffix}`,
+  skillName = `code-review-${suffix}`,
+  templateName = `审查助手 ${suffix}`,
+  agentName = `代码助手 ${suffix}`;
+const save = async () => {
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("link", { name: "任务", exact: true }).click();
-  await page.getByRole("button", { name: "新建任务" }).click();
-  await page.getByLabel("任务名称").fill(name);
-  await page.getByLabel("Agent", { exact: true }).click();
-  await page.getByRole("option", { name, exact: true }).click();
+};
+const go = async (name) =>
+  page.getByRole("link", { name, exact: true }).click();
+try {
+  await page.goto(`${base}/#/models`);
+  await page.getByRole("button", { name: "添加模型", exact: true }).click();
+  await page.getByLabel("显示名称").fill(modelName);
+  await page.getByLabel("模型 ID").fill(model);
+  await save();
+  await go("运行时");
+  await page.getByRole("button", { name: "添加运行时" }).click();
+  await page.getByLabel("名称", { exact: true }).fill(runtimeName);
+  await save();
+  await go("MCP");
+  await page.getByRole("button", { name: "添加MCP" }).click();
+  await page.getByLabel("名称", { exact: true }).fill(mcpName);
+  await page.getByLabel("服务标识").fill("deepwiki");
+  await page.getByLabel("MCP 地址").fill("https://mcp.deepwiki.com/mcp");
+  await save();
+  await go("Skills");
+  await page.getByRole("button", { name: "创建 Skill" }).click();
+  await page.getByLabel("技能名称").fill(skillName);
+  await page.getByLabel("用途").fill("检查代码修改，找出有依据的问题");
   await page
-    .getByLabel("任务内容")
+    .getByLabel("执行方法")
     .fill(
-      "Compute 19 + 23. Reply with PARSAR_LIVE_OK and the result. Remember the result for this conversation.",
+      "Read changed files. Report actionable correctness issues with file locations and explain the verification performed.",
     );
-  await page.getByRole("button", { name: "开始任务" }).click();
-  await expect(page.getByRole("heading", { name, exact: true })).toBeVisible({
-    timeout: 40_000,
-  });
-  process.stdout.write("Live task admitted through the example UI.\n");
-  await expect(page.getByText(/^(已完成|失败)$/)).toBeVisible({
-    timeout: 180_000,
-  });
-  await expect(page.getByText("已完成", { exact: true })).toBeVisible();
-  await expect(page.getByRole("article", { name: "Agent 回复" })).toContainText(
-    "PARSAR_LIVE_OK",
-  );
-  await expect(page.getByRole("article", { name: "Agent 回复" })).toContainText(
-    "42",
-  );
-  await page.reload();
-  await expect(page.getByRole("article", { name: "Agent 回复" })).toContainText(
-    "PARSAR_LIVE_OK",
-  );
-  await page.screenshot({
-    path: join(output, "live-task.png"),
-    fullPage: true,
-  });
-  process.stdout.write("Live model output and persisted reload passed.\n");
+  await save();
+  await go("模板");
+  await page.getByRole("button", { name: "新建模板" }).click();
+  await page.getByLabel("模板名称").fill(templateName);
+  await page.getByLabel("模型", { exact: true }).click();
+  await page.getByRole("option", { name: modelName, exact: true }).click();
   await page
-    .getByLabel("继续对话")
+    .getByLabel("指令", { exact: true })
     .fill(
-      "Which number did I ask you to remember? Reply only REMEMBERED and that number.",
+      "先理解目标，再检查代码。复用已绑定的技能；需要公开仓库背景时使用 DeepWiki。给出明确结论和验证依据。",
     );
-  await page.getByRole("button", { name: "发送", exact: true }).click();
+  await page.getByLabel(skillName, { exact: true }).check();
+  await page.getByLabel(mcpName, { exact: true }).check();
+  await save();
+  await page
+    .getByRole("article")
+    .filter({
+      has: page.getByRole("heading", { name: templateName, exact: true }),
+    })
+    .getByRole("button", { name: "创建 Agent", exact: true })
+    .click();
+  await page.getByLabel("Agent 名称").fill(agentName);
+  await page.getByLabel("运行时", { exact: true }).click();
+  await page.getByRole("option", { name: runtimeName, exact: true }).click();
+  await page.getByRole("button", { name: "创建", exact: true }).click();
   await expect(
-    page
-      .getByRole("article", { name: "Agent 回复" })
-      .filter({ hasText: "REMEMBERED" }),
-  ).toContainText("42", { timeout: 180_000 });
-  await expect(page.getByText("已完成", { exact: true })).toBeVisible();
-  process.stdout.write(
-    "Completed continuation with remembered context passed.\n",
-  );
-  await page
-    .getByLabel("继续对话")
-    .fill(
-      "Use the shell tool to run sleep 60, then tell me the number I asked you to remember. Do not respond until the command finishes.",
-    );
-  await page.getByRole("button", { name: "发送", exact: true }).click();
-  await expect(page.getByRole("button", { name: "取消执行" })).toBeVisible({
-    timeout: 30_000,
-  });
-  await page.getByRole("button", { name: "取消执行" }).click();
-  await expect(page.getByText("已取消", { exact: true })).toBeVisible({
-    timeout: 90_000,
-  });
+    page.getByRole("heading", { name: agentName, exact: true }),
+  ).toBeVisible({ timeout: 30000 });
   await page.reload();
-  await expect(page.getByText("已取消", { exact: true })).toBeVisible();
+  await expect(page.getByText(skillName, { exact: true })).toBeVisible();
+  const records = await (
+    await page.request.get(`${base}/app/instances`)
+  ).json();
+  const instance = records.find((row) => row.name === agentName);
+  assert.ok(instance.environment.environment_template_id);
+  assert.equal(instance.model, model);
+  const core = await (
+    await page.request.get(`${base}/v1/agents/${instance.core_agent_id}`)
+  ).json();
+  assert.equal(core.model, model);
+  assert.equal(
+    core.tools.find((tool) => tool.type === "mcp").transport.server_url,
+    "https://mcp.deepwiki.com/mcp",
+  );
+  await page.screenshot({ path: join(directory, "agent-light.png") });
+  await page.getByRole("button", { name: "切换深色" }).click();
+  await page.locator("img").evaluate((image) => image.decode());
+  await page.screenshot({ path: join(directory, "agent-dark.png") });
   await writeFile(
-    join(output, "result.json"),
+    join(directory, "result.json"),
     JSON.stringify(
       {
         passed: true,
-        task: page.url(),
+        url: page.url(),
+        instance_id: instance.id,
+        core_agent_id: instance.core_agent_id,
+        environment_template_id: instance.environment.environment_template_id,
         checks: [
-          "agent-save",
-          "hosted-creation",
-          "real-model-output",
-          "history-reload",
-          "completed-continuation",
-          "durable-cancel",
+          "model-catalog",
+          "runtime-binding",
+          "mcp-binding",
+          "real-skill-upload",
+          "template-copy",
+          "core-agent-save",
+          "reload",
         ],
       },
       null,
       2,
     ),
   );
-  process.stdout.write("Follow-up and durable cancellation passed.\n");
+  console.log("Live Agent workbench flow passed. No Session was started.");
 } catch (error) {
-  await page.screenshot({ path: join(output, "failure.png"), fullPage: true });
+  await page.screenshot({ path: join(directory, "failure.png") });
   await writeFile(
-    join(output, "failure.txt"),
+    join(directory, "failure.txt"),
     await page.locator("body").innerText(),
   );
   throw error;

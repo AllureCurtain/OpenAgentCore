@@ -10,14 +10,22 @@ business assets, the Parsar product Web, product API and product migrations rema
 in Parsar. Do not import `server/`, `apps/parsar/`, product CLI/plugin packages or
 their deployment stack.
 
-`example/parsar/` is an optional, independently started application example,
-authorized to reuse the Parsar product's UI primitives and branding. It uses only
-the public `/v1` application API through `OpenAIAgentsClient`, with a Project API
-key held by its loopback server. It is not the Core administrator console and is
-not included in Core distributions. It imports no product backend or database.
-One task maps to one Core Session; Session metadata stores only its display title
-and application marker. Core remains the sole owner of execution state and history.
-Changes to examples must not make the Core service depend on an example.
+`example/parsar/` is an optional, independently started Agent workbench,
+authorized to reuse the product UI and maintain a small product-owned SQLite database.
+Models, anonymous HTTP MCP configurations, runtime bindings, Agent templates and
+instance bindings belong to that database; Core owns Skills, saved Agents and
+hosted environment templates. Template configuration excludes the runtime.
+Creating an instance copies its configuration, binds a runtime, and saves the
+corresponding public Core resources without starting execution. Template edits
+do not change existing instances. The example calls only the public `/v1` API,
+using `OpenAIAgentsClient` for browser resource calls and a small server adapter
+for composing Agent/environment-template writes. Its Project key stays server-side.
+Product resources use `/app/` and never become Core API or database conventions.
+No task product, execution scheduler, machine enrollment or user permissions are
+included. SQLite uses Node's built-in module (Node 22.13+), lives outside the
+checkout, and is isolated by Core origin and Project key fingerprint. Core state
+is not replicated into product history tables. The example is excluded from Core
+distributions and cannot become a service dependency.
 
 Preserve copied runtime and protocol behavior. Existing Go import paths remain unchanged and do not require fetching the original
 repository. Installed commands and environment settings use the OpenAgentCore names
@@ -184,7 +192,7 @@ split oversized components before extending them. Use `internal/obs/log` for log
 ## Required checks
 
 `make check-example` validates the optional application example with TypeScript,
-proxy/history tests, a build and fixture browser acceptance; it also runs in
+proxy/product-persistence tests, a build and fixture browser acceptance; it also runs in
 `make check`. Its synthetic responses are not live model qualification.
 
 Run `make check` before completion. The standalone gate includes all daemon/shared

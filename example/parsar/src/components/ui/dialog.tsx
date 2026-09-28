@@ -1,8 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
-import * as React from "react"
-import * as DialogPrimitive from "@radix-ui/react-dialog"
-import { X } from "lucide-react"
-import { cn } from "../../lib/utils"
+import * as React from "react";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
+import { X } from "lucide-react";
+import { cn } from "../../lib/utils";
 
 /**
  * The one dialog, built like the detail rail: a floating paper panel (8px
@@ -11,10 +11,10 @@ import { cn } from "../../lib/utils"
  * and the ghost close button; footer with the actions right-aligned), and a
  * 16px-padded body between them.
  */
-export const Dialog = DialogPrimitive.Root
-export const DialogTrigger = DialogPrimitive.Trigger
-export const DialogPortal = DialogPrimitive.Portal
-export const DialogClose = DialogPrimitive.Close
+export const Dialog = DialogPrimitive.Root;
+export const DialogTrigger = DialogPrimitive.Trigger;
+export const DialogPortal = DialogPrimitive.Portal;
+export const DialogClose = DialogPrimitive.Close;
 
 export const DialogOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
@@ -22,16 +22,20 @@ export const DialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn("fixed inset-0 z-50 bg-surface-inverse/30 data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out", className)}
+    className={cn(
+      "fixed inset-0 z-50 bg-surface-inverse/30 data-[state=open]:animate-overlay-in data-[state=closed]:animate-overlay-out",
+      className,
+    )}
     {...props}
   />
-))
-DialogOverlay.displayName = DialogPrimitive.Overlay.displayName
+));
+DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
-export interface DialogContentProps
-  extends React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> {
+export interface DialogContentProps extends React.ComponentPropsWithoutRef<
+  typeof DialogPrimitive.Content
+> {
   /** Default true; set false for confirm dialogs where action buttons are the only exits. */
-  showCloseButton?: boolean
+  showCloseButton?: boolean;
 }
 
 export const DialogContent = React.forwardRef<
@@ -44,7 +48,7 @@ export const DialogContent = React.forwardRef<
       ref={ref}
       className={cn(
         "app-shadow-floating fixed left-1/2 top-1/2 z-50 grid w-full max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-line bg-surface p-4 text-sm text-fg animate-pop-in data-[state=closed]:animate-pop-out focus:outline-none",
-        className
+        className,
       )}
       {...props}
     >
@@ -59,8 +63,8 @@ export const DialogContent = React.forwardRef<
       )}
     </DialogPrimitive.Content>
   </DialogPortal>
-))
-DialogContent.displayName = DialogPrimitive.Content.displayName
+));
+DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 export function DialogHeader({
   className,
@@ -68,12 +72,15 @@ export function DialogHeader({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn("-mx-4 -mt-4 flex min-h-12 flex-col justify-center gap-0.5 border-b border-line px-4 py-2.5 pr-12", className)}
+      className={cn(
+        "-mx-4 -mt-4 flex min-h-12 flex-col justify-center gap-0.5 border-b border-line px-4 py-2.5 pr-12",
+        className,
+      )}
       {...props}
     />
-  )
+  );
 }
-DialogHeader.displayName = "DialogHeader"
+DialogHeader.displayName = "DialogHeader";
 
 export function DialogFooter({
   className,
@@ -83,13 +90,13 @@ export function DialogFooter({
     <div
       className={cn(
         "-mx-4 -mb-4 flex items-center justify-end gap-2 border-t border-line px-4 py-3",
-        className
+        className,
       )}
       {...props}
     />
-  )
+  );
 }
-DialogFooter.displayName = "DialogFooter"
+DialogFooter.displayName = "DialogFooter";
 
 export const DialogTitle = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Title>,
@@ -100,8 +107,8 @@ export const DialogTitle = React.forwardRef<
     className={cn("text-lg font-medium leading-snug text-fg", className)}
     {...props}
   />
-))
-DialogTitle.displayName = DialogPrimitive.Title.displayName
+));
+DialogTitle.displayName = DialogPrimitive.Title.displayName;
 
 export const DialogDescription = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Description>,
@@ -112,5 +119,5 @@ export const DialogDescription = React.forwardRef<
     className={cn("text-sm text-fg-muted", className)}
     {...props}
   />
-))
-DialogDescription.displayName = DialogPrimitive.Description.displayName
+));
+DialogDescription.displayName = DialogPrimitive.Description.displayName;
