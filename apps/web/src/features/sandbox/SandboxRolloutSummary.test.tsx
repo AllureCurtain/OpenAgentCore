@@ -10,25 +10,36 @@ const deployment: SandboxDeployment = { installation_id: "i", owner_epoch: 1, ge
   rollout: { state: "settled", previous_generation_sandboxes: 8, nodes: { ready: 1, preparing: 0, failed: 2, update_required: 3, unknown: 4 } } };
 
 describe("authoritative configuration rollout", () => {
-  it("shows settled with retained work and failed/unknown nodes without claiming readiness", () => {
+  it("keeps attention visible while moving detailed counts off the main page", () => {
     const html = renderToStaticMarkup(<SandboxRolloutSummary deployment={deployment} />);
-    expect(html).toContain("No active preparation");
-    expect(html).toContain("Previous-generation sandboxes</dt><dd>8");
-    expect(html).toContain("Preparation failed</dt><dd>2");
-    expect(html).toContain("Node update required</dt><dd>3");
-    expect(html).toContain("Target readiness unknown</dt><dd>4");
-    expect(html).not.toContain("Core is preparing the target configuration.");
-    expect(html).toContain("Review affected nodes");
+    expect(html).toContain("Needs attention");
+    expect(html).toContain("View rollout details");
+    expect(html).not.toContain("<dl");
+    expect(html).not.toContain("Target generation");
+    expect(html).not.toContain("Previous-generation sandboxes");
+    expect(html).not.toContain("Review affected nodes");
+    expect(html).not.toContain("No active preparation");
   });
 
-  it("qualifies stale preparation and keeps routine compact summaries quiet", () => {
-    const preparing = renderToStaticMarkup(<SandboxRolloutSummary deployment={{ ...deployment, rollout: { ...deployment.rollout, state: "preparing" } }} stale />);
-    expect(preparing).toContain("last confirmed observations");
-    expect(preparing).toContain("Core is preparing the target configuration.");
-    const quiet = renderToStaticMarkup(<SandboxRolloutSummary deployment={{ ...deployment, rollout: { state: "settled", previous_generation_sandboxes: 0, nodes: { ready: 2, preparing: 0, failed: 0, update_required: 0, unknown: 0 } } }} compact />);
-    expect(quiet).toContain("Target generation</dt><dd>4");
-    expect(quiet).not.toContain("Previous-generation sandboxes");
-    expect(quiet).not.toContain("Preparation failed");
+  it("makes stale state explicit instead of repeating the last preparation state", () => {
+    const html = renderToStaticMarkup(<SandboxRolloutSummary deployment={{ ...deployment, rollout: { ...deployment.rollout, state: "preparing" } }} stale />);
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("Rollout state unconfirmed");
+    expect(html).not.toContain("Preparing configuration");
+  });
+
+  it("does not call settled nodes ready when Core reports unknown target readiness", () => {
+    const html = renderToStaticMarkup(<SandboxRolloutSummary deployment={{ ...deployment, rollout: { ...deployment.rollout, nodes: { ready: 2, preparing: 0, failed: 0, update_required: 0, unknown: 1 } } }} compact />);
+    expect(html).toContain("Target readiness unknown");
+    expect(html).not.toContain("No active preparation");
+    expect(html).not.toContain("Ready for target");
+  });
+
+  it("reports preparing and settled without turning settled into readiness", () => {
+    const quiet = { ...deployment, rollout: { state: "settled" as const, previous_generation_sandboxes: 0, nodes: { ready: 2, preparing: 0, failed: 0, update_required: 0, unknown: 0 } } };
+    expect(renderToStaticMarkup(<SandboxRolloutSummary deployment={quiet} compact />)).toContain("No active preparation");
+    expect(renderToStaticMarkup(<SandboxRolloutSummary deployment={{ ...quiet, rollout: { ...quiet.rollout, state: "preparing" } }} />)).toContain("Preparing configuration");
+    expect(renderToStaticMarkup(<SandboxRolloutSummary deployment={{ ...quiet, provider: "" }} />)).toBe("");
   });
 
   it("never promotes an offline durable serving pin into ready target status", () => {
