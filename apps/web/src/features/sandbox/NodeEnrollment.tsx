@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { HelpTip, StatusDot, type Tone } from "../../components/console-ui";
 import { Modal } from "../../components/Modal";
+import { coreFieldError } from "../../lib/core-error";
 import { formatBytes } from "../../lib/format";
 import { useConsoleNavigation } from "../../lib/console-navigation";
 import { installationQuery } from "../../lib/installation";
@@ -69,6 +70,7 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
 }) {
   const { t, i18n } = useTranslation("sandbox");
   const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
+  const { t: tCommon } = useTranslation("common");
   const id = useId();
   const [active, setActive] = useState(DEFAULT_ACTIVE);
   const [retained, setRetained] = useState(DEFAULT_RETAINED);
@@ -118,6 +120,8 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   const retainedProblem = !suspends ? null
     : !inRange(retainedLimit) ? t("Enter a whole number from 1 to 1,000,000.")
     : inRange(activeLimit) && retainedLimit < activeLimit ? t("Enter at least the number of sandboxes at once.") : null;
+  const activeError = coreFieldError(error, "max_active", tCommon) ?? activeProblem;
+  const retainedError = coreFieldError(error, "max_retained", tCommon) ?? retainedProblem;
   const limitsReady = !activeProblem && !retainedProblem;
   const node = enrollment ? enrolledNode(nodes, enrollment) : null;
   const progress = enrollmentProgress(node, node && appeared?.id === node.id ? appeared.at : undefined, now);
@@ -277,14 +281,14 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
           <p>{t("Set the sandbox limits for the host you want to add.")}</p>
           <div className="field">
             <span className="field-label-row"><label htmlFor={`${id}-active`}>{t("Sandboxes at once")}</label><HelpTip>{t("The most sandboxes Core places on this node at the same time.")}</HelpTip></span>
-            <input id={`${id}-active`} inputMode="numeric" autoComplete="off" autoFocus={open} value={active} onChange={(event) => setActive(event.target.value)} aria-invalid={Boolean(activeProblem)} />
-            {activeProblem ? <span className="field-error">{activeProblem}</span> : null}
+            <input id={`${id}-active`} inputMode="numeric" autoComplete="off" autoFocus={open} value={active} onChange={(event) => { setActive(event.target.value); setError(null); }} aria-invalid={Boolean(activeError)} aria-errormessage={activeError ? `${id}-active-error` : undefined} />
+            {activeError ? <span id={`${id}-active-error`} className="field-error">{activeError}</span> : null}
           </div>
           {suspends ? (
             <div className="field">
               <span className="field-label-row"><label htmlFor={`${id}-retained`}>{t("Retained sandboxes")}</label><HelpTip>{t("Sandboxes kept on this node for resuming, the running ones included. At least the number at once.")}</HelpTip></span>
-              <input id={`${id}-retained`} inputMode="numeric" autoComplete="off" value={retained} onChange={(event) => setRetained(event.target.value)} aria-invalid={Boolean(retainedProblem)} />
-              {retainedProblem ? <span className="field-error">{retainedProblem}</span> : null}
+              <input id={`${id}-retained`} inputMode="numeric" autoComplete="off" value={retained} onChange={(event) => { setRetained(event.target.value); setError(null); }} aria-invalid={Boolean(retainedError)} aria-errormessage={retainedError ? `${id}-retained-error` : undefined} />
+              {retainedError ? <span id={`${id}-retained-error`} className="field-error">{retainedError}</span> : null}
             </div>
           ) : null}
           {error !== null ? <p role="alert" className="sandbox-error">{sandboxRequestError(error, locale)}</p> : null}

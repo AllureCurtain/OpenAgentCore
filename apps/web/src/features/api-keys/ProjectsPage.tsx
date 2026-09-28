@@ -326,10 +326,11 @@ export function ProjectsPage() {
             {dialog.kind === "create" || dialog.kind === "rename" ? (
               <NameField
                 name="project-name"
+                serverError={dialogError}
                 label={t("createDialog.name")}
                 help={t("createDialog.nameHelp")}
                 value={dialog.name}
-                onChange={(name) => setDialog({ ...dialog, name })}
+                onChange={(name) => { setDialog({ ...dialog, name }); setDialogError(null); }}
                 problem={dialogNameProblem}
                 problemText={dialogNameProblem ? t(`createDialog.problems.${dialogNameProblem}`) : ""}
                 placeholder={t("createDialog.placeholder")}

@@ -1,4 +1,7 @@
+import { coreErrors } from "./core-errors";
+
 export const common = {
+  coreErrors,
   readFailure: {
     title: "Could not read the data",
     partial: "Some reads failed. Any figures and rows shown cover only data already read; they may be incomplete or out of date.",

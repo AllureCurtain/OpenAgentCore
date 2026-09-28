@@ -9,6 +9,7 @@ import { ErrorState } from "../../components/ErrorState";
 import { Modal } from "../../components/Modal";
 import { TableSkeleton } from "../../components/Skeleton";
 import { failedLast, useFailureToast, useToast } from "../../components/Toast";
+import { coreError, coreFieldError } from "../../lib/core-error";
 import { useDeleteFlow } from "../../lib/delete-flow";
 import { formatDateTime, formatInteger } from "../../lib/format";
 import { useConsoleIntent } from "../../lib/console-navigation";
@@ -192,8 +193,8 @@ function HarnessCard({ harness, busy, onEdit, onClear }: { harness: CoreHarness;
  * current provider; the API key never does. The protocol is the one Core
  * accepts for the harness. The form checks the HTTPS provider URL and whole-number
  * limits within Core's range, with max output no larger than the context window.
- * Core's other rules come back as its 400 message, shown
- * beside the form. Enter saves; a save in flight blocks another.
+ * Core's typed rejection is shown beside its field, or beside the form
+ * when no editable field applies. Enter saves; a save in flight blocks another.
  */
 function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
   harness: CoreHarness | null;
@@ -213,6 +214,8 @@ function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  const [rejection, setRejection] = useState<unknown>(null);
+  const fieldError = (param: string) => coreFieldError(rejection, param, tCommon);
 
   const name = harness ? harnessNames[harness.id] : "";
   const protocol = harness ? harnessProtocol[harness.id] : "responses";
@@ -231,7 +234,7 @@ function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
     if (!ready || !harness || saving.current) return;
     saving.current = true;
     setBusy(true);
-    setError(null);
+    setError(null); setRejection(null);
     try {
       await admin.setHarnessModelProvider(harness.id, {
         protocol, base_url: url, api_key: apiKey.trim(),
@@ -242,7 +245,8 @@ function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
     } catch (caught) {
       // Never retried: a rejection shows Core's reason; an unknown outcome is read again first.
       if (caught instanceof AgentCoreError && caught.status >= 400 && caught.status < 500 && caught.status !== 408) {
-        setError(caught.message);
+        setRejection(caught);
+        setError(coreError(caught, tCommon));
       } else if (caught instanceof AgentCoreError && caught.code === "credential_storage_unavailable") {
         // A deployment without a credential key stores nothing: a configuration error, not an unknown outcome.
         setError(t("models.form.noCredentialKey"));
@@ -258,6 +262,7 @@ function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
 
   const limitField = (field: "context" | "output", value: string, setValue: (value: string) => void, problem: string | null) => {
     const inputId = `${id}-${field}`;
+    problem = problem ?? fieldError(field === "context" ? "context_window" : "max_output_tokens");
     return (
       <div className="field">
         <span className="field-label-row">
@@ -269,7 +274,7 @@ function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
           inputMode="numeric"
           autoComplete="off"
           value={value}
-          onChange={(event) => setValue(event.target.value)}
+          onChange={(event) => { setValue(event.target.value); setRejection(null); setError(null); }}
           aria-required={limitsRequired}
           aria-invalid={problem ? true : undefined}
           aria-describedby={`${inputId}-help${problem ? ` ${inputId}-problem` : ""}`}
@@ -279,6 +284,9 @@ function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
     );
   };
 
+  const baseUrlError = urlProblem ?? fieldError("base_url");
+  const apiKeyError = fieldError("api_key");
+  const fieldRejected = ["base_url", "api_key", "context_window", "max_output_tokens", "protocol"].some((param) => fieldError(param));
   return (
     <Modal
       open={harness !== null}
@@ -299,32 +307,34 @@ function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
             <HelpTip>{t("models.form.protocolHelp")}</HelpTip>
           </span>
           <p className="system-model-protocol">{protocolNames[protocol]}</p>
+          {fieldError("protocol") ? <span className="field-error" role="alert">{fieldError("protocol")}</span> : null}
         </div>
         <div className="field">
           <span className="field-label-row"><label htmlFor={`${id}-url`}>{t("models.baseUrl")}</label></span>
           <input
             id={`${id}-url`}
             value={baseUrl}
-            onChange={(event) => setBaseUrl(event.target.value)}
+            onChange={(event) => { setBaseUrl(event.target.value); setRejection(null); setError(null); }}
             autoComplete="off"
             spellCheck={false}
-            aria-invalid={urlProblem ? true : undefined}
-            aria-describedby={urlProblem ? `${id}-url-problem` : undefined}
+            aria-invalid={baseUrlError ? true : undefined}
+            aria-describedby={baseUrlError ? `${id}-url-problem` : undefined}
           />
-          {urlProblem ? <span id={`${id}-url-problem`} className="field-error">{urlProblem}</span> : null}
+          {baseUrlError ? <span id={`${id}-url-problem`} className="field-error">{baseUrlError}</span> : null}
         </div>
         <div className="field">
           <span className="field-label-row">
             <label htmlFor={`${id}-key`}>{t("models.apiKey")}</label>
             <HelpTip id={`${id}-key-help`}>{t("models.form.apiKeyHelp")}</HelpTip>
           </span>
-          <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={(event) => setApiKey(event.target.value)} aria-required="true" aria-describedby={`${id}-key-help`} />
+          <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={(event) => { setApiKey(event.target.value); setRejection(null); setError(null); }} aria-required="true" aria-invalid={apiKeyError ? true : undefined} aria-describedby={`${id}-key-help${apiKeyError ? ` ${id}-key-problem` : ""}`} />
+          {apiKeyError ? <span id={`${id}-key-problem`} className="field-error">{apiKeyError}</span> : null}
         </div>
         <div className="system-model-limits">
           {limitField("context", contextWindow, setContextWindow, contextProblem)}
           {limitField("output", maxOutputTokens, setMaxOutputTokens, outputProblem)}
         </div>
-        {error ? <p className="confirm-dialog-error" role="alert">{error}</p> : null}
+        {error && !fieldRejected ? <p className="confirm-dialog-error" role="alert">{error}</p> : null}
       </form>
     </Modal>
   );
