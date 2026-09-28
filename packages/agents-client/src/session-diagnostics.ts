@@ -25,9 +25,9 @@ function failure(value: unknown, codes: Set<string>, session = false): Diagnosti
   let params: DiagnosticFailure["params"] = {};
   if (value.code === "environment_provisioning_failed") {
     const p = value.params;
-    if (!exactFields(p, fields("step", "index", "exit_code")) || (p.step !== null && !["setup", "python", "npm", "system", "file", "skill"].includes(String(p.step))) ||
+    if (!exactFields(p, fields("step", "index", "exit_code")) || (p.step !== null && (typeof p.step !== "string" || !["setup", "python", "npm", "system", "file", "skill"].includes(p.step))) ||
         (p.index !== null && (!Number.isSafeInteger(p.index) || (p.index as number) < 0 || p.step !== "setup")) ||
-        (p.exit_code !== null && (!Number.isSafeInteger(p.exit_code) || (p.exit_code as number) < 1 || (p.exit_code as number) > 255 || !["setup", "python", "npm", "system"].includes(String(p.step))))) return invalidAdminResponse();
+        (p.exit_code !== null && (!Number.isSafeInteger(p.exit_code) || (p.exit_code as number) < 1 || (p.exit_code as number) > 255 || !["setup", "python", "npm", "system"].includes(p.step ?? "")))) return invalidAdminResponse();
     params = { step: p.step as ProvisioningFailureParams["step"], index: p.index as number | null, exit_code: p.exit_code as number | null };
   } else if (value.code === "connection_failed") {
     const p = value.params;
@@ -39,10 +39,10 @@ function failure(value: unknown, codes: Set<string>, session = false): Diagnosti
 
 export function projectSessionDiagnostics(value: unknown, sessionId: string): SessionDiagnostics {
   if (!isRecord(value) || !exactFields(value, fields("object", "session_id", "status", "failure")) || value.object !== "core.session_diagnostics" ||
-      canonicalUuid(value.session_id) === null || !sameResourceId(value.session_id as string, sessionId) || !["idle", "in_progress", "requires_action", "failed"].includes(String(value.status))) return invalidAdminResponse();
+      canonicalUuid(value.session_id) === null || !sameResourceId(value.session_id as string, sessionId) || typeof value.status !== "string" || !["idle", "in_progress", "requires_action", "failed"].includes(value.status)) return invalidAdminResponse();
   let projected: SessionDiagnosticFailure | null = null;
   if (value.status === "failed") {
-    if (!isRecord(value.failure) || !["turn", "environment", "environment_input"].includes(String(value.failure.source))) return invalidAdminResponse();
+    if (!isRecord(value.failure) || typeof value.failure.source !== "string" || !["turn", "environment", "environment_input"].includes(value.failure.source)) return invalidAdminResponse();
     const f = value.failure;
     const source = f.source as SessionDiagnosticFailure["source"];
     projected = { ...failure(f, source === "turn" ? turnCodes : source === "environment_input" ? inputCodes : new Set(["environment_provisioning_failed"]), true), source };
@@ -57,7 +57,7 @@ export function projectSessionDiagnostics(value: unknown, sessionId: string): Se
 export function projectTurnDiagnostics(value: unknown, sessionId: string, turnId: string): TurnDiagnostics {
   if (!isRecord(value) || !exactFields(value, fields("object", "session_id", "turn_id", "status", "failure", "items", "items_truncated")) || value.object !== "core.turn_diagnostics" ||
       canonicalUuid(value.session_id) === null || !sameResourceId(value.session_id as string, sessionId) || canonicalUuid(value.turn_id) === null || !sameResourceId(value.turn_id as string, turnId) ||
-      !turnStatuses.has(String(value.status)) || !Array.isArray(value.items) || value.items.length > 1000 || typeof value.items_truncated !== "boolean" || (value.items_truncated && value.items.length !== 1000)) return invalidAdminResponse();
+      typeof value.status !== "string" || !turnStatuses.has(value.status) || !Array.isArray(value.items) || value.items.length > 1000 || typeof value.items_truncated !== "boolean" || (value.items_truncated && value.items.length !== 1000)) return invalidAdminResponse();
   const projected = value.status === "failed" ? failure(value.failure, turnCodes) : null;
   if (value.status !== "failed" && value.failure !== null) return invalidAdminResponse();
   const seen = new Set<string>();

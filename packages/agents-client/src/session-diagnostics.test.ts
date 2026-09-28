@@ -76,3 +76,13 @@ it.each([{}, { http_status: 99 }, { http_status: 600 }, { http_status: 503.5 }, 
 it("rejects HTTP status parameters on nonconnection categories", () => {
   expect(() => projectTurnDiagnostics({ ...snapshot, failure: { ...failure, code: "authentication_error", params: { http_status: 401 } } }, id, turn)).toThrow();
 });
+
+const provisioning = { source: "environment", code: "environment_provisioning_failed", params: { step: "setup", index: null, exit_code: null }, failed_at: null };
+it.each([
+  ["Session status", () => projectSessionDiagnostics({ ...session, status: ["failed"], failure: null }, id)],
+  ["Turn status", () => projectTurnDiagnostics({ ...snapshot, status: ["failed"], failure: null }, id, turn)],
+  ["failure source", () => projectSessionDiagnostics({ ...session, failure: { ...provisioning, source: ["environment"] } }, id)],
+  ["provisioning step", () => projectSessionDiagnostics({ ...session, failure: { ...provisioning, params: { ...provisioning.params, step: ["setup"] } } }, id)],
+] as const)("rejects arrays in %s", (_field, project) => {
+  expect(project).toThrow();
+});
