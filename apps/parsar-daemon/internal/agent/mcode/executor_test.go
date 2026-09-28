@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -115,57 +116,75 @@ func TestExecutorReusesNativeOwnerWithFreshTurnsAndIdleDrain(t *testing.T) {
 	}
 }
 
-func TestExecutorCancellationWithoutRootProofInvalidatesAndLateCancelCannotRetarget(t *testing.T) {
-	e, record := executorFixture(t, "executor-cancel", true)
-	first, _ := runExecutorFixtureTurn(t, e, "first", "one")
-	out := make(chan proto.Envelope, 32)
-	second, err := e.StartTurn(t.Context(), "second", proto.TextInput("wait"), out)
-	if err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case event := <-out:
-		if event.Type != proto.TypeDelta {
-			t.Fatal(event.Type)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("second Turn did not start")
-	}
-	if err = first.Cancel(t.Context()); err != nil {
-		t.Fatal(err)
-	}
-	raw, _ := os.ReadFile(record)
-	if strings.Contains(string(raw), "session/cancel") {
-		t.Fatal("late cancellation targeted the new Turn")
-	}
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
-	defer cancel()
-	if err = second.Cancel(ctx); err != nil {
-		t.Fatal("stopped nonreusable owner reported cancellation failure", err)
-	}
-	settlement, err := second.AwaitSettlement(ctx)
-	if err != nil || settlement.Reusable {
-		t.Fatal(settlement, err)
-	}
-	select {
-	case <-e.connection.exited:
-	default:
-		t.Fatal("nonreusable settlement preceded native process exit")
-	}
-	if got := second.CancellationOutcome(); got.Content != "ready" || got.Metadata[proto.DoneMetaAgentSessionID] != "native-1" {
-		t.Fatal("cancel lost settled outcome", got)
-	}
-	for range out {
-	}
-	thirdOut := make(chan proto.Envelope, 1)
-	third, err := e.StartTurn(t.Context(), "third", proto.TextInput("three"), thirdOut)
-	if third != nil || err == nil {
-		t.Fatal("unproven native owner admitted a successor")
-	}
-	close(thirdOut)
-	raw, _ = os.ReadFile(record)
-	if strings.Count(string(raw), "session/cancel\n") != 1 || strings.Count(string(raw), "initialize\n") != 1 {
-		t.Fatalf("cancellation replaced owner: %s", raw)
+func TestExecutorCancellationRetiresOwnerAndLateCancelCannotRetarget(t *testing.T) {
+	for _, disabled := range []bool{true, false} {
+		t.Run(map[bool]string{true: "single-agent", false: "subagents"}[disabled], func(t *testing.T) {
+			e, record := executorFixture(t, "executor-cancel", true)
+			first, _ := runExecutorFixtureTurn(t, e, "first", "one")
+			e.req.DisableSubagents = disabled
+			if !disabled {
+				// A terminal native history record still cannot prove Bash cleanup.
+				dir := t.TempDir()
+				node, bridge := filepath.Join(dir, "node"), filepath.Join(dir, "bridge.mjs")
+				body := "#!/bin/sh\nprintf '%s\\n' '{\"version\":1,\"complete\":true,\"rootSessionId\":\"native-1\",\"sessions\":[{\"id\":\"native-1\",\"turns\":[{\"id\":\"root-turn\",\"status\":\"aborted\"}]}]}'\n"
+				for name, data := range map[string]string{node: body, bridge: "", filepath.Join(dir, "subagent-snapshot.mjs"): ""} {
+					if err := os.WriteFile(name, []byte(data), 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				t.Setenv("OAC_RUNTIME_MCODE_NODE", node)
+				t.Setenv("OAC_RUNTIME_MCODE_WORKSPACE_BRIDGE", bridge)
+			}
+			out := make(chan proto.Envelope, 32)
+			second, err := e.StartTurn(t.Context(), "second", proto.TextInput("wait"), out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			select {
+			case event := <-out:
+				if event.Type != proto.TypeDelta {
+					t.Fatal(event.Type)
+				}
+			case <-time.After(3 * time.Second):
+				t.Fatal("second Turn did not start")
+			}
+			if err = first.Cancel(t.Context()); err != nil {
+				t.Fatal(err)
+			}
+			raw, _ := os.ReadFile(record)
+			if strings.Contains(string(raw), "session/cancel") {
+				t.Fatal("late cancellation targeted the new Turn")
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+			defer cancel()
+			if err = second.Cancel(ctx); err != nil {
+				t.Fatal("stopped nonreusable owner reported cancellation failure", err)
+			}
+			settlement, err := second.AwaitSettlement(ctx)
+			if err != nil || settlement.Reusable {
+				t.Fatal(settlement, err)
+			}
+			select {
+			case <-e.connection.exited:
+			default:
+				t.Fatal("nonreusable settlement preceded native process exit")
+			}
+			if got := second.CancellationOutcome(); got.Content != "ready" || got.Metadata[proto.DoneMetaAgentSessionID] != "native-1" {
+				t.Fatal("cancel lost settled outcome", got)
+			}
+			for range out {
+			}
+			thirdOut := make(chan proto.Envelope, 1)
+			third, err := e.StartTurn(t.Context(), "third", proto.TextInput("three"), thirdOut)
+			if third != nil || err == nil {
+				t.Fatal("unproven native owner admitted a successor")
+			}
+			close(thirdOut)
+			raw, _ = os.ReadFile(record)
+			if strings.Count(string(raw), "session/cancel\n") != 1 || strings.Count(string(raw), "initialize\n") != 1 {
+				t.Fatalf("cancellation replaced owner: %s", raw)
+			}
+		})
 	}
 }
 
@@ -239,5 +258,17 @@ func TestExecutorCloseRetainsOwnerAfterDeadline(t *testing.T) {
 	case <-e.connection.exited:
 	default:
 		t.Fatal("Close lost native cleanup ownership")
+	}
+}
+
+func TestExecutorFactoryPreparationFailureHasNoTypedNilOwner(t *testing.T) {
+	config, req, _ := workspaceFixture(t)
+	req.ReleaseOnCompletion = false
+	if err := os.WriteFile(config.Binary, []byte("#!/bin/sh\nexit 1\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	value, err := NewExecutorFactory(&config)(t.Context(), req)
+	if err == nil || value != nil {
+		t.Fatalf("settled preparation failure returned owner: nil=%t error=%v", value == nil, err)
 	}
 }

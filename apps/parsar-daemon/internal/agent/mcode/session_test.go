@@ -327,6 +327,8 @@ func TestMCodeProcess(t *testing.T) {
 			}
 			update("usage_update", map[string]any{"used": 2000, "size": 64000, "cost": map[string]any{"amount": 2, "currency": "USD"}})
 			result = map[string]string{"stopReason": "end_turn"}
+		case "mcode/session/delegation/stop":
+			result = map[string]any{"receipt": map[string]any{"failedSessionIds": []string{}}}
 		case "session/cancel":
 			raw, _ := json.Marshal(map[string]string{"stopReason": "cancelled"})
 			send(rpcFrame{JSONRPC: "2.0", ID: promptID, Result: raw})

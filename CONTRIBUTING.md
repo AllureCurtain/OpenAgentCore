@@ -3334,6 +3334,11 @@ process and wait for its exit before settling the Turn as non-reusable. Common
 Runtime recovery then loads the exact owned native history in a new Executor. Do not infer history IDs or qualify hosted execution from this text
 profile. See [deployment and acceptance](services/agents-api/deploy/mcode/README.md).
 
+MiniMax companion readiness uses private protocol 2; old companions are rejected
+even when the upstream version matches. Cancellation retires the executor and
+settles its native workers and detached Bash groups before acknowledgement;
+later work recovers the same native history in a new owner without replay.
+
 The MiniMax workspace profile builds one CLI from the fixed upstream source and
 lockfile through the existing companion packaging path, and connects native
 workspace tools through its standard MCP client. The process and native Session

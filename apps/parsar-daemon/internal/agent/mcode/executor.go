@@ -54,7 +54,11 @@ func NewExecutorFactory(config *WorkspaceConfig) agent.ExecutorFactory {
 		if err != nil {
 			return nil, err
 		}
-		return newExecutor(ctx, req, opts, binary)
+		resource, err := newExecutor(ctx, req, opts, binary)
+		if resource == nil {
+			return nil, err
+		}
+		return resource, err
 	}
 }
 

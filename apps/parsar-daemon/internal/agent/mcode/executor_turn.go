@@ -40,9 +40,9 @@ func (s *Session) runExecutorTurn() {
 	}
 	s.finishEnvironmentMCP()
 	s.mu.Lock()
-	// ACP cancelled can precede native root Turn settlement in 0.4.12.
-	// Without the qualified history reader, retain no claim of safe reuse.
-	if (s.cancelled && s.req.DisableSubagents) || s.inputUncertain || len(s.permissions) != 0 || len(s.questions) != 0 {
+	// ACP and native history cancellation do not prove detached tool cleanup.
+	// Retire the owner and settle its workers before acknowledging cancellation.
+	if s.cancelled || s.inputUncertain || len(s.permissions) != 0 || len(s.questions) != 0 {
 		reusable = false
 	}
 	if s.inputUncertain && err == nil {
@@ -126,7 +126,7 @@ func (s *Session) cancelTurn(ctx context.Context) error {
 	}
 	s.mu.Unlock()
 	// Cancellation releases event backpressure but does not cancel native owner
-	// context. ACP prompt completion and child/tool settlement decide reuse.
+	// context. After native settlement, cancellation retires and drains the owner.
 	s.outputCancel()
 	e.mu.Unlock()
 	var err error
