@@ -1,0 +1,64 @@
+name: native-installer
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.22.0'
+      - name: Build the native daemon and test bundle boundaries
+        run: |
+          go build -o "$RUNNER_TEMP/oac-daemon${{ runner.os == 'Windows' && '.exe' || '' }}" ./apps/parsar-daemon/cmd/parsar-daemon
+          node --test scripts/build-native-installer.test.mjs
+      - name: Build pinned native components
+        run: |
+          npm install --global pnpm@10.30.3
+          pnpm install --frozen-lockfile --filter @parsar/claude-sdk-adapter...
+          pnpm --filter @parsar/claude-sdk-adapter build --outDir "$RUNNER_TEMP/claude-compiled"
+          pnpm --config.inject-workspace-packages=true --config.extend-node-path=false --filter @parsar/claude-sdk-adapter deploy --prod "$RUNNER_TEMP/claude-runtime"
+          rm -rf "$RUNNER_TEMP/claude-runtime/dist"
+          mv "$RUNNER_TEMP/claude-compiled" "$RUNNER_TEMP/claude-runtime/dist"
+          # Reify the dedicated frozen export lock without pnpm's symlink layout.
+          # Flattening isolated package links changes Node dependency resolution.
+          rm -rf "$RUNNER_TEMP/claude-runtime/node_modules"
+          pnpm --dir "$RUNNER_TEMP/claude-runtime" install --prod --frozen-lockfile --config.node-linker=hoisted --ignore-scripts
+          npm install --prefix "$RUNNER_TEMP/native-tools" --no-save @openai/codex@0.153.4
+      - name: Package and exercise CLI-only installation, additions and reuse
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            export CLAUDE_CODE_GIT_BASH_PATH='C:\Program Files\Git\bin\bash.exe'
+          fi
+          node scripts/build-native-installer-ci.mjs
+      - name: Verify native Harness protocols without model requests
+        run: |
+          if [[ "$RUNNER_OS" == Windows ]]; then
+            export CLAUDE_CODE_GIT_BASH_PATH='C:\Program Files\Git\bin\bash.exe'
+          fi
+          node scripts/native-harness-smoke.mjs --codex-binary "$RUNNER_TEMP/native-installer/components/codex/bin/codex${{ runner.os == 'Windows' && '.exe' || '' }}" --claude-runtime "$RUNNER_TEMP/native-installer/components/claude"
+      - name: Archive the native distribution
+        run: tar -C "$RUNNER_TEMP/native-installer" -czf "$RUNNER_TEMP/oac-native-installer-${{ runner.os }}-${{ runner.arch }}.tar.gz" .
+      - uses: actions/upload-artifact@v6
+        with:
+          name: oac-native-installer-${{ runner.os }}-${{ runner.arch }}
+          path: ${{ runner.temp }}/oac-native-installer-*.tar.gz
+          if-no-files-found: error
