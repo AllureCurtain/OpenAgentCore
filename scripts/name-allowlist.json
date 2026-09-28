@@ -843,5 +843,15 @@
     "path": "apps/parsar-daemon/internal/dispatch/executor_test.go",
     "regex": "\"agents-api-(?:session)?\"",
     "reason": "Executor ownership validates the current Core and local-workspace AgentStateKey namespace; this change does not introduce an alternate identity or compatibility path."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/localworkspace/capabilities.go",
+    "regex": "\"agents-api-\"",
+    "reason": "AgentStateKey retains the existing daemon/native-session resume identity; capability snapshots bind to the Session UUID carried in that identity."
+  },
+  {
+    "path": "apps/parsar-daemon/internal/localworkspace/capability_preparation_test.go",
+    "regex": "\"agents-api-\"",
+    "reason": "AgentStateKey retains the existing daemon/native-session resume identity; capability snapshots bind to the Session UUID carried in that identity."
   }
 ]
