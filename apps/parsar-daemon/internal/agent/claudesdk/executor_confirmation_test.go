@@ -11,10 +11,10 @@ import (
 )
 
 func TestExecutorNativeConfirmationSurvivesCleanup(t *testing.T) {
-	for _, mode := range []string{"unknown_cancel", "queued_cancel", "missing_confirmation", "pending_function", "pending_input", "confirmed_closed"} {
+	for _, mode := range []string{"unknown_cancel", "queued_cancel", "missing_confirmation", "pending_function", "pending_function_unconfirmed", "pending_input", "confirmed_closed"} {
 		t.Run(mode, func(t *testing.T) {
 			config, req := persistentConfig(t, mode)
-			if mode == "pending_function" {
+			if mode == "pending_function" || mode == "pending_function_unconfirmed" {
 				req.FunctionTools = []proto.FunctionTool{{Name: "lookup", Parameters: json.RawMessage(`{"type":"object"}`)}}
 			}
 			owner, err := NewExecutorFactory(config)(t.Context(), req)
@@ -26,7 +26,7 @@ func TestExecutorNativeConfirmationSurvivesCleanup(t *testing.T) {
 			if event := <-out; event.Type != proto.TypeDelta {
 				t.Fatal("initial output missing")
 			}
-			if mode == "pending_function" {
+			if mode == "pending_function" || mode == "pending_function_unconfirmed" {
 				if event := <-out; event.Type != proto.TypeFunctionCall {
 					t.Fatal("function obligation missing")
 				}
@@ -45,8 +45,9 @@ func TestExecutorNativeConfirmationSurvivesCleanup(t *testing.T) {
 			for range out {
 			}
 			settlement, settlementErr := turn.AwaitSettlement(t.Context())
-			confirmed := mode == "confirmed_closed"
-			if (cancelErr == nil) != confirmed || (settlementErr == nil) != confirmed || settlement.Reusable {
+			confirmed := mode == "confirmed_closed" || mode == "pending_function"
+			reusable := mode == "pending_function"
+			if (cancelErr == nil) != confirmed || (settlementErr == nil) != confirmed || settlement.Reusable != reusable {
 				t.Fatalf("cancel=%v settlement=%+v err=%v", cancelErr, settlement, settlementErr)
 			}
 			if inputReceipt != nil {

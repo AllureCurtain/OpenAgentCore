@@ -69,6 +69,7 @@ type Session struct {
 	nativeSettled             atomic.Bool
 	settlement                agent.TurnSettlement
 	settlementErr             error
+	terminalCleanupMu         sync.Mutex
 	operationMu               sync.Mutex
 	operations                sync.WaitGroup
 	operationsClosed          bool

@@ -24,7 +24,7 @@ globalThis.startupFixture=async({options})=>{
  options.abortController.signal.addEventListener('abort',close);
  return {close,query(prompt){assert.equal(queried,false);queried=true;process.send({type:'query'});return {
   close,async initializationResult(){return process.argv[1]==="no-hook-report" ? {} : process.argv[1]==="false-hook-report" ? {hooks_applied:false} : {hooks_applied:true}},
-  async interrupt(){process.send({type:'interrupt'});interrupt?.();if(process.argv[1]==='rejected')throw new Error('interrupt failed');return process.argv[1]==='unknown' ? undefined : {still_queued:process.argv[1]==='queued' ? ['not-consumed'] : []}},
+  async interrupt(){process.send({type:'interrupt'});interrupt?.();if(process.argv[1]==='rejected')throw new Error('interrupt failed');return ['unknown','pending-function-unknown'].includes(process.argv[1]) ? undefined : {still_queued:process.argv[1]==='queued' ? ['not-consumed'] : []}},
   async *[Symbol.asyncIterator](){
    for await(const user of prompt){
     number++;
@@ -32,6 +32,11 @@ globalThis.startupFixture=async({options})=>{
     process.send({type:'input',text});
     yield {type:'system',subtype:'init',session_id:'native',tools:client ? ['mcp__functions__lookup'] : [],mcp_servers:client ? [{name:'functions',status:'connected'}] : []};
     if(client){
+     if(text==='pending-function'){
+      void client.callTool({name:'lookup',arguments:{text},_meta:{'claudecode/toolUseId':'pending-call'}}).catch(()=>{});
+      await Promise.race([new Promise(resolve=>{interrupt=resolve}),exited]);
+      if(process.argv[1]==='pending-function-result') yield {type:'user',session_id:'native',parent_tool_use_id:null,message:{content:[{type:'tool_result',tool_use_id:'pending-call',content:'Interrupted',is_error:true}]}};
+     }
      if(text==='features'){
       const called=await client.callTool({name:'lookup',arguments:{text},_meta:{'claudecode/toolUseId':'same-native-call'}});
       yield {type:'user',session_id:'native',parent_tool_use_id:null,message:{content:[{type:'tool_result',tool_use_id:'same-native-call',content:called.content,is_error:called.isError}]}};
@@ -68,7 +73,7 @@ async function launch(t,mode="normal") {
  const send=value=>child.stdin.write(JSON.stringify(value)+"\n");
  const start=(id,text)=>send({type:"turn_start",turn_id:id,input:[{content:[{type:"input_text",text}]}]});
  send({type:"executor_prepare",cwd:"/tmp",model:"fixture",system_prompt:"",
- ...(mode==="features" ? {observe_messages:true,functions:[{name:"lookup",description:"lookup",parameters:{type:"object",properties:{text:{type:"string"}}}}]} : {})});
+ ...(mode==="features" || mode.startsWith("pending-function") ? {observe_messages:true,functions:[{name:"lookup",description:"lookup",parameters:{type:"object",properties:{text:{type:"string"}}}}]} : {})});
  await wait(()=>events.some(event=>event.type==="executor_ready"));
  assert.equal(observations.filter(event=>event.type==="input").length,0);
  return {child,events,observations,closed,wait,send,start};
@@ -146,4 +151,25 @@ for(const mode of ["no-hook-report","false-hook-report"])test("none Executor wit
  assert.equal(events.find(event=>event.type==="turn_settled").confirmed,true);
  assert.equal(events.find(event=>event.type==="turn_settled").reusable,true);
  child.stdin.end();assert.deepEqual(await closed,{code:0,signal:null});
+});
+
+for (const mode of ["pending-function-result", "pending-function-terminal", "pending-function-unknown"]) test(`unanswered function cancellation ${mode} retains native confirmation requirements`, {timeout:10000}, async t => {
+ const {child,events,closed,wait,send,start}=await launch(t,mode);
+ start("first","pending-function");
+ await wait(()=>events.some(event=>event.type==="function_call"));
+ send({type:"turn_cancel",turn_id:"first"});
+ await wait(()=>events.some(event=>event.type==="turn_settled"));
+ const settled=events.find(event=>event.type==="turn_settled");
+ const confirmed=mode!=="pending-function-unknown";
+ assert.equal(settled.confirmed,confirmed);
+ assert.equal(settled.reusable,confirmed);
+ assert.ok(events.some(event=>event.type==="error"&&event.code==="cancelled"));
+ assert.equal(events.filter(event=>event.type==="function_applied").length,0);
+ if(confirmed){
+  start("second","answer");
+  await wait(()=>events.some(event=>event.type==="turn_settled"&&event.turn_id==="second"));
+  assert.equal(events.find(event=>event.type==="turn_settled"&&event.turn_id==="second").confirmed,true);
+  child.stdin.end();
+ }
+ assert.deepEqual(await closed,{code:0,signal:null});
 });

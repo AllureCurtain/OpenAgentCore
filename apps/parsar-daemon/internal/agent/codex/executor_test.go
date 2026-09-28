@@ -18,7 +18,9 @@ func executorFixture(t *testing.T, mode string) (*Executor, string) {
 	t.Helper()
 	req, cfg, root := preparationFixture(t)
 	t.Setenv("OAC_TEST_EXECUTOR_MODE", mode)
-	e, err := newExecutor(t.Context(), req, cfg)
+	ownerCtx, cancelOwner := context.WithCancel(context.Background())
+	t.Cleanup(cancelOwner)
+	e, err := newExecutor(ownerCtx, req, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

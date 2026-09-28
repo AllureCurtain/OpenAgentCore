@@ -129,6 +129,18 @@ func (e *Executor) Close(ctx context.Context) error {
 				stop()
 			}
 		}
+		if running != nil && base.rpc.Alive() {
+			// A caller deadline only stops waiting. Cleanup retains a bounded
+			// opportunity to release native terminals before closing their owner.
+			cleanupCtx, stop := context.WithTimeout(context.Background(), rpcKillTimeout)
+			err := running.cleanupNativeTerminals(cleanupCtx)
+			stop()
+			if err != nil {
+				// Preserve the native owner and exact handles for a later Close.
+				done <- err
+				return
+			}
+		}
 		base.cancelFn()
 		err := base.rpc.Close()
 		e.mu.Lock()
