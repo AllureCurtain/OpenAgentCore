@@ -144,6 +144,8 @@ for `start`, `status`, `logs -n 100`, `logs -f` and `stop`. Direct `connect` is
 rejected for an installed Runtime; `start` validates its components and selection. An explicit
 `OAC_RUNTIME_HOME` overrides this location; keep it consistent if set. If adding a
 Harness while the daemon is running, restart it to refresh Harness discovery.
+`status` reports local profile/PID-file information only. Check **Host connection**
+in Core or the Environment connection API for authenticated connection state.
 
 A connected Environment proves machine authentication, not model availability.
 Configure the model provider through the existing Session/Agent mechanism and

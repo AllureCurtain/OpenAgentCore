@@ -172,7 +172,7 @@ func runInstall(rc *runContext, args []string) error {
 		return err
 	}
 	fmt.Fprintln(rc.stdout, "Installation: ready; verified Harnesses:", all)
-	fmt.Fprintln(rc.stdout, "Daemon connection: not checked by install; run the installed oac-daemon start, then status.")
+	fmt.Fprintln(rc.stdout, "Daemon connection: not checked by install; run the installed oac-daemon start, then check Host connection in Core.")
 	fmt.Fprintln(rc.stdout, "Model configuration: not checked; configure the Session model provider in Core and send a Turn.")
 	return nil
 }
