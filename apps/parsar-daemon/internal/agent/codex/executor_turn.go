@@ -76,6 +76,15 @@ func (s *Session) settleExecutorTurn(startErr error) {
 			s.settlementErr = errors.Join(s.settlementErr, s.cancelErr, s.rpc.Close())
 		}
 	}
+	if s.cancelled.Load() && s.nativeSettled.Load() && s.cancelErr == nil && s.rpc.Alive() {
+		cleanupCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
+		err := s.cleanupNativeTerminals(cleanupCtx)
+		stop()
+		if err != nil {
+			s.settlement = agent.TurnSettlement{Reason: "native_terminal_cleanup_unconfirmed"}
+			s.settlementErr = errors.Join(s.settlementErr, err)
+		}
+	}
 	s.cancelFn()
 }
 

@@ -1632,6 +1632,11 @@ that already owns the Executor. Connection shutdown owns transport-loss cleanup.
 Preserve the ten-second settlement wait and separate five-second receipt
 send budget; timeout is not proof of quiescence. The observed cancellation outcome
 retains native identity, Usage and output without fabricating missing evidence.
+Codex native Turn interruption can leave background terminals alive. Its adapter
+uses the exact thread-owned terminal list and confirmed per-terminal termination
+before settling cancellation, and repeats this cleanup during Executor close.
+The bulk clean acknowledgement does not prove termination. Failed cleanup keeps
+the native owner available for a later close attempt.
 
 Private preparation controls reserve a per-Turn admission, not a new Executor.
 They carry an explicit Session identity and immutable configuration without model
