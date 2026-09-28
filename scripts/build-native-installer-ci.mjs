@@ -29,7 +29,7 @@ async function findCodex(directory, depth = 0) {
 const candidates = await findCodex(join(root, 'native-tools', 'node_modules', '@openai'));
 assert.equal(candidates.length, 1, 'Expected exactly one native Codex artifact');
 const bundle = join(root, 'native-installer');
-const receipt = await buildBundle({ daemon, node: await realpath(node), codex: candidates[0], claude: join(root, 'claude-runtime'), output: bundle });
+const receipt = await buildBundle({ daemon, node: await realpath(node), codex: candidates[0], claude: join(root, 'claude-runtime'), ...(!windows ? { minimax: join(root, 'minimax-runtime') } : {}), output: bundle });
 console.log(JSON.stringify({ stage: 'bundle', os: receipt.os, arch: receipt.arch, components: Object.keys(receipt.components), model_requests: 0 }));
 const workspace = join(root, 'native-install-workspace'); await mkdir(workspace);
 const credential = join(root, 'native-install-credential.json');
@@ -49,8 +49,9 @@ function install(extra, expected) {
   assert.ok(!`${result.stdout}${result.stderr}`.includes('fixture-only-not-a-real-credential'), 'Installer echoed a credential');
 }
 install(['--harness', 'codex'], true);
-install(['--harness', 'codex,claude'], true);
-install(['--harness', 'codex,claude'], true);
+const allHarnesses = windows ? 'codex,claude' : 'codex,claude,minimax';
+install(['--harness', allHarnesses], true);
+install(['--harness', allHarnesses], true);
 if (windows) install(['--harness', 'minimax'], false);
 const installedCommand = join(installDir, 'bin', windows ? 'oac-daemon.exe' : 'oac-daemon');
 const installedEnv = { ...process.env }; delete installedEnv.OAC_RUNTIME_HOME;
@@ -60,4 +61,4 @@ assert.equal(installedVersion.stdout.trim(), receipt.daemon_version, 'Installed 
 const incomplete = spawnSync(command, ['install', '--non-interactive'], { env, input: '', encoding: 'utf8', timeout: 10000 });
 assert.equal(Boolean(incomplete.error), false, 'Missing arguments waited for interaction');
 assert.notEqual(incomplete.status, 0, 'Missing required arguments succeeded');
-console.log(JSON.stringify({ stage: 'install', install: 'passed', additive: 'passed', reuse: 'passed', missing_arguments: 'rejected', connection: 'not_attempted', model: 'not_configured', model_requests: 0 }));
+console.log(JSON.stringify({ stage: 'install', harnesses: allHarnesses.split(','), install: 'passed', additive: 'passed', reuse: 'passed', missing_arguments: 'rejected', connection: 'not_attempted', model: 'not_configured', model_requests: 0 }));

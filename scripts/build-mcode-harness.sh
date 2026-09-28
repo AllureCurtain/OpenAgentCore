@@ -5,12 +5,17 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 package="$repo_root/packages/mcode-harness"
 source="${MCODE_NATIVE_SOURCE:?Set MCODE_NATIVE_SOURCE to the pinned upstream checkout}"
 native="${MCODE_CLI_DIR:?Set MCODE_CLI_DIR to the pinned CLI package supplying native dependencies}"
-if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
-  printf 'Build the MiniMax Code Runtime artifact on Linux x86_64\n' >&2
-  exit 1
-fi
-root="$HOME/.oac/build"
-mkdir -p "$root"
+case "$(uname -s):$(uname -m)" in
+  Linux:x86_64|Darwin:arm64) ;;
+  *) printf 'Build the MiniMax Code Runtime artifact on Linux x86_64 or macOS arm64\n' >&2; exit 1 ;;
+esac
+root="${OAC_DEV_HOME:-$HOME/.oac}/build"
+destination="${MCODE_HARNESS_BUILD_DIR:-$root/mcode-harness-$(date +%Y%m%d%H%M%S)}"
+for directory in "$root" "$destination"; do
+  [[ "$directory" == /* ]] || { printf 'Absolute build directories are required\n' >&2; exit 1; }
+done
+[[ ! -e "$destination" ]] || { printf 'MiniMax artifact destination already exists\n' >&2; exit 1; }
+mkdir -p "$root" "$(dirname "$destination")"
 context="$(mktemp -d "$root/mcode-build.XXXXXX")"
 trap 'rm -rf "$context"' EXIT
 revision="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["revision"])' "$package/source.json")"
@@ -62,6 +67,5 @@ pin['files']={str(p.relative_to(artifact)):hashlib.sha256(p.read_bytes()).hexdig
               for p in sorted(artifact.rglob('*')) if p.is_file()}
 (artifact/'provenance.json').write_text(json.dumps(pin,indent=2)+'\n')
 PY
-destination="$root/mcode-harness-$(date +%Y%m%d%H%M%S)"
 mv "$artifact" "$destination"
 printf 'MiniMax Code Runtime artifact: %s\n' "$destination"
