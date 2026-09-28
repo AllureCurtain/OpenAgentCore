@@ -88,7 +88,7 @@ func (h *Handler) listExecutorCredentials(w http.ResponseWriter, r *http.Request
 	if observed.DeviceID != "" {
 		connection = ExecutorConnection{Status: "disconnected", BoundKeyID: observed.BoundKeyID, EnrolledAt: observed.EnrolledAt, LastSeenAt: observed.LastSeenAt}
 		if observed.EnvironmentStatus == "connected" && observed.CredentialHash != "" && h.executorConnections != nil {
-			connected, err := h.executorConnections(r.Context(), chi.URLParam(r, "environment_id"), observed.CredentialHash)
+			connected, err := h.executorConnections(r.Context(), state.EnvironmentID, observed.CredentialHash)
 			if err != nil && !errors.Is(err, store.ErrNotFound) && !errors.Is(err, store.ErrDeviceBindingConflict) {
 				writeStoreError(w, r, err)
 				return

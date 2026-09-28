@@ -17,12 +17,13 @@ import (
 
 type executorManagementFixture struct {
 	ResourceStore
-	principal        identity.Principal
-	environment, key string
-	rotate, audited  bool
-	calls            int
-	err              error
-	connection       store.ExecutorConnectionState
+	principal           identity.Principal
+	environment, key    string
+	rotate, audited     bool
+	calls               int
+	err                 error
+	connection          store.ExecutorConnectionState
+	resolvedEnvironment string
 }
 
 func (f *executorManagementFixture) record(ctx context.Context, principal identity.Principal, environment, key string) {
@@ -32,7 +33,11 @@ func (f *executorManagementFixture) record(ctx context.Context, principal identi
 }
 func (f *executorManagementFixture) ProjectExecutorCredentialState(ctx context.Context, principal identity.Principal, environment string) (store.ExecutorCredentialState, error) {
 	f.record(ctx, principal, environment, "")
-	return store.ExecutorCredentialState{Credentials: []store.ExecutorCredential{{KeyID: "listed", CreatedAt: time.Unix(1, 0).UTC()}}, Connection: f.connection}, f.err
+	resolved := f.resolvedEnvironment
+	if resolved == "" {
+		resolved = environment
+	}
+	return store.ExecutorCredentialState{EnvironmentID: resolved, Credentials: []store.ExecutorCredential{{KeyID: "listed", CreatedAt: time.Unix(1, 0).UTC()}}, Connection: f.connection}, f.err
 }
 func (f *executorManagementFixture) IssueProjectExecutorCredential(ctx context.Context, principal identity.Principal, environment, key string, rotate bool) (store.IssuedExecutorCredential, error) {
 	f.record(ctx, principal, environment, key)
@@ -181,5 +186,41 @@ func TestExecutorConnectionListObservation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestExecutorConnectionListUsesResolvedEnvironment(t *testing.T) {
+	const canonical = "a21e4155-d8bb-4e99-afce-273a907efbc8"
+	key := callerBinding()
+	f := &executorManagementFixture{
+		resolvedEnvironment: canonical,
+		connection:          store.ExecutorConnectionState{DeviceID: "device", CredentialHash: "private-digest", EnvironmentStatus: "connected"},
+	}
+	auth, _ := NewAuthenticator([]APIKey{key})
+	admin, _ := NewDeploymentAuthenticator([]string{device.HashCredential("admin")})
+	observations := 0
+	h, err := NewHandler(f, auth, "codex", WithProjectAPIKeys(managementProjectStore(key), admin),
+		WithExecutorConnections(func(_ context.Context, environment, digest string) (bool, error) {
+			observations++
+			if environment != canonical || digest != "private-digest" {
+				return false, store.ErrDeviceBindingConflict
+			}
+			return true, nil
+		}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, spelling := range []string{canonical, strings.ToUpper(canonical), strings.ReplaceAll(canonical, "-", "")} {
+		w := projectKeyHTTP(h, "GET", "/core/v1/projects/"+managementProjectID+"/environments/"+spelling+"/executor-credentials", "admin", "")
+		var got ExecutorCredentialList
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &got) != nil || got.Connection.Status != "connected" {
+			t.Fatalf("equivalent target %q: %d %s", spelling, w.Code, w.Body.String())
+		}
+		if f.environment != spelling {
+			t.Fatal("target spelling did not reach store resolution")
+		}
+	}
+	if observations != 3 {
+		t.Fatal("missing live authority observations", observations)
 	}
 }

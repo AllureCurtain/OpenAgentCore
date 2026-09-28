@@ -38,8 +38,9 @@ type ExecutorConnectionState struct {
 }
 
 type ExecutorCredentialState struct {
-	Credentials []ExecutorCredential
-	Connection  ExecutorConnectionState
+	EnvironmentID string `json:"-"`
+	Credentials   []ExecutorCredential
+	Connection    ExecutorConnectionState
 }
 
 func (s *Store) ListProjectExecutorCredentials(ctx context.Context, project identity.Principal, environment string) ([]ExecutorCredential, error) {
@@ -57,16 +58,18 @@ func (s *Store) ProjectExecutorCredentialState(ctx context.Context, project iden
 	if err != nil {
 		return ExecutorCredentialState{}, err
 	}
+	environmentID := parsePathID(environment)
 	result := ExecutorCredentialState{Credentials: []ExecutorCredential{}}
 	err = pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
 		q := s.queries.WithTx(tx)
-		row, err := q.GetEnvironmentExecutorConnection(ctx, sqlc.GetEnvironmentExecutorConnectionParams{EnvironmentID: parsePathID(environment), TenantID: tenant})
+		row, err := q.GetEnvironmentExecutorConnection(ctx, sqlc.GetEnvironmentExecutorConnectionParams{EnvironmentID: environmentID, TenantID: tenant})
 		if errors.Is(err, pgx.ErrNoRows) {
 			return ErrNotFound
 		}
 		if err != nil {
 			return err
 		}
+		result.EnvironmentID = uuid.UUID(environmentID.Bytes).String()
 		result.Connection.EnvironmentStatus = row.EnvironmentStatus
 		if row.DeviceID.Valid {
 			result.Connection.DeviceID = uuid.UUID(row.DeviceID.Bytes).String()
@@ -87,7 +90,7 @@ func (s *Store) ProjectExecutorCredentialState(ctx context.Context, project iden
 			result.Connection.CredentialHash = row.CredentialHash.String
 		}
 		rows, err := q.ListEnvironmentExecutorCredentials(ctx, sqlc.ListEnvironmentExecutorCredentialsParams{
-			TenantID: tenant, EnvironmentID: parsePathID(environment),
+			TenantID: tenant, EnvironmentID: environmentID,
 			SubjectKind: pgtype.Text{String: project.SubjectKind, Valid: true}, SubjectID: pgtype.Text{String: project.SubjectID, Valid: true},
 		})
 		if err != nil {

@@ -229,6 +229,12 @@ func TestProjectExecutorConnectionState(t *testing.T) {
 	if state.Connection.DeviceID != enrolled.DeviceID || state.Connection.BoundKeyID == nil || *state.Connection.BoundKeyID != key.KeyID || state.Connection.EnrolledAt == nil || state.Connection.LastSeenAt != nil || state.Connection.CredentialHash != executorDigest(key.Token) {
 		t.Fatal("binding", state)
 	}
+	for _, spelling := range []string{env.ID, strings.ToUpper(env.ID), strings.ReplaceAll(env.ID, "-", "")} {
+		resolved, err := s.ProjectExecutorCredentialState(ctx, binding.Principal, spelling)
+		if err != nil || resolved.EnvironmentID != env.ID || resolved.Connection.DeviceID != enrolled.DeviceID || resolved.Connection.CredentialHash != executorDigest(key.Token) {
+			t.Fatal("equivalent target did not retain canonical identity and binding", spelling, resolved, err)
+		}
+	}
 	// An additional credential never changes the enrolled device's bound key.
 	if _, err = s.IssueProjectExecutorCredential(keyAdminContext(ctx, project.ID), binding.Principal, env.ID, uuid.NewString(), false); err != nil {
 		t.Fatal(err)
