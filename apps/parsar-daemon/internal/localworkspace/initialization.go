@@ -70,7 +70,7 @@ func ReadOptionalToolEnvironment() (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err = os.Stat(path); errors.Is(err, os.ErrNotExist) {
+	if _, err = os.Stat(path); errors.Is(err, os.ErrNotExist) && os.Getenv("OAC_RUNTIME_TOOL_ENV_FILE") == "" {
 		return map[string]string{}, nil
 	}
 	return ReadToolEnvironment()
