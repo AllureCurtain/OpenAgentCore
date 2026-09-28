@@ -395,18 +395,7 @@ func (s *Session) SubmitPromptForUserChoice(_ context.Context, askID string, dec
 	// above; stop is best-effort either way.
 	s.stopAskTimer(askID)
 
-	// Pick the reply shape based on which path recorded the entry.
-	// control_request path (CCRequestID set) needs a control_response
-	// frame; tool_use path needs a user message with a tool_result block.
-	var (
-		body    []byte
-		buildEr error
-	)
-	if entry.CCRequestID != "" {
-		body, buildEr = buildAskUserControlResponse(entry, decision)
-	} else {
-		body, buildEr = buildAskUserToolResult(entry, decision)
-	}
+	body, buildEr := buildAskUserControlResponse(entry, decision)
 	if buildEr != nil {
 		return fmt.Errorf("claudecode: marshal ask reply: %w", buildEr)
 	}

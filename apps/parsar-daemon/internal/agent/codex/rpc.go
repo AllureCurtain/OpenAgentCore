@@ -98,7 +98,6 @@ type JSONRPCClient struct {
 	handlersMu        sync.RWMutex
 	notifHandlers     map[string][]NotificationHandler
 	serverReqHandlers map[string]ServerRequestHandler
-	anyNotifHandler   NotificationHandler
 
 	readers   sync.WaitGroup
 	closeOnce sync.Once
@@ -263,14 +262,6 @@ func (c *JSONRPCClient) OnNotification(method string, h NotificationHandler) {
 	c.notifHandlers[method] = append(c.notifHandlers[method], h)
 }
 
-// OnAnyNotification registers a fallback handler. Used by session.go for
-// debug logging of unmodeled methods.
-func (c *JSONRPCClient) OnAnyNotification(h NotificationHandler) {
-	c.handlersMu.Lock()
-	defer c.handlersMu.Unlock()
-	c.anyNotifHandler = h
-}
-
 // OnServerRequest registers h for inbound server requests with method.
 // Only one handler per method is permitted; later Registers override.
 func (c *JSONRPCClient) OnServerRequest(method string, h ServerRequestHandler) {
@@ -404,23 +395,17 @@ func (c *JSONRPCClient) handleNotification(method string, rawFrame []byte) {
 	_ = json.Unmarshal(rawFrame, &env)
 	c.handlersMu.RLock()
 	handlers := append([]NotificationHandler{}, c.notifHandlers[method]...)
-	any := c.anyNotifHandler
-	if len(handlers) > 0 || any != nil {
+	if len(handlers) > 0 {
 		c.handlerWork.Add(1)
 	}
 	c.handlersMu.RUnlock()
-	if len(handlers) > 0 || any != nil {
-		defer c.handlerWork.Done()
-	}
-	if len(handlers) == 0 && any == nil {
+	if len(handlers) == 0 {
 		c.cfg.Logger.Debug("codex rpc unhandled notification", "tag", c.cfg.LogTag, "method", method)
 		return
 	}
+	defer c.handlerWork.Done()
 	for _, h := range handlers {
 		safeInvoke(h, env.Params, c.cfg.Logger, c.cfg.LogTag, "notification "+method)
-	}
-	if any != nil {
-		safeInvoke(any, env.Params, c.cfg.Logger, c.cfg.LogTag, "notification "+method)
 	}
 }
 
@@ -535,7 +520,6 @@ func (c *JSONRPCClient) detachHandlers() {
 	c.handlersMu.Lock()
 	clear(c.notifHandlers)
 	clear(c.serverReqHandlers)
-	c.anyNotifHandler = nil
 	c.handlersMu.Unlock()
 	c.handlerWork.Wait()
 }

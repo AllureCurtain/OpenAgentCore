@@ -53,7 +53,7 @@ def install_helper(root, args, installer):
             package = Path(directory) / "package"
             package.mkdir(mode=0o700)
             source_dir = Path(installer.__file__).parent
-            for name in ("node_install.py", "node_spec.py", "distribution.py", "node_generations.py", "node_update.py"):
+            for name in ("node_install.py", "node_spec.py", "distribution.py", "node_generations.py"):
                 shutil.copyfile(source_dir / name, package / ("__main__.py" if name == "node_install.py" else name))
             zipapp.create_archive(package, staged, compressed=True)
         os.chmod(staged, 0o600)

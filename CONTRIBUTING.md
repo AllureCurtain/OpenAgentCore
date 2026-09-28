@@ -1,5 +1,36 @@
 # Contributing to OpenAgentCore
 
+Start with [Develop OpenAgentCore](docs/development.md) for checkout, toolchains,
+component locations and focused checks. This guide owns repository-wide workflow
+and architecture rules. Detailed protocols and native implementation rules have
+one canonical owner, listed below; update that owner when changing its contract.
+
+## Documentation ownership
+
+| Subject | Canonical source |
+| --- | --- |
+| User concepts and authority | [Design principles](docs/design-principles.md) |
+| API callers, credentials and route inventory | [API index](docs/api/README.md) |
+| Public wire types and qualified behavior | [Agents API contracts](contracts/agents-api/README.md), [pinned upstream](contracts/agents-api/upstream.json), and linked operation contracts |
+| Runtime messages, receipts and failure ownership | [Core–Runtime protocol](docs/runtime-protocol.md) and `internal/agentdaemon/proto` |
+| Harness interfaces and onboarding | [Harness onboarding](contracts/agents-api/harness-onboarding.md) and `agent/executor.go` |
+| Provider interfaces and onboarding | [Sandbox Provider guide](docs/sandbox-provider.md) and `sandbox/sandbox_provider.go` |
+| Claude private bridge and Runtime artifact | [Claude SDK adapter](packages/claude-sdk-adapter/README.md) |
+| Operator installation and configuration | [Installation](docs/getting-started/install.md), [configuration](docs/configuration.md), [operations](docs/getting-started/operations.md) |
+| Web components, interaction and visual rules | [Web design](apps/web/DESIGN.md) and [Web architecture](docs/web/architecture.md) |
+| Documentation website generation | [Docs app](apps/docs/README.md) |
+
+English Markdown in `docs/`, component guides and `contracts/` is authored source.
+The docs app generates guide pages and API references from these sources. Never
+edit generated copies to establish a different rule. Keep documentation and code
+comments in English; the root project README is provided in English and Chinese,
+and user-facing internationalized product copy may be bilingual.
+
+Historical acceptance records retain their original revisions and limits. They
+are evidence, not current installation instructions or authority to restore a
+retired implementation. Keep task chronology and one-off rollout reports out of
+new contributor rules.
+
 ## Repository boundary
 
 This repository is the standalone execution substrate copied from Parsar at the
@@ -42,9 +73,8 @@ created by Core through a Provider. Harness adapters use bypass execution on all
 platforms. Runtime authentication, process cleanup and state consistency remain
 required; none constitutes isolation from tools running as the same user.
 Installation layout may differ, but Core preparation and execution cannot branch
-on operating system or Environment source. Windows acceptance requires native CI
-builds and automated tests; cross-compilation alone is insufficient. Record the
-absence of manual Windows acceptance until an actual machine is tested.
+on operating system or Environment source. Platform support requires native CI builds and automated tests; cross-compilation
+alone is insufficient.
 
 - Keep component boundaries explicit through shared interfaces and versioned
   protocols. Register implementations behind those interfaces. Adding an
@@ -69,62 +99,49 @@ absence of manual Windows acceptance until an actual machine is tested.
 
 ### Sandbox Provider contract
 
-The canonical Sandbox Provider entry point is
-[`sandbox_provider.go`](services/agents-api/internal/sandbox/sandbox_provider.go),
-with integration and operation semantics in [the onboarding guide](docs/sandbox-provider.md).
-Use `sandbox.SandboxProvider` for compute lifecycle and bounded bootstrap operations;
-checkpoint and read-only observation remain separate optional interfaces.
-Registration/construction owns vendor configuration. Core's common lifecycle
-selects optional behavior by interface capability, not a provider name.
-
-Retain the persisted allocation identity and cleanup responsibility after unknown
-results. Never replay Create or initialization commands on transport failure.
-Compute running, authenticated Runtime connection, prepared capabilities and Turn
-acceptance are separate facts. A confirmed Kill cannot by itself settle an
-outstanding Create. Capability preparation belongs to Runtime, and releasing an
-executor does not reclaim its Environment. Do not add provider-specific execution
-or preparation paths. New adapters must run the shared Sandbox Provider contract
-suite through their native boundary and qualify their real resource behavior.
+The [Sandbox Provider onboarding guide](docs/sandbox-provider.md) owns integration
+and operation semantics. Its canonical interface is
+[`SandboxProvider`](services/agents-api/internal/sandbox/sandbox_provider.go).
+Use that interface for compute lifecycle and bounded bootstrap; optional
+interfaces own checkpoint and read-only observation behavior. Construction owns
+vendor configuration, and common orchestration selects capabilities rather than
+provider names.
 
 ## Core–Runtime integration contract
 
-The [Core–Runtime protocol](docs/runtime-protocol.md) is the integration entry
-point for message order, identities, receipts, capability declarations and failure
-ownership. The shared types and validators live only in
-`internal/agentdaemon/proto`; do not introduce a parallel schema or per-Harness
-orchestration path. Both hosted and self-hosted peers use the same contract.
-Protocol changes update matching peers together, with an exact wire-version
-check and no historical wire fallback.
-
-Core queues and Runtime writes are transport observations, not native acceptance
-or completion. The gateway exposes only durable Run subscriptions: connection
-loss or overflow closes the subscription with an error and never fabricates
-native error/done events. A timeout leaves unconfirmed effects unknown; transport
-reconnection never authorizes mutation replay. The public Turn may still be
-`failed` for an observation failure (`delivery_unknown` or
-`event_stream_incomplete`); that status does not prove native failure or cleanup.
-Runtime owns native settlement
-and cleanup; Executor release does not reclaim Sandbox Provider compute.
-The daemon runs with its starting user's authority, not as an isolation boundary;
-Core-managed sandbox infrastructure owns outer isolation.
+The [Core–Runtime protocol](docs/runtime-protocol.md) owns message order,
+identities, receipts and failure ownership. Shared types and validators live only
+in `internal/agentdaemon/proto`; change both peers together with an exact
+wire-version check. Do not add a parallel schema or historical wire fallback.
+Hosted and self-hosted peers use the same contract. The project is not public:
+change current callers and implementations together instead of maintaining
+historical compatibility layers, aliases or migrations.
 
 `make check-runtime-contract` is the focused shared-contract entry point. Its
-wire, gateway, transport, dispatcher, real WebSocket and observation-result tests
-also run in the required `make check` through `check-go` and `check-agents-api`. Keep failure, cancellation, disconnect
-and cleanup assertions in that common suite; native adapter acceptance remains
-required for advertised capabilities.
+checks also run through `check-go` and `check-agents-api` in the required full gate.
+Keep failure, cancellation, disconnect and cleanup assertions in that common
+suite; native adapter acceptance remains required for advertised capabilities.
 
 ## Workflow and quality
 
-Develop in an isolated worktree on a feature branch and submit a PR. Do not edit
-or commit implementation directly on main. An empty repository bootstrap commit
-is only the comparison base for the first import PR. Choose review depth by risk. Substantial changes and changes involving security,
-shared lifecycle ownership or uncertain cross-package behavior need an independent
-blind review after validation. Give the reviewer only requirements, acceptance
-criteria, boundaries, repository path and comparison baseline. Small, verified
-fixes may use self-review, including focused corrections after a blind review;
-repeat independent review when a correction materially changes the design or risk.
-Fix in-scope blockers before delivery. Do not use `codex exec` as a substitute reviewer.
+Before development, record the requirements, acceptance criteria and scope. Make
+only the changes needed for that scope; keep unrelated refactors separate. Work
+in an isolated Git worktree on a feature branch and submit a PR. Do not edit or
+commit implementation directly on main.
+
+After implementation and necessary validation, have a fresh independent subagent
+review the complete diff. Give it only the requirements, acceptance criteria,
+boundaries, repository path and comparison baseline, without an implementation
+summary, self-assessment or earlier review findings. Explain those review criteria
+to the user. Fix substantiated in-scope findings, validate, then use another fresh
+reviewer. If the review/fix cycle repeats, reassess the design and scope before
+adding more changes; report an unresolved blocker rather than broadening the task.
+Do not use `codex exec` as a substitute reviewer.
+
+Search for existing formatters, parsers, validation and error mappers before adding
+one. Share frontend formatting and labels in `apps/web/src/lib/`; reuse components
+and tokens. Keep one error mapper per API surface. Split growing files at an
+existing ownership boundary rather than adding unrelated responsibilities.
 
 The [API documentation index](docs/api/README.md) lists the three namespaces:
 `/v1` for applications (Project API key), `/core/v1` for Core Web's server and
@@ -175,27 +192,9 @@ Keep uncommon resource edits and rollout details in dialogs, and avoid repeating
 the same information within or across pages. Core responses remain the source of
 truth for deployment and connection state.
 
-For subsequent alignment and milestone closure batches, the main thread coordinates
-design, shared interface agreements, file ownership, integration and merge. First
-reconcile main and the boards, then list remaining mandatory milestone work,
-acceptance, scope ceilings and stop conditions. Use built-in GPT-6 Astra high
-subagents for two or three related tasks with disjoint file ownership, or separate
-implementation from real acceptance. Do not create a design per harness or have
-multiple agents edit one shared interface. Validation workers use independent
-databases, ports and containers. Run targeted tests during development, then the
-stable batch's required checks, real regression, generation and independent review.
-Do not split an already active batch again just to adopt this workflow. Preserve
-confirmed native differences and queue nonblocking findings without expanding the
-milestone; stop after completing it when the user has set that boundary.
-
-For the continuous official-semantics alignment campaign, repeat owned-resource
-API/documentation comparisons, bounded implementation batches, acceptance and
-rescan until reasonably addressable discovered differences are removed. Maintain
-operation-level evidence, including unverified behavior and approved native
-harness/daemon differences. A merged batch does not finish the campaign. Discuss
-uncertain designs before expanding mechanisms; simplify repeated patch loops and
-record unresolved low-ROI cases with evidence and impact. Never defer a safety or
-data-consistency blocker while claiming the affected workflow passed.
+Track the selected milestone and its evidence in the active project board when
+one is in use. Record unrelated findings without automatically starting them.
+Do not claim completion of a broader compatibility target from one merged batch.
 
 Session creation requires initial input for `none`, and for streaming creation
 outside `self_hosted`. Report inline agent protocol errors first, then check these
@@ -284,7 +283,7 @@ Run `make check` before completion. The standalone gate includes all daemon/shar
 Go tests, Core contract/client/service tests, Core Web and TypeScript client
 checks (including fixture-only Playwright acceptance), a real dedicated PostgreSQL test
 database, byte-for-byte sqlc regeneration checks, standalone API builds, Claude SDK
-tests and packaging, MiniMax companion checks, and native daemon filesystem tests. It intentionally has no product Web/server/installer gates. The full gate fails when the database variable is missing. The test database role
+tests and packaging, MiniMax companion checks, and native daemon filesystem tests. It includes the Core distribution and installer gates, but no Parsar product Web or server gates. The full gate fails when the database variable is missing. The test database role
 needs CREATE DATABASE permission: managed-provider tests create and drop isolated
 `oac_*_tests` databases because provider identity is deployment-wide.
 Set `OAC_TEST_DATABASE_URL` to that dedicated database and `OAC_TEST_OFFICIAL_SDK_PYTHON`
@@ -341,9 +340,9 @@ offline backfill is allowed.
 
 ## Architecture boundaries
 
-The following execution rules are retained from the source contributor guide.
-References to the product describe the external client boundary, not components
-included in this repository.
+These rules govern execution ownership across components. Operation-specific
+wire behavior and acceptance evidence live in the linked contracts. References
+to the Parsar product describe an external client boundary.
 
 ### Product and execution service separation
 
@@ -409,23 +408,6 @@ databases, credentials and migrations. The product uses Core exclusively; it has
   Parsar uses the same public contract as any other client, with no privileged
   endpoint or direct execution-table access. An OpenAI endpoint is a possible
   client target only where the requested capabilities and credentials support it.
-- Maintain tasks, priorities and evidence in the Feishu board. Register issues
-  discovered during a task without switching work or automatically selecting them
-  next. Only a direct acceptance blocker justifies a minimal in-scope fix. After
-  each bounded task passes checks/review and merges, mark its child entry done.
-  Treat each selected concise Core TODO item as a delivery milestone. The long-term
-  Goal retains the objective, constraints and standards; detailed-board entries are
-  smaller tasks within that milestone. Batch related small tasks when they share a
-  functional outcome and safety boundary, then validate and independently review
-  the batch once stable. Do not manufacture one PR per internal wiring step.
-  Finish the selected milestone before choosing another. The main agent selects
-  tasks; subagents handle technical design, scoped collaboration and review, not
-  prioritization. Stop after the complete milestone when the user sets that boundary;
-  do not automatically claim the next one or mark the long-term objective complete. Product integration, UI and business Team work remain
-  outside Core delivery. Prioritize a sound architecture skeleton
-  and correct principal workflows with real API validation. Record and defer
-  low-frequency corner cases when risk and ROI permit; do not let minor details
-  delay the main work. Required checks and material correctness guarantees apply.
 
 - Parsar owns users, workspaces, business authorization, Agent/Team definitions,
   capabilities, product conversations, IM/sharing, approval decisions and billing.
@@ -458,21 +440,6 @@ daemon sockets and native harness Sessions. Create an Environment association in
 the same transaction as its Session and creation identity when this resource is
 implemented. Keep mutable connection/registration state out of immutable
 configuration; replacement ownership must fence stale observations.
-
-The current MVP covers Codex, Claude Code and MiniMax Code through the shared
-single-Agent path: Session
-creation, environment preparation, native execution, files/artifacts, cancellation,
-reconnection/recovery queries, and standalone deployment acceptance. Select each
-bounded child from the complete board within the selected concise-TODO task;
-nonblocking local improvements stay queued.
-Authentication, tenant/credential isolation, state consistency and data loss remain
-material acceptance requirements. Optional feature equality is not required. After
-the three profiles pass merged-main validation, publish the results, limitations
-and backlog. The user has since renewed continuous Core delivery: select and
-finish large tasks from the concise TODO, retaining bounded child acceptance.
-Additional harness implementations remain queued. The separately authorized
-Subagent batch targets the six read operations across these three harnesses and
-does not change the complete pinned protocol target.
 
 The current hosted architecture is V1: Core runs independently; each Environment
 sandbox contains its daemon, selected native harness, local tools and workspace.
@@ -1502,7 +1469,7 @@ the Session row/cursor in the same transaction, without borrowing subsequent
 activity or Turn state. Initial state is `pending`; authenticated connection observations follow
 the lifecycle rules below.
 Public creation supports `self_hosted` on the three enabled native profiles when
-the daemon gateway is configured. The workspace is a clean absolute Linux path matching the bound Runtime root;
+the daemon gateway is configured. The workspace is a clean absolute host path matching the bound Runtime root;
 `/workspace` denotes that root through the existing logical mapping. Optional
 capability directories are clean absolute host-local selections. Supported non-deferred functions keep their engine-specific
 validation and native callback bridge. Enrollment binds the dedicated Runtime;
@@ -1991,13 +1958,9 @@ and output umask remain unchanged, including when invoked under umask 077.
 The installer packages Core and the Web console together,
 with independent `--core-only` and `--web-only` modes. `site/` is the public static
 landing, separate from `apps/web`; it must not create an onboarding prerequisite,
-call a model, or claim complete protocol compatibility. The root README starts with
-the three newcomer steps (install, sign in and issue a key, add a node), each linking
-to `docs/getting-started/`: installation, nodes, self-hosted executors, operations and
-the application developer quickstart. `docs/configuration.md` is the single settings
-reference; building distributions and running Core alone live in `docs/maintainers.md`.
-Use Web's page and action names in docs, and `OPENAI_BASE_URL` and `OPENAI_API_KEY` for
-application examples.
+call a model, or claim complete protocol compatibility. Use Web's page and action names in user docs, and `OPENAI_BASE_URL` and
+`OPENAI_API_KEY` for application examples. The [documentation ownership](#documentation-ownership)
+map defines the authored sources.
 
 A distribution carries a fixed list of docs (`BUNDLED_DOCS` in
 `scripts/core-distribution-manifest.py`). The build keeps relative links between
@@ -2378,9 +2341,7 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
 
 - `internal/agentdaemon/gateway` is the shared daemon connection implementation.
   Its persistence interfaces use `internal/agentdaemon/device`, never product Store
-  types. Product adapters live in `server/internal/agentdaemon`. Keep protocol
-  frames in `internal/agentdaemon/proto` until the contracts directory migration.
-  Store aliases preserve existing callers during this transition.
+  types. Shared protocol frames and validators live in `internal/agentdaemon/proto`.
 - Session deletion uses a durable `sessions.deleted_at` marker. Public deletion
   accepts only a durably idle or failed Session without required actions: no
   queued, in-progress or waiting root Turn and no pending input reservation, the
@@ -2419,8 +2380,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   the column while deleted records exist, preventing public resurrection.
 - `services/agents-api` owns its SQL schema, sqlc queries and embedded goose
   migrations. `OAC_DATABASE_URL` is required; never fall back to the product
-  database URL. Its first persistence slice stores tenant-scoped Sessions with a
-  stable engine and idempotent creation. It does not switch production execution.
+  database URL. It stores tenant-scoped Sessions with a stable engine and durable
+  creation retry identity.
 - Reusable Agents have their own tenant-scoped `agents` records, independent of
   Session snapshots, engine bindings and product Agent definitions. The Store
   persists caller-validated non-secret configuration and metadata without applying
@@ -2771,7 +2732,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   immutable configuration snapshot. Inline and historical creation identities include
   the resolved configuration; new saved references use the separate caller intent.
   Session metadata updates replace only metadata under the authenticated tenant:
-  omission is a read, null/empty clears, and a nonempty object replaces all pairs.
+  a supplied metadata field is required, null/empty clears, and a nonempty object
+  replaces all pairs.
   Keep execution state, timestamps and the original creation request hash unchanged;
   creation retries return the current resource without restoring its old metadata.
   Public schema validation belongs to the API; the Store validates JSON structure.
@@ -2783,7 +2745,7 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   Preserve the existing tenant-owned cursor and creation-time/ID ordering rules.
   Hosted empty-filter, mismatched-filter cursor and exact error semantics remain
   unverified. Other resource lists do not accept this parameter.
-- `make sqlc-generate` and the drift gate cover both services. Run
+- `make sqlc-generate` and the drift gate cover this service. Run
   `make check-agents-api` with `OAC_TEST_DATABASE_URL` pointing to a
   dedicated `oac_*_tests` database for Session integration tests.
   CI provides a separate PostgreSQL service. Migration immutability and ordering
@@ -3218,7 +3180,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   A creation retry returns the existing Session without re-admitting initial work,
   including after terminal or later Turns. Omitted/null input is permitted only
   for non-streaming hosted creation and self-hosted creation.
-  Creation streaming uses the shared live path above; non-text messages remain a gap.
+  Creation streaming uses the shared live path above. Image support requires the
+  qualification in [the message-input contract](contracts/agents-api/message-input.md).
 - Enabling daemon transport with `OAC_PUBLIC_URL` also starts a bounded execution worker. Select
   only connected, capable devices owned by the authenticated tenant; bind once and
   preserve native continuity. Metadata cannot select a device. Offline work stays
@@ -3470,406 +3433,16 @@ qualification limits are recorded in [the coverage note](contracts/agents-api/st
 
 ### Claude SDK adapter foundation
 
-`packages/claude-sdk-adapter` privately owns the pinned official TypeScript SDK
-and native message translation. The Go `claudesdk.NewExecutorFactory` uses the shared
-owned process runner and emits the existing daemon delta/error/Done frames.
-The SDK owns the model loop. Its narrow stdio protocol carries Executor preparation and identified Turn starts,
-text deltas, function calls/results/receipts, active input/receipts, usage snapshots
-and terminal result/error plus settlement; native translation stays inside the adapter.
-With `observe_messages`, it also emits the existing neutral `output_message`
-start/completion snapshots and tags deltas with the native Messages API message
-ID, not the SDK event UUID. Text blocks in one native message share that identity.
-The SDK's per-block assistant snapshots replace draft block text; only native
-`message_stop` completes the message, without replaying its text as another delta.
-Thinking/tool-only messages produce no text Items; interrupted messages retain
-their streamed partial text. No phase is inferred from the final result.
-Turn-owned native work and output draining precede reuse. Executor close releases
-the SDK Query and native process. The private `turn_settled` frame requires
-`confirmed` independently of `reusable`: confirmed native Turn/cancellation
-settlement, confirmed resource cleanup, and reuse eligibility are separate facts.
-Unknown or nonempty interrupt receipts and unsettled input/function/tool work
-remain unconfirmed even after successful teardown. Go rejects cancellation and
-AwaitSettlement when native confirmation is missing or false, or its own receipt
-ledger remains unsettled. A confirmed Turn may be non-reusable after cleanup;
-that state alone does not turn a verified cancellation into an error.
-Confirmed native cancellation may settle unanswered function calls after result
-admission closes and callbacks drain. A submitted function result still requires
-its native application receipt, including when the MCP request aborts.
-
-`claudesdk.Config.Workspace` is an operator binding for the selected workspace and
-native state. It enables native Bash/Read/Edit and admitted host functions in the
-existing SDK loop. Native tools run with the launching user's permissions on all
-platforms; there is no inner sandbox, protected-root deny policy or managed shell
-wrapper. Managed isolation belongs to the outer Environment, which must exclude
-other tenants' and broader application credentials. An ordinary native install
-provides no such boundary. Directory selection is not tenant authorization.
-
-`Config.Env` selects readiness and native process variables. Explicit tool env is
-applied to tool execution, but this is not a guarantee that same-user tools cannot
-read credentials or history from local files. Workspace hooks retain their event,
-identity and lifecycle responsibilities, not security enforcement. Process groups
-and Windows Jobs provide cancellation and descendant cleanup, not isolation.
-Supported MCP and subagent combinations require their own qualification. The
-existing `none` profile keeps its tool inventory. Packaged `workspace_tools`
-establishes bridge support, not outer host isolation or public API admission.
-The dedicated Runtime composes public preparation, placement quotas, command Items
-and Files ownership. Real-provider acceptance verifies effects, cancellation and
-same-history continuation for the actual platform and outer deployment.
-
-The private bridge accepts `executor_prepare` without model input. It freezes
-validated configuration and resume identity, checks required history, and retains
-one native process and SDK Query across Turns. Preparation requires initialization
-and acknowledgement of required hooks while the input iterator remains empty.
-An `executor_ready` receipt permits later `turn_start` messages containing only
-Turn identity and ordered input; configuration replacement and concurrent starts
-are rejected. Every Turn event carries its originating `turn_id`. Native Session
-identity and actual tool inventory are checked before `input_ready`.
-
-Each Turn ends with a result/error and `turn_settled`, independently of process
-exit. The outer input iterator remains open for later Turns. `turn_cancel` invokes
-the native interrupt control for that exact Turn. Unconfirmed input, native child
-work or queue state invalidates the Executor and requires close before replacement.
-EOF, owner signals and invalid control input close owned resources. Preparation
-may write native metadata and perform startup traffic; readiness does not prove
-provider authentication, complete sandbox health or placement authorization.
-
-`claudesdk.NewExecutorFactory` binds this bridge to `agent.Executor`. Direct-call
-and read-only preparation wrappers delegate to the same implementation. Runtime
-execution uses the Executor registry for both none and workspace configurations.
-Its owner context spans all Turns; a Turn's caller cannot replace fixed resources.
-A failed preparation returns its Executor when cleanup remains unconfirmed.
-Installed runtime checks are cached by package/file identity, while capability
-and request validation still run for each Executor configuration.
-
-The optional private `agent.WorkspaceReader` on this Executor and its delegated wrappers
-requires the packaged `workspace_read` feature. It sends bounded relative
-paths to that same SDK Query's native `readFile` control. Only the adapter combines
-the path with the frozen workspace root; callers cannot replace the placement.
-The pinned native read handler awaits file-handle close before its successful
-base64 response. The adapter validates bytes and truncation, bounds each result
-to 1 MiB and each request to 8 KiB, and admits one read at a time. Its continuous
-bridge output consumer retains read receipts during preparation and across Turns.
-Caller cancellation detaches observation without cancelling the Run or discarding
-an admitted waiter; its original deadline still applies. Owner closure stops
-admission. Native null, malformed receipts, timeout and interrupted delivery remain
-uncertain and stop the owner; local reap is not a successful read settlement.
-The SDK's nullable result catches all native/control errors, so it cannot distinguish
-missing files from denial or transport failure. This does not provide a public
-Files endpoint, snapshot consistency, placement registration or idle owner policy.
-The qualified live workspace fixture also checks binary, empty and bounded reads
-before input and during real execution, plus effects before cancellation and reads
-on fresh-process history continuation.
-
-The optional private `agent.WorkspaceDirectoryLister` uses the portable
-`workspace_directory` bridge feature. Node reads directory metadata under the
-selected workspace; there is no Linux `/proc/self/fd` dependency. Public daemon
-Files operations share the Go Binding implementation on all platforms. Their
-relative path and result bounds define the Files API, not Harness permissions.
-
-Directory requests are bounded to 8 KiB and 1,000 immediate entries, with explicit
-truncation, literal names, kinds, and sizes only for regular files. They do not promise
-ordering, snapshots, recursion, or public pagination. Missing and permission errors
-are returned only from distinguishable filesystem outcomes; unknown results stop the
-owner. Each operation closes its directory before a successful receipt.
-Caller cancellation, Turn transitions and owner shutdown retain the existing workspace
-read settlement rules. This adapter gap fill alone does not enable public Claude Files; the dedicated
-Runtime integration supplies public placement and ownership.
-
-With `ObserveToolObservations`, private workspace execution requires the packaged
-`workspace_command_observations` feature and emits the existing neutral command
-snapshots. Match root, current-query native Bash call/result identities after input;
-ignore historical replay, synthetic and child work. Preserve exact command text and
-the native per-call textual result, including native rendering or truncation. This
-is final native output, not incremental stdout/stderr or reconstructed interleaving.
-Native error results are failed; unambiguous structured interruption is incomplete.
-Missing results close as incomplete after the observation drain; query cancellation
-does not overwrite an already observed native failure. Do not infer an
-exit code from rendered text or supply cwd/duration without qualified native fields.
-Preparation alone emits no command. Cold continuation must not reissue historical
-observations. This private translation does not enable public workspace admission,
-Read/Edit Items or Files ownership.
-
-The private adapter also accepts typed anonymous HTTP and static-bearer HTTPS MCP
-declarations on the trusted `environment:none` harness host. The packaged readiness
-report must include `mcp_http_tools`; discovery advertises that feature only when
-present, and execution
-rechecks the installed bundle before dispatching an MCP request. An unchanged SDK
-version alone cannot qualify an older bridge. Authenticated private requests also
-require the packaged `mcp_http_bearer_auth` feature at discovery and dispatch.
-The daemon generates a separate environment reference for each server and launch;
-only those references enter the bridge request and native SDK configuration.
-The native HTTP client expands them from its owned process environment. Literal
-bearers must never enter SDK MCP headers because that configuration enters argv.
-Readiness probes receive no per-request bearer environment. Token validation is
-shared with the Codex adapter; credential storage remains an opaque-string contract.
-Public Claude MCP admission reuses the shared resolver, immutable Session snapshots
-and neutral Item/event projection.
-The API checks the supported profile before persistence, during device selection
-and again before claiming execution; a missing runtime capability leaves work queued.
-
-MCP queries use the SDK's main-thread Agent definition to restrict model-visible
-tools, in addition to empty built-ins, strict MCP configuration, empty setting
-sources and default-deny permissions. Permission allowlists alone do not restrict
-the native model inventory. Null selects all tools from a declared server; an empty
-list selects none. Host functions compose with those selections. Native server
-status supplies original tool identities; map their normalized native aliases while
-preserving the original names in observations. Native status deduplicates aliases,
-so it does not prove a complete original server inventory. A native PreToolUse hook
-waits for inventory verification before admitting root calls and denies unverified,
-mismatched or cancelled calls. The native Agent restriction controls model-visible
-tools; inventory verification is not a barrier before the model request.
-Anonymous HTTP declarations explicitly set an empty Authorization header to disable
-native OAuth and automatic credential injection. Preserve that header; do not erase
-native history or credentials to enforce this boundary. Servers that reject a blank
-Authorization header, normalized name collisions and inventory changes during a
-query require separate validation; this profile covers static inventories.
-Private SDK status/control objects can contain expanded authentication headers.
-Read only connection and tool identity fields; never retain, log or publish raw
-status/configuration or control responses. Diagnostic projections must whitelist
-safe fields. This does not permit filtering actual model/tool output to hide a leak.
-The bounded adapter profile currently requires connected servers, reserves the
-`functions` label, accepts alphanumeric/underscore/hyphen server labels and
-alphanumeric/underscore/hyphen/dot selected tool names, and excludes remote
-environments. Required startup is separately qualified by `mcp_http_required`.
-All HTTP MCP queries use native SDK startup and an empty input iterator to
-confirm initialization hooks. Required declarations additionally check connected
-server status before the initial prompt is released exactly once. Pending, failed,
-missing or ambiguous required status rejects before input; native startup timeouts are retained without
-an adapter retry loop. Normal system/init still verifies Session identity and the
-complete inventory before input readiness/tool authority. Optional servers retain
-their existing inventory checks without a new pre-input connection requirement.
-A Runtime must advertise the concrete required-initialization capability; there
-is no fallback to an older execution path.
-
-Public Claude static-bearer HTTPS MCP reuses the shared
-Vault attachment, frozen selection and scoped decryption path. Selection and final
-preclaim require the existing bearer capability; shared authentication dispatch
-uses capability/placement checks rather than a Codex-name restriction. Missing keys
-or failed lookup/decryption never fall back to anonymous execution; an attached
-Vault with no matching credential may remain anonymous. These are execution limits,
-not saved-Agent schema restrictions or changes to the official protocol.
-
-Root assistant tool calls and live root user results produce the existing neutral
-MCP observations. Correlate actual Session/call identities; exclude replay,
-synthetic and subagent work and keep host function receipts separate. Preserve
-the exact native `tool_use_result` when one result is unambiguous, otherwise the
-per-call result content. Native errors remain observed native errors. The SDK can
-replace annotated MCP content with rendered structuredContent and flatten MCP
-errors; these observations do not claim original MCP envelope fidelity or hosted
-output parity. Do not reconstruct lost fields or infer output from model prose.
-Unfinished observed calls become incomplete on shutdown, without claiming that
-remote tool effects were cancelled. Rich content, native truncation and asynchronous
-MCP task results remain unverified.
-
-Daemon `connect` optionally registers this factory as `claude_sdk` when the
-operator sets `OAC_RUNTIME_CLAUDE_SDK_ENTRYPOINT` to the absolute packaged `dist/main.js`.
-`OAC_RUNTIME_CLAUDE_SDK_NODE` selects Node (default: `node` on PATH). Discovery resolves
-Node once and checks that exact configuration before pairing; the SDK's bounded
-runtime check is independent of legacy CLI version probes. A ready SDK alone is
-sufficient to start the daemon. No configuration means no SDK probe or descriptor;
-failed readiness reports an unavailable descriptor with a rejecting factory.
-Runtime checks establish local readiness, not provider authentication.
-
-SDK state lives under `paths.ProfileDir(profile)/runtime/claude-sdk`, independently
-of the replaceable runtime bundle. Both the entrypoint and managed state root must
-be absolute. Background re-execution inherits operator configuration; it does not
-persist provider credentials in pairing profiles. Product `claude_code` remains
-unchanged. Product registration explicitly opts existing engines into
-`WorkspaceAuthoring`; the authoring registry wraps only that opt-in. SDK registration
-bypasses product capability-download, skill-upload and workspace-authoring wrappers.
-It does not accept caller-supplied environment variables or business write authority.
-
-The SDK descriptor advertises the validated daemon subset, including durable
-Turns/input receipts, text observations, function tools, raw usage and restrictive
-execution controls. It does not advertise permissions, product authoring, legacy
-raw tool Items, general web-search control or text-verbosity levels. Router admission
-for `environment:none` uses the available engine capability, not an engine name.
-The independent API selects new Session engines through `OAC_DEFAULT_HARNESS`
-(`codex` by default, `claude_sdk` or `mcode`); existing Sessions keep their stored engine.
-This remains the deployment default; the optional Core harness extension selects
-an enabled engine for one saved or inline Agent configuration. API admission,
-device selection and the final preclaim check share the execution service's narrow
-engine policy without importing native adapters. Selected engines require the common
-durable execution capabilities. Codex retains its general search/verbosity checks;
-Claude uses its restrictive profile without claiming those general capabilities.
-Idle and initial-input Session creation qualify the resolved configuration before
-persistence; saved Agent resources remain independent of engine restrictions.
-Claude additionally requires medium verbosity and explicit object-root function
-schemas. Function-result batches normalize through the existing shared parser. Claude accepts
-text results and, on `none` and Core-managed Docker `openai_hosted`, successful
-ordered inline PNG/JPEG results. Unqualified placements, failed image results and
-invalid/remote references reject before any batch write, preserving pending calls
-and retry identity. Public qualification receives the full neutral result so
-success-dependent limitations remain in the profile. Image-bearing delivery alone
-requires Runtime function-result image support; text results and function
-declarations do not acquire that requirement. These are implementation limits, not changes to the upstream contract.
-Do not bypass them by dropping fields, changing model identity or fabricating usage.
-Operators may configure the daemon provider environment or the deployment default
-model provider for `claude_sdk` (HTTPS `base_url` and a write-only key), which Core
-freezes in the Session's encrypted snapshot and delivers as the adapter-owned
-`claude_provider`; it never enters public Session configuration. The adapter exclusively selects the
-provider environment and removes credentials from native tool environments. Product `claude_code` and product execution are unchanged.
-The `none` public profile accepts only
-text, explicit model/system instructions, managed state, exact native resume and
-declared functions with ordered text or successful inline PNG/JPEG results, and the HTTP MCP subset
-described above. It rejects unsupported request
-options and disables built-in tools and undeclared MCP discovery.
-`DisableExecutionEnvironment` and `DisableSubagents` are accepted assertions about
-the single-Agent restrictive profile. Omission does not enable built-in tools.
-Explicit Subagent observation enables only its qualified native delegation tools,
-with admission before start and verified child identity before workspace authority.
-Public function/MCP combinations remain unqualified with Subagents. Single-Agent
-new and resumed queries use the SDK's empty built-in tool set, explicit function MCP
-configuration and allowlist, strict MCP configuration and empty user/project/local
-setting sources. Without HTTP MCP declarations, native initialization and real
-provider request inventories must contain only the declared host functions. Managed operator policy may further
-restrict execution; it must not widen the profile. This limits model tool access,
-not native state files or filesystem access by an explicitly supplied host function;
-it is not sandbox/file isolation. The private factory accepts typed execution
-controls only for disabled search and medium text verbosity. Search remains excluded
-by the native tool inventory; medium retains the SDK's default text generation,
-without adding instructions or changing caller input. The pinned SDK has no native
-verbosity-level option: low/high and enabled search remain explicit implementation
-gaps. Missing/invalid fields in a supplied control block fail before native setup;
-omitting the block keeps the same restrictive profile. Public engine admission is
-qualified separately by the API policy described above.
-Use the SDK's history lookup before explicit resume; never fall back to a new
-Session. Native files remain device-affine under a caller-selected managed
-runtime directory. The launch configuration supplies trusted provider environment;
-request options cannot supply environment variables or business write authority.
-Omitted, null and empty `system_prompt` map to empty SDK instructions only at this
-adapter boundary; null model values and unsupported options remain rejected.
-
-The internal SDK function-server helper uses the maintained MCP server's public
-request handlers and standard Tool/CallToolResult types. It snapshots definitions
-and forwards JSON Schema without a JSON Schema-to-Zod conversion; supplied tools
-are always loaded. Native call identity comes from the pinned harness's
-`claudecode/toolUseId` MCP metadata, independently of request IDs, names or arrival
-order. Missing identities and undeclared tools fail before invoking the host.
-Return content/error fields unchanged over MCP and forward its per-request abort
-signal. The private Go factory connects declared functions through this helper and
-reuses the daemon function-call/result interface and opt-in neutral observations.
-The native function-server registry must contain exactly those functions. SDK allowlisting admits
-only these host callbacks; the host still owns result decisions and any business
-permission checks. It grants no runtime-token business authority.
-
-Function results remain pending after stdin/MCP delivery. A matching live, root
-native user tool_result confirms application only when its Session/call identity,
-error flag and ordered content match the submission. Text matches exactly; each
-submitted image position must remain a valid native base64 image. Native resizing
-or re-encoding may change image bytes. This acknowledges incorporation into native
-history, not byte/pixel fidelity or completed provider consumption. Public Items
-retain the original caller content; real image-dependent model responses separately
-qualify usability. Ignore replayed, synthetic and
-subagent messages. Native error text joins the submitted text parts with newlines;
-neutral observations retain their original order and separate failure status.
-Missing/mismatched receipts fail the execution; do not replay unknown delivery.
-Result submission waits at most ten seconds for a receipt and cancels uncertain
-execution on timeout. Invalid or unsupported image results fail before consuming
-a pending call. Function state belongs to one live Run and ends with it; the
-existing router owns receipt retry/conflict handling. This does not establish
-crash recovery or exactly-once effects. Public schemas outside MCP's object-root
-contract, failed image results and remote image references remain admission/execution gaps.
-
-Each SDK result supplies one native usage snapshot, including reported failures.
-`Usage.Raw.claude_sdk_result` holds the latest; queries with multiple native results
-also retain all snapshots in order under `claude_sdk_results`. Main-loop `usage`
-is per native turn, while query-pipeline `modelUsage` and estimated `total_cost_usd`
-are cumulative within the query. Retain subtype/error provenance and earlier
-snapshots even when a later failure reports zero counters. Reuse the latest full
-snapshot set in Usage and Done; never sum cumulative measurements. Each Executor owns one SDK query, including cold resume. Raw snapshots explicitly
-identify per-native-turn usage versus query-cumulative model usage and cost. A new
-Turn has a fresh snapshot list, but query totals may include earlier Turns; never
-represent those totals as consumption by the current Turn. Missing native results do not imply zero consumption. SDK estimates stay
-in raw evidence, outside the billed cost field; do not select an arbitrary model
-or invent missing public token breakdowns. The API does not parse native counters.
-Precise public usage projection, unreported costs and crash/partial accounting
-remain gaps; the native snapshot alone is not complete protocol Usage compatibility.
-
-Active text uses the SDK's `AsyncIterable<SDKUserMessage>` input, with a fresh
-native UUID mapped to each daemon input ID. A native query may fold text into its
-current native turn or queue another; one daemon Run can therefore contain several
-native turns. Never promise Codex's same-native-turn semantics. Writes, queued
-notifications and user-message echoes do not confirm consumption. Only matching
-root assistant/partial/result `user_message_uuids` (or the singular fallback)
-confirm applied input. Typed mid-turn folds may appear only on the native result.
-Preserve that receipt even when the result reports failure. Check pending functions
-after the query drains: the SDK may dispatch later-turn callbacks before the
-earlier result handler finishes.
-Keep Turn input admission open until every submitted input has a consuming result,
-even when an earlier result reports an empty native queue. Close admission before
-releasing final receipt waiters. The outer SDK iterator remains open across Turns.
-Cancellation resolves unconfirmed pending receipts as unknown and interrupts the
-exact native Turn. Successful Cancel requires confirmed Turn settlement; process
-exit alone cannot establish a successful cancellation. Reuse also requires an
-empty confirmed native queue and settled child work. Otherwise close the Executor.
-The settled CancellationOutcome retains verified native identity, partial text
-and observed Usage; a requested resume identity alone is not evidence. Caller
-wait expiry reports failure/unknown while cleanup retains ownership. Output
-backpressure cannot turn missing native facts into confirmed settlement. Closed
-Turn output precedes successful AwaitSettlement; the settled outcome remains
-readable when connection loss prevents publication.
-A receipt timeout after a full write preserves the process and pending identity
-without redelivery; a blocked write is cancelled and released.
-The private adapter permits one input awaiting consumption and at most 63 extra
-inputs per Run, preserving the native 64-UUID receipt bound. Durable receipt opt-in
-separates bounded writes from native consumption waits; calls without it retain
-the router's ten-second deadline. Larger input capacity and interrupted-input
-recovery remain separate work. Daemon registration alone does not establish public acceptance.
-
-Public text/function execution, active input, pending-call cancellation and cold
-continuation are accepted for the registered restrictive profile. Environment
-provisioning, broader tools/verbosity, complete public Usage, failed image results and
-process-loss recovery remain gaps. Managed installation and release publication
-remain separate tasks. `make check-cli` also builds
-and tests the SDK package, including native output draining; CI selects that check
-for changes to the package. Live adapter
-acceptance is opt-in and must use a real provider with private credentials.
+The [Claude SDK adapter guide](packages/claude-sdk-adapter/README.md#bridge-and-native-lifecycle)
+owns the private bridge, native configuration, observation translation and
+SDK-specific settlement rules. Use the common Executor/Turn interfaces and the
+same Runtime path as every other harness.
 
 ### Private Claude SDK runtime artifact
 
-`make build-claude-sdk-runtime` exports the compiled bridge and pinned production
-SDK/MCP dependencies, including the native package for the build host, into a
-platform/architecture/libc-specific `.tar.gz` and SHA256 file under
-`${OAC_DEV_HOME:-$HOME/.oac}/build/claude-sdk-runtime`. `CLAUDE_SDK_BUILD_DIR`
-may select another absolute output directory. The production dependency closure
-requires Node20 or newer; Node22 is the tested version. Node is operator-supplied
-and is not bundled; the bundle is independent of product sources, services and databases.
-It does not add Node or SDK assets to the Agents API binaries/image.
-
-The build validates source manifests with the repository-pinned pnpm frozen
-install and compiles into fresh managed staging, never exporting incremental
-checkout output. It then uses modern `pnpm deploy` with command-scoped workspace injection
-and its dedicated frozen lock. The adapter has no workspace dependencies; keep
-that boundary explicit. Do not enable injection globally or replace this with a
-custom dependency copier. Export only compiled `dist` and production dependencies;
-retain their package metadata, lockfile and licenses. Check dependency links stay
-inside the export, pinned SDK/MCP/native versions, native `--version`, and bridge
-startup before publishing the archive. Startup with stdin EOF is an import check,
-not model execution acceptance. `make check-cli` includes this artifact check.
-
-Extract the archive into a fresh managed runtime directory on a matching host
-and use its absolute `dist/main.js` as the private factory entrypoint. Validate
-relocation and real provider cancellation/continuation before accepting an
-artifact. Linux x64/glibc with Node22 is the currently exercised platform;
-other hosts require their own native acceptance. Do not reuse a bundle across
-platforms or libc variants. Standalone Claude archives require operator-supplied Node. The native installer
-bundles Node and owns user-managed activation; release publication remains separate. Operator-configured daemon discovery/registration is supported as
-specified above.
-
-The exported `dist/runtime_check.js` companion is the local readiness contract.
-It checks Node20+, installed SDK/MCP/native versions against the package manifest,
-contained dependency resolution, native startup, and the exact `dist/main.js` bridge
-with stdin EOF. It emits one versioned JSON report without calling a model or
-creating Session state. The artifact check reuses this companion and separately
-checks all exported links, the lockfile and source pins. `claudesdk.CheckRuntime`
-uses the same operator-supplied Node, entrypoint and environment as execution,
-with shared process-group ownership, bounded output and a 15-second deadline
-plus bounded cleanup. Both native and bridge probes have five-second limits.
-Return unavailable on failed or malformed probes; never forward native diagnostics
-or treat local readiness as provider authentication, public capability acceptance
-or filesystem isolation. The native installer reuses this readiness check after copying its release components.
-
+The [package artifact contract](packages/claude-sdk-adapter/README.md#runtime-artifact)
+owns build isolation, dependency export, readiness and relocation checks.
+Keep the adapter artifact independent of the Core binary and product sources.
 
 ### Harness selection and Agent defaults
 
@@ -3887,21 +3460,6 @@ Hosted provider selection belongs to deployment configuration and is independent
 of the engine. Session creation fixes a node through automatic placement; retained allocations keep that node and provider identity. Runtime images must satisfy their existing qualification rules.
 Transient model options are partitioned by engine and must not expose another
 engine's credentials. Do not infer an engine from a model name or template.
-
-Parsar Agents save default model, harness extension and a typed, non-confidential
-`config.environment` selector. The Agent form requires an explicit harness before
-saving; existing records without one remain unset in read-only views. The Agent
-list shows the configured environment type and harness in both table and compact
-layouts. The environment selector is product configuration;
-it becomes the official Session `environment`, never part of the protocol Agent.
-Only a template reference or supported environment selector is stored, not live
-container identity or initialization secrets. An explicitly chosen conversation
-environment retains its existing override behavior. Otherwise the first message
-uses the Agent defaults. Creating an Agent or opening an empty chat performs no
-Core Session or container creation. One conversation/Agent binding freezes the
-request on first execution; later messages and observer retries reuse it. Separate
-conversations get independent Sessions and environments. Edits affect future
-Sessions only. Keep the existing product navigation and direct empty-chat composer.
 
 ### Shared Runtime capability preparation
 

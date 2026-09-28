@@ -35,9 +35,6 @@ func NewPendingAskTableForTest() *PendingAskTable {
 	return (*PendingAskTable)(newPendingAskTable())
 }
 
-func (p *PendingAskTable) Record(askID, toolUseID string, questions []proto.PromptForUserChoiceQuestion) {
-	(*pendingAskTable)(p).Record(askID, toolUseID, questions)
-}
 func (p *PendingAskTable) RecordControl(askID, ccRequestID string, questions []proto.PromptForUserChoiceQuestion) {
 	(*pendingAskTable)(p).RecordControl(askID, ccRequestID, questions)
 }
@@ -45,10 +42,16 @@ func (p *PendingAskTable) Take(askID string) (PendingAskEntry, bool) {
 	return (*pendingAskTable)(p).Take(askID)
 }
 func (p *PendingAskTable) Peek(askID string) (PendingAskEntry, bool) {
-	return (*pendingAskTable)(p).Peek(askID)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	entry, ok := p.byAskID[askID]
+	return entry, ok
 }
-func (p *PendingAskTable) Delete(askID string) { (*pendingAskTable)(p).Delete(askID) }
-func (p *PendingAskTable) Len() int            { return (*pendingAskTable)(p).Len() }
+func (p *PendingAskTable) Len() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.byAskID)
+}
 
 // NewTranslatorForTest constructs a translator with a deterministic
 // perm-id minter. askPending and askMint default to nil — covers the
@@ -77,13 +80,6 @@ func (t *Translator) Translate(line []byte) (Translation, error) {
 type (
 	Envelope = proto.Envelope
 )
-
-// BuildAskUserToolResultForTest exposes the daemon-side tool_result
-// builder so ask_test.go can lock in the JSON shape claude's stdin
-// expects.
-func BuildAskUserToolResultForTest(entry PendingAskEntry, decision proto.PromptForUserChoiceDecisionPayload) ([]byte, error) {
-	return buildAskUserToolResult(entry, decision)
-}
 
 // BuildAskUserControlResponseForTest exposes the control_request-path
 // writeback builder so ask_test.go can pin the control_response shape

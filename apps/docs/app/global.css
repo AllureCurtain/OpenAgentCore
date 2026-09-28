@@ -50,10 +50,10 @@ body {
 }
 
 /* Give every table column a readable floor. The minimum content width of a
-   column that holds only Chinese text is about one character, while a column
+   column with short words is about one character, while a column
    holding a parameter such as `OAC_DATABASE_URL` cannot shrink below
    that parameter. The automatic layout satisfies the wider columns first and
-   can crush the Chinese one to about four characters per line. Five columns of
+   can crush a short-label column to a few characters per line. Five columns of
    7rem still fit the narrowest content area the layout produces. */
 .prose table :is(th, td) {
   min-width: 7rem;

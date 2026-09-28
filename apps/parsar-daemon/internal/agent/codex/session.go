@@ -354,10 +354,6 @@ func (s *Session) peekLastErrText() string {
 // envelope emit helpers
 // ---------------------------------------------------------------------------
 
-func (s *Session) emitDone(content string, usage *TurnUsage) {
-	s.emitDoneAt(content, usage, nil)
-}
-
 func (s *Session) emitDoneAt(content string, usage *TurnUsage, completedAt *int64) {
 	if !s.terminal.CompareAndSwap(false, true) {
 		return

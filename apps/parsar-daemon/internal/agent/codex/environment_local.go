@@ -15,6 +15,3 @@ func SupportsLocalEnvironment(version string) bool {
 	binding, err := localworkspace.Load()
 	return err == nil && binding != nil
 }
-
-// Network isolation belongs to the outer environment, never this adapter.
-func SupportsLocalNetworkPolicy(version string) bool { return false }
