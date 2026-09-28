@@ -301,7 +301,7 @@ func TestNoneSessionRetryAfterDeploymentDefaultChanges(t *testing.T) {
 }
 
 func TestDeploymentProviderResolutionPairsRevisionDuringReplacement(t *testing.T) {
-	st, pool := store.NewModelTestStore(t)
+	st, pool := store.NewManagedTestStore(t)
 	tenant, token := uuid.NewString(), uuid.NewString()
 	auth, err := newTestAuthenticator([]testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "tuple-test", TokenSHA256: device.HashCredential(token), TenantID: tenant}})
 	if err != nil {
@@ -354,5 +354,24 @@ func TestDeploymentProviderResolutionPairsRevisionDuringReplacement(t *testing.T
 		if strings.Contains(w.Body.String(), private) {
 			t.Fatal("private snapshot entered public response")
 		}
+	}
+}
+
+// The official-client job starts a fresh server with an independent encryption
+// key after the Go suite. Deployment-wide fixtures must leave its database intact.
+func TestDeploymentProviderResolutionFixtureIsolation(t *testing.T) {
+	_, shared := store.NewTestStore(t)
+	revisions := func() string {
+		t.Helper()
+		var value string
+		if err := shared.QueryRow(t.Context(), "SELECT COALESCE(jsonb_object_agg(harness, revision), '{}'::jsonb)::text FROM deployment_model_providers").Scan(&value); err != nil {
+			t.Fatal(err)
+		}
+		return value
+	}
+	before := revisions()
+	t.Run("resolution", TestDeploymentProviderResolutionPairsRevisionDuringReplacement)
+	if revisions() != before {
+		t.Fatal("deployment provider fixture changed the shared test database")
 	}
 }
