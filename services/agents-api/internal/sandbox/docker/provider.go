@@ -35,7 +35,7 @@ type Provider struct {
 	config Config
 }
 
-var _ sandbox.Provider = (*Provider)(nil)
+var _ sandbox.SandboxProvider = (*Provider)(nil)
 
 func New(c *client.Client, config Config) (*Provider, error) {
 	if c == nil || !validID(config.InstallationID) || (!strings.HasPrefix(config.Image, "sha256:") && !strings.Contains(config.Image, "@sha256:")) || config.Seccomp == "" || config.Network == "" || config.Network == "host" || strings.HasPrefix(config.Network, "container:") {

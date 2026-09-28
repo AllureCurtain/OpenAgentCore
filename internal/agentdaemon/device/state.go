@@ -72,7 +72,6 @@ type KindCapabilities struct {
 	ToolObservations               bool `json:"tool_observations,omitempty"`
 	EnvironmentNone                bool `json:"environment_none,omitempty"`
 	LocalEnvironment               bool `json:"local_environment,omitempty"`
-	LocalEnvironmentNetworkPolicy  bool `json:"local_environment_network_policy,omitempty"`
 	Preparation                    bool `json:"preparation,omitempty"`
 	WorkspaceReadPreparation       bool `json:"workspace_read_preparation,omitempty"`
 	WorkspaceOutputExport          bool `json:"workspace_output_export,omitempty"`

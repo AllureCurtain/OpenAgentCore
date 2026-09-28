@@ -294,7 +294,7 @@ func mainLoopRemote(rc *runContext, profile string, prof auth.Profile, agentCLIs
 			DeviceID:   boot.DeviceID,
 			Credential: prof.RunnerCredential,
 			// DaemonVersion is the WIRE-PROTOCOL version, not the build
-			// tag. proto.VersionCompatible is a strict major.minor
+			// tag. proto.VersionCompatible requires an exact version
 			// match against proto.Version. Build-tag reporting goes
 			// in heartbeat's DaemonVersion field.
 			DaemonVersion: proto.Version,
@@ -405,7 +405,6 @@ func pumpConn(parentCtx context.Context, conn *transport.Conn, registry *agent.R
 			Timestamp:           time.Now().Unix(),
 			ActiveRequests:      router.ActiveRuns(),
 			DaemonVersion:       Version,
-			ClaudeAvailable:     agentCLIs.ClaudeCode.Available, // legacy server compatibility
 			SupportedAgentKinds: kinds,
 		}
 	}, obslog.Bg().With("component", "heartbeat"))

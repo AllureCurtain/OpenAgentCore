@@ -54,10 +54,12 @@ func TestManagedNodesIsolateBlockedProviderAndInitialization(t *testing.T) {
 
 			// Same-node direct callers and the scan all consume the same one-shot
 			// allocation receipt. A's provider or Runtime operation remains blocked.
-			tenant, _, env := f.session(f.nodeB, true)
+			// The background scan can provision as soon as the Session is saved.
+			// Capture the baseline before making the new Environment visible.
 			f.provider.mu.Lock()
 			before := f.provider.creates
 			f.provider.mu.Unlock()
+			tenant, _, env := f.session(f.nodeB, true)
 			var callers sync.WaitGroup
 			results := make(chan store.RuntimeAllocation, 12)
 			failures := make(chan error, 12)

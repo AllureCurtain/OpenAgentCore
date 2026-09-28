@@ -436,8 +436,7 @@ func TestPromptForUserChoiceDecisionRoutesToSession(t *testing.T) {
 	// payload.AskID to seed askIndex.
 	askEnv := mustEnv(t, proto.TypePromptForUserChoice, "run_ask", proto.PromptForUserChoicePayload{
 		AskID:     "ask_abcd1234",
-		Question:  "?",
-		Options:   []proto.PromptForUserChoiceOption{{Label: "yes"}, {Label: "no"}},
+		Questions: []proto.PromptForUserChoiceQuestion{{Question: "?", Options: []proto.PromptForUserChoiceOption{{Label: "yes"}, {Label: "no"}}}},
 		ToolUseID: "toolu_42",
 	})
 	sess.out <- askEnv
@@ -492,8 +491,7 @@ func TestPromptForUserChoiceDecisionClearsIndexOnAgentUnknown(t *testing.T) {
 
 	askEnv := mustEnv(t, proto.TypePromptForUserChoice, "run_ask_u", proto.PromptForUserChoicePayload{
 		AskID:     "ask_xxxxxxxx",
-		Question:  "?",
-		Options:   []proto.PromptForUserChoiceOption{{Label: "yes"}},
+		Questions: []proto.PromptForUserChoiceQuestion{{Question: "?", Options: []proto.PromptForUserChoiceOption{{Label: "yes"}}}},
 		ToolUseID: "toolu_y",
 	})
 	sess.out <- askEnv

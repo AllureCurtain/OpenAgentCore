@@ -152,7 +152,7 @@ func TestCopiedIdentityCannotReplaceNodeWithInflightCreate(t *testing.T) {
 	duplicate := &fakeProvider{}
 	var release sync.Once
 	defer release.Do(func() { close(original.release) })
-	start := func(dir string, p sandbox.Provider) (context.CancelFunc, chan error) {
+	start := func(dir string, p sandbox.SandboxProvider) (context.CancelFunc, chan error) {
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error, 1)
 		go func() {

@@ -13,7 +13,7 @@ import (
 type GenerationProvider struct {
 	Generation          uint64
 	SpecificationDigest string
-	Provider            sandbox.Provider
+	Provider            sandbox.SandboxProvider
 	Probe               func(context.Context) error
 	Close               func()
 }
@@ -187,7 +187,7 @@ func (m *GenerationManager) Retained(after uint64) []sandbox.GenerationReference
 }
 
 // Acquire is called before queue admission, so queued work also prevents GC.
-func (m *GenerationManager) Acquire(generation uint64) (sandbox.Provider, bool, func(), error) {
+func (m *GenerationManager) Acquire(generation uint64) (sandbox.SandboxProvider, bool, func(), error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	g := m.values[generation]
