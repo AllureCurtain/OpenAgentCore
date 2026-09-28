@@ -155,7 +155,6 @@ func discoverAgentCLIs(rc *runContext, profile string, checks agentCLIChecks) (a
 		out.Codex.Version = codexVersion
 		out.Codex.Capabilities.NativeSessionRecovery = codex.SupportsNativeSessionRecovery(codexVersion)
 		out.Codex.Capabilities.LocalEnvironment = codex.SupportsLocalEnvironment(codexVersion)
-		out.Codex.Capabilities.LocalEnvironmentNetworkPolicy = codex.SupportsLocalNetworkPolicy(codexVersion)
 		out.Codex.Capabilities.MCPHTTPRequired = codex.SupportsNativeSessionRecovery(codexVersion)
 		fmt.Fprintf(rc.stdout, "Codex preflight ok (%s)\n", codexVersion)
 	} else if errors.Is(codexErr, codex.ErrCLINotFound) {

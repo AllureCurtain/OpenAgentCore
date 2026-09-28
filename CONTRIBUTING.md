@@ -59,6 +59,34 @@ isolation remain separate work.
   the pinned public API, or authorize unrelated refactors or live Session
   configuration switching.
 
+## Core–Runtime integration contract
+
+The [Core–Runtime protocol](docs/runtime-protocol.md) is the integration entry
+point for message order, identities, receipts, capability declarations and failure
+ownership. The shared types and validators live only in
+`internal/agentdaemon/proto`; do not introduce a parallel schema or per-Harness
+orchestration path. Both hosted and self-hosted peers use the same contract.
+Protocol changes update matching peers together, with an exact wire-version
+check and no historical wire fallback.
+
+Core queues and Runtime writes are transport observations, not native acceptance
+or completion. The gateway exposes only durable Run subscriptions: connection
+loss or overflow closes the subscription with an error and never fabricates
+native error/done events. A timeout leaves unconfirmed effects unknown; transport
+reconnection never authorizes mutation replay. The public Turn may still be
+`failed` for an observation failure (`delivery_unknown` or
+`event_stream_incomplete`); that status does not prove native failure or cleanup.
+Runtime owns native settlement
+and cleanup; Executor release does not reclaim Sandbox Provider compute.
+The daemon runs with its starting user's authority, not as an isolation boundary;
+Core-managed sandbox infrastructure owns outer isolation.
+
+`make check-runtime-contract` is the focused shared-contract entry point. Its
+wire, gateway, transport, dispatcher, real WebSocket and observation-result tests
+also run in the required `make check` through `check-go` and `check-agents-api`. Keep failure, cancellation, disconnect
+and cleanup assertions in that common suite; native adapter acceptance remains
+required for advertised capabilities.
+
 ## Workflow and quality
 
 Develop in an isolated worktree on a feature branch and submit a PR. Do not edit
@@ -496,7 +524,7 @@ forwarding. The explicit daemon-executor decision supersedes the previous native
 executor interoperability requirement. The superseded execution route is removed;
 retain reusable filesystem helpers,
 necessary regressions and historical evidence without a compatibility layer.
-The private daemon wire protocol is 0.7.0. Initial, prepared and active input use
+The private daemon wire protocol is 0.8.0. Initial, prepared and active input use
 the same ordered MessageInput contract, replacing scalar prompts and attachments.
 User-message boundaries and text/image order remain intact through Core and the
 Runtime wire; adapters own native conversion and receipt aggregation. Text-only
@@ -506,8 +534,8 @@ unqualified harnesses (Claude SDK, MiniMax Code) reject them at admission rather
 their input rewritten. Codex has a flat native
 input list and uses blank-line separators between messages; this does not preserve
 independent native user-message boundaries. No old wire fallback is maintained.
-Deploy Core and daemon together; the existing major/minor WebSocket check rejects
-older major/minor peers before dispatch rather than ignoring removed fields.
+Deploy Core and daemon together; the WebSocket check requires the exact wire
+version, including patch, and rejects mismatches before dispatch.
 The independently packaged Claude bridge uses protocol 3 for a prepared Executor
 and separately identified Turns; readiness rejects other protocol versions.
 Image-bearing messages require a qualified profile/placement before persistence
@@ -1176,7 +1204,7 @@ a chain of old writable disks across suspension cycles. No Kubernetes, distribut
 scheduler or snapshot replication belongs in this V1 profile.
 
 Queued work and live Environment file access request wake. History and published
-artifact reads do not. Planned suspension uses private daemon wire 0.7.0 with an
+artifact reads do not. Planned suspension uses private daemon wire 0.8.0 with an
 Environment and suspension token; a PID/start-time fenced local control signal
 wakes the parked daemon, which reauthenticates before admitting new work. A
 transient disconnect before confirmation retries the same armed suspension with
@@ -1278,11 +1306,12 @@ through the provider-neutral bootstrap and checked against execution preparation
 The shared policy includes enabled, disabled and an exact-host restricted allowlist.
 Core preserves public spelling/order/duplicates and only permits Template overrides
 that narrow authority. Adapters translate a normalized copy into native settings;
-Core and Docker never select native profile names. Every hosted execution peer
-must support `local_environment_network_policy` and receive the complete bound
-policy; missing policy never falls back to enabled or an older peer path. Read-only
-workspace access does not require execution network policy. A declaration alone
-does not qualify an image or admit public hosted creation.
+Core and Docker never select native profile names. Execution preparation receives
+the complete bound policy; missing policy never falls back to enabled or an older
+peer path. Network isolation belongs to the surrounding sandbox, not a daemon
+capability declaration. Read-only workspace access does not require execution
+network policy. A declaration alone does not qualify an image or admit public
+hosted creation.
 
 Codex restricted networking uses its native managed network requirements and proxy.
 Its adapter preserves the image's filesystem, approval and hook requirements and
