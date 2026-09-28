@@ -70,15 +70,12 @@ jobs:
           npm install --global pnpm@10.30.3
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libssl-dev
-          rustup toolchain install 1.95.0 --profile minimal
       - uses: actions/cache@v6
         with:
           path: |
             ~/.oac/cache/go-build
             ~/.oac/cache/go-mod
-            ~/.oac/cache/executor-cargo
-            ~/.oac/cache/executor-target
-          key: core-release-${{ runner.os }}-${{ hashFiles('go.sum', 'packages/codex-executor/Cargo.lock') }}
+          key: core-release-${{ runner.os }}-${{ hashFiles('go.sum') }}
       - name: Check release metadata and prepare pinned harnesses
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/core-distribution-manifest.test.py

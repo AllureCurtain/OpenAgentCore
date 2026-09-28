@@ -309,11 +309,9 @@ of product routes.
 Core changes must retain the independent build and official-client workflow.
 Native adapter changes require their applicable build/check targets and live provider
 acceptance. Real execution checks require real models; do not count omitted
-prerequisites or mocked responses as live acceptance. `packages/codex-executor`
-retains only the directory, write and workspace-export Rust helpers. Its build and
-check targets remain; the separate `packages/codex-harness`, its build/check scripts
-and its CI/`make check` gate are retired. Historical remote native probes are not
-current validation entrypoints.
+prerequisites or mocked responses as live acceptance. Workspace Files run in the
+daemon's portable Go implementation and are covered by its tests. Historical
+remote native probes are not current validation entrypoints.
 
 ## Core operational metrics
 
@@ -1441,21 +1439,18 @@ capability advertisement alone does not qualify an operator's deployment.
 Exporter component checks do not establish public Artifact compatibility.
 
 Local inline file delivery uses the same authenticated daemon connection and exact
-Environment/Session binding. The optional startup-owned `OAC_RUNTIME_WRITE_HELPER`
-and `OAC_RUNTIME_STAGING` enable only the bounded installer primitive; they do
-not grant public feature admission. Require a canonical executable outside the
-Environment parent, canonical sibling workspace/staging directories on one mount,
-and verified native tool denial of staging and its ancestors. Native credentials
-and history remain outside that parent. Mode bits and path checks alone do not
-qualify this layout. The read-only deployment needs neither writer setting.
+Environment/Session binding. All platforms use the daemon's Go implementation
+for bounded file reads, directory listing, file creation and output export.
+Files operations require no external helper executable or staging directory.
+The Files API keeps workspace-relative paths and no-overwrite creation semantics;
+it does not restrict native Harness tools' host permissions.
 
 Transfer a complete bounded body in acknowledged 64 KiB frames before invoking
-the existing installer, verify the declared digest, and run no model for upload.
+the native file writer, verify the declared digest, and run no model for upload.
 Keep the private 50 MiB transfer bound distinct from the official 5 MiB decoded
 inline bound, which the API checks before any Runtime work. Files.create uses the
-installer's explicit create mode: parents are created without following links and
-an existing path is never replaced. Initial Session files and Skills keep the
-installer's replace mode; do not change one caller's mode for another.
+native writer's no-overwrite operation. Initial Session files retain their separate
+atomic replacement behavior; do not change one caller's semantics for another.
 The dedicated Runtime excludes execution while receiving or applying a write;
 malformed, incomplete or expired transfers cannot reach the installer. Exact
 commit/rejection receipts release the mutation owner. Missing or ambiguous

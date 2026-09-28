@@ -154,8 +154,6 @@ cp -R apps/web/dist "$stage/web/dist"
 cp services/core-console/Dockerfile "$stage/web/Dockerfile"
 build_image web "$stage/web"
 
-export AGENTS_EXECUTOR_BUILD_DIR="$stage/helpers"
-scripts/build-agents-executor.sh
 CGO_ENABLED=0 go build -mod=readonly -trimpath -o "$stage/oac-daemon" ./apps/parsar-daemon/cmd/parsar-daemon
 cp "$stage/oac-daemon" "$bundle/native/bin/oac-daemon"
 CGO_ENABLED=0 go build -mod=readonly -trimpath -o "$bundle/native/bin/oac-selfhost" ./services/agents-api/cmd/runtime
@@ -183,7 +181,7 @@ else
   mcode_image="$(cat "$stage/mcode.id")"
 fi
 for image in "$codex_image" "$claude_image" "$mcode_image"; do
-  python3 scripts/core-distribution-manifest.py verify-runtime "$image" "$stage/oac-daemon" "$stage/helpers" "$source_dir"
+  python3 scripts/core-distribution-manifest.py verify-runtime "$image" "$stage/oac-daemon" "$source_dir"
 done
 tag_suffix="${stage##*.}"
 for harness in codex claude mcode; do

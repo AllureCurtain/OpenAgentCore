@@ -53,12 +53,8 @@ func prepareWorkspace(config Config, req proto.PromptRequestPayload) (*workspace
 	if err != nil {
 		return nil, nil, err
 	}
-	if req.LocalEnvironment != nil && req.LocalEnvironment.ToolEnvironment {
-		binding, loadErr := localworkspace.Load()
-		if loadErr != nil || binding == nil {
-			return nil, nil, fmt.Errorf("claudesdk: native Runtime binding unavailable")
-		}
-		profile.ToolEnv, err = binding.ReadToolEnvironment()
+	if req.LocalEnvironment != nil {
+		profile.ToolEnv, err = localworkspace.ReadOptionalToolEnvironment()
 		if err != nil {
 			return nil, nil, err
 		}

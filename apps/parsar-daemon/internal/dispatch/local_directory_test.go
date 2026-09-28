@@ -17,10 +17,10 @@ import (
 )
 
 func TestLocalDirectoryPreparationNeedsNoHarnessAndRejectsOtherOwners(t *testing.T) {
-	workspace, helper := t.TempDir(), ""
+	workspace := t.TempDir()
 
 	environment, session := uuid.NewString(), uuid.NewString()
-	binding, err := localworkspace.New(environment, session, workspace, helper)
+	binding, err := localworkspace.New(environment, session, workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,12 +98,12 @@ func waitWorkspaceRead(t *testing.T, sender *recSender, id string) proto.Workspa
 }
 
 func TestLocalDirectoryKeepsNotDirectorySeparateFromFailures(t *testing.T) {
-	workspace, helper := t.TempDir(), ""
+	workspace := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workspace, "file"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
 	environment, session := uuid.NewString(), uuid.NewString()
-	binding, err := localworkspace.New(environment, session, workspace, helper)
+	binding, err := localworkspace.New(environment, session, workspace)
 	if err != nil {
 		t.Fatal(err)
 	}

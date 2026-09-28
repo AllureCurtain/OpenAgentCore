@@ -180,16 +180,6 @@
     "reason": "This persisted model-provider key fingerprint purpose remains stable across upgrade and request replay."
   },
   {
-    "path": "packages/codex-executor/Cargo.toml",
-    "regex": "\"agents-api-codex-executor\"",
-    "reason": "The Cargo package identity remains stable; the installed executable is oac-runtime-executor."
-  },
-  {
-    "path": "packages/codex-executor/Cargo.lock",
-    "regex": "\"agents-api-codex-executor\"",
-    "reason": "The Cargo package identity remains stable; the installed executable is oac-runtime-executor."
-  },
-  {
     "path": "package.json",
     "regex": "\"(?:parsar-core|parsar-mcode-harness)\"",
     "reason": "npm package names are deferred package identities, not runtime command names."

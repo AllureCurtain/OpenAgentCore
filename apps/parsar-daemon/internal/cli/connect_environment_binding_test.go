@@ -21,14 +21,9 @@ func environmentRuntimeFixture(t *testing.T) (root, workspace, credential string
 	if err := os.WriteFile(credential, []byte("private-test-credential"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	helper := filepath.Join(base, "directory-helper")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
 	t.Setenv("OAC_RUNTIME_HOME", root)
 	t.Setenv("OAC_RUNTIME_WORKSPACE", workspace)
-	t.Setenv("OAC_RUNTIME_DIRECTORY_HELPER", helper)
-	for _, name := range []string{"OAC_RUNTIME_ENVIRONMENT_ID", "OAC_RUNTIME_SESSION_ID", "OAC_RUNTIME_NETWORK_ACCESS", "OAC_RUNTIME_ALLOWED_DOMAINS", "OAC_RUNTIME_WRITE_HELPER", "OAC_RUNTIME_EXPORT_HELPER", "OAC_RUNTIME_STAGING"} {
+	for _, name := range []string{"OAC_RUNTIME_ENVIRONMENT_ID", "OAC_RUNTIME_SESSION_ID", "OAC_RUNTIME_NETWORK_ACCESS", "OAC_RUNTIME_ALLOWED_DOMAINS"} {
 		t.Setenv(name, "")
 	}
 	return root, workspace, credential, environmentEnrollment{uuid.NewString(), uuid.NewString(), uuid.NewString(), "/workspace"}

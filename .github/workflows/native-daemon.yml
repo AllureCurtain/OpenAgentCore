@@ -33,6 +33,13 @@ jobs:
           ./apps/parsar-daemon/internal/paths
           ./apps/parsar-daemon/internal/daemonize
           ./apps/parsar-daemon/internal/agent/clirunner
+      - name: Native Harness ownership and environment identity
+        run: >-
+          go test -race -count=1
+          ./apps/parsar-daemon/internal/agent/codex
+          ./apps/parsar-daemon/internal/agent/claudesdk
+          ./apps/parsar-daemon/internal/agent/mcode
+          -run 'TestJSONRPCClientOwnsToolDescendants|TestSelfHostedToolEnvironment'
       - name: Native capability snapshots, files and installation
         run: >-
           go test -race -count=1

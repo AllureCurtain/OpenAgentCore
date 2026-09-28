@@ -21,60 +21,44 @@ type Binding struct {
 	allowedDomains []string
 	stateKey       string
 	workspace      string
-	helper         string
-	exportHelper   string
 	writer         *fileWriter
 	capabilityMu   sync.Mutex
 	capabilityRoot string
 }
 
-func New(environment, session, workspace, helper string) (*Binding, error) {
+func New(environment, session, workspace string) (*Binding, error) {
 	root, err := paths.Root()
 	if err != nil {
 		return nil, err
 	}
-	b, err := newNativeBinding(environment, session, workspace, filepath.Join(root, "capabilities"))
-	if err != nil {
-		return nil, err
-	}
-	b.helper = helper
-	return b, nil
+	return newNativeBinding(environment, session, workspace, filepath.Join(root, "capabilities"))
 }
 
 // NewWithCapabilityDirectory freezes paths selected by the Runtime operator.
-func NewWithCapabilityDirectory(environment, session, workspace, helper, directory string) (*Binding, error) {
-	b, err := newNativeBinding(environment, session, workspace, directory)
-	if err != nil {
-		return nil, err
-	}
-	b.helper = helper
-	return b, nil
+func NewWithCapabilityDirectory(environment, session, workspace, directory string) (*Binding, error) {
+	return newNativeBinding(environment, session, workspace, directory)
 }
 
 func Load() (*Binding, error) {
-	values := []string{os.Getenv("OAC_RUNTIME_ENVIRONMENT_ID"), os.Getenv("OAC_RUNTIME_SESSION_ID"), os.Getenv("OAC_RUNTIME_WORKSPACE"), os.Getenv("OAC_RUNTIME_DIRECTORY_HELPER")}
+	values := []string{os.Getenv("OAC_RUNTIME_ENVIRONMENT_ID"), os.Getenv("OAC_RUNTIME_SESSION_ID"), os.Getenv("OAC_RUNTIME_WORKSPACE")}
 	policy, err := RuntimeNetworkPolicy()
 	if err != nil {
 		return nil, err
 	}
 	network := policy.Access
-	writeHelper, staging := os.Getenv("OAC_RUNTIME_WRITE_HELPER"), os.Getenv("OAC_RUNTIME_STAGING")
-	exportHelper := os.Getenv("OAC_RUNTIME_EXPORT_HELPER")
 	capabilityDirectory := os.Getenv("OAC_RUNTIME_CAPABILITY_DIRECTORY")
-	if strings.Join(values, "") == "" && writeHelper == "" && staging == "" && network == "" && exportHelper == "" && capabilityDirectory == "" {
+	if strings.Join(values, "") == "" && network == "" && capabilityDirectory == "" {
 		return nil, nil
 	}
 	if capabilityDirectory == "" {
 		capabilityDirectory = CapabilityDirectory
 	}
-	b, err := NewWithCapabilityDirectory(values[0], values[1], values[2], values[3], capabilityDirectory)
+	b, err := NewWithCapabilityDirectory(values[0], values[1], values[2], capabilityDirectory)
 	if err != nil {
 		return nil, err
 	}
 	b.networkAccess = network
 	b.allowedDomains = policy.Hosts()
-	b.exportHelper = exportHelper
-	b.writer.helper, b.writer.staging = writeHelper, staging
 
 	return b, nil
 }
@@ -117,22 +101,4 @@ func (b *Binding) Configure(r proto.PromptRequestPayload) (proto.PromptRequestPa
 
 func (b *Binding) Matches(environment, session string) bool {
 	return b != nil && b.environment == environment && b.stateKey == "agents-api-"+session
-}
-
-// Inspect existing ancestors before creating an operator-owned path. This prevents
-// MkdirAll from creating directories through an alias before its final validation.
-func canonicalExistingParent(name string) bool {
-	for {
-		if _, err := os.Lstat(name); err == nil {
-			actual, err := filepath.EvalSymlinks(name)
-			return err == nil && actual == name
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return false
-		}
-		parent := filepath.Dir(name)
-		if parent == name {
-			return false
-		}
-		name = parent
-	}
 }

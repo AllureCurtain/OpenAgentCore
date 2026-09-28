@@ -47,7 +47,7 @@ func exporterRouter(t *testing.T, program string) (*Router, exportSender, proto.
 		f.Close()
 	}
 	environment, session := uuid.NewString(), uuid.NewString()
-	binding, err := localworkspace.New(environment, session, workspace, "")
+	binding, err := localworkspace.New(environment, session, workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
