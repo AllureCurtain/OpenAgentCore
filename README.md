@@ -5,7 +5,7 @@
 **Open-source Agents API infrastructure, with your choice of native harness.**
 
 Run Codex, Claude Code and MiniMax Code behind the OpenAI Agents API, on machines you
-control. Core serves the API and runs each Session in a sandbox; Web is the
+control. Core serves the API and drives each Session through its Runtime; Web is the
 administrator console that issues the keys applications call Core with.
 
 ## Get started
@@ -56,9 +56,9 @@ Applications then set `OPENAI_BASE_URL` to `https://core.example/v1` and
   self-hosted executors.
 - **One Runtime path.** The same daemon handles initial files, tool configuration,
   packages, setup, Skills/Plugins and execution. Providers place and bootstrap
-  compute, then renew or reclaim it. The protocol is platform-neutral; the current
-  packaged implementation and isolation are Linux-only. Harness differences stay
-  in adapters.
+  compute, then renew or reclaim it. User-managed daemons support Linux, macOS and
+  Windows with the launching account's permissions. Managed Providers remain
+  Linux-only and provide outer isolation. Harness differences stay in adapters.
 - **A console for administrators.** Web signs in with the Core key, issues Project API
   keys, adds nodes, sets default models and shows metrics and Session history. It
   never runs Agents on anyone's behalf.
@@ -75,6 +75,7 @@ native differences.
 | [Install Core and Web](docs/getting-started/install.md) | Prerequisites, download, installer options, HTTPS and the reverse proxy, first sign-in |
 | [Nodes](docs/getting-started/nodes.md) | Adding, removing and troubleshooting nodes |
 | [Self-hosted executors](docs/getting-started/self-hosted.md) | Connecting an application's own machine to a Session |
+| [Native daemon and Harness installer](docs/self-hosted-native.md) | Linux/macOS/Windows, interactive or CLI installation, adding Harnesses, prerequisites and operation |
 | [Operations](docs/getting-started/operations.md) | The `oac` command, the Core key, backups, upgrades, troubleshooting |
 | [Configuration reference](docs/configuration.md) | Every setting in `config.json` and in Web |
 | [Call the API](docs/getting-started/quickstart.md) | The application developer's quickstart |

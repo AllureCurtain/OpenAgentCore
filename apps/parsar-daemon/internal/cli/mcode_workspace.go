@@ -13,7 +13,7 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
 )
 
-func discoverMCodeWorkspace(rc *runContext, discovery *agentCLIDiscovery) {
+func discoverMCodeWorkspace(parent context.Context, rc *runContext, discovery *agentCLIDiscovery) {
 	fail := func(err error) {
 		discovery.MCode.Available = false
 		fmt.Fprintf(rc.stderr, "oac-daemon: mcode workspace unavailable: %v\n", err)
@@ -61,7 +61,7 @@ func discoverMCodeWorkspace(rc *runContext, discovery *agentCLIDiscovery) {
 	}
 	c, err := mcode.ConfigureLocal(binary, node, os.Getenv("OAC_RUNTIME_MCODE_WORKSPACE_BRIDGE"), root, os.Getenv("OAC_RUNTIME_WORKSPACE"), binding.NetworkPolicy())
 	if err == nil {
-		err = mcode.CheckWorkspace(context.Background(), c)
+		err = mcode.CheckWorkspace(parent, c)
 	}
 	if err != nil {
 		fail(err)

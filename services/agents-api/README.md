@@ -480,10 +480,10 @@ is stored; there is no secret read-back. `--rotate` and `--revoke` require the s
 management ID and full principal; neither changes the key's restriction. Unknown
 historical creators cannot enroll. API bearer keys and executor keys are separate.
 
-Inside the qualified Linux Runtime, install that JSON as an owned mode-0600
-`$OAC_RUNTIME_HOME/daemon/executor-key.json`, outside the tool workspace. The
-packaged Runtime supplies its native harness, filesystem helpers and isolation
-profile. Start its daemon with the values returned by Session creation:
+On the executor host, save that JSON as a private
+`$OAC_RUNTIME_HOME/daemon/executor-key.json`, outside the tool workspace. Use the [native installer](../../docs/self-hosted-native.md) to prepare the selected
+Harnesses. Managed images preinstall them. A preconfigured Runtime can connect
+with the values returned by Session creation:
 
 ```bash
 oac-daemon connect --remote "$REMOTE_URL" \
@@ -500,8 +500,6 @@ WebSocket authentication uses the `Authorization` header, never a URL token.
 On a permanent rejection (enrollment 401 or 409, a permanent WebSocket rejection
 or close) `connect --environment-id` prints one message naming the fix, makes no
 further requests and exits 0 on SIGTERM or SIGINT; transient failures exit 1.
-The self-hosted launcher adds `--self-hosted-install`, so the message names the
-installer's rerun instead of a generic credential update and restart.
 
 The private `POST /api/v1/agent-daemon/enroll` endpoint accepts that executor bearer
 and `{"environment_id":"..."}`. It returns `device_id`, `session_id`,

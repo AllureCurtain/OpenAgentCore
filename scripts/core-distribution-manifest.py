@@ -23,7 +23,6 @@ ARTIFACTS = {
     "images/runtime.tar.gz": "runtime.tar.gz",
     "native/bin/oac-node": "sandbox-node",
     "native/bin/oac-daemon": "daemon",
-    "native/bin/oac-selfhost": "runtime-launcher",
     "native/bin/oac-microsandbox-provider": "microsandbox-provider",
     "native/microsandbox/msb": "msb",
     "native/microsandbox/libkrunfw.so.5.6.1": "libkrunfw.so.5.6.1",
@@ -238,19 +237,14 @@ def bootstraps(bundle, epoch, revision):
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("Invalid operator source revision")
     bundle = pathlib.Path(bundle)
-    for source, output in (("node_install.py", "node-install.pyz"),
-                           ("self_hosted_install.py", "self-hosted-install.pyz")):
-        with tempfile.TemporaryDirectory(dir=bundle.parent) as directory:
-            for original, packaged in ((source, "__main__.py"), ("distribution.py", "distribution.py")):
-                target = pathlib.Path(directory) / packaged
-                shutil.copyfile(bundle / original, target)
-                os.utime(target, (int(epoch), int(epoch)))
-            if source == "node_install.py":
-                for name in ("node_spec.py", "node_generations.py", "node_update.py"):
-                    target = pathlib.Path(directory) / name
-                    shutil.copyfile(bundle / name, target)
-                    os.utime(target, (int(epoch), int(epoch)))
-            zipapp.create_archive(directory, bundle / output, compressed=True)
+    with tempfile.TemporaryDirectory(dir=bundle.parent) as directory:
+        modules = (("node_install.py", "__main__.py"), ("distribution.py", "distribution.py"),
+                   *((name, name) for name in ("node_spec.py", "node_generations.py", "node_update.py")))
+        for original, packaged in modules:
+            target = pathlib.Path(directory) / packaged
+            shutil.copyfile(bundle / original, target)
+            os.utime(target, (int(epoch), int(epoch)))
+        zipapp.create_archive(directory, bundle / "node-install.pyz", compressed=True)
     with tempfile.TemporaryDirectory(dir=bundle.parent) as directory:
         for name in OAC_CLI_MODULES:
             shutil.copyfile(bundle / name, pathlib.Path(directory) / name)

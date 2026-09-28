@@ -502,7 +502,7 @@ The installation directory, `~/.oac/core` by default, mode `0700`:
 | `secrets/database.password` | PostgreSQL password |
 | `state.json` | Format 2, installation ID, Compose project name, image IDs and source commit. Written by the tools only |
 | `generated/` | Files derived from `config.json`: `compose.json`, `core.env`, `core-key-digests.json`, `settings.json`, `config.schema.json`, and `runtime-history.json` or the native Core unit when used. `oac apply` rewrites them; don't edit them |
-| `node-payload/` | The node and self-hosted installers, the manifest and the node files that Web serves at `/node-install/` |
+| `node-payload/` | The managed node installer, the manifest and the node files that Web serves at `/node-install/` |
 | `state/e2b/` | Private E2B receipts |
 | `native/` | Core binaries, with `--native-core` only |
 

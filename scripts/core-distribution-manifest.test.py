@@ -232,7 +232,7 @@ class DistributionTests(unittest.TestCase):
         self.assertEqual(json.loads((self.bundle / "manifest.json").read_text())["artifact_base_url"], "")
 
     def test_bootstraps_include_shared_downloader_and_are_reproducible(self):
-        for name in ("node_install.py", "node_generations.py", "node_update.py", "self_hosted_install.py", *distribution.OAC_CLI_MODULES):
+        for name in ("node_install.py", "node_generations.py", "node_update.py", *distribution.OAC_CLI_MODULES):
             (self.bundle / name).write_text("# " + name + "\n")
         distribution.bootstraps(self.bundle, "1700000000", "a" * 40)
         first = [(self.bundle / name).read_bytes() for name in ("node-install.pyz", "oac.pyz")]
@@ -242,11 +242,9 @@ class DistributionTests(unittest.TestCase):
         with zipfile.ZipFile(self.bundle / "oac.pyz") as contents:
             self.assertEqual(set(contents.namelist()), {"__main__.py", *distribution.OAC_CLI_MODULES})
             self.assertIn(("oac_cli.SOURCE_COMMIT = " + repr("a" * 40)).encode(), contents.read("__main__.py"))
-        for script, filename in (("node_install.py", "node-install.pyz"),
-                                 ("self_hosted_install.py", "self-hosted-install.pyz")):
-            with zipfile.ZipFile(self.bundle / filename) as contents:
-                self.assertEqual(set(contents.namelist()), {"__main__.py", "distribution.py"} | ({"node_spec.py", "node_generations.py", "node_update.py"} if script == "node_install.py" else set()))
-                self.assertEqual(contents.read("__main__.py"), (self.bundle / script).read_bytes())
+        with zipfile.ZipFile(self.bundle / "node-install.pyz") as contents:
+            self.assertEqual(set(contents.namelist()), {"__main__.py", "distribution.py", "node_spec.py", "node_generations.py", "node_update.py"})
+            self.assertEqual(contents.read("__main__.py"), (self.bundle / "node_install.py").read_bytes())
 
 
 class BundledDocsTests(unittest.TestCase):

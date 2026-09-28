@@ -416,7 +416,7 @@ class InstallerTests(unittest.TestCase):
         self.install()
         payload = self.root / "node-payload/releases" / ("a" * 40)
         exported = {str(path.relative_to(payload)) for path in payload.rglob("*") if path.is_file()}
-        self.assertEqual(exported, {"node-install.pyz", "self-hosted-install.pyz", "manifest.json", "SHA256SUMS",
+        self.assertEqual(exported, {"node-install.pyz", "manifest.json", "SHA256SUMS",
                                     "runtime/seccomp.json"})
         (payload / "node-install.pyz").write_text("changed")
         with self.assertRaisesRegex(install.InstallError, "node payload differs"):
