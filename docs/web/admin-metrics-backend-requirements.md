@@ -4,7 +4,6 @@ Status reviewed 2026-09-28: P0 Agent/Tool aggregates (BE-8) remain unimplemented
 proposals. Core process metrics and node host history have landed through their
 own contracts, linked below. Other P1/P2 ideas are proposals, not an accepted
 implementation backlog or a statement that all observability is missing.
-[简体中文](admin-metrics-backend-requirements.zh-CN.md)
 
 The console is a management tool: Monitor (Overview, Agent metrics, Sandbox
 metrics, Session log) leads. It reads only the Web API (`/core/v1/**`,
