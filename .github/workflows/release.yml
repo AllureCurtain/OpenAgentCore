@@ -11,7 +11,7 @@ on:
         type: string
       offline:
         description: Also create the full offline archive
-        default: false
+        default: true
         type: boolean
       draft_release:
         description: Upload files to a new draft release; never publish
@@ -88,7 +88,7 @@ jobs:
           RELEASE_REVISION: ${{ steps.source.outputs.revision }}
           RELEASE_TAG: ${{ steps.source.outputs.release_tag }}
           RELEASE_REPOSITORY: ${{ github.repository }}
-          CORE_DISTRIBUTION_OFFLINE: ${{ inputs.offline && '1' || '0' }}
+          CORE_DISTRIBUTION_OFFLINE: ${{ (github.event_name == 'push' || inputs.offline) && '1' || '0' }}
         run: |
           inputs="$HOME/.oac/build/release-inputs/inputs.json"
           AGENTS_RUNTIME_CODEX_PACKAGE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["codex"])' "$inputs")"

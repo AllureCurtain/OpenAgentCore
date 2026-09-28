@@ -1947,8 +1947,11 @@ private temporary files, verify before atomic promotion, and reuse only verified
 cache entries or exact image identities. Core's default image must not acquire
 execution-only payloads. Python zipapps bundle the shared resolver with each
 remote bootstrap; the console publishes only fixed non-secret files and declared
-artifact names. Release automation builds artifacts and may create an unpublished
-draft, but cannot claim real execution qualification or public availability.
+artifact names. Candidate build automation creates artifacts and may create an
+unpublished draft; a successful build is not real execution qualification. A
+separate existing-host batch controller may publish that draft automatically only
+after directly supervised real qualification and verified batch landing. Repository
+visibility remains internal and independent of Release publication.
 Manual builds use the legal `build-<full source SHA>` release tag; tag-triggered
 builds use the actual `v*` tag. The manifest download base and draft tag must match,
 while artifact filenames and source provenance retain the full source SHA.
@@ -1960,6 +1963,42 @@ digests and URLs. Never use an acceptance
 image containing a private test CA or model credential as a release input.
 Repository visibility is independent of publication. Do not add repository
 credentials to installed node/Runtime configuration to bypass download access.
+
+For the current installation batch, `scripts/promote-qualified-release.py` fixes
+candidate provenance and its tag to source
+`48ed8158e134207d15cdd14ae0a30e10f070eb5c`. It uses existing local gh authentication
+and SSH, uploads/downloads the complete matching thin/offline/Runtime asset set,
+and verifies archive members and full asset hashes. The reviewed qualification
+adapter receives a fresh run identity and exact inventory over the authenticated
+command channel. Required checks are fresh-install, current-lifecycle,
+managed-native, current-generations, node-runtime and diagnostics-observations.
+All must run successfully; a supplied pass file, skipped check or old report cannot
+release the candidate. The adapter currently refuses execution until the real
+batch acceptance commands are connected. Controller tests never count as live
+qualification. Historical reset evidence stays historical; later self-hosted
+capability work is outside this batch.
+
+The caller supplies the independently reviewed promotion-tooling commit. Its
+changes from the candidate may only affect the exact promotion files enumerated
+in the controller, including CONTRIBUTING, docs/maintainers and the current-batch
+node-generation protocol wording correction; the Makefile
+exception permits only registration of the controller test. Main must contain the
+candidate source and have the reviewed tooling commit's tree. This permits normal
+merge commit identity changes and release-only documentation updates without
+rebuilding or relabeling the original candidate. The candidate's bundled docs and
+source archive retain source 48 (CONTRIBUTING and the node-generation protocol
+are present through the source archive, not as direct bundled docs); new release instructions live in the tooling
+commit. Product changes or a different main tree block promotion of the old
+candidate. Never infer batch membership from all open PRs or automatically merge
+them in the publication command.
+
+Use one controller invocation for the batch. It verifies unchanged draft identity,
+target, tag and downloaded bytes immediately before publication and checks the
+published bytes afterward. Conflicting assets are never overwritten. An interrupted
+run is reconciled before another invocation; stored qualification output is evidence,
+not a resumable permission to publish. Preserve its isolated local/remote evidence
+and installation resources. No runner, background service, new GitHub secret or
+repository-visibility change is required by this finite batch path.
 
 Executor credentials are issued by the operator with the Core key, through Web or
 a Core-key script, under

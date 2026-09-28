@@ -56,6 +56,64 @@ draft. A workflow build alone is not live acceptance. Publish exactly the tested
 never rebuild or replace files under the same release identity. Publishing a Release
 does not change the repository's visibility.
 
+The workflow defaults to offline output, including tag-triggered builds. It remains
+a candidate builder; it does not publish merely because a build succeeded.
+
+For the current installation batch, the promotion controller runs on the existing
+operator host with gh authentication and SSH access to the qualification host:
+
+```sh
+python3 scripts/promote-qualified-release.py \
+  --assets /absolute/path/to/flat-candidate-assets \
+  --state /absolute/path/to/new-promotion-evidence \
+  --host zju_a100_2 --remote-root /absolute/path/to/existing-isolated-acceptance-root \
+  --promotion-commit FULL_REVIEWED_TOOLING_COMMIT_SHA
+```
+
+This command is an operational publication command, not a dry run. It does not
+build, merge PRs, install services or create host accounts. Its qualification adapter
+currently reports `ready=false`, so it stops before any Release operation until the
+real batch checks are integrated and reviewed. Do not change readiness just to
+bypass the missing implementation.
+
+Stage only the build's flat files, including thin/offline archives, both checksum
+files and every versioned Runtime asset; exclude the extracted bundle directory.
+Before staging files from the builder, compare their full inventory byte total plus
+64 MiB of working reserve with actual local free space. The controller uses only
+that existing single asset set and hashes subsequent GitHub downloads as streams;
+it checks the additional reserve and records both byte counts. It never removes
+user files to make room.
+The remote parent directory must already exist within the batch's authorized scope.
+The controller creates one new run directory, copies verified draft assets there,
+and invokes the reviewed adapter over SSH. For this batch, zju coordinates managed stages and reaches mx2 through existing
+SSH for the fresh Core/node stages; no new service or credentials are required.
+GitHub credentials stay on the operator host; nodes continue to download from their console.
+
+The adapter protocol is documented in `scripts/qualify-core-release.py`: one JSON
+request on stdin, one bound JSON result on stdout, redacted diagnostics on stderr,
+and a nonzero exit for any failed or skipped required check. The six current-batch
+checks cover fresh installation, current lifecycle, managed native execution,
+current generations, node Runtime and diagnostics/observations. Their actual
+commands must operate on freshly extracted supplied assets and respect the agreed
+resource ownership. The controller verifies remote asset hashes before and after
+execution; it has no pass-file or arbitrary acceptance-command option.
+
+This finite command publishes automatically when all checks pass and the batch is
+landed. Candidate source and tag remain
+`48ed8158e134207d15cdd14ae0a30e10f070eb5c` / `build-48ed8158e134207d15cdd14ae0a30e10f070eb5c`.
+The reviewed tooling commit can add only the enumerated release files, the
+node-generation protocol wording correction and test registration; main must have that commit's tree and include the candidate source.
+Later release documentation is not retroactively inserted into the tested bundle.
+Any product change blocks publication of this candidate instead of silently
+publishing an obsolete product or relabeling old bytes.
+
+On failure, retain the new evidence and resources and reconcile the Release state.
+Never overwrite assets or use saved check results to resume publication. A release
+already published is refused before any new acceptance; a failed final verification
+needs investigation, not automatic deletion or replacement. Run only one controller
+for this batch. This path does not require unattended cloud scheduling for future
+pushes, public repository visibility or historical-installation upgrades.
+
 ## Run Core without the installer
 
 These paths give you Core alone, without Web, the `oac` command or `config.json`.
