@@ -10,15 +10,8 @@ import {
 } from "./lib/product";
 import { ModelEditor } from "./ModelEditor";
 import { Button } from "./components/ui/button";
-import { Input } from "./components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "./components/ui/dialog";
-import { Field, Help, ErrorNotice, PageHeader } from "./components/shared";
+import { ProviderEditor } from "./ProviderEditor";
+import { Help, ErrorNotice, PageHeader } from "./components/shared";
 import { EmptyState } from "./components/ui/empty-state";
 
 export function Models() {
@@ -38,8 +31,7 @@ export function Models() {
     <>
       <PageHeader title="模型">
         <Help>
-          Provider 用于分组。模型连接和密钥仍由 Core 配置，Agent
-          选择其中一个模型。修改模型只影响新会话。
+          获取 Provider 的模型列表，勾选或自定义后保存。Agent 选择已绑定的模型。
         </Help>
         <Button
           onClick={() =>
@@ -52,19 +44,6 @@ export function Models() {
       </PageHeader>
       <ErrorNotice error={models.error || providers.error || remove.error} />
       <div className="min-h-0 flex-1 space-y-6 overflow-auto p-6">
-        {models.data
-          ?.filter((model) => !model.provider_id)
-          .map((model) => (
-            <div
-              key={model.id}
-              className="flex items-center justify-between gap-3"
-            >
-              <span>{model.name}</span>
-              <Button variant="outline" onClick={() => setEditing(model)}>
-                选择 Provider
-              </Button>
-            </div>
-          ))}
         {providers.data?.map((group) => (
           <section
             key={group.id}
@@ -75,13 +54,18 @@ export function Models() {
               <h2 className="min-w-0 flex-1 break-words text-lg font-semibold">
                 {group.name}
               </h2>
+              <span className="text-base text-fg-muted">
+                {models.data?.filter((model) => model.provider_id === group.id)
+                  .length || 0}{" "}
+                个模型
+              </span>
               <Button
                 variant="ghost"
-                size="icon"
                 aria-label={`编辑 Provider ${group.name}`}
+                disabled={!models.data}
                 onClick={() => setProvider(group)}
               >
-                <Pencil />
+                管理模型
               </Button>
               <Button
                 variant="ghost"
@@ -97,21 +81,6 @@ export function Models() {
               >
                 <Trash2 />
               </Button>
-              <Button
-                variant="outline"
-                onClick={() =>
-                  setEditing({
-                    id: crypto.randomUUID(),
-                    provider_id: group.id,
-                    name: "",
-                    model: "",
-                    revision: 0,
-                  })
-                }
-              >
-                <Plus />
-                添加模型
-              </Button>
             </div>
             <div className="divide-y divide-line">
               {models.data
@@ -125,9 +94,11 @@ export function Models() {
                       <h3 className="truncate text-base font-medium">
                         {model.name}
                       </h3>
-                      <p className="break-words text-base text-fg-muted">
-                        {model.model}
-                      </p>
+                      {model.name !== model.model && (
+                        <p className="break-words text-base text-fg-muted">
+                          {model.model}
+                        </p>
+                      )}
                     </div>
                     <Button
                       variant="ghost"
@@ -155,7 +126,7 @@ export function Models() {
           </section>
         ))}
         {!providers.isPending && !providers.data?.length && (
-          <EmptyState title="添加 Provider，再添加它的模型" />
+          <EmptyState title="添加 Provider，选择需要的模型" />
         )}
       </div>
       {editing && (
@@ -165,64 +136,5 @@ export function Models() {
         <ProviderEditor value={provider} close={() => setProvider(null)} />
       )}
     </>
-  );
-}
-function ProviderEditor({
-  value,
-  close,
-}: {
-  value: ProviderProfile;
-  close: () => void;
-}) {
-  const [name, setName] = useState(value.name);
-  const cache = useQueryClient();
-  const save = useMutation({
-    mutationFn: () =>
-      product(`providers/${value.id}`, "PUT", { ...value, name }),
-    onSuccess: () => {
-      void cache.invalidateQueries({ queryKey: ["providers"] });
-      close();
-    },
-  });
-  return (
-    <Dialog
-      open
-      onOpenChange={(open) => {
-        if (!open && !save.isPending) close();
-      }}
-    >
-      <DialogContent aria-describedby={undefined}>
-        <DialogHeader>
-          <DialogTitle>
-            {value.revision ? "编辑 Provider" : "添加 Provider"}
-          </DialogTitle>
-        </DialogHeader>
-        <form
-          id="provider-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            save.mutate();
-          }}
-          className="space-y-4"
-        >
-          <Field label="Provider 名称" id="provider-name">
-            <Input
-              id="provider-name"
-              value={name}
-              required
-              maxLength={80}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="例如 OpenAI、MiniMax"
-            />
-          </Field>
-          <ErrorNotice error={save.error} />
-        </form>
-        <DialogFooter>
-          <Button type="submit" form="provider-form" disabled={save.isPending}>
-            保存
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }

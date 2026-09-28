@@ -8,11 +8,17 @@ async function resources(page: Page) {
     .getByRole("button", { name: "添加 Provider", exact: true })
     .click();
   await page.getByLabel("Provider 名称").fill("Moonshot");
+  await page.getByLabel("Base URL").fill("http://127.0.0.1:18181");
+  await page.getByLabel("API Key").fill("provider-fixture-key");
+  await page.getByRole("button", { name: "获取模型", exact: true }).click();
+  await expect(page.getByText("获取到 3 个模型 · 已选 0 个")).toBeVisible();
+  await page.getByLabel("kimi-k2.6", { exact: true }).check();
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button", { name: "添加模型", exact: true }).click();
-  await page.getByLabel("显示名称").fill("Kimi");
-  await page.getByLabel("模型 ID").fill("kimi-k2.6");
+  await page
+    .getByRole("button", { name: "编辑 kimi-k2.6", exact: true })
+    .click();
+  await page.getByLabel("显示名称", { exact: true }).fill("Kimi");
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await navigate(page, "运行时");
@@ -208,12 +214,18 @@ test("mobile navigation, help and single creation action", async ({
 
 test("Provider groups contain multiple models and retain manual names", async ({
   page,
+  request,
 }) => {
   await resources(page);
   await navigate(page, "模型");
-  await page.getByRole("button", { name: "添加模型", exact: true }).click();
-  await page.getByLabel("显示名称").fill("Kimi Lite");
+  await page.getByRole("button", { name: "编辑 Provider Moonshot" }).click();
+  await page.getByRole("button", { name: "获取模型", exact: true }).click();
+  await expect(page.getByLabel("kimi-k2.6", { exact: true })).toBeChecked();
+  await page.getByLabel("kimi-k2", { exact: true }).check();
+  await page.getByRole("button", { name: "自定义模型", exact: true }).click();
+  await page.getByLabel("显示名称（选填）").fill("Kimi Lite");
   await page.getByLabel("模型 ID").fill("kimi-lite");
+  await page.getByRole("button", { name: "加入列表", exact: true }).click();
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   const group = page.getByRole("region", { name: "Moonshot", exact: true });
@@ -225,9 +237,76 @@ test("Provider groups contain multiple models and retain manual names", async ({
   ).toBeVisible();
   await page.getByRole("button", { name: "编辑 Provider Moonshot" }).click();
   await page.getByLabel("Provider 名称").fill("团队模型");
+  await page.getByRole("button", { name: "手动选择", exact: true }).click();
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await page.reload();
   await expect(page.getByRole("region", { name: "团队模型" })).toBeVisible();
+  await expect(page.getByText("3 个模型", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "kimi-k2", exact: true }),
+  ).toBeVisible();
+  const providers = await (await request.get("/app/providers")).json();
+  expect(providers[0].has_api_key).toBe(true);
+  expect(providers[0].api_key).toBeUndefined();
+  await page.getByRole("button", { name: "编辑 Provider 团队模型" }).click();
+  await expect(page.getByLabel("API Key")).toHaveValue("");
+  await page.getByRole("button", { name: "获取模型", exact: true }).click();
+  await expect(page.getByText("获取到 3 个模型 · 已选 3 个")).toBeVisible();
+  await expect(page.getByLabel("kimi-lite", { exact: true })).toBeChecked();
+  await page.getByLabel("kimi-k2", { exact: true }).uncheck();
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByText("2 个模型", { exact: true })).toBeVisible();
+  await page.route("**/app/models", (route) => route.fulfill({ json: [] }));
+  await page.reload();
+  await page.getByRole("button", { name: "编辑 Provider 团队模型" }).click();
+  await page.getByRole("button", { name: "手动选择", exact: true }).click();
+  await expect(page.getByLabel("kimi-k2.6", { exact: true })).toBeChecked();
+  await expect(page.getByLabel("kimi-lite", { exact: true })).toBeChecked();
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.unroute("**/app/models");
+  await page.reload();
+  await expect(page.getByText("2 个模型", { exact: true })).toBeVisible();
+});
+
+test("failed discovery can retry or use custom models; closing discards a new Provider", async ({
+  page,
+  request,
+}) => {
+  await page.goto("/#/models");
+  await page
+    .getByRole("button", { name: "添加 Provider", exact: true })
+    .click();
+  await page.getByLabel("Provider 名称").fill("自定义服务");
+  await page.getByLabel("Base URL").fill("http://127.0.0.1:18181/v1");
+  await page.getByLabel("API Key").fill("invalid-key");
+  await page.getByRole("button", { name: "获取模型", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("HTTP 401");
+  expect(await (await request.get("/app/providers")).json()).toEqual([]);
+  await page.getByLabel("API Key").fill("provider-fixture-key");
+  await page.getByRole("button", { name: "获取模型", exact: true }).click();
+  await expect(page.getByText("获取到 3 个模型 · 已选 0 个")).toBeVisible();
+  await page.getByLabel("kimi-k2", { exact: true }).check();
+  await page.getByRole("button", { name: "Close", exact: true }).click();
+  expect(await (await request.get("/app/providers")).json()).toEqual([]);
+  await page
+    .getByRole("button", { name: "添加 Provider", exact: true })
+    .click();
+  await page.getByLabel("Provider 名称").fill("自定义服务");
+  await page.getByRole("button", { name: "手动选择", exact: true }).click();
+  await page.getByRole("button", { name: "自定义模型", exact: true }).click();
+  await page.getByLabel("模型 ID", { exact: true }).fill("my-model");
+  await page.getByRole("button", { name: "加入列表", exact: true }).click();
+  await expect(page.getByLabel("my-model", { exact: true })).toBeChecked();
+  await page.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page
+      .getByRole("region", { name: "自定义服务" })
+      .getByRole("heading", { name: "my-model" }),
+  ).toBeVisible();
 });
 test("text arrives incrementally before durable completion, then survives reload without duplicates", async ({
   page,

@@ -25,10 +25,16 @@ For a built version, run `pnpm --filter @oac/parsar-example build` and then
 
 ## Main flow
 
-1. **Models:** create a named Provider group, then add its models using readable
-   names and deployment model IDs. No default group is created. Providers only
-   organize the catalog; Agent configuration selects one model. This catalog does
-   not configure providers or hold model API keys; Core owns provider credentials.
+1. **Models:** enter a Provider name, Base URL and API key, then fetch its
+   `GET /v1/models` list. Select models with checkboxes or add custom model IDs,
+   then save the Provider and selected models together. The dialog shows discovered
+   and selected counts. For manual entry, skip discovery. No default group is
+   created. Keys are stored in the local restricted SQLite file and never returned
+   to the browser; leaving the key blank while editing preserves it. Discovery
+   sends only that Provider's key and does not follow redirects. The list expects
+   the OpenAI-shaped `data: [{id: "..."}]` response. Discovery failures leave manual
+   entry available. This imports the catalog only: Core still owns execution
+   connections, so selected model IDs must also be configured there.
 2. **Skills:** create a SKILL.md resource or upload a ZIP. Inspect versions,
    upload a new version, and choose the default. Core validates and stores bundles.
 3. **MCP:** save anonymous HTTPS endpoints and bind them to Agents. Hosted

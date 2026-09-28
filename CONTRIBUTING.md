@@ -19,8 +19,15 @@ and passes an inline Agent/configuration snapshot to the public Core API. One
 Agent may have many independent Sessions. Existing Sessions keep their original
 configuration and history; only continuation within the same live hosted Session
 reuses its workspace. There is no shared-workspace mechanism or task layer.
-Providers are catalog groups only: users create them explicitly, without default
-groups or provider credentials. Each model references one Provider.
+Providers are explicit catalog groups without default groups. Each model references
+one Provider. The example can fetch an OpenAI-shaped model list from a user-entered
+Provider Base URL using that Provider's key, then save checked/custom models and
+the Provider in one SQLite transaction. Editing reads the Provider revision and
+its models as one snapshot; individual model changes advance the owning Provider
+revision. Provider keys stay in the local restricted
+SQLite file and are omitted from every browser response. Discovery uses only the
+Provider credential, never the Core Project key, and never follows redirects.
+This catalog import does not reconfigure Core execution credentials or routing.
 Core owns Skills and all execution/history state. SQLite stores Session references
 and freezes pending creation requests with stable idempotency keys for retry;
 confirmed requests are removed from local storage. Earlier example templates and

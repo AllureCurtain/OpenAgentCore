@@ -5,7 +5,10 @@ export interface NamedResource {
   name: string;
   revision: number;
 }
-export type ProviderProfile = NamedResource;
+export interface ProviderProfile extends NamedResource {
+  base_url?: string;
+  has_api_key?: boolean;
+}
 export interface ModelProfile extends NamedResource {
   provider_id: string;
   model: string;

@@ -33,13 +33,11 @@ try {
     .getByRole("button", { name: "添加 Provider", exact: true })
     .click();
   await page.getByLabel("Provider 名称").fill(`Moonshot ${suffix}`);
-  await save();
-  await page
-    .getByRole("region", { name: `Moonshot ${suffix}`, exact: true })
-    .getByRole("button", { name: "添加模型", exact: true })
-    .click();
-  await page.getByLabel("显示名称").fill(modelName);
+  await page.getByRole("button", { name: "手动选择", exact: true }).click();
+  await page.getByRole("button", { name: "自定义模型", exact: true }).click();
+  await page.getByLabel("显示名称（选填）").fill(modelName);
   await page.getByLabel("模型 ID").fill(model);
+  await page.getByRole("button", { name: "加入列表", exact: true }).click();
   await save();
   await go("运行时");
   await page.getByRole("button", { name: "添加运行时" }).click();

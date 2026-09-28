@@ -31,6 +31,17 @@ export function openStore(path) {
     CREATE TABLE IF NOT EXISTS records (kind TEXT NOT NULL, id TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(kind,id));`);
   return {
     close: () => db.close(),
+    transaction: (write) => {
+      db.exec("BEGIN IMMEDIATE");
+      try {
+        const result = write();
+        db.exec("COMMIT");
+        return result;
+      } catch (error) {
+        db.exec("ROLLBACK");
+        throw error;
+      }
+    },
     list: (kind) =>
       db
         .prepare("SELECT value FROM records WHERE kind=? ORDER BY rowid DESC")

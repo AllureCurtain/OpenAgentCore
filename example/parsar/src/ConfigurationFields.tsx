@@ -44,16 +44,16 @@ export function ConfigurationFields({
           onValueChange={(model_id) => change({ ...value, model_id })}
         >
           <SelectOption value="">选择模型</SelectOption>
-          {models.data?.map((model) => {
-            const provider = providers.data?.find(
-              (entry) => entry.id === model.provider_id,
-            );
-            return (
-              <SelectOption key={model.id} value={model.id}>
-                {provider ? `${provider.name} / ${model.name}` : model.name}
-              </SelectOption>
-            );
-          })}
+          {providers.data?.flatMap(
+            (provider) =>
+              models.data
+                ?.filter((model) => model.provider_id === provider.id)
+                .map((model) => (
+                  <SelectOption key={model.id} value={model.id}>
+                    {provider.name} / {model.name}
+                  </SelectOption>
+                )) || [],
+          )}
         </Select>
         {!models.isPending && !models.data?.length && (
           <a href="#/models" className="inline-block text-base underline">

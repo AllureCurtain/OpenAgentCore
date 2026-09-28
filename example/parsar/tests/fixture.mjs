@@ -42,6 +42,13 @@ createServer(async (req, res) => {
     res.writeHead(status, { "Content-Type": "application/json" });
     res.end(JSON.stringify(value));
   };
+  if (url.pathname === "/v1/models") {
+    if (req.headers.authorization !== "Bearer provider-fixture-key")
+      return reply({ error: { message: "Invalid provider key" } }, 401);
+    return reply({
+      data: [{ id: "kimi-k2.6" }, { id: "kimi-k2" }, { id: "kimi-latest" }],
+    });
+  }
   if (url.pathname === "/resume-output") {
     const session = sessions.at(-1),
       turn = turns.get(session.id).at(-1);

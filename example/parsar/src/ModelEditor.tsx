@@ -27,6 +27,7 @@ export function ModelEditor({
     mutationFn: () => product(`models/${form.id}`, "PUT", form),
     onSuccess: () => {
       void cache.invalidateQueries({ queryKey: ["models"] });
+      void cache.invalidateQueries({ queryKey: ["providers"] });
       close();
     },
   });
@@ -52,7 +53,7 @@ export function ModelEditor({
           <Field label="Provider" id="model-provider">
             <Select
               id="model-provider"
-              value={form.provider_id || ""}
+              value={form.provider_id}
               onValueChange={(provider_id) => setForm({ ...form, provider_id })}
             >
               <SelectOption value="">选择 Provider</SelectOption>

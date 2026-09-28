@@ -76,29 +76,33 @@ export function createHandler(
 ) {
   const product =
     store &&
-    productAPI(store, async (path, method, body, key) => {
-      const response = await fetchImpl(`${config.target}${path}`, {
-        method,
-        body: JSON.stringify(body),
-        redirect: "manual",
-        signal: AbortSignal.timeout(30_000),
-        headers: {
-          ...(key ? { "Idempotency-Key": key } : {}),
-          Authorization: `Bearer ${config.key}`,
-          "OpenAI-Beta": "agents=v1",
-          "Content-Type": "application/json",
-        },
-      });
-      if (response.status >= 300 && response.status < 400)
-        throw new AppError(502, "Core returned a redirect.");
-      const value = await response.json();
-      if (!response.ok)
-        throw new AppError(
-          response.status,
-          value.error?.message || "Core request failed.",
-        );
-      return value;
-    });
+    productAPI(
+      store,
+      async (path, method, body, key) => {
+        const response = await fetchImpl(`${config.target}${path}`, {
+          method,
+          body: JSON.stringify(body),
+          redirect: "manual",
+          signal: AbortSignal.timeout(30_000),
+          headers: {
+            ...(key ? { "Idempotency-Key": key } : {}),
+            Authorization: `Bearer ${config.key}`,
+            "OpenAI-Beta": "agents=v1",
+            "Content-Type": "application/json",
+          },
+        });
+        if (response.status >= 300 && response.status < 400)
+          throw new AppError(502, "Core returned a redirect.");
+        const value = await response.json();
+        if (!response.ok)
+          throw new AppError(
+            response.status,
+            value.error?.message || "Core request failed.",
+          );
+        return value;
+      },
+      fetchImpl,
+    );
   return async (req, res) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");

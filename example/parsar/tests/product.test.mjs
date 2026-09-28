@@ -8,6 +8,103 @@ import { unzipSync, strFromU8 } from "fflate";
 import { openStore, dataPath, AppError } from "../server/store.mjs";
 import { productAPI } from "../server/product.mjs";
 
+test("Provider discovery uses only its credential; selected and custom models save together", async () => {
+  const store = openStore(":memory:");
+  const id = randomUUID();
+  const api = productAPI(store, null, async (url, init) => {
+    assert.equal(url, "https://models.example/v1/models");
+    assert.equal(init.method, "GET");
+    assert.equal(init.redirect, "manual");
+    assert.equal(init.headers.Authorization, "Bearer provider-secret");
+    assert.equal(init.headers["OpenAI-Beta"], undefined);
+    return Response.json({
+      data: [{ id: "one" }, { id: "two" }, { id: "one" }],
+    });
+  });
+  const body = {
+    name: "Team",
+    base_url: "https://models.example/v1/",
+    api_key: "provider-secret",
+  };
+  assert.deepEqual(await api("POST", "/app/providers/discover", body), {
+    models: ["one", "two"],
+  });
+  assert.equal(store.list("providers").length, 0);
+  const saved = await api("PUT", `/app/providers/${id}`, {
+    ...body,
+    models: [
+      { model: "one", name: "One" },
+      { model: "custom", name: "Custom" },
+    ],
+  });
+  const snapshot = await api("GET", `/app/providers/${id}`);
+  assert.equal(snapshot.revision, saved.revision);
+  assert.equal(snapshot.models.length, 2);
+  assert.ok(snapshot.models.every((model) => model.provider_id === id));
+  assert.equal(saved.has_api_key, true);
+  assert.equal(JSON.stringify(saved).includes("provider-secret"), false);
+  assert.equal(
+    JSON.stringify(await api("GET", "/app/providers")).includes(
+      "provider-secret",
+    ),
+    false,
+  );
+  assert.equal(
+    JSON.stringify(await api("GET", `/app/providers/${id}`)).includes(
+      "provider-secret",
+    ),
+    false,
+  );
+  assert.deepEqual(await api("POST", "/app/providers/discover", { id }), {
+    models: ["one", "two"],
+  });
+  const one = store.list("models").find((row) => row.model === "one");
+  store.put("agents", { id: randomUUID(), model_id: one.id, mcp_ids: [] });
+  await assert.rejects(
+    api("PUT", `/app/providers/${id}`, {
+      ...saved,
+      name: "Changed",
+      models: [],
+    }),
+    /仍被 Agent 引用/,
+  );
+  assert.equal(store.get("providers", id).name, "Team");
+  assert.equal(store.list("models").length, 2);
+  const updated = await api("PUT", `/app/providers/${id}`, {
+    ...saved,
+    models: [{ model: "one", name: "One" }],
+  });
+  assert.equal(store.list("models").length, 1);
+  assert.equal(store.list("models")[0].id, one.id);
+  assert.equal(store.get("providers", id).api_key, "provider-secret");
+  assert.equal(updated.has_api_key, true);
+  store.close();
+});
+
+test("Provider discovery reports failures without leaking keys or upstream bodies", async () => {
+  const store = openStore(":memory:");
+  const body = { base_url: "https://models.example", api_key: "private-key" };
+  for (const response of [
+    () => Response.json({ error: "private-key" }, { status: 401 }),
+    () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://other.example" },
+      }),
+    () => Response.json({ data: [], has_more: true }),
+    () => {
+      throw new Error("private-key");
+    },
+  ]) {
+    const api = productAPI(store, null, response);
+    await assert.rejects(
+      api("POST", "/app/providers/discover", body),
+      (error) => error.status === 502 && !error.message.includes("private-key"),
+    );
+  }
+  store.close();
+});
+
 async function setup(store, core) {
   const api = productAPI(store, core);
   const put = (kind, body, id = randomUUID()) =>
@@ -153,10 +250,96 @@ test("Providers are explicit groups with many models, guarded deletion and no au
     });
   assert.equal((await api("GET", "/app/models")).length, 2);
   await assert.rejects(api("DELETE", `/app/providers/${id}`), /仍被引用/);
-  await api("PUT", `/app/providers/${id}`, { ...provider, name: "Renamed" });
+  await api("PUT", `/app/providers/${id}`, {
+    ...(await api("GET", `/app/providers/${id}`)),
+    name: "Renamed",
+  });
   assert.ok(store.list("models").every((m) => m.provider_id === id));
   await assert.rejects(
     api("PUT", `/app/models/${randomUUID()}`, { name: "Missing", model: "x" }),
     /有效的资源/,
   );
+});
+
+test("stale Provider selections cannot overwrite model edits, moves or removals", async (t) => {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  const api = productAPI(store, null);
+  const id = randomUUID(),
+    other = randomUUID();
+  await api("PUT", `/app/providers/${id}`, {
+    name: "First",
+    models: [{ model: "old-id", name: "Model" }],
+  });
+  await api("PUT", `/app/providers/${other}`, { name: "Other" });
+  const snapshot = () => api("GET", `/app/providers/${id}`);
+  const model = store.list("models")[0];
+  const old = await snapshot();
+  const edited = await api("PUT", `/app/models/${model.id}`, {
+    ...model,
+    model: "new-id",
+  });
+  await assert.rejects(
+    api("PUT", `/app/providers/${id}`, {
+      ...old,
+      models: [{ model: "old-id", name: "Model" }],
+    }),
+    /配置已更新/,
+  );
+  assert.equal(store.get("models", model.id).model, "new-id");
+  const beforeMove = await snapshot();
+  await api("PUT", `/app/models/${model.id}`, {
+    ...edited,
+    provider_id: other,
+  });
+  await assert.rejects(
+    api("PUT", `/app/providers/${id}`, { ...beforeMove, models: [] }),
+    /配置已更新/,
+  );
+  const beforeRemove = await api("GET", `/app/providers/${other}`);
+  await api("DELETE", `/app/models/${model.id}`);
+  await assert.rejects(
+    api("PUT", `/app/providers/${other}`, {
+      ...beforeRemove,
+      models: [{ model: "new-id", name: "Model" }],
+    }),
+    /配置已更新/,
+  );
+  assert.equal(store.list("models").length, 0);
+});
+
+test("model editing and moving retain unique IDs within each Provider", async (t) => {
+  const store = openStore(":memory:");
+  t.after(() => store.close());
+  const api = productAPI(store, null);
+  const first = randomUUID(),
+    second = randomUUID();
+  await api("PUT", `/app/providers/${first}`, {
+    name: "First",
+    models: [
+      { model: "one", name: "One" },
+      { model: "two", name: "Two" },
+    ],
+  });
+  await api("PUT", `/app/providers/${second}`, {
+    name: "Second",
+    models: [{ model: "one", name: "Other One" }],
+  });
+  const two = store.list("models").find((row) => row.model === "two");
+  const other = store.list("models").find((row) => row.provider_id === second);
+  await assert.rejects(
+    api("PUT", `/app/models/${two.id}`, { ...two, model: " one " }),
+    /已有相同的模型 ID/,
+  );
+  await assert.rejects(
+    api("PUT", `/app/models/${other.id}`, { ...other, provider_id: first }),
+    /已有相同的模型 ID/,
+  );
+  assert.equal(store.get("models", two.id).model, "two");
+  assert.equal(store.get("models", other.id).provider_id, second);
+  const renamed = await api("PUT", `/app/models/${two.id}`, {
+    ...two,
+    model: " three ",
+  });
+  assert.equal(renamed.model, "three");
 });
