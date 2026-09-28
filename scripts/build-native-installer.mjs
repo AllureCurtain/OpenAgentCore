@@ -69,17 +69,49 @@ function probe(command, args, cwd, env) {
 const json = async path => JSON.parse(await readFile(path, 'utf8'));
 const requireFile = async path => { if (!(await stat(path)).isFile()) throw new Error('Required component file is missing'); };
 
+// Flattening Node's Unix bin links moves npm's relative requires. Keep the
+// original package entrypoints and publish relocatable regular-file launchers.
+export async function prepareNodeEntrypoints(root, files) {
+  if (process.platform === 'win32') return;
+  for (const name of ['npm', 'npx']) {
+    const entry = `lib/node_modules/npm/bin/${name}-cli.js`;
+    await requireFile(join(root, entry));
+    const launcher = '#!/bin/sh\n' +
+      'basedir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1\n' +
+      `exec "$basedir/node" "$basedir/../${entry}" "$@"\n`;
+    const path = `bin/${name}`;
+    await writeFile(join(root, path), launcher, { mode: 0o755 });
+    await chmod(join(root, path), 0o755);
+    files[path] = { sha256: createHash('sha256').update(launcher).digest('hex'), executable: true };
+  }
+}
+
+export async function validateNodeCommands(nodeRoot, cwd) {
+  const windows = process.platform === 'win32';
+  const bin = windows ? nodeRoot : join(nodeRoot, 'bin');
+  const npmRoot = join(nodeRoot, windows ? 'node_modules/npm' : 'lib/node_modules/npm');
+  const version = (await json(join(npmRoot, 'package.json'))).version;
+  const env = { ...process.env, PATH: [bin, process.env.PATH ?? ''].join(windows ? ';' : ':') };
+  for (const name of ['npm', 'npx']) {
+    await requireFile(join(bin, windows ? `${name}.cmd` : name));
+    // Windows command scripts require cmd.exe; only these fixed command names
+    // enter the shell. Unix probes use executable lookup from the installed PATH.
+    const observed = windows
+      ? probe(process.env.ComSpec ?? 'cmd.exe', ['/d', '/s', '/c', `${name} --version`], cwd, env)
+      : probe(name, ['--version'], cwd, env);
+    if (observed !== version) throw new Error('Bundled npm entrypoint compatibility failed');
+  }
+}
+
 export async function validateComponents(root, names, daemonVersion) {
   const windows = process.platform === 'win32';
   const nodeRoot = join(root, 'components', 'node');
   const node = join(nodeRoot, windows ? 'node.exe' : 'bin/node');
-  const npm = join(nodeRoot, windows ? 'node_modules/npm/bin/npm-cli.js' : 'lib/node_modules/npm/bin/npm-cli.js');
   const env = { ...process.env, PATH: [dirname(node), join(root, 'components', 'minimax', 'bin'), process.env.PATH ?? ''].join(sep === '\\' ? ';' : ':') };
   if (probe(node, ['--version'], root, env) !== `v${pins.node}`) throw new Error('Node version does not match the pin');
   const identity = JSON.parse(probe(node, ['-p', 'JSON.stringify([process.platform,process.arch])'], root, env));
   if (identity[0] !== process.platform || identity[1] !== process.arch) throw new Error('Node platform does not match the build host');
-  await requireFile(npm);
-  probe(node, [npm, '--version'], root, env);
+  await validateNodeCommands(nodeRoot, root);
   const daemon = join(root, windows ? 'oac-daemon.exe' : 'oac-daemon');
   if (probe(daemon, ['version'], root, env) !== daemonVersion) throw new Error('Daemon identity changed during packaging');
   for (const name of names) {
@@ -103,7 +135,7 @@ export async function validateComponents(root, names, daemonVersion) {
       for (const entry of ['launch.mjs', 'dist/worker.mjs', 'provenance.json', 'native-patch.json']) await requireFile(join(component, entry));
       if (probe(node, [join(component, 'native/cli.js'), '--version'], component, env) !== pins.minimax) throw new Error('MiniMax native pin mismatch');
       const info = JSON.parse(probe(node, [join(component, 'check.mjs')], component, env));
-      if (info.protocol !== 1 || info.native !== pins.minimax || info.source !== expected.revision) throw new Error('MiniMax companion compatibility failed');
+      if (info.protocol !== 2 || info.native !== pins.minimax || info.source !== expected.revision) throw new Error('MiniMax companion compatibility failed');
     }
   }
 }
@@ -129,6 +161,7 @@ export async function buildBundle(options) {
     await mkdir(join(staging, 'components'));
     const components = {};
     for (const name of ['node', ...names]) components[name] = { version: pins[name], files: await copyComponent(options[name], join(staging, 'components', name)) };
+    await prepareNodeEntrypoints(join(staging, 'components', 'node'), components.node.files);
     if (components.minimax) {
       const component = join(staging, 'components', 'minimax');
       const nativeRequire = createRequire(join(component, 'native', 'cli.js'));

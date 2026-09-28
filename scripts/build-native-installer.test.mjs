@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmod, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, cp, lstat, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
-import { buildBundle, copyComponent } from './build-native-installer.mjs';
+import { buildBundle, copyComponent, prepareNodeEntrypoints, validateNodeCommands } from './build-native-installer.mjs';
 
 async function fixture(t) {
   const root = await mkdtemp(join(tmpdir(), 'oac-native-bundle-test-'));
@@ -65,4 +65,33 @@ test('bundle rejects output entering a component through an aliased parent', asy
   const alias = join(root, 'alias');
   await symlink(source, alias, process.platform === 'win32' ? 'junction' : 'dir');
   await assert.rejects(buildBundle({ daemon: join(source, 'daemon'), node: source, codex: source, output: join(alias, 'new-parent', 'out') }), /outside/);
+});
+
+test('real npm and npx remain runnable from PATH after regular-file copying and relocation', async t => {
+  const { root, source, output } = await fixture(t);
+  const windows = process.platform === 'win32';
+  const nodeRoot = windows ? dirname(process.execPath) : dirname(dirname(process.execPath));
+  const bin = windows ? source : join(source, 'bin');
+  const npmRelative = windows ? 'node_modules/npm' : 'lib/node_modules/npm';
+  await mkdir(bin, { recursive: true });
+  await copyFile(process.execPath, join(bin, windows ? 'node.exe' : 'node'));
+  await chmod(join(bin, windows ? 'node.exe' : 'node'), 0o755);
+  await cp(join(nodeRoot, npmRelative), join(source, npmRelative), { recursive: true });
+  for (const name of ['npm', 'npx']) {
+    if (windows) await copyFile(join(nodeRoot, `${name}.cmd`), join(bin, `${name}.cmd`));
+    else await symlink(`../lib/node_modules/npm/bin/${name}-cli.js`, join(bin, name));
+  }
+  const files = await copyComponent(source, output);
+  // This is the original failure: the copied Unix JS entrypoint lost its scope.
+  if (!windows) await assert.rejects(validateNodeCommands(output, root), /compatibility probe/);
+  await prepareNodeEntrypoints(output, files);
+  const relocated = join(root, 'relocated node');
+  await rename(output, relocated);
+  await validateNodeCommands(relocated, root);
+  for (const name of ['npm', 'npx']) {
+    const path = windows ? `${name}.cmd` : `bin/${name}`;
+    assert.equal((await lstat(join(relocated, path))).isSymbolicLink(), false);
+    assert.equal(files[path].sha256, createHash('sha256').update(await readFile(join(relocated, path))).digest('hex'));
+    assert.equal(files[path].executable, true);
+  }
 });
