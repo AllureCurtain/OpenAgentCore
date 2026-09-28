@@ -33,7 +33,7 @@ Web 提供管理员控制台。
 daemon 使用启动账户的权限，隔离由外层沙箱负责。释放执行器不会销毁 Environment。
 
 公开接口遵循固定版本的 OpenAI Agents API，已支持的操作和原生引擎差异见
-[协议覆盖记录](contracts/agents-api/README.md)。Core 独立于 Parsar 产品及其数据库。
+[协议覆盖记录](contracts/agents-api/README.md)。
 
 ## 文档
 

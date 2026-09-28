@@ -25,6 +25,17 @@ Runtime builds have additional prerequisites in their component guides.
 pnpm install --frozen-lockfile
 python3 -m venv .venv
 .venv/bin/python -m pip install -r services/agents-api/tests/requirements.txt
+.venv/bin/python - <<'PYTHON'
+import json
+import subprocess
+import sys
+
+pin = json.load(open("contracts/agents-api/upstream.json"))
+subprocess.check_call([
+    sys.executable, "-m", "pip", "install",
+    "git+" + pin["repository"] + "@" + pin["commit"],
+])
+PYTHON
 pnpm exec playwright install --with-deps chrome
 export OAC_TEST_OFFICIAL_SDK_PYTHON="$PWD/.venv/bin/python"
 ```
@@ -34,10 +45,8 @@ database. Its role needs permission to create databases: managed-provider tests
 create and drop isolated test databases. Never point the test suite at an
 installation or product database. The full gate fails if this setting is missing.
 
-The import and package paths retained from Parsar resolve within this repository.
-You do not need the Parsar product checkout or its database. Third-party native
-packages are pinned build inputs; changing a pin requires the relevant native
-qualification as well as compilation.
+Third-party native packages are pinned build inputs; changing a pin requires the
+relevant native qualification as well as compilation.
 
 ## Build and run components
 

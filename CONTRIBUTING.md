@@ -73,9 +73,8 @@ created by Core through a Provider. Harness adapters use bypass execution on all
 platforms. Runtime authentication, process cleanup and state consistency remain
 required; none constitutes isolation from tools running as the same user.
 Installation layout may differ, but Core preparation and execution cannot branch
-on operating system or Environment source. Windows acceptance requires native CI
-builds and automated tests; cross-compilation alone is insufficient. Record the
-absence of manual Windows acceptance until an actual machine is tested.
+on operating system or Environment source. Platform support requires native CI builds and automated tests; cross-compilation
+alone is insufficient.
 
 - Keep component boundaries explicit through shared interfaces and versioned
   protocols. Register implementations behind those interfaces. Adding an
@@ -114,7 +113,9 @@ The [Core–Runtime protocol](docs/runtime-protocol.md) owns message order,
 identities, receipts and failure ownership. Shared types and validators live only
 in `internal/agentdaemon/proto`; change both peers together with an exact
 wire-version check. Do not add a parallel schema or historical wire fallback.
-Hosted and self-hosted peers use the same contract.
+Hosted and self-hosted peers use the same contract. The project is not public:
+change current callers and implementations together instead of maintaining
+historical compatibility layers, aliases or migrations.
 
 `make check-runtime-contract` is the focused shared-contract entry point. Its
 checks also run through `check-go` and `check-agents-api` in the required full gate.
