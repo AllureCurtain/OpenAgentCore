@@ -5010,6 +5010,7 @@ components:
             - provider_unavailable
             - docker_unavailable
             - docker_limits_unsupported
+            - runtime_download_failed
             - runtime_image_unavailable
             - kvm_unavailable
             - microsandbox_artifacts_unavailable
@@ -5102,6 +5103,7 @@ components:
             - provider_unavailable
             - docker_unavailable
             - docker_limits_unsupported
+            - runtime_download_failed
             - runtime_image_unavailable
             - kvm_unavailable
             - microsandbox_artifacts_unavailable
@@ -5211,6 +5213,15 @@ components:
     store.SandboxNodeRollout:
       properties:
         diagnostic:
+          enum:
+            - provider_unavailable
+            - docker_unavailable
+            - docker_limits_unsupported
+            - runtime_download_failed
+            - runtime_image_unavailable
+            - kvm_unavailable
+            - microsandbox_artifacts_unavailable
+            - capacity_insufficient
           type: string
         ready_generation:
           anyOf:

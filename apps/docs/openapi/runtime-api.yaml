@@ -17,6 +17,11 @@ paths:
           description: Retained node UUID
           in: header
           name: X-OAC-Node-ID
+        - schema:
+            type: integer
+          description: Exact kept generation (registered nodes only); omitted reads the current target
+          in: query
+          name: generation
       responses:
         '200':
           description: OK
