@@ -19,8 +19,9 @@ func Installation() agent.Installation {
 			if err != nil || got != SupportedVersion {
 				return fmt.Errorf("MiniMax installation is incompatible")
 			}
-			if _, err = installroot.Probe(ctx, node, []string{filepath.Join(dir, "check.mjs")}, env, dir); err != nil {
-				return fmt.Errorf("MiniMax dependencies are unavailable; Bash is required")
+			raw, err := installroot.Probe(ctx, node, []string{filepath.Join(dir, "check.mjs")}, env, dir)
+			if err != nil || ValidateWorkspaceReadiness([]byte(raw)) != nil {
+				return fmt.Errorf("MiniMax companion is unavailable or incompatible; use the current native distribution and verify Bash")
 			}
 			return nil
 		}}
