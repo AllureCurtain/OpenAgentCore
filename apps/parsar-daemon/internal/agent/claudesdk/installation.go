@@ -13,8 +13,8 @@ func Installation() agent.Installation {
 		Environment: func(dir, node string) map[string]string {
 			return map[string]string{"OAC_RUNTIME_CLAUDE_SDK_ENTRYPOINT": filepath.Join(dir, "dist", "main.js"), "OAC_RUNTIME_CLAUDE_SDK_NODE": node}
 		},
-		Check: func(dir, node string, env []string) error {
-			got, err := CheckRuntime(context.Background(), Config{Node: node, Entrypoint: filepath.Join(dir, "dist", "main.js"), Env: env})
+		Check: func(ctx context.Context, dir, node string, env []string) error {
+			got, err := CheckRuntime(ctx, Config{Node: node, Entrypoint: filepath.Join(dir, "dist", "main.js"), Env: env})
 			if err != nil || got.SDK != "0.3.269" || !got.SupportsLocalRuntime() {
 				return fmt.Errorf("Claude installation is incompatible; Windows requires Git Bash")
 			}

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 
+	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/daemonize"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
 	"github.com/MiniMax-AI-Dev/parsar/internal/runtimefs"
 )
@@ -93,6 +95,8 @@ func runInstall(rc *runContext, args []string) error {
 	if err != nil {
 		return err
 	}
+	ctx, stop := daemonize.NotifyContext(context.Background())
+	defer stop()
 	if runtimefs.ValidateLocalPath(o.Directory) != nil || runtimefs.ValidateLocalPath(o.Bundle) != nil {
 		return errors.New("install: --install-dir and --bundle-dir must be clean absolute directories")
 	}
@@ -152,11 +156,14 @@ func runInstall(rc *runContext, args []string) error {
 		return err
 	}
 	for _, name := range append([]string{"node"}, selected...) {
-		if err = installNativeComponent(o.Bundle, o.Directory, name, bundle.Components[name]); err != nil {
+		if err = installNativeComponent(ctx, o.Bundle, o.Directory, name, bundle.Components[name]); err != nil {
 			return err
 		}
 	}
-	if err = probeNativeInstallation(o.Directory, all); err != nil {
+	if err = probeNativeInstallation(ctx, o.Directory, all); err != nil {
+		return err
+	}
+	if err = ctx.Err(); err != nil {
 		return err
 	}
 	o.Harnesses = all
@@ -243,6 +250,8 @@ func installNativeBinary(root string) error {
 }
 
 func runStart(rc *runContext, args []string) error {
+	ctx, stop := daemonize.NotifyContext(context.Background())
+	defer stop()
 	flags := newFlagSet("start")
 	foreground := flags.Bool("foreground", false, "stay attached to this terminal")
 	if err := flags.Parse(args); err != nil {
@@ -274,7 +283,7 @@ func runStart(rc *runContext, args []string) error {
 		err = verifyNativeComponents(root, config.Harnesses)
 	}
 	if err == nil {
-		err = probeNativeInstallation(root, config.Harnesses)
+		err = probeNativeInstallation(ctx, root, config.Harnesses)
 	}
 	unlock()
 	if err != nil {

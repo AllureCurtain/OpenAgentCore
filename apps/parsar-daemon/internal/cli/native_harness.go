@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -72,10 +73,10 @@ var nativeHarnesses = map[string]agent.Installation{
 }
 var probeNativeInstallation = checkNativeInstallation
 
-func checkNativeInstallation(root string, selected []string) error {
+func checkNativeInstallation(ctx context.Context, root string, selected []string) error {
 	env := withNativeEnv(nativeHarnessEnvironment(root, selected))
 	node := nativeNode(root)
-	version, err := installroot.Probe(node, []string{"--version"}, env, root)
+	version, err := installroot.Probe(ctx, node, []string{"--version"}, env, root)
 	if err != nil || version != "v"+nativePins["node"] {
 		return errors.New("install: bundled Node is unavailable or incompatible; use the matching native distribution")
 	}
@@ -84,7 +85,7 @@ func checkNativeInstallation(root string, selected []string) error {
 		if !ok || !spec.Supported() {
 			return fmt.Errorf("install: %s is unsupported on this platform", name)
 		}
-		if err = spec.Check(nativeComponentRoot(root, name), node, env); err != nil {
+		if err = spec.Check(ctx, nativeComponentRoot(root, name), node, env); err != nil {
 			return fmt.Errorf("install: %s; no installed files were replaced", err)
 		}
 	}

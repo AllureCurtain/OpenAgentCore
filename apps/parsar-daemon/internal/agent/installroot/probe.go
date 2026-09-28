@@ -11,8 +11,8 @@ import (
 
 // Native diagnostics are deliberately discarded: dependencies may echo their
 // environment. Readiness is separate from model credentials and a live Turn.
-func Probe(binary string, args, env []string, dir string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Second)
+func Probe(parent context.Context, binary string, args, env []string, dir string) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, 25*time.Second)
 	defer cancel()
 	p, err := clirunner.Start(clirunner.StartOptions{Parent: ctx, Binary: binary, Args: args, Env: env, Dir: dir, OwnProcessGroup: true, KillTimeout: 250 * time.Millisecond})
 	if err != nil {

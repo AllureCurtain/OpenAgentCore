@@ -1,6 +1,7 @@
 package codex
 
 import (
+	"context"
 	"fmt"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent/installroot"
@@ -20,8 +21,8 @@ func Installation() agent.Installation {
 		Environment: func(dir, node string) map[string]string {
 			return map[string]string{"OAC_RUNTIME_CODEX_BIN": binary(dir)}
 		},
-		Check: func(dir, node string, env []string) error {
-			got, err := installroot.Probe(binary(dir), []string{"--version"}, env, dir)
+		Check: func(ctx context.Context, dir, node string, env []string) error {
+			got, err := installroot.Probe(ctx, binary(dir), []string{"--version"}, env, dir)
 			if err != nil || got != "codex-cli 0.153.4" {
 				return fmt.Errorf("Codex installation is incompatible")
 			}

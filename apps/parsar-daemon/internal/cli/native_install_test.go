@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -45,7 +46,7 @@ func nativeInstallFixture(t *testing.T) (*runContext, []string, string, string) 
 		t.Fatal(err)
 	}
 	old := probeNativeInstallation
-	probeNativeInstallation = func(string, []string) error { return nil }
+	probeNativeInstallation = func(context.Context, string, []string) error { return nil }
 	t.Cleanup(func() { probeNativeInstallation = old })
 	output := new(bytes.Buffer)
 	rc := &runContext{stdin: strings.NewReader("must not read"), stdout: output, stderr: output}
@@ -104,14 +105,14 @@ func TestNativeInstallationFailureAndRecoveryPreserveExisting(t *testing.T) {
 	}
 	file := filepath.Join(root, "daemon", "installation.json")
 	before, _ := os.ReadFile(file)
-	probeNativeInstallation = func(string, []string) error { return errors.New("synthetic unavailable") }
+	probeNativeInstallation = func(context.Context, string, []string) error { return errors.New("synthetic unavailable") }
 	if err := runInstall(rc, append(args, "--harness", "claude")); err == nil {
 		t.Fatal("published failed installation")
 	}
 	if after, _ := os.ReadFile(file); !bytes.Equal(before, after) {
 		t.Fatal("failed addition changed settings")
 	}
-	probeNativeInstallation = func(string, []string) error { return nil }
+	probeNativeInstallation = func(context.Context, string, []string) error { return nil }
 	if err := runInstall(rc, append(args, "--harness", "claude")); err != nil {
 		t.Fatalf("could not reuse complete unpublished component: %v", err)
 	}

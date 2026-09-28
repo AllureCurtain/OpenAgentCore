@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -118,7 +119,7 @@ func checkComponentFiles(directory string, c nativeComponent) error {
 
 // A complete component is published once. An interruption cannot turn a partial
 // copy into an installation; a subsequent run can reuse an already-published one.
-func installNativeComponent(source, root, name string, expected nativeComponent) error {
+func installNativeComponent(ctx context.Context, source, root, name string, expected nativeComponent) error {
 	dest := nativeComponentRoot(root, name)
 	if _, err := os.Lstat(dest); err == nil {
 		got, e := componentReceipt(dest)
@@ -147,6 +148,9 @@ func installNativeComponent(source, root, name string, expected nativeComponent)
 	}
 	defer src.Close()
 	for name, expectedFile := range expected.Files {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if !validBundlePath(name) {
 			return errors.New("install: invalid component path")
 		}
@@ -174,7 +178,7 @@ func installNativeComponent(source, root, name string, expected nativeComponent)
 			return err
 		}
 		h := sha256.New()
-		_, err = io.Copy(io.MultiWriter(out, h), in)
+		_, err = io.Copy(io.MultiWriter(out, h), nativeCopyReader{ctx: ctx, Reader: in})
 		in.Close()
 		if err == nil {
 			err = out.Sync()
@@ -186,6 +190,9 @@ func installNativeComponent(source, root, name string, expected nativeComponent)
 	}
 	raw, _ := json.Marshal(expected)
 	if err = os.WriteFile(filepath.Join(tmp, ".oac-install.json"), raw, 0600); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	return os.Rename(tmp, dest)
@@ -208,4 +215,16 @@ func selectedNativeHarnesses(value string) ([]string, error) {
 	}
 	slices.Sort(out)
 	return out, nil
+}
+
+type nativeCopyReader struct {
+	io.Reader
+	ctx context.Context
+}
+
+func (r nativeCopyReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return r.Reader.Read(p)
 }
