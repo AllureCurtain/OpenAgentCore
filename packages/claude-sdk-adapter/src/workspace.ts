@@ -15,6 +15,7 @@ export type Workspace = {
   dependency_path: string;
   env_names: string[];
   skills?: WorkspaceSkill[];
+  capability_root?: string;
   mcp?: EnvironmentMCPServer[];
   tool_environment?: boolean;
   system_packages?: boolean;
@@ -49,7 +50,7 @@ export function parseWorkspace(value: unknown, cwd: string): Workspace | undefin
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_request");
   const config = value as Record<string, unknown>;
-  if (Object.keys(config).some(key => !["home", "state", "scratch", "protected_dirs", "dependency_path", "env_names", "network_access", "allowed_domains", "tool_environment", "system_packages", "skills", "mcp"].includes(key)) ||
+  if (Object.keys(config).some(key => !["home", "state", "scratch", "protected_dirs", "dependency_path", "env_names", "network_access", "allowed_domains", "tool_environment", "system_packages", "skills", "mcp", "capability_root"].includes(key)) ||
       (config.tool_environment !== undefined && typeof config.tool_environment !== "boolean") ||
       (config.system_packages !== undefined && typeof config.system_packages !== "boolean") ||
       (config.system_packages === true && config.tool_environment !== true) ||
@@ -59,6 +60,12 @@ export function parseWorkspace(value: unknown, cwd: string): Workspace | undefin
       config.env_names.some(name => typeof name !== "string" || !environmentNames.has(name)) ||
       new Set(config.env_names).size !== config.env_names.length) throw new Error("invalid_request");
   const mcp = parseEnvironmentMCP(config.mcp);
+  if (config.capability_root !== undefined) {
+    const capabilityRoot = directory(config.capability_root, true);
+    if ([cwd, config.home, config.state, config.scratch].some(root =>
+        typeof root === "string" && (contains(root, capabilityRoot) || contains(capabilityRoot, root)))) throw new Error("invalid_request");
+  }
+  if ((Array.isArray(config.skills) && config.skills.length || mcp?.length) && !config.capability_root) throw new Error("invalid_request");
   if (mcp?.length && config.network_access !== "enabled") throw new Error("invalid_request");
   const domains = config.allowed_domains ?? [];
   const hostname = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
@@ -105,7 +112,7 @@ export class WorkspaceProfile {
       env.CLAUDE_CODE_SHELL_PREFIX = "/usr/local/bin/oac-claude-shell-prefix";
       env.OAC_RUNTIME_TOOL_SCRATCH = config.scratch;
     }
-    const skills = workspaceSkills(config.skills ?? []);
+    const skills = workspaceSkills(config.skills ?? [], config.capability_root ?? "");
     this.skillNames = skills?.names ?? [];
     const skillTools = skills ? ["Skill"] : [];
     const protectedRoots = [config.home, config.state, ...config.protected_dirs];
@@ -126,7 +133,7 @@ export class WorkspaceProfile {
         enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: false, allowUnsandboxedCommands: false,
         excludedCommands: [], enableWeakerNestedSandbox: false, enableWeakerNetworkIsolation: false,
         filesystem: { disabled: false, allowWrite: [cwd, config.scratch, ...(config.tool_environment ? ["/environment/packages"] : [])], denyRead: protectedRoots,
-          denyWrite: [...protectedRoots, ...(skills || config.mcp?.length ? ["/environment/initialization/capabilities"] : []),
+          denyWrite: [...protectedRoots, ...(config.capability_root ? [config.capability_root] : []),
             ...(config.system_packages ? ["/environment/packages/system"] : [])], allowRead: [] },
         credentials: {
           envVars: [...new Set([...credentialNames, ...config.env_names, ...(mcp?.credentialReferences() ?? [])])].map(name => ({ name, mode: "deny" })),

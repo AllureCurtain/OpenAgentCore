@@ -34,6 +34,9 @@ func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg
 		plan.Permissions = profile
 		plan.ExtraConfig = append(plan.ExtraConfig, [2]string{"default_permissions", tomlQuoteString(profile)})
 		configureRestrictedShellEnvironment(&plan)
+		if req.LocalEnvironment != nil && req.LocalEnvironment.CapabilityRoot != "" {
+			configureCapabilityRoot(&plan, profile, req.LocalEnvironment.CapabilityRoot)
+		}
 		// Native login-shell snapshots live outside the managed tool filesystem.
 		plan.ExtraConfig = append(plan.ExtraConfig, [2]string{"features.shell_snapshot", "false"})
 	}
@@ -109,4 +112,10 @@ func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg
 		}
 	}
 	return plan, skillRoots, nil
+}
+
+// The Runtime supplies this resolved root after validating its binding. Quote the
+// path as one TOML key; neither public options nor source directories select it.
+func configureCapabilityRoot(plan *SessionPlan, profile, root string) {
+	plan.ExtraConfig = append(plan.ExtraConfig, [2]string{"permissions." + tomlQuoteString(profile) + ".filesystem." + tomlQuoteString(root), tomlQuoteString("read")})
 }

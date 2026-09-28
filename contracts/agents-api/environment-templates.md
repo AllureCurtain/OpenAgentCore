@@ -133,7 +133,7 @@ while template responses retain unresolved selectors. Confidential bundle conten
 never appears in these metadata responses. The common Runtime installation path
 receives frozen files and descriptive metadata, without source or template IDs.
 
-Inline Skill ZIPs use the same initializer:
+Inline Skill ZIPs use the shared Runtime capability installer:
 
 ```python
 import base64
@@ -163,10 +163,14 @@ resource-bound template and Session snapshots. Updates replace supplied `skills`
 omission preserves and null/[] clears. Existing Sessions retain their frozen
 content after template update/deletion.
 
-The shared initializer installs Skills under
-`/environment/initialization/capabilities/skills/<name>` before setup and native execution.
-Setup and native tools can read that tree but cannot write it; completed recovery
-never reinstalls it. The public descriptor requests capability installation; the common daemon resolves protected metadata and paths for native preparation.
+Core transfers frozen Skill archives over the authenticated Runtime connection.
+Runtime's shared parser installs them under its operator-bound capability root
+(default `/environment/initialization/capabilities/skills/<name>` for each Skill)
+before setup and native execution;
+Provider commands do not install Skills or Plugins. Setup and native tools can read
+that tree but cannot write it. Completed recovery loads the protected installation
+without reinstalling. The common Runtime resolves installed metadata and paths before
+invoking the native executor factory.
 Codex registers native extra roots, Claude creates its own explicit Skill plugin
 envelope, and MiniMax points its native user-global catalog at the shared root.
 MiniMax retains disabled unrestricted built-in tools and uses its existing
@@ -192,18 +196,23 @@ Referencing Session Plugin lists inherit on omission/null and replace when a
 non-null list is supplied, including empty-list clearing. Template resource updates
 continue to accept null/empty clearing.
 
-`capability_directories` currently accepts clean absolute paths within `/workspace`.
-Initial files and setup can populate them. The shared initializer snapshots these
-directories after setup, then publishes one protected installed manifest. Recovery
-uses those installed bytes even if the source directory changes or is removed.
-This timing and workspace restriction are local implementation choices, not claims
-about unspecified upstream behavior. A supplied Session directory list replaces
+Hosted Template and inline `capability_directories` accept clean absolute paths
+within `/workspace`; self-hosted local selections have their
+[separate public input](environments.md#runtime-capability-preparation).
+Initial files and setup can populate hosted directories. Runtime snapshots them after
+setup and writes the shared protected `installed.json`, bound to the Session,
+Environment and source-selection digest. Recovery loads those installed bytes even
+if a source directory changes or is removed; a new Session captures its own snapshot.
+Partial or conflicting installation fails rather than silently recapturing sources.
+This timing and the hosted path restriction are local implementation choices, not
+claims about unspecified upstream behavior. A supplied Session directory list replaces
 the template list; omitted/null lists inherit. Missing, overlapping duplicate Skill
 names, unsupported manifests and nonregular files reject initialization without
 publishing completion. Directory-discovered Skills do not become fabricated
 inline entries in public `skills` or `plugins` metadata.
 
-The common daemon resolves the installed manifest before executable preparation;
+The common Runtime resolves the installed manifest during admitted asynchronous
+preparation, before creating a native executor;
 read-only Files operations retain their existing minimal requirements. Native
 adapters consume Runtime-owned Skill and package roots. Codex uses explicit roots,
 MiniMax uses its native registry and Claude uses controlled envelopes with explicit
@@ -218,8 +227,8 @@ combined installed capabilities are limited to 50 Skills and 50 MiB. Limits are
 implementation bounds. Native shell preprocessing, dependency activation and
 nested discovery retain the existing adapter restrictions.
 
-Real standalone Docker acceptance on 2026-09-21 passed with the fixed official
-SDK and raw HTTP against current Core/daemon/adapters on qualified native images:
+Historical standalone Docker acceptance on 2026-09-21 passed with the fixed official
+SDK and raw HTTP against the then-current Core/daemon/adapters on qualified native images:
 Codex/Kimi (258.08s), Claude/Kimi (187.81s) and MiniMax Code/MiniMax (250.23s).
 Each exercised two Plugin Skills with package-relative resources and one directory
 Skill generated during setup, public Files/Artifacts and tenant rejection, retained
@@ -237,7 +246,8 @@ fixture is `services/agents-api/tests/official_environment_plugins.py`; operator
 runners reuse existing standalone acceptance and private model configuration.
 A user-authorized reused-context GPT-6 Astra high independent review of all 60
 changed files found no material actionable findings. Those historical results do
-not qualify Plugin MCP. Portable root `plugin.json` applicability and the unconfirmed
+not qualify Plugin MCP or the later shared Runtime transport and self-hosted directory
+preparation. Portable root `plugin.json` applicability and the unconfirmed
 semantics above remain gaps;
 these results do not establish complete Environment Templates or protocol compatibility.
 
@@ -452,18 +462,19 @@ The reason names only the failed step and its exit status:
 | Setup command `i` | `Failed to provision environment: script "setup_commands[i]" failed with exit code N` (observed) |
 | Python packages | `... script "Python package installation" failed with exit code N` (observed label; the official reason appends raw pip output, Core never does) |
 | npm or system packages | `... script "npm package installation"` / `"System package installation"` `failed with exit code N` (unverified) |
-| Initial file or Skill with a confirmed failed write | `Failed to provision environment: initial file installation failed` / `Skill installation failed` (unverified) |
+| Initial file write or Runtime Skill preparation with a confirmed failure | `Failed to provision environment: initial file installation failed` / `Skill installation failed` (unverified) |
 | Anything else | `Failed to provision environment: initialization did not complete` |
 
 "Anything else" covers timeouts, the thirty-minute budget, unknown effects,
-missing or malformed receipts, receipts without `exit_code` from Runtime images
-built before this change, Plugin and capability installation, bootstrap
-rejection and Core restart during initialization. Core treats a step as
-confirmed failed only when the process exits 1 with empty stderr and stdout
-decodes as a version-1 receipt whose `outcome` is `failed`. The decoder is
-deliberately lenient so older images keep working: other receipt fields are
-ignored and never read. The only value ever taken from the receipt is
-`exit_code`, used only when it is an integer from 1 to 255. The Store composes the
+missing or malformed receipts, Plugin installation and directory finalization,
+bootstrap rejection and Core restart during initialization. Provider-executed setup
+has a confirmed failure only when the process exits 1 with empty stderr and stdout
+decodes as a version-1 receipt whose `outcome` is `failed`. Only its optional
+`exit_code` is projected, when it is an integer from 1 to 255; unknown fields are
+ignored without establishing old-version compatibility. Runtime capability
+operations use typed `rejected`, `failed` or `unknown` outcomes instead of provider
+process receipts. Only a confirmed Skill preparation failure gets the Skill label;
+Plugin/finalization failures and uncertain effects retain the generic reason. The Store composes the
 reason from a fixed label and integers, so commands, env values, package names,
 paths and any process output never reach the reason, events, logs or responses.
 The failed step is

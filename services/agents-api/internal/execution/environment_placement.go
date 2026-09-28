@@ -38,11 +38,19 @@ func parseEnvironmentPlacement(configuration json.RawMessage) (environmentPlacem
 	}
 	switch placement.Type {
 	case "self_hosted":
-		if placement.WorkspaceDirectory == "/workspace" && len(placement.CapabilityDirectories) == 0 {
+		var local struct {
+			Type                  string   `json:"type"`
+			WorkspaceDirectory    string   `json:"workspace_directory"`
+			CapabilityDirectories []string `json:"capability_directories"`
+		}
+		decoder := json.NewDecoder(bytes.NewReader(configuration))
+		decoder.DisallowUnknownFields()
+		if decoder.Decode(&local) == nil && validSelfHostedPlacement(placement) {
 			placement.NetworkAccess = "enabled"
 			return placement, nil
 		}
 	case "openai_hosted":
+		placement.WorkspaceDirectory = "/workspace"
 		// Stored policy is shared by preparation and provider bootstrap.
 		var local struct {
 			Plugins               []agentplugin.Metadata           `json:"plugins,omitempty"`
@@ -90,14 +98,26 @@ func (d *Dispatcher) configurePreparedEnvironment(session store.Session, environ
 	if placement.SystemPackages && !placement.ToolEnvironment {
 		return store.ErrInvalidInput
 	}
-	req.LocalEnvironment = &proto.LocalEnvironment{ID: environment.ID, Capabilities: len(placement.Plugins)+len(placement.CapabilityDirectories) > 0, ToolEnvironment: placement.ToolEnvironment, SystemPackages: placement.SystemPackages}
+	sources := &agentcapabilities.Input{Plugins: append([]agentplugin.Metadata(nil), placement.Plugins...), Directories: append([]string(nil), placement.CapabilityDirectories...)}
 	for _, metadata := range placement.Skills {
 		if store.ValidateInstalledSkillMetadata(metadata) != nil {
 			return store.ErrInvalidInput
 		}
-		req.LocalEnvironment.Capabilities = true
+		sources.Skills = append(sources.Skills, (store.EnvironmentSkill{Metadata: metadata}).InstallationMetadata())
+	}
+	req.LocalEnvironment = &proto.LocalEnvironment{
+		ID: environment.ID, WorkspaceDirectory: placement.WorkspaceDirectory,
+		CapabilitySources: sources,
+		Capabilities:      len(sources.Skills)+len(sources.Plugins)+len(sources.Directories) > 0,
+		ToolEnvironment:   placement.ToolEnvironment, SystemPackages: placement.SystemPackages,
 	}
 	req.LocalEnvironment.NetworkAccess = placement.NetworkAccess
 	req.LocalEnvironment.AllowedDomains = append([]string(nil), placement.AllowedDomains...)
 	return nil
+}
+
+func validSelfHostedPlacement(placement environmentPlacement) bool {
+	return agentcapabilities.ValidateLocalDirectories([]string{placement.WorkspaceDirectory}) == nil &&
+		agentcapabilities.ValidateLocalDirectories(placement.CapabilityDirectories) == nil &&
+		!placement.ToolEnvironment && len(placement.Skills)+len(placement.Plugins) == 0
 }

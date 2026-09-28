@@ -65,3 +65,12 @@ func VerifyToolEnvironment(systemPackages bool) error {
 	}
 	return nil
 }
+
+// ReadOptionalToolEnvironment permits a directory-only Runtime without user
+// variables. Declared MCP variables still require the immutable explicit file.
+func ReadOptionalToolEnvironment() (map[string]string, error) {
+	if _, err := os.Lstat(ToolEnvironmentJSON); errors.Is(err, os.ErrNotExist) {
+		return map[string]string{}, nil
+	}
+	return ReadToolEnvironment()
+}

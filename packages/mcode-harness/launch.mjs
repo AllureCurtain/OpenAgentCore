@@ -2,7 +2,7 @@ import { SandboxManager } from './dist/sandbox.mjs';
 import { spawn } from 'node:child_process';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { isIP } from 'node:net';
-import { dirname, join } from 'node:path';
+import { dirname, join, isAbsolute, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const profile = JSON.parse(readFileSync(process.argv[2], 'utf8'));
@@ -19,6 +19,8 @@ if (profile.systemPackages) {
  if (!profile.toolEnvironment) throw new Error('System packages require initialized tool configuration');
  baseEnv.OAC_RUNTIME_TOOL_SCRATCH=profile.scratch;
 }
+if (profile.capabilityRoot && (typeof profile.capabilityRoot !== 'string' || !isAbsolute(profile.capabilityRoot) || normalize(profile.capabilityRoot) !== profile.capabilityRoot || profile.capabilityRoot === '/' || /[\\\x00-\x1f\x7f]/.test(profile.capabilityRoot))) throw new Error('Invalid capability root');
+if (profile.skills && !profile.capabilityRoot) throw new Error('Missing capability root');
 let child;
 let cancelled=false;
 const cancel=()=>{cancelled=true;child?.kill('SIGKILL');};
@@ -27,7 +29,7 @@ try {
  mkdirSync(profile.scratch,{recursive:true});
  await SandboxManager.initialize({
   network:{allowedDomains:domains,deniedDomains:profile.network==='disabled'?['*']:[],allowAll:profile.network==='enabled',strictAllowlist:true,allowAllUnixSockets:false,allowLocalBinding:false},
-  filesystem:{denyRead:profile.protectedDirs,allowWrite:[profile.workspace,profile.scratch,...(profile.toolEnvironment ? ['/environment/packages'] : [])],denyWrite:[...(profile.skills ? ["/environment/initialization/capabilities"] : []),...(profile.systemPackages ? ['/environment/packages/system'] : [])]},
+  filesystem:{denyRead:profile.protectedDirs,allowWrite:[profile.workspace,profile.scratch,...(profile.toolEnvironment ? ['/environment/packages'] : [])],denyWrite:[...(profile.capabilityRoot ? [profile.capabilityRoot] : []),...(profile.systemPackages ? ['/environment/packages/system'] : [])]},
   seccomp:{applyPath:join(here,'dist/vendor/seccomp/x64/apply-seccomp')},
  },undefined,false);
  const quote=s=>"'"+s.replaceAll("'","'\\''")+"'";

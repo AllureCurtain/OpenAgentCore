@@ -26,7 +26,7 @@ Runtime: Executor preparation, reuse, idle expiry, recovery
 | Component | Responsibility | Location |
 | --- | --- | --- |
 | Core | Public API, authority, durable state, scheduling and configuration snapshots | `services/agents-api` |
-| Runtime | Authenticated connection and common Executor/Turn lifecycle | `apps/parsar-daemon/internal/dispatch` |
+| Runtime | Authenticated connection, shared capability preparation and common Executor/Turn lifecycle | `apps/parsar-daemon/internal/dispatch` |
 | Adapter | Native configuration, resources, API calls, event translation and restrictions | `apps/parsar-daemon/internal/agent/<kind>` |
 | Harness | Native model/tool loop and history | Pinned SDK or executable |
 | Service profile | Pure validation of qualified operations and placements | `services/agents-api/internal/engine` |
@@ -40,7 +40,10 @@ alone does not qualify another platform. Resource management owns machine select
 and reclamation. Executor close does not release that allocation or delete the
 workspace. Environment reclamation is an explicit resource-management action that
 coordinates with execution. Runtime connection, installed capability snapshot,
-Session Executor and Turn each have their own lifetime. Model providers supply
+Session Executor and Turn each have their own lifetime. Native factories receive
+capabilities only after the common Runtime has loaded its bound installed snapshot;
+see [capability preparation](environments.md#runtime-capability-preparation).
+Model providers supply
 model communication configuration, not Turn scheduling or native process ownership.
 
 ## Required adapter interfaces

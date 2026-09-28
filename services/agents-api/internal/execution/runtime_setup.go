@@ -5,27 +5,25 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/MiniMax-AI-Dev/parsar/internal/agentbundle"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
-	"github.com/MiniMax-AI-Dev/parsar/internal/agentskill"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
+	"github.com/google/uuid"
 )
 
 // runtimeSetupOperation is the packaged initializer's confidential stdin contract.
 // Public templates and native harness configuration never cross this boundary.
 type runtimeSetupOperation struct {
-	Capabilities *agentcapabilities.Operation `json:"-"`
-	Skill        *store.EnvironmentSkill      `json:"-"`
-	Name         string                       `json:"name,omitempty"`
-	Files        []agentbundle.File           `json:"files,omitempty"`
-	Version      int                          `json:"version"`
-	Action       string                       `json:"action"`
-	Network      string                       `json:"network,omitempty"`
-	Env          map[string]string            `json:"env"`
-	Packages     []string                     `json:"packages,omitempty"`
-	Command      string                       `json:"command,omitempty"`
-	CWD          string                       `json:"cwd,omitempty"`
+	Capabilities *proto.CapabilitiesPreparePayload `json:"-"`
+	Archive      []byte                            `json:"-"`
+	Version      int                               `json:"version"`
+	Action       string                            `json:"action"`
+	Network      string                            `json:"network,omitempty"`
+	Env          map[string]string                 `json:"env"`
+	Packages     []string                          `json:"packages,omitempty"`
+	Command      string                            `json:"command,omitempty"`
+	CWD          string                            `json:"cwd,omitempty"`
 	// Index is the setup command position, used only for the public failure label.
 	Index int `json:"-"`
 }
@@ -56,10 +54,11 @@ func setupOperations(setup store.EnvironmentSetup) []runtimeSetupOperation {
 	}
 	result := []runtimeSetupOperation{{Version: 1, Action: "configure", Env: env}}
 	for i := range setup.Skills {
-		result = append(result, runtimeSetupOperation{Version: 1, Action: "skill", Skill: &setup.Skills[i]})
+		metadata := setup.Skills[i].InstallationMetadata()
+		result = append(result, runtimeSetupOperation{Action: "skill", Capabilities: &proto.CapabilitiesPreparePayload{Action: "skill", Skill: &metadata}, Archive: setup.Skills[i].Archive})
 	}
 	for i, plugin := range setup.Plugins {
-		result = append(result, runtimeSetupOperation{Capabilities: &agentcapabilities.Operation{Version: 1, Action: "plugin", Slot: i, Archive: plugin.Archive, Plugin: plugin.Metadata}})
+		result = append(result, runtimeSetupOperation{Capabilities: &proto.CapabilitiesPreparePayload{Action: "plugin", Slot: i, Plugin: &plugin.Metadata}, Archive: plugin.Archive})
 	}
 	// The public network policy applies after setup completes. Provisioning uses
 	// the isolated initializer's network; adapters enforce the runtime policy.
@@ -85,28 +84,17 @@ func setupOperations(setup store.EnvironmentSetup) []runtimeSetupOperation {
 		for _, skill := range setup.Skills {
 			sources.Skills = append(sources.Skills, skill.InstallationMetadata())
 		}
-		result = append(result, runtimeSetupOperation{Capabilities: &agentcapabilities.Operation{Version: 1, Action: "finalize", Sources: sources}})
+		result = append(result, runtimeSetupOperation{Capabilities: &proto.CapabilitiesPreparePayload{Action: "finalize", Sources: &sources}})
 	}
 	return result
 }
 
 func runRuntimeSetup(ctx context.Context, provider sandbox.Provider, reference sandbox.Reference, operation runtimeSetupOperation) error {
-	if provider == nil {
+	if provider == nil || operation.Capabilities != nil {
 		return sandbox.ErrInvalid
-	}
-	if operation.Skill != nil {
-		files, err := agentskill.Read(operation.Skill.Archive, operation.Skill.InstallationMetadata())
-		if err != nil {
-			return err
-		}
-		operation.Name, operation.Files = operation.Skill.Metadata.Name, files
 	}
 	var payload any = operation
 	args := []string{"/usr/bin/python3", "-I", "-S", "/usr/local/bin/oac-runtime-initialize"}
-	if operation.Capabilities != nil {
-		payload = operation.Capabilities
-		args = []string{"/usr/local/bin/oac-daemon", "runtime-capabilities"}
-	}
 	input, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -134,4 +122,27 @@ func runRuntimeSetup(ctx context.Context, provider sandbox.Provider, reference s
 		return failure
 	}
 	return errors.New("environment initialization operation unconfirmed")
+}
+
+// capabilityPreparer is the authenticated Runtime operation; no provider command
+// or expanded Skill files cross this boundary.
+type capabilityPreparer interface {
+	PrepareCapabilities(context.Context, string, proto.CapabilitiesPreparePayload, []byte) (proto.CapabilitiesResultPayload, error)
+}
+
+func runRuntimeCapabilities(ctx context.Context, peer capabilityPreparer, owner store.RuntimeAllocation, operation runtimeSetupOperation) error {
+	if peer == nil || operation.Capabilities == nil {
+		return sandbox.ErrInvalid
+	}
+	request := *operation.Capabilities
+	request.EnvironmentID, request.SessionID = owner.EnvironmentID, owner.SessionID
+	result, err := peer.PrepareCapabilities(ctx, uuid.NewString(), request, operation.Archive)
+	if err == nil && result.Outcome == "completed" {
+		return nil
+	}
+	if err == nil && (result.Outcome == "rejected" || result.Outcome == "failed") {
+		return &runtimeStepFailure{}
+	}
+	// Keep transport details and Runtime-native text out of public errors.
+	return errors.New("environment capability preparation unconfirmed")
 }

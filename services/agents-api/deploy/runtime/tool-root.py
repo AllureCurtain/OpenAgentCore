@@ -38,6 +38,8 @@ def sandbox(cwd, *, writable=False, network='enabled', workspace='/workspace', s
             '--bind', workspace, '/environment/workspace',
             '--bind', '/environment/packages', '/environment/packages',
             '--ro-bind', str(ROOT), str(ROOT), '--ro-bind', str(CONFIG), str(CONFIG)]
+    if workspace not in ('/workspace', '/environment/workspace'):
+        args += ['--bind', workspace, workspace]
     if network == 'disabled':
         args += ['--unshare-net']
     elif network != 'enabled':
@@ -47,8 +49,8 @@ def sandbox(cwd, *, writable=False, network='enabled', workspace='/workspace', s
     return args + ['--chdir', cwd, '--']
 
 
-def initialization_sandbox(cwd, network='enabled', *, writable=False):
-    args = sandbox(cwd, writable=writable, network=network, workspace='/environment/workspace')
+def initialization_sandbox(cwd, network='enabled', *, writable=False, workspace='/environment/workspace'):
+    args = sandbox(cwd, writable=writable, network=network, workspace=workspace)
     args[1:1] = ['--new-session', '--clearenv']
     for key, value in {**BASE_ENV, 'DEBIAN_FRONTEND': 'noninteractive'}.items():
         args[-1:-1] = ['--setenv', key, value]

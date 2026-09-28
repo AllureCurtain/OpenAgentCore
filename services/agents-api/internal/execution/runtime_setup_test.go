@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 )
@@ -29,7 +29,7 @@ func (p receiptProvider) RunCommand(context.Context, sandbox.Reference, sandbox.
 // Other receipt fields are ignored, never read; everything else stays generic.
 func TestRuntimeSetupReceiptOutcomes(t *testing.T) {
 	setup := runtimeSetupOperation{Version: 1, Action: "setup", Network: "enabled", Command: "echo " + setupCanary, CWD: "/workspace", Index: 2}
-	plugin := runtimeSetupOperation{Capabilities: &agentcapabilities.Operation{Version: 1, Action: "plugin"}}
+	plugin := runtimeSetupOperation{Capabilities: &proto.CapabilitiesPreparePayload{Action: "plugin"}}
 	unconfirmed := -1
 	for _, test := range []struct {
 		name      string

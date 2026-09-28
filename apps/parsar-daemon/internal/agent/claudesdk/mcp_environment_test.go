@@ -15,19 +15,19 @@ func TestEnvironmentMCPUsesInstalledLauncherAndSelectedCredential(t *testing.T) 
 	req := workspaceRequest()
 	token := "selected-user-token"
 	t.Setenv("MCP_TOKEN", "unselected-native-token")
-	req.LocalEnvironment = &proto.LocalEnvironment{NetworkAccess: "enabled", MCP: []proto.EnvironmentMCP{
-		{PackageRoot: "plugins/local", Server: agentplugin.MCPServer{Name: "local", Type: "stdio", Command: "untrusted-package-command", Args: []string{"package-argument"}, EnvVars: []string{"MCP_TOKEN"}}},
-		{PackageRoot: "plugins/remote", Server: agentplugin.MCPServer{Name: "remote", Type: "http", URL: "https://example.invalid/mcp", BearerTokenEnvVar: "MCP_TOKEN"}, BearerToken: &token},
+	req.LocalEnvironment = &proto.LocalEnvironment{CapabilityRoot: "/private/runtime/capabilities", NetworkAccess: "enabled", MCP: []proto.EnvironmentMCP{
+		{InstallationRoot: "/private/runtime/capabilities", WorkspaceRoot: "/private/runtime/workspace", PackageRoot: "plugins/local", Server: agentplugin.MCPServer{Name: "local", Type: "stdio", Command: "untrusted-package-command", Args: []string{"package-argument"}, EnvVars: []string{"MCP_TOKEN"}}},
+		{InstallationRoot: "/private/runtime/capabilities", WorkspaceRoot: "/private/runtime/workspace", PackageRoot: "plugins/remote", Server: agentplugin.MCPServer{Name: "remote", Type: "http", URL: "https://example.invalid/mcp", BearerTokenEnvVar: "MCP_TOKEN"}, BearerToken: &token},
 	}}
 	start, env, err := prepare(config, req)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if start.MCPHTTPServers != nil || len(start.Workspace.MCP) != 2 {
+	if start.MCPHTTPServers != nil || len(start.Workspace.MCP) != 2 || start.Workspace.CapabilityRoot != req.LocalEnvironment.CapabilityRoot {
 		t.Fatal("environment declarations changed authority")
 	}
 	stdio := start.Workspace.MCP[0]
-	if stdio.Command != "/usr/bin/python3" || len(stdio.Args) != 6 || stdio.Args[4] != "plugins/local" || stdio.Args[5] != "local" {
+	if stdio.Command != "/usr/bin/python3" || len(stdio.Args) != 8 || stdio.Args[4] != "/private/runtime/capabilities" || stdio.Args[5] != "/private/runtime/workspace" || stdio.Args[6] != "plugins/local" || stdio.Args[7] != "local" {
 		t.Fatal("stdio bypassed the shared installed entry")
 	}
 	raw, _ := json.Marshal(start)
@@ -65,7 +65,7 @@ func TestEnvironmentMCPRejectsUnqualifiedCombinations(t *testing.T) {
 			e.MCP[0].Server.URL = "http://example.invalid/mcp"
 		},
 	} {
-		environment := &proto.LocalEnvironment{NetworkAccess: "enabled", MCP: []proto.EnvironmentMCP{{PackageRoot: "plugins/remote", Server: agentplugin.MCPServer{Name: "remote", Type: "http", URL: "https://example.invalid/mcp"}}}}
+		environment := &proto.LocalEnvironment{NetworkAccess: "enabled", MCP: []proto.EnvironmentMCP{{InstallationRoot: "/private/runtime/capabilities", WorkspaceRoot: "/private/runtime/workspace", PackageRoot: "plugins/remote", Server: agentplugin.MCPServer{Name: "remote", Type: "http", URL: "https://example.invalid/mcp"}}}}
 		mutate(environment)
 		if _, _, err := prepareEnvironmentMCP(environment); err == nil {
 			t.Fatal("unsupported declaration accepted")

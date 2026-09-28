@@ -119,11 +119,11 @@ func TestSelfHostedUsesSameLocalBinding(t *testing.T) {
 		for _, binding := range []string{"", "foreign", environment.ID} {
 			var request proto.PromptRequestPayload
 			err := (&Dispatcher{}).configurePreparedEnvironment(session, environment, store.ExecutionDevice{EnvironmentID: binding}, &request)
-			valid := binding == environment.ID && workspace == "/workspace"
+			valid := binding == environment.ID
 			if (err == nil) != valid {
 				t.Fatal(workspace, binding, err)
 			}
-			if valid && (request.LocalEnvironment == nil || request.LocalEnvironment.ID != environment.ID || request.LocalEnvironment.NetworkAccess != "enabled") {
+			if valid && (request.LocalEnvironment == nil || request.LocalEnvironment.ID != environment.ID || request.LocalEnvironment.NetworkAccess != "enabled" || request.LocalEnvironment.WorkspaceDirectory != workspace || request.LocalEnvironment.CapabilitySources == nil) {
 				t.Fatal("self-hosted placement did not retain common local contract", request.LocalEnvironment)
 			}
 		}

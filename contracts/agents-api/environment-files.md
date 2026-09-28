@@ -279,10 +279,12 @@ Decisions:
 
 - The shared `oac-codex-write` helper takes an explicit per-call mode. Only
   the daemon's local workspace writer, which serves only Files.create, passes
-  `create`. Core's initial Session file installer and the Skill installer keep the
-  four-argument replace mode, which older Runtime images also understand. Plugins
-  use the separate capability installer, and completed recovery, including cold
-  resume, never reinstalls files. Their semantics are unchanged.
+  `create`. Core's initial Session file installer keeps the four-argument replace
+  mode. At this historical acceptance, the Skill installer also used that helper;
+  current Skills and Plugins use the
+  [shared Runtime capability preparation](environments.md#runtime-capability-preparation).
+  Completed recovery, including cold resume, never reinstalls files. The Files.create
+  semantics recorded here remain unchanged.
 - Parents are created only after the complete body is verified, so incomplete or
   corrupt input creates nothing. Each new directory is reopened without following
   links. The install itself never replaces: `renameat2(RENAME_NOREPLACE)`, or

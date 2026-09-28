@@ -9,18 +9,18 @@ import { immediateInput, parseStart } from "../dist/request.js";
 import { WorkspaceProfile } from "../dist/workspace.js";
 
 const stdio = { server_label: "installed", command: "/usr/bin/python3", allowed_tools: null,
-  args: ["-I", "-S", "/usr/local/bin/oac-runtime-initialize", "stdio", "plugins/installed", "installed"] };
+  args: ["-I", "-S", "/usr/local/bin/oac-runtime-initialize", "stdio", "/private/runtime/capabilities", "/private/runtime/workspace", "plugins/installed", "installed"] };
 const native = "mcp__installed__echo_v1";
 const statuses = [{ name: "installed", status: "connected", tools: [{ name: "echo.v1" }] }];
 const baseline = ["Bash", "Read", "Edit"];
 
 function fixture(t, declarations = [stdio]) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), "oac-mcp-workspace-")));
-  const dirs = Object.fromEntries(["work", "home", "state", "scratch", "secrets", "deps"].map(name => {
+  const dirs = Object.fromEntries(["work", "home", "state", "scratch", "secrets", "deps", "capabilities"].map(name => {
     const path = join(root, name); mkdirSync(path); return [name, path];
   }));
   const config = { home: dirs.home, state: dirs.state, scratch: dirs.scratch, protected_dirs: [dirs.secrets],
-    dependency_path: dirs.deps, env_names: ["ANTHROPIC_AUTH_TOKEN"], network_access: "enabled", mcp: declarations };
+    capability_root: dirs.capabilities, dependency_path: dirs.deps, env_names: ["ANTHROPIC_AUTH_TOKEN"], network_access: "enabled", mcp: declarations };
   const previous = process.env;
   process.env = { HOME: dirs.home, CLAUDE_CONFIG_DIR: dirs.state, ANTHROPIC_AUTH_TOKEN: "model-secret" };
   t.after(() => { process.env = previous; rmSync(root, { recursive: true, force: true }); });
@@ -37,8 +37,14 @@ test("installed MCP private projection cannot launch arbitrary unsandboxed comma
   assert.deepEqual(parseEnvironmentMCP([stdio]), [stdio]);
   for (const value of [[stdio, stdio], [{ ...stdio, command: "/bin/sh" }], [{ ...stdio, env: { TOKEN: "secret" } }],
     [{ ...stdio, args: ["-c", "untrusted"] }], [{ ...stdio, allowed_tools: ["*"] }],
-    [{ ...stdio, server_url: "https://example.invalid" }], [{ ...stdio, args: [...stdio.args.slice(0, 4), "../escape", "installed"] }]]) {
+    [{ ...stdio, server_url: "https://example.invalid" }], [{ ...stdio, args: [...stdio.args.slice(0, 6), "../escape", "installed"] }]]) {
     assert.throws(() => parseEnvironmentMCP(value), /invalid_request/);
+  }
+  for (const index of [4, 5]) {
+    for (const invalid of ["/", "relative", "/tmp/../escape", "/tmp/root/", "/tmp/line\n"]) {
+      const args = [...stdio.args]; args[index] = invalid;
+      assert.throws(() => parseEnvironmentMCP([{ ...stdio, args }]), /invalid_request/);
+    }
   }
   assert.throws(() => parseStart(JSON.stringify({ ...request, workspace: { ...request.workspace, network_access: "disabled" } })), /invalid_request/);
 });
@@ -66,7 +72,7 @@ test("combined inventory admits exact MCP identities without granting local file
   }
   assert.deepEqual(workspace.options.allowedTools, ["mcp__installed__*"]);
   assert.deepEqual(workspace.options.tools, baseline);
-  assert.ok(workspace.options.sandbox.filesystem.denyWrite.includes("/environment/initialization/capabilities"));
+  assert.ok(workspace.options.sandbox.filesystem.denyWrite.includes(dirs.capabilities));
   assert.equal(workspace.options.sandbox.allowUnsandboxedCommands, false);
   mcp.close();
   assert.equal((await workspace.canUseTool(native, {}, { signal })).behavior, "deny");

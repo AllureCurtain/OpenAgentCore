@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/gateway"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 )
@@ -56,6 +57,16 @@ func (r *runtimeLifecycle) observeInitialization(ctx context.Context, owner stor
 	if len(cfg.Files)+len(operations) == 0 || cfg.Initialization != !setup.Empty() {
 		_, err = r.store.RequestRuntimeCleanup(ctx, owner)
 		return err
+	}
+	// A not-yet-connected Runtime is not a failed initialization attempt.
+	for _, operation := range operations {
+		if operation.Capabilities != nil {
+			peer, err := r.initializationPeer(ctx, owner)
+			if err != nil || peer == nil {
+				return err
+			}
+			break
+		}
 	}
 	claimed, err := r.store.ClaimRuntimeInitialization(ctx, owner)
 	if err != nil {
@@ -108,7 +119,18 @@ func (r *runtimeLifecycle) advanceInitialization(ctx context.Context) error {
 	} else {
 		setup := active.operations[active.next-active.files]
 		step = setup.provisioningFailure(0)
-		err = runRuntimeSetup(operation, r.config.Provider, runtimeReference(owner), setup)
+		if setup.Capabilities != nil {
+			var peer *gateway.Session
+			peer, err = r.initializationPeer(operation, owner)
+			if err == nil && peer == nil {
+				return nil
+			}
+			if err == nil {
+				err = runRuntimeCapabilities(operation, peer, owner, setup)
+			}
+		} else {
+			err = runRuntimeSetup(operation, r.config.Provider, runtimeReference(owner), setup)
+		}
 	}
 	if err != nil {
 		// Clearing the in-memory owner makes the next observation request cleanup,
@@ -187,3 +209,16 @@ for component in parts[:-1]:
 os.close(fd)
 os.execv('/usr/local/bin/oac-codex-write', ['oac-codex-write', '/environment/workspace', sys.argv[1], sys.argv[2], '/environment/staging'])
 `
+
+// Missing authority/socket before sending consumes no initialization operation.
+// Once PrepareCapabilities is called, unknown effects use the existing cleanup.
+func (r *runtimeLifecycle) initializationPeer(ctx context.Context, owner store.RuntimeAllocation) (*gateway.Session, error) {
+	if r.registry == nil {
+		return nil, nil
+	}
+	peer, err := authorizedRuntimePeer(ctx, r.store, r.registry, owner.DeviceID)
+	if errors.Is(err, store.ErrNotFound) || errors.Is(err, gateway.ErrSessionClosed) || errors.Is(err, gateway.ErrDeviceNotRegistered) {
+		return nil, nil
+	}
+	return peer, err
+}

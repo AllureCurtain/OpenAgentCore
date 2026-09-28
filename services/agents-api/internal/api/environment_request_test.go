@@ -1,0 +1,29 @@
+package api
+
+import (
+	"encoding/json"
+	"testing"
+)
+
+func TestSelfHostedPathsDoNotCreateManagedInitialization(t *testing.T) {
+	raw := json.RawMessage(`{"type":"self_hosted","workspace_directory":"/home/user/work","capability_directories":["/opt/skills","/home/user/plugins"]}`)
+	request, err := (decodedSessionRequest{Environment: raw}).validated()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !request.initialization.Empty() || request.Environment.WorkspaceDirectory != "/home/user/work" || len(request.Environment.CapabilityDirectories) != 2 {
+		t.Fatal("local selections became managed initialization", request.initialization, request.Environment)
+	}
+	for _, raw := range []string{
+		`{"type":"self_hosted","workspace_directory":"/a/../b"}`,
+		`{"type":"self_hosted","workspace_directory":"/work/"}`,
+		`{"type":"self_hosted","workspace_directory":"/work","capability_directories":["relative"]}`,
+		`{"type":"self_hosted","workspace_directory":"/work","capability_directories":["/a","/a"]}`,
+		`{"type":"self_hosted","workspace_directory":"/work","plugins":[]}`,
+		`{"type":"self_hosted","workspace_directory":"/work","skills":[]}`,
+	} {
+		if _, err := (decodedSessionRequest{Environment: json.RawMessage(raw)}).validated(); err == nil {
+			t.Fatal("invalid local input accepted", raw)
+		}
+	}
+}

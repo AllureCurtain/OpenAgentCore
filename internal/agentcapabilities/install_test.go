@@ -27,7 +27,7 @@ func TestInstalledCapabilitiesPreserveSourcesWithoutRescanning(t *testing.T) {
 	writeWorkspace(t, workspace, "generated/nested/SKILL.md", skillManifest("generated"))
 	writeWorkspace(t, workspace, "generated/shared/proof.txt", []byte("original-resource"))
 	input := Input{Skills: []agentskill.Metadata{inline}, Plugins: []agentplugin.Metadata{plugin}, Directories: []string{"/workspace/generated"}}
-	if err := Finalize(workspace, installed, input); err != nil {
+	if err := Finalize(installed, input, testIdentity, workspaceResolver(workspace)); err != nil {
 		t.Fatal(err)
 	}
 	before, err := Load(installed)
@@ -51,7 +51,7 @@ func TestInstalledCapabilitiesPreserveSourcesWithoutRescanning(t *testing.T) {
 			t.Fatalf("snapshot changed or writable: %s", name)
 		}
 	}
-	if Finalize(workspace, installed, input) == nil {
+	if Finalize(installed, input, testIdentity, workspaceResolver(workspace)) == nil {
 		t.Fatal("completed initialization was replayed")
 	}
 }
@@ -61,7 +61,7 @@ func TestDirectoryDiscoveryDoesNotActivateChildPluginMCP(t *testing.T) {
 	writeWorkspace(t, workspace, "parent/child/.codex-plugin/plugin.json", []byte(`{"name":"remote","description":"Remote","skills":"./skills","mcpServers":"./.mcp.json"}`))
 	writeWorkspace(t, workspace, "parent/child/.mcp.json", []byte(`{"mcpServers":{"remote":{"type":"http","url":"https://example.com"}}}`))
 	writeWorkspace(t, workspace, "parent/child/skills/proof/SKILL.md", skillManifest("proof"))
-	if err := Finalize(workspace, installed, Input{Directories: []string{"/workspace/parent"}}); err != nil {
+	if err := Finalize(installed, Input{Directories: []string{"/workspace/parent"}}, testIdentity, workspaceResolver(workspace)); err != nil {
 		t.Fatal(err)
 	}
 	manifest, err := Load(installed)
@@ -72,7 +72,7 @@ func TestDirectoryDiscoveryDoesNotActivateChildPluginMCP(t *testing.T) {
 		t.Fatal("parent directory activated child Plugin MCP")
 	}
 	exact := openTestRoot(t)
-	if err := Finalize(workspace, exact, Input{Directories: []string{"/workspace/parent/child"}}); err != nil {
+	if err := Finalize(exact, Input{Directories: []string{"/workspace/parent/child"}}, testIdentity, workspaceResolver(workspace)); err != nil {
 		t.Fatal(err)
 	}
 	manifest, err = Load(exact)
@@ -102,7 +102,7 @@ func TestInvalidDirectorySnapshotsNeverPublish(t *testing.T) {
 			case "file":
 				input.Directories = []string{"/workspace/first/SKILL.md"}
 			}
-			if Finalize(workspace, installed, input) == nil {
+			if Finalize(installed, input, testIdentity, workspaceResolver(workspace)) == nil {
 				t.Fatal("invalid capability source accepted")
 			}
 			if _, err := installed.Lstat(ManifestName); !os.IsNotExist(err) {

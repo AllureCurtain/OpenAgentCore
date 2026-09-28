@@ -40,6 +40,9 @@ func TestNativeFunctionBridge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Chmod(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("OAC_RUNTIME_HOME", home)
 	var count atomic.Int32
 	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

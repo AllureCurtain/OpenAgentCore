@@ -23,10 +23,10 @@ type mcpInvocation struct {
 // runRuntimeMCP executes only inside the packaged initializer's sandbox. It
 // never consumes MCP stdin, opens a daemon connection or owns a child process.
 func runRuntimeMCP(_ *runContext, args []string) error {
-	if len(args) != 2 {
+	if len(args) != 3 || args[0] == "/" || agentcapabilities.ValidateLocalDirectories([]string{args[0]}) != nil {
 		return errRuntimeMCP
 	}
-	root, err := os.OpenRoot(agentcapabilities.Directory)
+	root, err := os.OpenRoot(args[0])
 	if err != nil {
 		return errRuntimeMCP
 	}
@@ -35,18 +35,21 @@ func runRuntimeMCP(_ *runContext, args []string) error {
 	if err != nil {
 		return errRuntimeMCP
 	}
-	values, err := localworkspace.ReadToolEnvironment()
+	values, err := localworkspace.ReadOptionalToolEnvironment()
 	if err != nil {
 		return errRuntimeMCP
 	}
-	invocation, err := resolveMCPInvocation(manifest, args[0], args[1], values)
+	invocation, err := resolveMCPInvocation(manifest, args[0], args[1], args[2], values)
 	if err != nil {
 		return errRuntimeMCP
 	}
 	return execRuntimeMCP(invocation)
 }
 
-func resolveMCPInvocation(manifest agentcapabilities.Manifest, pkg, name string, values map[string]string) (mcpInvocation, error) {
+func resolveMCPInvocation(manifest agentcapabilities.Manifest, installationRoot, pkg, name string, values map[string]string) (mcpInvocation, error) {
+	if installationRoot == "/" || agentcapabilities.ValidateLocalDirectories([]string{installationRoot}) != nil {
+		return mcpInvocation{}, errRuntimeMCP
+	}
 	for _, installed := range manifest.MCP {
 		server := installed.Server
 		if installed.PackageRoot != pkg || server.Name != name {
@@ -72,7 +75,7 @@ func resolveMCPInvocation(manifest agentcapabilities.Manifest, pkg, name string,
 		}
 		cwd := server.CWD
 		if !filepath.IsAbs(cwd) {
-			cwd = filepath.Join(agentcapabilities.Directory, installed.PackageRoot, cwd)
+			cwd = filepath.Join(installationRoot, installed.PackageRoot, cwd)
 		}
 		result := mcpInvocation{command: server.Command, args: append([]string{server.Command}, server.Args...), cwd: cwd}
 		for key, value := range env {

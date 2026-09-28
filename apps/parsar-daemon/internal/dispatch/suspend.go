@@ -31,7 +31,7 @@ func (r *Router) Quiesce(ctx context.Context, request proto.EnvironmentSuspendPa
 		r.mu.Unlock()
 		return ErrRouterQuiesced
 	}
-	if len(r.sessions) != 0 || len(r.workspaceReads) != 0 || r.workspaceWrite != nil || r.workspaceExport != nil || len(r.permIndex) != 0 || len(r.askIndex) != 0 {
+	if r.capabilitiesPrepare != nil || len(r.sessions) != 0 || len(r.workspaceReads) != 0 || r.workspaceWrite != nil || r.workspaceExport != nil || len(r.permIndex) != 0 || len(r.askIndex) != 0 {
 		r.mu.Unlock()
 		return ErrRouterBusy
 	}

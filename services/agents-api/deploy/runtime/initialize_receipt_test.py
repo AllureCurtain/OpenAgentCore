@@ -10,6 +10,7 @@ import io
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 from unittest import mock
 
@@ -41,6 +42,77 @@ class FailureReceiptTest(unittest.TestCase):
         self.assertEqual(json.loads(stdout), expected)
         self.assertNotIn(CANARY, stdout)
         self.assertNotIn('echo', stdout)
+
+    def test_configure_does_not_create_or_change_runtime_capabilities(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory)
+            capabilities = config / 'capabilities'
+            capabilities.mkdir()
+            manifest = capabilities / 'installed.json'
+            manifest.write_bytes(b'fixed-runtime-fixture')
+            with mock.patch.object(initialize, 'CONFIG', config):
+                initialize.configure({'VALUE': 'configured'})
+                self.assertEqual(manifest.read_bytes(), b'fixed-runtime-fixture')
+                self.assertFalse((capabilities / 'skills').exists())
+                self.assertIn('configured', (config / 'tool-env.sh').read_text())
+                with self.assertRaises(FileExistsError):
+                    initialize.configure({'VALUE': 'changed'})
+
+    def test_skill_is_not_a_provider_initializer_action(self):
+        with mock.patch.object(initialize, 'sandbox', return_value=[]), \
+             mock.patch.object(initialize.subprocess, 'run') as run:
+            with self.assertRaisesRegex(ValueError, 'invalid action'):
+                initialize.run({'action': 'skill', 'network': 'enabled'})
+            run.assert_not_called()
+
+    def test_stdio_forwards_and_mounts_resolved_runtime_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            root, workspace = base / 'capabilities', base / 'actual-work'
+            root.mkdir()
+            workspace.mkdir()
+            root, workspace = str(root), str(workspace)
+            with mock.patch.object(initialize, 'roots') as roots, \
+                 mock.patch.object(initialize, 'sandbox', return_value=['bwrap', '--']) as sandbox, \
+                 mock.patch.object(initialize, 'stdio_lifetime', return_value=0) as launch:
+                with mock.patch.object(initialize.sys, 'argv', ['initialize', 'stdio', root, workspace, 'plugins/0', 'server']):
+                    self.assertEqual(initialize.main(), 0)
+                roots.assert_called_once_with(workspace)
+                sandbox.assert_called_once_with('enabled', '/workspace', workspace=workspace)
+                argv = launch.call_args.args[0]
+                self.assertEqual(argv[-5:], ['/tmp/oac-mcp-exec', 'runtime-mcp-exec', root, 'plugins/0', 'server'])
+                self.assertIn(['--ro-bind', root, root], [argv[i:i+3] for i in range(len(argv)-2)])
+            alias = base / 'alias'
+            alias.symlink_to(workspace, target_is_directory=True)
+            for invalid in ('/', 'relative', '/tmp/../secret', workspace + '/', workspace + '\n', str(alias)):
+                for values in ((invalid, workspace), (root, invalid)):
+                    with self.assertRaises(ValueError):
+                        initialize.stdio(*values, 'plugins/0', 'server')
+
+    def test_stdio_mounts_workspace_at_native_alias_and_physical_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory)
+            workspace = str(config / 'actual-work')
+            with mock.patch.object(initialize, 'CONFIG', config):
+                args = initialize.sandbox('enabled', '/workspace', workspace=workspace)
+                mounts = [args[i:i+3] for i in range(len(args)-2)]
+                self.assertIn(['--bind', workspace, '/workspace'], mounts)
+                self.assertIn(['--bind', workspace, workspace], mounts)
+                self.assertNotIn(['--bind', '/environment/workspace', '/workspace'], mounts)
+                self.assertIn(['--ro-bind', str(config), str(config)], mounts)
+                default = initialize.sandbox('enabled', '/workspace')
+                self.assertIn(['--bind', '/environment/workspace', '/workspace'],
+                              [default[i:i+3] for i in range(len(default)-2)])
+                tools = initialize.runpy.run_path(str(Path(__file__).with_name('tool-root.py')))
+                (config / 'system-root.json').write_text('{"version":1}')
+                tools['installed'] = lambda: True
+                with mock.patch.object(initialize.runpy, 'run_path', return_value=tools):
+                    args = initialize.sandbox('enabled', '/workspace', workspace=workspace)
+                mounts = [args[i:i+3] for i in range(len(args)-2)]
+                self.assertIn(['--bind', workspace, '/workspace'], mounts)
+                self.assertIn(['--bind', workspace, workspace], mounts)
+                self.assertIn(['--ro-bind', '/environment/initialization', '/environment/initialization'], mounts)
+                self.assertIn(['--chdir', '/workspace'], [args[i:i+2] for i in range(len(args)-1)])
 
     def test_sandboxed_step_reports_only_its_exit_status(self):
         for status in (1, 3, 100, 255):

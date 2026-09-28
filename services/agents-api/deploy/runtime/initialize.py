@@ -3,9 +3,7 @@
 Core owns sequencing and the completion ledger. This helper executes one bounded
 operation; it never retries, schedules, selects a harness or interprets templates.
 """
-import base64
 import ctypes
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -21,8 +19,6 @@ ROOT = Path('/environment')
 CONFIG = ROOT / 'initialization'
 PACKAGES = ROOT / 'packages'
 ENV_FILE = CONFIG / 'tool-env.sh'
-CAPABILITIES = CONFIG / 'capabilities'
-SKILLS = CAPABILITIES / 'skills'
 MAX_INPUT = 32 * 1024 * 1024
 BASE_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/tmp', 'LANG': 'C.UTF-8'}
 DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -33,78 +29,20 @@ def open_directory(parent, name):
     return os.open(name, DIRECTORY, dir_fd=parent)
 
 
-def roots():
+def roots(workspace=None):
     root = os.open('/', DIRECTORY)
     try:
         environment = open_directory(root, 'environment')
     finally:
         os.close(root)
     try:
-        for name in ('workspace', 'packages', 'initialization'):
+        for name in (('workspace', 'packages', 'initialization') if workspace is None else ('packages', 'initialization')):
             child = open_directory(environment, name)
             os.close(child)
     finally:
         os.close(environment)
-
-
-def install_skill(request):
-    name, files = request['name'], request['files']
-    if not isinstance(name, str) or not re.fullmatch('[a-z0-9]+(?:[-_][a-z0-9]+)*', name) or len(name) > 64 or not isinstance(files, list) or not 0 < len(files) <= 1000:
-        raise ValueError('invalid skill')
-    directory = os.open(SKILLS, DIRECTORY)
-    try:
-        os.mkdir(name, mode=0o700, dir_fd=directory)
-        skill = open_directory(directory, name)
-    finally:
-        os.close(directory)
-    total = 0
-    try:
-        for file in files:
-            relative = file['path']
-            if not isinstance(relative, str) or len(relative) > 4096 or any(c in relative for c in ('\\', '\x00', '\r', '\n')):
-                raise ValueError('invalid skill path')
-            parts = relative.split('/')
-            if any(not part or part in ('.', '..') for part in parts):
-                raise ValueError('invalid skill path')
-            body = base64.b64decode(file['data'], validate=True)
-            total += len(body)
-            if total > 20 * 1024 * 1024:
-                raise ValueError('skill too large')
-            parent = os.dup(skill)
-            try:
-                for part in parts[:-1]:
-                    try:
-                        os.mkdir(part, mode=0o700, dir_fd=parent)
-                    except FileExistsError:
-                        pass
-                    child = open_directory(parent, part)
-                    os.close(parent)
-                    parent = child
-                # A fresh installation cannot replace an existing member.
-                try:
-                    os.stat(parts[-1], dir_fd=parent, follow_symlinks=False)
-                except FileNotFoundError:
-                    pass
-                else:
-                    raise ValueError('duplicate skill member')
-                result = subprocess.run(['/usr/local/bin/oac-codex-write', str(SKILLS / name), relative,
-                                         str(len(body)), str(ROOT / 'staging')],
-                                        input=body + hashlib.sha256(body).digest(), env=BASE_ENV,
-                                        capture_output=True, check=True)
-                receipt = json.loads(result.stdout)
-                if result.stderr or receipt != {'version': 1, 'outcome': 'completed', 'size_bytes': len(body)}:
-                    raise ValueError('skill write unconfirmed')
-                fd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW, dir_fd=parent)
-                try:
-                    os.fchmod(fd, 0o500 if file.get('executable', False) else 0o400)
-                    os.fsync(fd)
-                finally:
-                    os.close(fd)
-            finally:
-                os.close(parent)
-        os.fsync(skill)
-    finally:
-        os.close(skill)
+    if workspace is not None:
+        os.close(os.open(workspace, DIRECTORY))
 
 
 def configure(env):
@@ -123,16 +61,6 @@ def configure(env):
     }
     materialized = json.dumps(values, ensure_ascii=True)
     script = ''.join('export ' + name + '=' + shlex.quote(value) + '\n' for name, value in sorted(values.items()))
-    environment = os.open(CONFIG, DIRECTORY)
-    try:
-        os.mkdir('capabilities', mode=0o700, dir_fd=environment)
-        capabilities = open_directory(environment, 'capabilities')
-        try:
-            os.mkdir('skills', mode=0o700, dir_fd=capabilities)
-        finally:
-            os.close(capabilities)
-    finally:
-        os.close(environment)
     directory = os.open(CONFIG, DIRECTORY)
     try:
         fd = os.open('tool-env.sh', os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o400, dir_fd=directory)
@@ -150,14 +78,14 @@ def configure(env):
         os.close(directory)
 
 
-def sandbox(network, cwd):
+def sandbox(network, cwd, workspace=None):
     if network not in ('enabled', 'disabled') or not isinstance(cwd, str) or not cwd.startswith('/') or '\x00' in cwd:
         raise ValueError('invalid execution configuration')
     if (CONFIG / 'system-root.json').exists():
         tools = runpy.run_path('/usr/local/bin/oac-tool-root')
         if not tools['installed']():
             raise ValueError('system tools unavailable')
-        return tools['initialization_sandbox'](cwd, network)
+        return tools['initialization_sandbox'](cwd, network, workspace=workspace or str(ROOT / 'workspace'))
     # One packaging contract for every Provider/harness. No native state, daemon
     # credential, staging payload or parent process is visible in this mount map.
     args = ['/usr/bin/bwrap', '--unshare-user', '--unshare-pid', '--unshare-ipc', '--unshare-uts',
@@ -168,8 +96,10 @@ def sandbox(network, cwd):
             '--ro-bind', '/etc/resolv.conf', '/etc/resolv.conf',
             '--ro-bind', '/etc/hosts', '/etc/hosts', '--ro-bind', '/etc/ssl', '/etc/ssl',
             '--proc', '/proc', '--dev', '/dev', '--tmpfs', '/tmp', '--dir', '/home',
-            '--dir', '/environment', '--bind', str(ROOT / 'workspace'), '/workspace',
+            '--dir', '/environment', '--bind', workspace or str(ROOT / 'workspace'), '/workspace',
             '--bind', str(PACKAGES), str(PACKAGES), '--ro-bind', str(CONFIG), str(CONFIG)]
+    if workspace is not None and workspace != '/workspace':
+        args += ['--bind', workspace, workspace]
     if network == 'disabled':
         args += ['--unshare-net']
     for key, value in BASE_ENV.items():
@@ -181,9 +111,6 @@ def run(request):
     action = request['action']
     if action == 'configure':
         configure(request['env'])
-        return
-    if action == 'skill':
-        install_skill(request)
         return
     if action == 'system':
         runpy.run_path('/usr/local/bin/oac-tool-root')['install'](request['packages'])
@@ -283,24 +210,31 @@ def stdio_lifetime(args):
         os.close(parent_fd)
 
 
-def stdio(package, server):
+def stdio(installation_root, workspace, package, server):
     """Preserve the native MCP descriptors while entering the existing sandbox."""
-    roots()
-    args = sandbox('enabled', '/workspace')
+    for value in (installation_root, workspace):
+        if (not isinstance(value, str) or not value.startswith('/') or value == '/'
+                or os.path.normpath(value) != value or any(ord(c) < 32 or ord(c) == 127 or c == '\\' for c in value)):
+            raise ValueError('invalid Runtime directory')
+        path = Path(value)
+        if path.resolve(strict=True) != path or not path.is_dir():
+            raise ValueError('invalid Runtime directory')
+    roots(workspace)
+    args = sandbox('enabled', '/workspace', workspace=workspace)
     helper = '/tmp/oac-mcp-exec'
     # System-package roots predate daemon installation. Mount only the fixed
     # static helper, never native configuration, credentials or Runtime state.
-    args[-1:-1] = ['--ro-bind', '/usr/local/bin/oac-daemon', helper]
-    args += [helper, 'runtime-mcp-exec', package, server]
+    args[-1:-1] = ['--ro-bind', '/usr/local/bin/oac-daemon', helper, '--ro-bind', installation_root, installation_root]
+    args += [helper, 'runtime-mcp-exec', installation_root, package, server]
     return stdio_lifetime(args)
 
 
 def main():
     if len(sys.argv) != 1:
         try:
-            if len(sys.argv) != 4 or sys.argv[1] != 'stdio':
+            if len(sys.argv) != 6 or sys.argv[1] != 'stdio':
                 raise ValueError('invalid stdio invocation')
-            return stdio(sys.argv[2], sys.argv[3])
+            return stdio(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])
         except Exception:
             print('Environment MCP unavailable', file=sys.stderr)
             return 1

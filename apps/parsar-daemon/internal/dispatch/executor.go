@@ -73,7 +73,7 @@ func (r *Router) handleExecutorPrepare(ctx context.Context, env proto.Envelope, 
 		r.mu.Unlock()
 		return ErrRouterClosed
 	}
-	if r.workspaceWrite != nil || r.workspaceExport != nil {
+	if r.workspaceWrite != nil || r.workspaceExport != nil || r.capabilitiesPrepare != nil {
 		r.mu.Unlock()
 		return r.rejectPreparation(env, "resource_unavailable")
 	}
@@ -177,7 +177,10 @@ func (r *Router) prepareExecutor(p *preparationState, req proto.PromptRequestPay
 	var native agent.Executor
 	var err error
 	if owner.ctx.Err() == nil {
-		native, err = factory(owner.ctx, req)
+		req, err = r.localWorkspace.Prepare(owner.ctx, req)
+		if err == nil && owner.ctx.Err() == nil {
+			native, err = factory(owner.ctx, req)
+		}
 	} else {
 		err = owner.ctx.Err()
 	}

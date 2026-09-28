@@ -2,11 +2,17 @@
 package agentcapabilities
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"os"
 	"path"
 	"strings"
+	"unicode/utf8"
+
+	"github.com/google/uuid"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentplugin"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentskill"
@@ -21,16 +27,30 @@ var ErrInvalid = errors.New("capability installation unavailable or unsupported"
 
 // InstalledSkill contains Runtime-owned paths, never public resource metadata.
 type InstalledSkill struct {
-	Metadata     agentskill.Metadata `json:"metadata"`
-	RelativeRoot string              `json:"relative_root"`
-	PackageRoot  string              `json:"package_root"`
+	// InstallationRoot is resolved by Runtime and never persisted or accepted over wire.
+	InstallationRoot string              `json:"-"`
+	Metadata         agentskill.Metadata `json:"metadata"`
+	RelativeRoot     string              `json:"relative_root"`
+	PackageRoot      string              `json:"package_root"`
 }
 
+// Identity binds an installation to one immutable Environment and Session.
+type Identity struct {
+	EnvironmentID string `json:"environment_id"`
+	SessionID     string `json:"session_id"`
+}
+
+// DirectoryResolver opens a declared source after local authorization and path
+// checks. Finalize owns and closes each returned root; callers retain no handle.
+type DirectoryResolver func(string) (*os.Root, error)
+
 type Manifest struct {
-	Version int              `json:"version"`
-	Skills  []InstalledSkill `json:"skills"`
-	Plugins []string         `json:"plugins,omitempty"`
-	MCP     []InstalledMCP   `json:"-"`
+	Identity        Identity         `json:"identity"`
+	SelectionSHA256 string           `json:"selection_sha256"`
+	Version         int              `json:"version"`
+	Skills          []InstalledSkill `json:"skills"`
+	Plugins         []string         `json:"plugins,omitempty"`
+	MCP             []InstalledMCP   `json:"-"`
 }
 
 // InstalledMCP is resolved from a frozen package at load time. The manifest
@@ -47,13 +67,29 @@ type Input struct {
 	Directories []string               `json:"directories,omitempty"`
 }
 
+// ValidateDirectories preserves the managed public workspace-path contract.
 func ValidateDirectories(directories []string) error {
+	if ValidateLocalDirectories(directories) != nil {
+		return ErrInvalid
+	}
+	for _, directory := range directories {
+		if directory != "/workspace" && !strings.HasPrefix(directory, "/workspace/") {
+			return ErrInvalid
+		}
+	}
+	return nil
+}
+
+// ValidateLocalDirectories checks source spelling, not local access authority.
+// Absolute paths use the protocol path syntax; the Runtime resolver owns host
+// interpretation, directory access and protected-root exclusions.
+func ValidateLocalDirectories(directories []string) error {
 	if len(directories) > 50 {
 		return ErrInvalid
 	}
 	seen := map[string]bool{}
 	for _, directory := range directories {
-		if (directory != "/workspace" && !strings.HasPrefix(directory, "/workspace/")) ||
+		if !path.IsAbs(directory) || len(directory) > 4096 || !utf8.ValidString(directory) ||
 			path.Clean(directory) != directory || strings.ContainsAny(directory, "\\\x00\r\n") || seen[directory] {
 			return ErrInvalid
 		}
@@ -81,7 +117,7 @@ func (m *Manifest) add(metadata agentskill.Metadata, root, pkg string) error {
 
 func decodeManifest(body []byte) (Manifest, error) {
 	var result Manifest
-	if len(body) > 256<<10 || json.Unmarshal(body, &result) != nil || result.Version != 1 || len(result.Skills) > MaxSkills {
+	if len(body) > 256<<10 || json.Unmarshal(body, &result) != nil || result.Version != 1 || validateIdentity(result.Identity) != nil || !validSelectionHash(result.SelectionSHA256) || len(result.Skills) > MaxSkills {
 		return Manifest{}, ErrInvalid
 	}
 	checked := Manifest{Version: 1}
@@ -108,5 +144,66 @@ func (m *Manifest) addMCPPackage(root string) error {
 		}
 	}
 	m.Plugins = append(m.Plugins, root)
+	return nil
+}
+
+func validateIdentity(identity Identity) error {
+	for _, value := range []string{identity.EnvironmentID, identity.SessionID} {
+		id, err := uuid.Parse(value)
+		if err != nil || id == uuid.Nil || id.String() != value {
+			return ErrInvalid
+		}
+	}
+	return nil
+}
+
+func validSelectionHash(value string) bool {
+	digest, err := hex.DecodeString(value)
+	return err == nil && len(digest) == sha256.Size && hex.EncodeToString(digest) == value
+}
+
+// ValidateInput bounds source selections without reading archives or directories.
+// Portable manifest grammar is checked by the shared Skill and Plugin parsers.
+func ValidateInput(input Input) error {
+	if len(input.Skills) > MaxSkills || len(input.Plugins) > 50 || ValidateLocalDirectories(input.Directories) != nil {
+		return ErrInvalid
+	}
+	validMetadata := func(kind, name, description string) bool {
+		return kind == "inline" && name != "" && description != "" && utf8.ValidString(name) && utf8.ValidString(description)
+	}
+	for _, skill := range input.Skills {
+		if !validMetadata(skill.Type, skill.Name, skill.Description) {
+			return ErrInvalid
+		}
+	}
+	for _, plugin := range input.Plugins {
+		if !validMetadata(plugin.Type, plugin.Name, plugin.Description) {
+			return ErrInvalid
+		}
+	}
+	return nil
+}
+
+func selectionHash(input Input) (string, error) {
+	if ValidateInput(input) != nil {
+		return "", ErrInvalid
+	}
+	// omitempty gives nil and empty selections the same canonical representation;
+	// list order remains significant because it selects installed package slots.
+	body, err := json.Marshal(input)
+	if err != nil {
+		return "", ErrInvalid
+	}
+	digest := sha256.Sum256(body)
+	return hex.EncodeToString(digest[:]), nil
+}
+
+// ValidateSelection checks reconnect configuration without revisiting sources.
+// Use it only with a manifest returned by Load.
+func ValidateSelection(manifest Manifest, input Input, identity Identity) error {
+	digest, err := selectionHash(input)
+	if err != nil || validateIdentity(identity) != nil || manifest.Version != 1 || manifest.Identity != identity || manifest.SelectionSHA256 != digest {
+		return ErrInvalid
+	}
 	return nil
 }

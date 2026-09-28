@@ -13,15 +13,15 @@ import (
 func TestEnvironmentMCPProjectsIsolatedStdioAndPrivateHTTPReferences(t *testing.T) {
 	token := "user-token"
 	local := &proto.LocalEnvironment{NetworkAccess: "enabled", MCP: []proto.EnvironmentMCP{
-		{PackageRoot: "plugins/0", Server: agentplugin.MCPServer{Name: "local", Type: "stdio", Command: "must-not-be-native-command", Args: []string{"private-argument"}}},
-		{PackageRoot: "plugins/1", BearerToken: &token, Server: agentplugin.MCPServer{Name: "remote", Type: "http", URL: "https://example.com/mcp", HTTPHeaders: map[string]string{"X-Key": "literal-${DO_NOT_EXPAND}"}}},
+		{InstallationRoot: "/private/runtime/capabilities", WorkspaceRoot: "/private/runtime/workspace", PackageRoot: "plugins/0", Server: agentplugin.MCPServer{Name: "local", Type: "stdio", Command: "must-not-be-native-command", Args: []string{"private-argument"}}},
+		{InstallationRoot: "/private/runtime/capabilities", WorkspaceRoot: "/private/runtime/workspace", PackageRoot: "plugins/1", BearerToken: &token, Server: agentplugin.MCPServer{Name: "remote", Type: "http", URL: "https://example.com/mcp", HTTPHeaders: map[string]string{"X-Key": "literal-${DO_NOT_EXPAND}"}}},
 	}}
 	servers, env, err := mergeEnvironmentMCP(nil, local)
 	if err != nil || len(servers) != 2 || len(env) != 2 {
 		t.Fatal("environment declarations were not projected", err)
 	}
 	if servers["local"].Command != "/usr/bin/python3" || !servers["local"].ApproveTools ||
-		!slices.Equal(servers["local"].Args, []string{"-I", "-S", "/usr/local/bin/oac-runtime-initialize", "stdio", "plugins/0", "local"}) {
+		!slices.Equal(servers["local"].Args, []string{"-I", "-S", "/usr/local/bin/oac-runtime-initialize", "stdio", "/private/runtime/capabilities", "/private/runtime/workspace", "plugins/0", "local"}) {
 		t.Fatal("native stdio bypasses the packaged launcher")
 	}
 	remote := servers["remote"]

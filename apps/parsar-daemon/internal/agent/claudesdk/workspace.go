@@ -30,6 +30,7 @@ type WorkspaceConfig struct {
 }
 
 type workspaceProfile struct {
+	CapabilityRoot  string                             `json:"capability_root,omitempty"`
 	MCP             []environmentMCPServer             `json:"mcp,omitempty"`
 	Skills          []agentcapabilities.InstalledSkill `json:"skills,omitempty"`
 	ToolEnvironment bool                               `json:"tool_environment,omitempty"`
@@ -67,6 +68,7 @@ func prepareWorkspace(config Config, req proto.PromptRequestPayload) (*workspace
 	}
 	if req.LocalEnvironment != nil {
 		profile.Skills = req.LocalEnvironment.Skills
+		profile.CapabilityRoot = req.LocalEnvironment.CapabilityRoot
 	}
 	servers, credentials, err := prepareEnvironmentMCP(req.LocalEnvironment)
 	if err != nil {

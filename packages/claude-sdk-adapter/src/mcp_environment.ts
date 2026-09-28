@@ -1,3 +1,4 @@
+import { posix } from "node:path";
 import { parseHTTPServers, type HTTPServer } from "./mcp.js";
 
 export type StdioServer = {
@@ -20,12 +21,16 @@ export function parseEnvironmentMCP(value: unknown): EnvironmentMCPServer[] | un
       if (Object.keys(server).some(key => !["server_label", "command", "args", "allowed_tools"].includes(key)) ||
           typeof server.server_label !== "string" || !/^[a-zA-Z0-9_-]+$/.test(server.server_label) ||
           server.server_label === "functions" || server.allowed_tools !== null || server.command !== "/usr/bin/python3" ||
-          !Array.isArray(server.args) || server.args.length !== 6 ||
+          !Array.isArray(server.args) || server.args.length !== 8 ||
           server.args[0] !== "-I" || server.args[1] !== "-S" ||
           server.args[2] !== "/usr/local/bin/oac-runtime-initialize" || server.args[3] !== "stdio" ||
-          typeof server.args[4] !== "string" || !server.args[4] || server.args[4].startsWith("/") ||
-          server.args[4].split("/").some((part: string) => !part || part === "." || part === "..") ||
-          /[\x00-\x1f\x7f\\]/.test(server.args[4]) || server.args[5] !== server.server_label) throw new Error("invalid_request");
+          typeof server.args[4] !== "string" || !posix.isAbsolute(server.args[4]) || server.args[4].endsWith("/") || posix.normalize(server.args[4]) !== server.args[4] ||
+          /[\x00-\x1f\x7f\\]/.test(server.args[4]) ||
+          typeof server.args[5] !== "string" || !posix.isAbsolute(server.args[5]) || server.args[5].endsWith("/") || posix.normalize(server.args[5]) !== server.args[5] ||
+          /[\x00-\x1f\x7f\\]/.test(server.args[5]) ||
+          typeof server.args[6] !== "string" || !server.args[6] || server.args[6].startsWith("/") ||
+          server.args[6].split("/").some((part: string) => !part || part === "." || part === "..") ||
+          /[\x00-\x1f\x7f\\]/.test(server.args[6]) || server.args[7] !== server.server_label) throw new Error("invalid_request");
     } else {
       parseHTTPServers([server]);
       if (server.allowed_tools !== null || server.required !== undefined) throw new Error("invalid_request");

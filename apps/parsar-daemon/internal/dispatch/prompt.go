@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	obslog "github.com/MiniMax-AI-Dev/parsar/internal/obs/log"
 )
@@ -74,7 +75,7 @@ func (r *Router) handlePromptRequest(callerCtx context.Context, env proto.Envelo
 		r.log.ErrorContext(callerCtx, "handlePromptRequest: router closed", "run_id", runID)
 		return ErrRouterClosed
 	}
-	if r.workspaceWrite != nil || r.workspaceExport != nil {
+	if r.capabilitiesPrepare != nil || r.workspaceWrite != nil || r.workspaceExport != nil {
 		r.mu.Unlock()
 		err := errors.New("local workspace has an unsettled write")
 		r.emitTerminalError(callerCtx, runID, err.Error())
@@ -111,7 +112,11 @@ func (r *Router) handlePromptRequest(callerCtx context.Context, env proto.Envelo
 	r.mu.Unlock()
 
 	r.log.InfoContext(callerCtx, "handlePromptRequest: calling factory", "run_id", runID)
-	sess, err := factory(sessionCtx, req, out)
+	req, err = r.localWorkspace.Prepare(sessionCtx, req)
+	var sess agent.Session
+	if err == nil {
+		sess, err = factory(sessionCtx, req, out)
+	}
 	if err != nil {
 		r.log.ErrorContext(callerCtx, "handlePromptRequest: factory call failed", "run_id", runID, "agent_kind", req.AgentKind, "err", err)
 		// Roll back the registration, cancel ctx, surface error+done

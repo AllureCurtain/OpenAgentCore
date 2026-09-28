@@ -4,7 +4,6 @@ The fixture must expose writable workspace/packages/initialization roots and
 support the same nested isolation as its deployed Provider. No model is mocked;
 these checks exercise initialization only, not public native-model acceptance.
 """
-import base64
 import json
 import os
 from pathlib import Path
@@ -41,15 +40,13 @@ def main():
         env.update(http_proxy=os.environ['OAC_TEST_PACKAGE_PROXY'],
                    https_proxy=os.environ['OAC_TEST_PACKAGE_PROXY'])
     invoke('configure', env=env)
-    skill = [{'path': 'SKILL.md', 'data': base64.b64encode(b'---\nname: proof\ndescription: A proof.\n---\nRead check.sh.').decode()},
-             {'path': 'scripts/check.sh', 'data': base64.b64encode(b'#!/bin/sh\nprintf skill-proof').decode(), 'executable': True},
-             {'path': 'data.bin', 'data': base64.b64encode(bytes(range(256))).decode()}]
-    invoke('skill', name='proof', files=skill)
-    assert Path('/environment/initialization/capabilities/skills/proof/data.bin').read_bytes() == bytes(range(256))
-    assert Path('/environment/initialization/capabilities/skills/proof/scripts/check.sh').stat().st_mode & 0o777 == 0o500
-    invoke('skill', succeeds=False, name='proof', files=skill)
-    invoke('skill', succeeds=False, name='invalid', files=[{'path': '../../private/credential', 'data': 'YmFk'}])
-    assert Path('/environment/private/credential').read_text() == CANARY
+    # A fixed Runtime-installed fixture tests setup access, not archive parsing.
+    skill = Path('/environment/initialization/capabilities/skills/proof')
+    (skill / 'scripts').mkdir(parents=True)
+    (skill / 'SKILL.md').write_text('---\nname: proof\ndescription: A proof.\n---\nRead check.sh.')
+    (skill / 'SKILL.md').chmod(0o400)
+    (skill / 'scripts/check.sh').write_text('#!/bin/sh\nprintf skill-proof')
+    (skill / 'scripts/check.sh').chmod(0o500)
     invoke('setup', command='/environment/initialization/capabilities/skills/proof/scripts/check.sh > /workspace/skill-result')
     assert Path('/environment/workspace/skill-result').read_text() == 'skill-proof'
     if '--system' in sys.argv:

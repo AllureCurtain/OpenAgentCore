@@ -28,14 +28,14 @@ separate: closing a Session executor does not release its allocation, destroy it
 Environment or delete its workspace. Reclamation is an explicit resource-manager
 operation coordinated with active work.
 
-The capability-unification target is one Runtime preparation path for managed
-bundles and self-hosted local directories. Core resolves configuration, versions
+Capability preparation uses one Runtime path for managed bundles and self-hosted
+local directories. Core resolves configuration, versions
 and resources; Runtime uses one parser and `installed.json` snapshot to supply
 Skill paths and MCP declarations to adapters. Preparation must complete before
 execution; reconnect reuses installed contents, and new Sessions freeze a new
-configuration snapshot. The protocol is platform-neutral, while the first
-implementation is Linux-only. This is pending work, not a statement that current
-managed and self-hosted preparation or Windows/macOS isolation is already unified.
+configuration snapshot. The protocol is platform-neutral; the implementation uses the existing packaged
+Linux Runtime layout for both environment origins. Windows/macOS installation and
+isolation remain separate work.
 
 - Keep component boundaries explicit through shared interfaces and versioned
   protocols. Register implementations behind those interfaces. Adding an
@@ -495,7 +495,7 @@ forwarding. The explicit daemon-executor decision supersedes the previous native
 executor interoperability requirement. The superseded execution route is removed;
 retain reusable filesystem helpers,
 necessary regressions and historical evidence without a compatibility layer.
-The private daemon wire protocol is 0.6.0. Initial, prepared and active input use
+The private daemon wire protocol is 0.7.0. Initial, prepared and active input use
 the same ordered MessageInput contract, replacing scalar prompts and attachments.
 User-message boundaries and text/image order remain intact through Core and the
 Runtime wire; adapters own native conversion and receipt aggregation. Text-only
@@ -1169,7 +1169,7 @@ a chain of old writable disks across suspension cycles. No Kubernetes, distribut
 scheduler or snapshot replication belongs in this V1 profile.
 
 Queued work and live Environment file access request wake. History and published
-artifact reads do not. Planned suspension uses private daemon wire 0.6.0 with an
+artifact reads do not. Planned suspension uses private daemon wire 0.7.0 with an
 Environment and suspension token; a PID/start-time fenced local control signal
 wakes the parked daemon, which reauthenticates before admitting new work. A
 transient disconnect before confirmation retries the same armed suspension with
@@ -1482,8 +1482,9 @@ the Session row/cursor in the same transaction, without borrowing subsequent
 activity or Turn state. Initial state is `pending`; authenticated connection observations follow
 the lifecycle rules below.
 Public creation supports `self_hosted` on the three enabled native profiles when
-the daemon gateway is configured. V1 requires `/workspace` and empty/default
-capability directories. Supported non-deferred functions keep their engine-specific
+the daemon gateway is configured. The workspace is a clean absolute Linux path matching the bound Runtime root;
+`/workspace` denotes that root through the existing logical mapping. Optional
+capability directories are clean absolute host-local selections. Supported non-deferred functions keep their engine-specific
 validation and native callback bridge. Enrollment binds the dedicated Runtime;
 Session output uses the owned Environment association. Public Files reuse the exact
 local workspace; populated self-hosted installation metadata remains unsupported.
@@ -1622,8 +1623,9 @@ rotation/revocation and digest-only storage. They grant connection authority, ne
 Session API access. No raw-token import or secret read-back is added.
 
 Enrollment atomically creates or recovers one dedicated device and immutable Session
-binding under the Session lock. The V1 workspace is `/workspace`; nonempty
-self-hosted capability directories remain unsupported. No `runtime_allocation` is
+binding under the Session lock. The frozen workspace and capability directory selection come from the Session
+configuration and must match the local binding. Runtime snapshots declared local
+Skill or Plugin directories before creating the native executor. No `runtime_allocation` is
 created for user-owned compute. A retry cannot replace a device, change its bound
 key or adopt another native history. Gateway authentication and dispatch recheck
 current key authority; rotation/revocation and deletion deny further use.
@@ -3893,6 +3895,60 @@ Core Session or container creation. One conversation/Agent binding freezes the
 request on first execution; later messages and observer retries reuse it. Separate
 conversations get independent Sessions and environments. Edits affect future
 Sessions only. Keep the existing product navigation and direct empty-chat composer.
+
+### Shared Runtime capability preparation
+
+Resource management retains provider placement, capacity, allocation and Environment
+create/renew/reclaim operations. The authenticated Runtime connection carries
+capability preparation and executor operations; it does not implicitly allocate or
+destroy compute. Connection loss, executor idle close and Turn cancellation preserve
+the workspace and installed snapshot. Resource reclamation coordinates with active
+work through its existing owner.
+
+Core freezes resource versions, metadata and local source selections. Managed
+initialization keeps its existing order: initial files, provider tool configuration,
+Runtime bundle import, provider packages and setup commands, then Runtime directory
+snapshot finalization. Provider commands no longer parse or install Skills/Plugins.
+A missing authenticated Runtime connection waits before capability initialization
+is claimed; an operation whose effect is unknown is not replayed. Self-hosted
+capability directories remain in immutable Environment configuration and never
+create a managed initialization row or allocation.
+
+The private `capabilities_prepare`/`capabilities_result` exchange transfers inert
+Skill/Plugin archives or a finalization selection, with canonical Session and
+Environment identities. It accepts no command or destination path. Ordered 64 KiB
+chunks and SHA-256 receipts bound each archive to 50 MiB, each control frame to
+1 MiB and each connection to one transfer. Begin, chunk and commit are never retried;
+rejected, failed and unknown effects remain distinct. Runtime owns transfer and
+filesystem work through settlement, including disconnect or cancellation.
+
+The common Linux binding authorizes local directories, excluding aliases, Runtime
+credentials, native history and initialization roots or their ancestors. One shared
+parser writes `installed.json` below the operator-owned capability directory
+(default `/environment/initialization/capabilities`, selected at startup through
+`OAC_RUNTIME_CAPABILITY_DIRECTORY`). The root cannot overlap the workspace or
+private Runtime state and is never a public input. All adapters consume the same
+resolved installation root. The manifest
+binds Session/Environment identities and the ordered source-selection digest.
+Filesystem locking prevents overlapping installation. A partial, invalid or foreign
+snapshot fails closed without deleting files or silently reinstalling. Directory
+sources are copied only during first preparation; reconnect loads protected installed
+contents and validates the selection without rereading source directories. A new
+Session uses its own Environment and fresh snapshot.
+
+Synchronous executor admission validates the frozen descriptor only. The admitted
+asynchronous preparation owner ensures capabilities are ready before invoking the
+native factory, including an empty inventory. Resolved Skill paths and MCP declarations
+remain Runtime-only fields; engine adapters consume this common result. Reused
+Session executors retain their original configuration. Files reads retain their
+separate authorization and do not require capability or native execution readiness.
+
+Self-hosted public input remains `workspace_directory` and optional
+`capability_directories`; it does not accept managed archive fields. Its public
+installation arrays describe API-managed uploads and stay empty for local directories.
+MCP environment variables must come from explicit immutable Runtime tool configuration;
+missing variables never fall back to daemon credentials or ambient process variables.
+No project-version upgrade or historical manifest compatibility is introduced.
 
 ### API-key write provenance
 
