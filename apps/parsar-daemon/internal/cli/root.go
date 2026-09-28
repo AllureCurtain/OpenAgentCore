@@ -22,18 +22,19 @@ type command struct {
 // runContext bundles the streams a command writes to. Tests inject
 // buffers; production uses the OS streams.
 type runContext struct {
+	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
 }
 
 func defaultRunContext() *runContext {
-	return &runContext{stdout: os.Stdout, stderr: os.Stderr}
+	return &runContext{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
 }
 
 // commands lists subcommands in --help render order: the user's
 // likely flow connect → status → stop / logs → logout.
 var commands = []command{
-	{name: "install", summary: "Configure a native self-hosted daemon", run: runInstall},
+	{name: "install", summary: "Install a native daemon and selected Harnesses", run: runInstall},
 	{name: "start", summary: "Start the installed native daemon", run: runStart},
 	{name: "resume", summary: "Wake one planned hosted suspension", run: runResume},
 	{name: "runtime-mcp-exec", summary: "Execute an installed MCP server", run: runRuntimeMCP},
@@ -52,6 +53,7 @@ func Execute(argv []string) error {
 }
 
 func execute(ctx *runContext, argv []string) error {
+	useInstalledNativeHome()
 	if err := validateRuntimeConfiguration(); err != nil {
 		return err
 	}
