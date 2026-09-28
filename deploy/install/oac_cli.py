@@ -462,7 +462,12 @@ def confirm_public_url(root, config, old, port, core_answered, args, interactive
 
 def paired_core(root, config):
     """(HTTP status, installation ID) of the Core that web.core_url reaches."""
-    status, body = http(config["web"]["core_url"] + "/core/v1/installation", bearer(configuration.read_core_key(root)))
+    return core_installation(config["web"]["core_url"], configuration.read_core_key(root))
+
+
+def core_installation(origin, key):
+    """Read Core identity with an already validated private key, before or after install."""
+    status, body = http(origin + "/core/v1/installation", bearer(key))
     return status, (json.loads(body).get("installation_id") if status == 200 else None)
 
 

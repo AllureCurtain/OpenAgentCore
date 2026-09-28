@@ -641,7 +641,10 @@ def prepare_fresh(args):
     config = seed_config(args, document)
     check_public_url(config, choice)
     if config["mode"] == "web-only":
-        read_core_key_file(args.core_key_file)
+        key = read_core_key_file(args.core_key_file)
+        if oac_cli.core_installation(config["web"]["core_url"], key)[0] == 404:
+            raise InstallError("The paired Core version is not supported; preserve its data and reinstall "
+                               "the current release separately. Nothing was changed.")
     e2b = ({"api_key": read_private_file(args.e2b_api_key_file, "E2B API key file"), "template": args.e2b_template}
            if choice == "e2b" else None)
     if choice == "docker":

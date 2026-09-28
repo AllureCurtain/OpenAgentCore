@@ -110,6 +110,22 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(inode, (self.root / ".oac.lock").stat().st_ino)
         self.assertEqual(secret, (self.root / "secrets/core.key").read_bytes())
 
+    def test_fresh_web_refuses_old_core_before_creating_installation(self):
+        self.host.remote_core["https://core.example"] = (404, None)
+        with mock.patch.object(install, "check_host", side_effect=AssertionError("host touched")), \
+                mock.patch.object(install, "create", side_effect=AssertionError("installation created")), \
+                self.assertRaisesRegex(install.InstallError, "not supported;.*reinstall"):
+            self.install("--web-only", "--core-url", "https://core.example", "--core-key-file", self.key_file())
+        self.assertFalse(self.root.exists())
+
+    def test_fresh_web_accepts_current_core_and_records_its_identity(self):
+        self.host.remote_core["https://core.example"] = (200, self.host.core_installation_id)
+        key = self.key_file()
+        self.install("--web-only", "--core-url", "https://core.example", "--core-key-file", key)
+        self.assertEqual(self.document("state.json")["core_installation_id"], self.host.core_installation_id)
+        self.assertEqual((self.root / "secrets/core.key").read_text(), key.read_text())
+        self.assertEqual(self.host.running(), {"web"})
+
     def test_web_repair_refuses_old_paired_core_before_payload_or_state_writes(self):
         self.host.remote_core["https://core.example"] = (200, self.host.core_installation_id)
         self.install("--web-only", "--core-url", "https://core.example", "--core-key-file", self.key_file())
