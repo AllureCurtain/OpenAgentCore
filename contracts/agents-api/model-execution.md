@@ -158,25 +158,19 @@ default never reaches existing Sessions, so a Session's first and later Turns al
 use the same provider. The execution-configuration read shows the frozen safe view
 with source `deployment`.
 
-The former `AGENTS_API_EXECUTION_OPTIONS_FILE` is retired: setting it stops Core at
-startup with the replacement named; remove it and set the deployment defaults
-in Web (System) or with `PUT /core/v1/harnesses/{harness}/model-provider`. Only its provider identity (endpoint, key,
-protocol and MiniMax Code limits) has a home in the deployment default; its other
-native options (headers, query parameters, environment, MCP servers, feature and
-permission settings) are dropped. Sessions frozen from that file keep their
-complete private snapshot. Historical `openai_hosted` and `self_hosted` Sessions
-created without any snapshot cannot start new work: message input returns 400
-`model_provider_required`, while cancellation and history reads keep working.
-Input they reserved before the upgrade settles as failed with that reason, and the
-Session reports it, instead of waiting for its deadline. A retry of a Session that
-carried its own provider key, first sent before this release, conflicts once after
-the upgrade, because its retry hash now holds a keyed fingerprint instead of the
-key. Key-bearing retries likewise conflict after a credential key change, which is
-not supported anyway.
-Recreate them with a bundle. Run `deploy/install/model_provider_sessions.py`
-against an installation before upgrading to count them; it only reads. Historical
-`none` Sessions that relied on the retired options file now run with the device's
-own environment, and the check does not count them.
+The former `AGENTS_API_EXECUTION_OPTIONS_FILE` is rejected at startup. Configure
+a fresh installation through Web (System) or
+`PUT /core/v1/harnesses/{harness}/model-provider`; deployment defaults contain only
+provider identity (endpoint, key, protocol and MiniMax Code limits). They do not
+accept native headers, query parameters, environment, MCP servers, feature or
+permission settings.
+
+Historical installations and Session snapshots have no supported conversion or
+cross-version continuation procedure. Preserve their database, credentials and
+history, and install the current release separately. Do not run a historical
+pre-upgrade utility to make old Sessions eligible for the current release. Current
+hosted and self-hosted Sessions require a provider bundle at creation, and credential
+key replacement is unsupported.
 
 Parsar manages its own workspace catalog and encrypted keys, sends this extension
 only on the first Core Session request, and retains a private encrypted snapshot

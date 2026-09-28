@@ -16,7 +16,8 @@ add nodes. Applications call Core's API with those keys.
 6. [Add a node](/hosted-providers).
 
 These pages describe the current source. Every bundle carries the docs that match it
-under `docs/`; if you install an older bundle, follow those.
+under `docs/`. This private project supports fresh installation and repair of the
+same release; historical-version upgrades and conversion are unsupported.
 
 ## Prerequisites
 
@@ -139,7 +140,7 @@ A deployment runs its sandboxes on exactly one backend:
 | `none` | Nothing yet | Choose the backend on the **Nodes** page in Web |
 
 The Standard sizes come from the bundle's copy of Web's
-[`standard-sizes.json`](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/apps/web/src/features/sandbox/standard-sizes.json). The
+[`standard-sizes.json`](https://github.com/MiniMax-AI/parsar-core/blob/cd6a32c3de31d26b73ab92d21ba2aa7b067ba226/apps/web/src/features/sandbox/standard-sizes.json). The
 installer saves the choice through the same administrator API that Web uses once the
 services are healthy. If Core refuses it, for example because E2B rejects the key,
 the installer prints Core's message and exits with an error; the services keep
@@ -163,7 +164,7 @@ it installs anything:
 ```
 
 Prepare the template build with the
-[E2B guide](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/services/agents-api/deploy/e2b/README.md). To change the backend or
+[E2B guide](https://github.com/MiniMax-AI/parsar-core/blob/cd6a32c3de31d26b73ab92d21ba2aa7b067ba226/services/agents-api/deploy/e2b/README.md). To change the backend or
 the sandbox size later, use the Nodes page in Web; see
 [Nodes](/hosted-providers#change-the-sandbox-backend-or-size).
 
@@ -489,7 +490,7 @@ at Add node.
 
 An existing pre-rename installation at `~/.parsar/core` blocks a new default install.
 Historical conversion is not supported. Preserve the existing installation and explicitly
-choose another `--install-dir`. See [installation version policy](/troubleshooting#convert-an-earlier-installation).
+choose another `--install-dir`. See [installation version policy](/troubleshooting#installation-version-policy).
 
 ## What the installer creates
 
@@ -528,6 +529,6 @@ Rerunning `./install.sh` from the same bundle repairs an installation: it reload
 missing images, restores a missing `oac` command, copies node files newly placed in
 `artifacts/`, applies `config.json` and starts the services. It accepts only
 `--install-dir`. It refuses a bundle from another release; see
-[Upgrades](/troubleshooting#upgrade-an-installation).
+[installation version policy](/troubleshooting#installation-version-policy).
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f36ac3592bfe9f77a2172680aa52b14c6f525062/docs/getting-started/install.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/cd6a32c3de31d26b73ab92d21ba2aa7b067ba226/docs/getting-started/install.md)

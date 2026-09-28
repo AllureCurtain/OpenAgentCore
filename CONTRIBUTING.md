@@ -21,7 +21,21 @@ hashes. Do not automatically sync or delete the original repository's Core.
 Core orchestrates protocol-defined operations. Sandbox providers, Runtime
 implementations, harnesses and model providers are replaceable components.
 User-owned machines, E2B, Docker and other environments must expose the same
-execution protocol; placement and connection details belong to their providers.
+execution protocol. Resource management selects machines, allocates capacity and
+creates, renews and reclaims Environments; Runtime prepares capabilities, executes
+work and recovers within an Environment. Keep these contracts and lifetimes
+separate: closing a Session executor does not release its allocation, destroy its
+Environment or delete its workspace. Reclamation is an explicit resource-manager
+operation coordinated with active work.
+
+The capability-unification target is one Runtime preparation path for managed
+bundles and self-hosted local directories. Core resolves configuration, versions
+and resources; Runtime uses one parser and `installed.json` snapshot to supply
+Skill paths and MCP declarations to adapters. Preparation must complete before
+execution; reconnect reuses installed contents, and new Sessions freeze a new
+configuration snapshot. The protocol is platform-neutral, while the first
+implementation is Linux-only. This is pending work, not a statement that current
+managed and self-hosted preparation or Windows/macOS isolation is already unified.
 
 - Keep component boundaries explicit through shared interfaces and versioned
   protocols. Register implementations behind those interfaces. Adding an
@@ -84,8 +98,10 @@ removed; only the historical `source:"admin_copy"` provenance read remains, fed 
 or request bodies enter logs. The console's fixed actor label (`console`) is only
 an audit display label, never an authorization input.
 
-When requirements conflict, object ownership is unclear, or a design would need
-parallel compatibility paths, raise the issue with a concrete recommendation and
+Apply the latest explicit user decisions when older documents conflict, and
+update the affected current guidance. Historical evidence does not override those
+decisions. When requirements remain unresolved, object ownership is unclear, or a
+design would need parallel compatibility paths, raise the issue with a concrete recommendation and
 tradeoffs before implementing the disputed behavior. Continue independent work
 while the decision is pending. Do not silently preserve obsolete private designs.
 
@@ -2211,9 +2227,11 @@ TLS reverse proxy routes `/v1` (applications) and `/api/v1` (nodes and Runtime
 daemons, with their own credentials) directly to Core and everything else,
 including `/core/v1`, to Web. Operator scripts call `/core/v1` on Core's loopback
 port.
-Nodes and Core come from one distribution; older nodes using the removed
-`/core/v1/sandbox` node paths cannot connect and are replaced through the drained
-upgrade and re-enrollment workflow.
+Nodes and Core come from one distribution. Older nodes using the removed
+`/core/v1/sandbox` paths are unsupported; preserve their installation and data and
+use a separate fresh installation. There is no drained in-place upgrade or
+historical re-enrollment procedure. Current-version Runtime generation rollout
+retains its separate resource lifecycle.
 
 The Web manager offers no manual Core key entry outside sign-in, and Web refuses
 to start without its Core key file. It holds no Project API key and never calls
@@ -3119,16 +3137,15 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   Item's Session position under the Session lock, preserving observation order
   for equal timestamps. Allocate a separate zero-based `output_index` per Turn;
   inputs do not consume output indexes. Updates and retries retain both values.
-  Existing indexed history keeps its pre-upgrade deterministic order; missing
-  original ordering cannot be reconstructed. Cursors are scoped to the authenticated Session.
+  Persisted indexed history keeps its deterministic order; missing original
+  ordering cannot be reconstructed. Cursors are scoped to the authenticated Session.
   Terminal Turns expose unfinished Items as `incomplete`, preserving completed
   message/tool states independently of the Turn outcome.
 - Public history reads use the persisted index; the private pre-Items journal
-  backfill is retired. Migration 15 rejects unprepared historical Turns before
-  removing the obsolete indexing marker. Prepare them with release `906069e`
-  before upgrading, following `services/agents-api/README.md`. The migration
-  preserves indexed Item payloads, positions, output indexes and source journals;
-  never mark unprepared history indexed by hand or replay engine execution.
+  backfill is retired. Migration 15 and its historical validation remain evidence,
+  not a supported upgrade procedure. An old installation is unsupported and must
+  be retained separately from a fresh installation. Never mark unprepared history
+  indexed by hand or replay engine execution to convert it.
 - Project only the declared public Item variants; native adapter metadata is not
   a response schema. Preserve structured tool JSON without float conversion.
   Completion text replaces accumulated deltas. Item merging must not mutate the

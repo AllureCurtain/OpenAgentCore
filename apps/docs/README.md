@@ -43,6 +43,6 @@ Set `DOCS_SITE_ORIGIN` only when preparing actual publication.
 Generation links to the recorded source revision; update that revision after rebasing
 onto later canonical guide changes. Never point samples at an actual deployment by default.
 
-[Feature follow-up inventory](FOLLOW-UP.md) lists the reset and online-generation
-paragraphs that must be reconciled after those implementations land. This candidate
-cannot establish final documentation acceptance for those unfinished features.
+[Documentation integration status](FOLLOW-UP.md) distinguishes implemented Runtime
+generation behavior from future requirements and release qualification. Regenerated
+source pages do not by themselves establish that a release is published or deployed.

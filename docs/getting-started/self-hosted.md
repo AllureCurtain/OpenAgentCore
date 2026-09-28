@@ -144,21 +144,14 @@ credentials with `GET` before trying again. The
 has every rule and error.
 
 
-## Executors installed before the rename
+## Historical executor installations
 
-An existing `parsar-selfhost-*` container keeps its own image, daemon and
-`~/.parsar/self-hosted/<environment-id>` directory. It can keep serving its
-Environment after Core is renamed; Core does not upgrade or manage this container.
+The current installer does not upgrade or adopt an executor from an older release.
+It refuses when the same Environment retains state under the old
+`~/.parsar/self-hosted` directory, including when another `--install-dir` is supplied.
+Preserve the old container, files and native history; provision a fresh self-hosted
+Session and connect its executor separately. There is no supported cross-version
+continuation or automatic data deletion.
 
-The new installer refuses when that exact Environment still has a directory under
-`~/.parsar/self-hosted`, including when a different `--install-dir` is supplied.
-Executors for other Environments are unaffected. To replace it, inspect the old
-installation's `started.json` to identify its container, stop and remove that
-exact container, and preserve any history you need before removing the old
-Environment's installation directory. Then rerun the new verified installer. It
-starts `oac-selfhost` with state under `~/.oac/self-hosted/<environment-id>`;
-it does not reuse the old executor's volumes or native history.
-
-Credential replacement for executors created by the new installer still updates
-and restarts the same owned container. The legacy refusal does not authorize
-adopting an old container to replace its credential.
+Credential replacement for executors created by the current installer updates and
+restarts the same owned container. It does not authorize adopting an older executor.

@@ -120,18 +120,13 @@ identity mount.
 
 ## Older file-managed installations
 
-Core rejects `AGENTS_API_MANAGED_RUNTIMES_FILE`. It does not automatically convert
-an old file-managed database into a Web-managed deployment. Removing the setting
-alone is insufficient: the database retains its original configuration ownership.
-
-Keep the previous release, original database and backend available to settle work
-and confirm cleanup. Stopped compute, retained snapshots, pending Environments and
-unknown operations remain owned until their normal cleanup completes. Preserve
-business data, Runtime history, private receipts and node state; never clear rows
-or prune provider storage to bypass the guard. Retire the old file configuration
-only as part of an explicit deployment transition. Automatic old-database adoption,
-cross-provider Session migration and a force-reset operation are not supported.
-The current installation path uses a database-managed deployment.
+Core rejects `AGENTS_API_MANAGED_RUNTIMES_FILE`. Historical file-managed
+installations are unsupported and have no conversion procedure. Preserve their
+original database, backend resources, Runtime history, private receipts and node
+state; do not clear rows or prune provider storage to bypass a refusal. Install the
+current release separately using its database-managed deployment. Removing an old
+setting does not transfer resource ownership or authorize data deletion. See the
+[installation version policy](../../docs/getting-started/operations.md#installation-version-policy).
 
 ## Register a host
 
@@ -165,10 +160,10 @@ an address Core no longer uses. `POST /core/v1/sandbox/enrollment-tokens` also r
 a non-secret `enrollment_id`; the node it registers reports the same value in
 `/core/v1/sandbox/nodes`, and nodes enrolled before Core recorded it report null.
 
-A node and its Core must come from the same distribution. Nodes from releases
-that used the removed `/core/v1/sandbox` node paths cannot connect to this Core:
-drain with the previous release, then upgrade and enroll new nodes, as described
-in [Upgrade notes](../../docs/getting-started/operations.md#node-connections-at-apiv1).
+A node and its Core must come from the same distribution. Historical machine
+protocols and in-place version upgrades are unsupported. Preserve older
+installations and resources; provision current-release nodes separately. See the
+[installation version policy](../../docs/getting-started/operations.md#installation-version-policy).
 Rerunning the same command preserves the node's private identity. A registered retry
 reads configuration with its retained node credential and `X-OAC-Node-ID`; it does
 not enroll again. Changes to the Core origin, installation, generation, specification
@@ -390,10 +385,9 @@ that text never leaves the host.
 
 Only the code crosses the node connection. Probe errors can name host paths or
 contain daemon messages; they are not sent to Core, stored or returned. Core stores
-any other reported value as `provider_unavailable`. Nodes from older releases send
-`provider_unavailable` or no code and keep working unchanged. Upgrade Core before
-its nodes: an older Core rejects the new codes and closes an unready newer node's
-connection until its provider is ready again.
+any other reported value as `provider_unavailable`. Core and nodes must use the
+same distribution; this defensive mapping does not establish support for mixed
+program versions or an in-place upgrade sequence.
 
 ## Runtime observations
 

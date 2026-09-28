@@ -13,7 +13,8 @@ add nodes. Applications call Core's API with those keys.
 6. [Add a node](nodes.md).
 
 These pages describe the current source. Every bundle carries the docs that match it
-under `docs/`; if you install an older bundle, follow those.
+under `docs/`. This private project supports fresh installation and repair of the
+same release; historical-version upgrades and conversion are unsupported.
 
 ## Prerequisites
 
@@ -486,7 +487,7 @@ at Add node.
 
 An existing pre-rename installation at `~/.parsar/core` blocks a new default install.
 Historical conversion is not supported. Preserve the existing installation and explicitly
-choose another `--install-dir`. See [installation version policy](operations.md#convert-an-earlier-installation).
+choose another `--install-dir`. See [installation version policy](operations.md#installation-version-policy).
 
 ## What the installer creates
 
@@ -525,4 +526,4 @@ Rerunning `./install.sh` from the same bundle repairs an installation: it reload
 missing images, restores a missing `oac` command, copies node files newly placed in
 `artifacts/`, applies `config.json` and starts the services. It accepts only
 `--install-dir`. It refuses a bundle from another release; see
-[Upgrades](operations.md#upgrade-an-installation).
+[installation version policy](operations.md#installation-version-policy).

@@ -129,7 +129,7 @@ application, then **Revoke** the old key. **Archive** disables all of a Project'
 and keeps its assets and accepted work. Administrators can inspect and delete retained
 resources but can't execute with the Core key.
 
-## Data and upgrades
+## Data and current-release repair
 
 ### Back up
 
@@ -159,7 +159,7 @@ and provider storage rather than registering over existing resources. Never prun
 Docker volumes or delete native history to make a retry pass. A deleted Session does
 not prove that all provider resources were reclaimed.
 
-### Upgrade an installation
+### Installation version policy
 
 In-place version upgrades, downgrades and historical conversions are not supported.
 Keep existing data and installations intact; install the new release into a new,
@@ -171,49 +171,20 @@ and mutating `oac` commands use the same installation lock, including during rep
 and interrupted apply recovery. If another command owns it, retry after it finishes.
 Never remove or replace `.oac.lock` to bypass a busy installation.
 
-### Convert an earlier installation
+Historical installations and removed CLI or machine-protocol variants have no
+migration procedure. Preserve their files, database, Runtime resources and Session
+history; use a fresh installation and separately provision its nodes. Reinstallation
+does not authorize deleting the previous installation's data. Retired process
+settings remain rejected; use the current
+[configuration reference](../configuration.md).
 
-Historical conversion is not supported. `--convert` refuses without changing the
-installation. Preserve its files and data, and reinstall separately.
+### Machine connections
 
-### Upgrade notes
-
-Retired process settings remain rejected. Configure a fresh installation using the
-current [configuration reference](../configuration.md); do not copy old generated
-files into it.
-
-#### Node connections at /api/v1
-
-Core and its nodes must come from the same distribution; the node installer refuses a
-mismatched release. Current releases serve every machine connection at `/api/v1`, and
-Web returns 404 there. When the new Core and Web go live, route `/api/v1/*`, including
-WebSocket upgrades, to Core instead of Web
-([HTTPS and the reverse proxy](install.md#https-and-the-reverse-proxy)); with the old
-routing, node enrollment and every Runtime connection fail, for Docker, microsandbox,
-E2B and self-hosted executors alike.
-
-Nodes from releases that used the removed `/core/v1/sandbox/enroll` and
-`/core/v1/sandbox/node/*` paths can't connect to a current Core. For a Docker or
-microsandbox deployment:
-
-1. Drain with the previous release while its nodes are connected: enter maintenance,
-   archive retained hosted Sessions and wait until nothing is retained using that
-   previous release's maintenance procedure.
-2. Upgrade Core and Web, and change the routing as above.
-3. Reset a drained selection that lacks a specification, then configure the new
-   release's Runtime and add nodes again. On each node host,
-   stop the old node service and move its state directory aside as a backup first.
-
-A Web-selected Docker or microsandbox deployment saved before deployment specifications
-existed has an empty specification after migration. Draining it needs a Core that has
-the pre-specification drain mode (pull request #114) but still serves the old node
-paths. No such release was published: build a distribution from main commit
-`7b66be236a627246c85658722314285e6b39d9b8`, or any commit that contains #114 but not the
-move to `/api/v1/sandbox-node`. That Core loads the deployment only to drain; fresh
-sandboxes, node configuration reads and enrollment are refused. Back up, replace Core
-and Web with that build, drain as in step 1, then upgrade to the current release and
-continue with steps 2 and 3. Node IDs change; Session history and persisted Files and
-Artifacts remain. E2B deployments from that period are not covered.
+Core and its nodes must come from the same distribution; the node installer refuses
+a mismatched release. Route `/api/v1/*`, including WebSocket upgrades, to Core;
+Web returns 404 there. This applies to Docker and microsandbox nodes, E2B and
+self-hosted executors. See
+[HTTPS and the reverse proxy](install.md#https-and-the-reverse-proxy).
 
 ## Troubleshooting
 
@@ -225,8 +196,7 @@ Artifacts remain. E2B deployments from that period are not covered.
 | `Port N is already in use; select another port` | Free the port, or install with `--core-port`/`--web-port` |
 | `Installation directory is not empty …` | Use an empty `--install-dir` |
 | `This installation is configured by …/config.json …` | Flags only seed a new installation: edit `config.json` and run `oac apply` |
-| `This installation predates config.json …` | [Convert it](#convert-an-earlier-installation) |
-| `This installation runs another release …` | See [Upgrade an installation](#upgrade-an-installation) |
+| `This installation version or historical conversion is not supported …` | Preserve the installation and data; [install separately](#installation-version-policy) |
 | `generated/<file> was edited by hand` | Put the change in `config.json`, then `oac apply --discard-edits` |
 | `config.json has changes that are not applied` | Run `oac apply` |
 | `Core rejects secrets/core.key …` | Run `oac apply`, which restarts Core with the key's digest |

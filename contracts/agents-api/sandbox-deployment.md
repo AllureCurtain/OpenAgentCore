@@ -433,7 +433,7 @@ fields from the administrator node routes; runtime fields from the
 | Runtime observation `lifecycle_state: sleeping` | Never | Never | While suspended |
 | Runtime history CPU | Mean of the utilization ratios E2B reported in each bucket | Derived from cumulative CPU time | Derived from cumulative CPU time |
 
-## Failure and upgrade boundaries
+## Failure and version boundaries
 
 Malformed selections return 400; validated configuration diagnostics use
 `invalid_sandbox_configuration`. Stale generation returns 409 `sandbox_generation_stale` with safe `current_generation`;
@@ -459,53 +459,38 @@ fixed `diagnostic` code: `docker_unavailable`, `docker_limits_unsupported`,
 `provider_unavailable`. It is absent while the provider is ready. The node
 classifies the first failed readiness check and sends only the code; Core stores
 any other value as `provider_unavailable` and never stores or returns probe error
-text or host paths. Older nodes remain compatible, but an older Core rejects the
-new codes, so upgrade Core first. See
+text or host paths. Core and nodes must use the same distribution; unknown-code
+handling does not establish cross-version compatibility. See
 [Node readiness diagnostics](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md#node-readiness-diagnostics)
 for causes, precedence and operator actions.
 
 Core rejects `AGENTS_API_MANAGED_RUNTIMES_FILE`. A node provider file remains an
 installed copy of the database selection, not a Core startup configuration source.
-For an older file-managed deployment, use the previous release and original
-backend to settle work and confirm cleanup before retiring its file configuration.
-Preserve identities, provider receipts, history and storage. This version does not
-automatically adopt the old database or delete its resources; removing an
-environment variable alone does not complete that migration.
+Historical file-managed deployments and selections without a complete specification
+are unsupported. Preserve their database, identities, provider receipts, Runtime
+resources and history; install the current release separately. Do not clear state,
+run a historical service to convert it, or treat removal of an environment variable
+as a transfer of ownership. See the
+[installation version policy](../../docs/getting-started/operations.md#installation-version-policy).
 
-A Web-managed Docker or microsandbox selection saved before specifications has
-the empty migration default. Core loads it for draining only. GET omits
-`specification` and `specification_digest`. Fresh hosted sandboxes are refused
-until a complete configuration is saved. Enrollment tokens return 409
-`sandbox_deployment_conflict`; node configuration reads and enrollment are refused.
-Retained nodes without a recorded digest or generation authenticate while the
-deployment is in this state, but those nodes use the removed `/core/v1/sandbox`
-node paths. They can reach only a Core that has this drain mode (pull request
-#114) and still serves those paths. No such release is published: build one from
-main commit `7b66be236a627246c85658722314285e6b39d9b8`, or another commit with
-#114 but without `/api/v1/sandbox-node`. Run the maintenance and archive steps there. On this
-release, reset that drained selection before POSTing its complete specification;
-reset completion retires those nodes. See the
-[operator upgrade notes](../../docs/getting-started/operations.md#data-and-upgrades).
+Landed migrations and their refusal conditions remain historical schema evidence.
+They do not establish an operator upgrade, downgrade or conversion procedure.
+Fresh database initialization uses the ordinary migration runner.
 
 Unit tests, database tests and provider inspection are separate from live
 execution acceptance. This contract does not assert that every resource profile,
 provider deployment or host-reboot recovery path has been qualified.
 
 
-### OpenAgentCore Runtime rename
+### Current Runtime identity
 
 The immutable microsandbox reference is `oac-runtime@sha256:<64 lowercase hex>`.
-Before upgrading from the former names, drain the deployment with the previous
-release and remove its nodes. The database migration refuses any allocation with
-no `released_at`, including retained snapshots and uncertain cleanup, then rewrites
-only the former `parsar-core-runtime@` reference prefix. The specification digest
-changes, requiring new node enrollment. Historical Session data remains unchanged.
-Old E2B templates must be rebuilt with the matching Runtime release. This release
-refuses E2B rename conversion before mutations until a Core-owned safe upgrade
-transition is implemented. Ordinary migration retires maintenance and resumes
-admission; it never interprets old maintenance as authorization to clear. Downgrade
-refuses an active reset or an unconfigured completed reset with generation above
-zero; configure a provider before downgrading, never erase the generation.
+Build new E2B templates with the matching current Runtime release. Historical
+Runtime names and installations have no supported upgrade, downgrade or conversion
+path; preserve their data and resources and install separately. Current Runtime
+generation rollout, coexistence and ownership-scoped garbage collection remain
+supported and are independent of installed program version changes. See
+[generation ownership and rollout](#generation-ownership-and-rollout).
 
 `runtime_download_failed` means the exact Runtime artifacts could not be transferred
 or verified. It is distinct from provider probe and image availability failures;
