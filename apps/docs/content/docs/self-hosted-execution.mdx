@@ -136,7 +136,7 @@ create entries in the public API-managed installation arrays.
 Closing an executor, cancelling a Turn or losing its connection preserves the
 snapshot and workspace. The compute owner remains responsible for explicit resource
 cleanup. This source-level capability behavior requires its own real acceptance;
-[earlier qualification](https://github.com/MiniMax-AI/parsar-core/blob/8f64eb5458f0b784beb9d1dddb7a5ab4e8434a05/contracts/agents-api/user-managed-runtime-v1.md) covered
+[earlier qualification](https://github.com/MiniMax-AI/parsar-core/blob/e35d3c9eda2cdb717fd4c3627404d362cc2e4dca/contracts/agents-api/user-managed-runtime-v1.md) covered
 only its recorded inputs and binaries, not local directory preparation or additional
 platforms.
 
@@ -185,7 +185,7 @@ key_id=$(python3 -c 'import uuid; print(uuid.uuid4())'); echo "credential ID: $k
 Rotate with `{"key_id":"…","rotate":true}` on the same route; revoke with
 `DELETE …/executor-credentials/<key_id>`. After an uncertain response, list the
 credentials with `GET` before trying again. The
-[credential contract](https://github.com/MiniMax-AI/parsar-core/blob/8f64eb5458f0b784beb9d1dddb7a5ab4e8434a05/contracts/agents-api/environment-executor-credentials.md)
+[credential contract](https://github.com/MiniMax-AI/parsar-core/blob/e35d3c9eda2cdb717fd4c3627404d362cc2e4dca/contracts/agents-api/environment-executor-credentials.md)
 has every rule and error.
 
 
@@ -201,4 +201,4 @@ continuation or automatic data deletion.
 Credential replacement for executors created by the current installer updates and
 restarts the same owned container. It does not authorize adopting an older executor.
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/8f64eb5458f0b784beb9d1dddb7a5ab4e8434a05/docs/getting-started/self-hosted.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/e35d3c9eda2cdb717fd4c3627404d362cc2e4dca/docs/getting-started/self-hosted.md)
