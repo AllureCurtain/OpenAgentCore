@@ -12,6 +12,7 @@ import shlex
 import shutil
 import subprocess
 import tarfile
+import time
 import tempfile
 import uuid
 
@@ -21,10 +22,25 @@ distribution = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(distribution)
 
 REPO = "MiniMax-AI/parsar-core"
-SOURCE = "48ed8158e134207d15cdd14ae0a30e10f070eb5c"
-TAG = "build-" + SOURCE
-BASE = "https://github.com/" + REPO + "/releases/download/" + TAG
-STEM = "oac-" + SOURCE + "-linux-amd64"
+SOURCE = TAG = BASE = STEM = None
+
+
+def select_source(source):
+    """One invocation owns one explicit immutable candidate identity."""
+    if not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}", source):
+        raise ValueError("An explicit full candidate source commit is required")
+    global SOURCE, TAG, BASE, STEM
+    SOURCE = source
+    TAG = "build-" + source
+    BASE = "https://github.com/" + REPO + "/releases/download/" + TAG
+    STEM = "oac-" + source + "-linux-amd64"
+
+
+adapter_spec = importlib.util.spec_from_file_location(
+    "qualification_adapter", pathlib.Path(__file__).with_name("qualify-core-release.py"))
+qualification_adapter = importlib.util.module_from_spec(adapter_spec)
+adapter_spec.loader.exec_module(qualification_adapter)
+
 REQUIRED_CHECKS = ("fresh-install", "current-lifecycle", "managed-native",
                    "current-generations", "node-runtime", "diagnostics-observations")
 # Only this separate promotion change may follow the qualified source on main.
@@ -153,7 +169,7 @@ def verify_files(directory, inventory):
         raise ValueError("Release asset bytes/set changed")
 
 
-def verify_landed(tree, promotion_commit):
+def verify_landed(tree, promotion_commit, allow_pending=False):
     source = api("commits/" + SOURCE)
     if source["commit"]["tree"]["sha"] != tree:
         raise ValueError("Source tree differs from GitHub commit")
@@ -173,10 +189,25 @@ def verify_landed(tree, promotion_commit):
     reviewed_tree = api("commits/" + promotion_commit)["commit"]["tree"]["sha"]
     main = api("commits/main")
     if main["commit"]["tree"]["sha"] != reviewed_tree:
+        if allow_pending:
+            pending = api("compare/" + main["sha"] + "..." + promotion_commit)
+            if pending["status"] == "ahead":
+                return False
         raise ValueError("Main tree differs from reviewed promotion commit")
     comparison = api("compare/" + SOURCE + "..." + main["sha"])
     if comparison["status"] not in ("identical", "ahead"):
         raise ValueError("Qualified source has not landed on main")
+    return True
+
+
+def wait_for_landed(tree, promotion_commit, timeout_seconds):
+    deadline = time.monotonic() + timeout_seconds
+    while not verify_landed(tree, promotion_commit, allow_pending=True):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Reviewed batch did not land within the merge wait budget")
+        # Qualification remains in this process; no saved pass file is reloaded.
+        time.sleep(min(30, remaining))
 
 
 def release_state():
@@ -245,13 +276,17 @@ if actual != expected: raise ValueError('Remote candidate bytes changed')
         input=canonical(request))
 
 
-def qualification(request, host, remote, adapter, downloaded):
+def qualification(request, host, remote, adapter, downloaded, package, manifest_hash):
     adapter_bytes = adapter.read_bytes()
     request["adapter_sha256"] = hashlib.sha256(adapter_bytes).hexdigest()
     command = shlex.join(["mkdir", "-m", "700", remote])
     run(["ssh", "-o", "BatchMode=yes", host, command])
     run(["scp", "-q", "--", str(adapter), *[str(p) for p in sorted(downloaded.iterdir())],
          host + ":" + remote + "/"])
+    qualification_adapter.verify_package(package, manifest_hash)
+    run(["scp", "-q", "-r", "--", str(package), host + ":" + remote + "/tools"])
+    request["qualification_package"] = remote + "/tools"
+    request["qualification_manifest_sha256"] = manifest_hash
     verify_remote(request, host)
     # Hash and execute the same bytes, avoiding a check-then-open script race.
     bootstrap = ("import hashlib,pathlib,sys; p=pathlib.Path(sys.argv[1]); b=p.read_bytes(); "
@@ -265,7 +300,8 @@ def qualification(request, host, remote, adapter, downloaded):
                 "inventory_sha256": request["inventory_sha256"], "adapter_sha256": request["adapter_sha256"]}
     if any(result.get(key) != value for key, value in required.items()):
         raise ValueError("Qualification identity mismatch")
-    if result.get("checks") != {name: "passed" for name in REQUIRED_CHECKS}:
+    if (result.get("status") != "passed" or result.get("qualification_manifest_sha256") != manifest_hash
+            or result.get("checks") != {name: "passed" for name in REQUIRED_CHECKS}):
         raise ValueError("Qualification checks missing, failed or skipped")
     return result
 
@@ -277,7 +313,14 @@ def verify_tooling(promotion_commit):
             raise ValueError("Local tooling differs from reviewed commit: " + name)
 
 
-def promote(assets, state, host, remote_root, promotion_commit):
+def promote(assets, state, host, remote_root, promotion_commit, *, source, package, manifest_hash,
+            merge_wait_seconds=86400):
+    select_source(source)
+    if type(merge_wait_seconds) is not int or not 1 <= merge_wait_seconds <= 604800:
+        raise ValueError("Merge wait must be between one second and seven days")
+    qualification_adapter.verify_package(package, manifest_hash)
+    if package == assets or package.is_relative_to(assets):
+        raise ValueError("Qualification tooling must be separate from candidate assets")
     if not re.fullmatch(r"[0-9a-f]{40}", promotion_commit):
         raise ValueError("A reviewed full promotion commit is required")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.@-]*", host):
@@ -318,17 +361,17 @@ def promote(assets, state, host, remote_root, promotion_commit):
     initial_release = release_state()
     if not initial_release or not initial_release["draft"] or initial_release["target_commitish"] != SOURCE:
         raise ValueError("Draft identity changed")
-    request = {"source": SOURCE, "tree": metadata["source_tree"], "run_id": uuid.uuid4().hex,
+    request = {"source": SOURCE, "tree": metadata["source_tree"], "run_id": str(uuid.uuid4()),
                "inventory": inventory, "inventory_sha256": hashlib.sha256(canonical(inventory).encode()).hexdigest(),
                "required_checks": list(REQUIRED_CHECKS)}
     remote = remote_root.rstrip("/") + "/" + request["run_id"]
     request["directory"] = remote
     result = qualification(request, host, remote,
-                           adapter, assets)
+                           adapter, assets, package, manifest_hash)
     (state / "request.json").write_text(canonical(request) + "\n")
     (state / "qualification.json").write_text(canonical(result) + "\n")
     verify_files(assets, inventory)
-    verify_landed(metadata["source_tree"], promotion_commit)
+    wait_for_landed(metadata["source_tree"], promotion_commit, merge_wait_seconds)
     verify_tag()
     current = release_state()
     if (not current or not current["draft"] or current["id"] != initial_release["id"]
@@ -352,13 +395,20 @@ def promote(assets, state, host, remote_root, promotion_commit):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--source", required=True, help="Full candidate source commit; never inferred from latest")
+    parser.add_argument("--qualification-package", required=True, type=pathlib.Path,
+                        help="Separately reviewed private package directory, containing manifest.json")
+    parser.add_argument("--qualification-manifest-sha256", required=True, help="Explicit reviewed manifest digest")
+    parser.add_argument("--merge-wait-seconds", type=int, default=86400, help="Same-process merge wait, at most seven days")
     parser.add_argument("--promotion-commit", required=True, help="Reviewed tooling commit, never artifact provenance")
     parser.add_argument("--assets", required=True, type=pathlib.Path, help="Flat candidate files only")
     parser.add_argument("--state", required=True, type=pathlib.Path, help="New local evidence directory")
     parser.add_argument("--host", required=True, help="Existing SSH host alias")
     parser.add_argument("--remote-root", required=True, help="Existing isolated remote parent directory")
     args = parser.parse_args()
-    promote(args.assets.resolve(), args.state.resolve(), args.host, args.remote_root, args.promotion_commit)
+    promote(args.assets.resolve(), args.state.resolve(), args.host, args.remote_root, args.promotion_commit,
+            source=args.source, package=args.qualification_package.resolve(),
+            manifest_hash=args.qualification_manifest_sha256, merge_wait_seconds=args.merge_wait_seconds)
 
 
 if __name__ == "__main__":

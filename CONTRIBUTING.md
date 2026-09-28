@@ -1964,19 +1964,27 @@ image containing a private test CA or model credential as a release input.
 Repository visibility is independent of publication. Do not add repository
 credentials to installed node/Runtime configuration to bypass download access.
 
-For the current installation batch, `scripts/promote-qualified-release.py` fixes
-candidate provenance and its tag to source
-`48ed8158e134207d15cdd14ae0a30e10f070eb5c`. It uses existing local gh authentication
-and SSH, uploads/downloads the complete matching thin/offline/Runtime asset set,
-and verifies archive members and full asset hashes. The reviewed qualification
-adapter receives a fresh run identity and exact inventory over the authenticated
-command channel. Required checks are fresh-install, current-lifecycle,
-managed-native, current-generations, node-runtime and diagnostics-observations.
-All must run successfully; a supplied pass file, skipped check or old report cannot
-release the candidate. The adapter currently refuses execution until the real
-batch acceptance commands are connected. Controller tests never count as live
-qualification. Historical reset evidence stays historical; later self-hosted
-capability work is outside this batch.
+`scripts/promote-qualified-release.py` requires an explicit full candidate source
+SHA, binds it to the archive manifests and matching `build-<SHA>` tag, and uses
+existing local gh authentication and SSH. It uploads/downloads the complete
+matching thin/offline/Runtime asset set and verifies archive members and asset
+hashes. The separate qualification package is supplied by the maintainer with an
+explicit reviewed manifest SHA256. Its complete file inventory, ordered Python
+commands, bounded stage timeouts and private path/resource configuration are
+verified before any Release mutation and again by the remote supervisor. Candidate
+assets cannot select or replace this execution package. Keep host-specific
+acceptance scripts, usernames and credential paths outside this public repository;
+never put credential values in either manifest.
+
+The reviewed adapter receives a fresh canonical UUID and exact inventory over the
+authenticated command channel. It directly supervises fresh-install,
+current-lifecycle, managed-native, current-generations, node-runtime and
+diagnostics-observations in that order. Every child must exit successfully and
+return only its own passed check, the current controller identity and its observed
+owned resources. Resources and the previous result flow between live children;
+a supplied pass file, skipped check or old report cannot release the candidate.
+Verify package and candidate bytes again after each stage. Control tests exercise
+short-lived fixture children only and never establish live qualification.
 
 The caller supplies the independently reviewed promotion-tooling commit. Its
 changes from the candidate may only affect the exact promotion files enumerated
@@ -1992,7 +2000,11 @@ commit. Product changes or a different main tree block promotion of the old
 candidate. Never infer batch membership from all open PRs or automatically merge
 them in the publication command.
 
-Use one controller invocation for the batch. It verifies unchanged draft identity,
+Use one controller invocation for the batch. After successful qualification it
+waits in the same process, within the explicit merge-wait budget, for the exact
+reviewed batch tree to reach main. An ancestor main waits; conflicting main changes
+fail immediately. Cancellation or expiration retains evidence and cannot turn a
+saved result into resume authority. It verifies unchanged draft identity,
 target, tag and downloaded bytes immediately before publication and checks the
 published bytes afterward. Conflicting assets are never overwritten. An interrupted
 run is reconciled before another invocation; stored qualification output is evidence,

@@ -6,6 +6,7 @@ import io
 import json
 import pathlib
 import subprocess
+import sys
 import tarfile
 import tempfile
 import unittest
@@ -19,11 +20,21 @@ spec.loader.exec_module(promotion)
 
 class PromotionTests(unittest.TestCase):
     def setUp(self):
+        promotion.select_source("a" * 40)
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = pathlib.Path(self.temp.name)
         self.assets = self.root / "assets"
         self.assets.mkdir()
+        self.package = self.root / "private-package"
+        self.package.mkdir()
+        (self.package / "fixture.py").write_text("# Control fixture, never live qualification\n")
+        self.manifest = {"version": 1, "files": {"fixture.py": promotion.file_identity(self.package / "fixture.py")},
+            "configuration": {}, "stages": [{"name": name, "python": sys.executable,
+                "script": "fixture.py", "args": [], "timeout_seconds": 3} for name in promotion.REQUIRED_CHECKS]}
+        (self.package / "manifest.json").write_text(promotion.canonical(self.manifest))
+        self.manifest_hash = promotion.file_identity(self.package / "manifest.json")["sha256"]
+        self.kwargs = dict(source=promotion.SOURCE, package=self.package, manifest_hash=self.manifest_hash)
         self.tree = "b" * 40
         self.metadata = {
             "source_commit": promotion.SOURCE, "source_tree": self.tree,
@@ -139,10 +150,11 @@ class PromotionTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "exceeds promotion test"):
                 promotion.verify_landed(self.tree, "a" * 40)
 
-    def test_adapter_not_ready_has_no_remote_side_effects(self):
+    def test_unreviewed_package_has_no_remote_side_effects(self):
+        (self.package / "fixture.py").write_text("changed")
         with mock.patch.object(promotion, "gh") as gh, mock.patch.object(promotion, "api") as api:
-            with self.assertRaisesRegex(ValueError, "not connected"):
-                promotion.promote(self.assets, self.root / "state", "mx2", "/tmp/acceptance", "d" * 40)
+            with self.assertRaisesRegex(ValueError, "bytes/set mismatch"):
+                promotion.promote(self.assets, self.root / "state", "mx2", "/tmp/acceptance", "d" * 40, **self.kwargs)
             gh.assert_not_called()
             api.assert_not_called()
             self.assertFalse((self.root / "state").exists())
@@ -159,6 +171,8 @@ class PromotionTests(unittest.TestCase):
                     raise subprocess.CalledProcessError(1, argv)
                 result = {key: request[key] for key in (
                     "source", "tree", "run_id", "inventory_sha256", "adapter_sha256")}
+                result["status"] = "passed"
+                result["qualification_manifest_sha256"] = self.manifest_hash
                 result["checks"] = checks if checks is not None else {name: "passed" for name in promotion.REQUIRED_CHECKS}
                 if wrong_identity:
                     result["run_id"] = "previous-run"
@@ -166,7 +180,7 @@ class PromotionTests(unittest.TestCase):
             return ""
 
         with mock.patch.object(promotion, "run", side_effect=transport):
-            return promotion.qualification(request, "mx2", "/tmp/test", adapter, self.assets)
+            return promotion.qualification(request, "mx2", "/tmp/test", adapter, self.assets, self.package, self.manifest_hash)
 
     def test_nonzero_ssh_missing_checks_and_replayed_result_rejected(self):
         with self.assertRaises(subprocess.CalledProcessError):
@@ -180,7 +194,7 @@ class PromotionTests(unittest.TestCase):
         self.assertEqual(self.qualify()["checks"], {name: "passed" for name in promotion.REQUIRED_CHECKS})
 
     def test_publication_waits_for_live_result_and_merge(self):
-        for failure in ("qualification", "verify_landed"):
+        for failure in ("qualification", "wait_for_landed"):
             with self.subTest(failure=failure):
                 state = self.root / failure
                 draft = {"id": 1, "draft": True, "target_commitish": promotion.SOURCE}
@@ -193,11 +207,11 @@ class PromotionTests(unittest.TestCase):
                      mock.patch.object(promotion, "download"), \
                      mock.patch.object(promotion, "verify_files"), \
                      mock.patch.object(promotion, "qualification", return_value={}) as qualify, \
-                     mock.patch.object(promotion, "verify_landed") as landed, \
+                     mock.patch.object(promotion, "wait_for_landed") as landed, \
                      mock.patch.object(promotion, "gh") as gh:
                     (qualify if failure == "qualification" else landed).side_effect = ValueError("blocked")
                     with self.assertRaisesRegex(ValueError, "blocked"):
-                        promotion.promote(self.assets, state, "mx2", "/tmp/acceptance", "d" * 40)
+                        promotion.promote(self.assets, state, "mx2", "/tmp/acceptance", "d" * 40, **self.kwargs)
                     gh.assert_not_called()
 
     def test_success_publishes_only_after_final_download_verification(self):
@@ -217,10 +231,10 @@ class PromotionTests(unittest.TestCase):
              mock.patch.object(promotion, "download", side_effect=download), \
              mock.patch.object(promotion, "verify_files"), \
              mock.patch.object(promotion, "qualification", side_effect=lambda *args: events.append("qualified") or {}), \
-             mock.patch.object(promotion, "verify_landed", side_effect=lambda *args: events.append("landed")), \
+             mock.patch.object(promotion, "wait_for_landed", side_effect=lambda *args: events.append("landed")), \
              mock.patch.object(promotion, "gh", side_effect=lambda *args: events.append(args[:3])), \
              mock.patch("builtins.print"):
-            promotion.promote(self.assets, self.root / "success", "mx2", "/tmp/acceptance", "d" * 40)
+            promotion.promote(self.assets, self.root / "success", "mx2", "/tmp/acceptance", "d" * 40, **self.kwargs)
         self.assertEqual(events, ["downloaded", "qualified", "landed", "before-publication",
                                   ("release", "edit", promotion.TAG), "published"])
 
@@ -255,8 +269,136 @@ class PromotionTests(unittest.TestCase):
         with mock.patch.object(promotion, "run", return_value=ready), \
                      mock.patch.object(promotion, "verify_tooling"), mock.patch.object(promotion, "gh") as gh:
             with self.assertRaises(FileExistsError):
-                promotion.promote(self.assets, state, "mx2", "/tmp/acceptance", "d" * 40)
+                promotion.promote(self.assets, state, "mx2", "/tmp/acceptance", "d" * 40, **self.kwargs)
             gh.assert_not_called()
+
+
+class SupervisionTests(unittest.TestCase):
+    """Actual short-lived child fixtures exercise supervision, never Core acceptance."""
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = pathlib.Path(self.temp.name)
+        self.package = self.root / 'tools'
+        self.package.mkdir()
+        self.assets = self.root / 'assets'
+        self.assets.mkdir()
+        (self.assets / 'fixture.tar.gz').write_bytes(b'not a release')
+        self.script = self.package / 'fixture.py'
+        self.script.write_text("""import json,sys
+q=json.load(sys.stdin);name=sys.argv[1]
+r={k:q[k] for k in ('source','tree','run_id','inventory_sha256','adapter_sha256')}
+count=q['owned_resources'].get('child_count',0)
+assert (q['previous_stage_result'] is None)==(count==0)
+r.update(status='passed',checks={name:'passed'},owned_resources={'child_count':count+1})
+print(json.dumps(r))
+""")
+        self.manifest = {'version': 1, 'configuration': {}, 'files': {}, 'stages': [
+            {'name': name, 'python': sys.executable, 'script': 'fixture.py', 'args': [name],
+             'timeout_seconds': 3} for name in promotion.REQUIRED_CHECKS]}
+        inventory = {'fixture.tar.gz': promotion.file_identity(self.assets / 'fixture.tar.gz')}
+        self.request = {'source': 'a'*40, 'tree': 'b'*40, 'run_id': 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+            'directory': str(self.assets), 'inventory': inventory,
+            'inventory_sha256': hashlib.sha256(promotion.canonical(inventory).encode()).hexdigest(),
+            'adapter_sha256': 'd'*64, 'required_checks': list(promotion.REQUIRED_CHECKS),
+            'qualification_package': str(self.package)}
+        self.freeze()
+
+    def freeze(self):
+        self.manifest['files'] = {'fixture.py': promotion.file_identity(self.script)}
+        path = self.package / 'manifest.json'
+        path.write_text(promotion.canonical(self.manifest))
+        self.request['qualification_manifest_sha256'] = promotion.file_identity(path)['sha256']
+
+    def test_six_actual_children_and_exclusive_supervision(self):
+        result = promotion.qualification_adapter.qualify(self.request)
+        self.assertEqual(result['owned_resources'], {'child_count': 6})
+        self.assertEqual(result['checks'], {name: 'passed' for name in promotion.REQUIRED_CHECKS})
+        with self.assertRaises(FileExistsError):
+            promotion.qualification_adapter.qualify(self.request)
+
+    def test_package_mutation_and_unlisted_file_rejected(self):
+        self.script.write_text('# changed')
+        with self.assertRaisesRegex(ValueError, 'bytes/set mismatch'):
+            promotion.qualification_adapter.qualify(self.request)
+        self.freeze()
+        (self.package / 'pass.json').write_text('{"passed":true}')
+        with self.assertRaisesRegex(ValueError, 'bytes/set mismatch'):
+            promotion.qualification_adapter.qualify(self.request)
+        self.assertFalse((self.assets / 'qualification').exists())
+
+    def test_old_pass_file_cannot_replace_failed_child(self):
+        self.script.write_text("import sys;sys.exit(9)\n")
+        self.freeze()
+        (self.assets / 'old-pass.json').write_text('{"status":"passed"}')
+        with self.assertRaisesRegex(ValueError, 'stage failed'):
+            promotion.qualification_adapter.qualify(self.request)
+        self.assertFalse((self.assets / 'qualification/supervision.result.json').exists())
+
+    def test_wrong_identity_and_extra_passed_check_rejected(self):
+        self.script.write_text(self.script.read_text().replace("print(json.dumps(r))", "r['checks']['invented']='passed';print(json.dumps(r))"))
+        self.freeze()
+        with self.assertRaisesRegex(ValueError, 'identity or required check'):
+            promotion.qualification_adapter.qualify(self.request)
+
+    def test_child_timeout_never_completes_qualification(self):
+        self.script.write_text('import time;time.sleep(20)\n')
+        self.manifest['stages'][0]['timeout_seconds'] = 1
+        self.freeze()
+        with self.assertRaises(subprocess.TimeoutExpired):
+            promotion.qualification_adapter.qualify(self.request)
+        self.assertFalse((self.assets / 'qualification/supervision.result.json').exists())
+
+    def test_structured_commands_reject_traversal_and_missing_stage(self):
+        for change in ('path', 'stage'):
+            if change == 'path':
+                self.manifest['stages'][0]['script'] = '../fixture.py'
+            else:
+                self.manifest['stages'] = self.manifest['stages'][:-1]
+            self.freeze()
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                promotion.qualification_adapter.qualify(self.request)
+
+    def test_merge_wait_stays_in_process_without_requalification(self):
+        with mock.patch.object(promotion, 'verify_landed', side_effect=[False, False, True]) as landed, \
+             mock.patch.object(promotion.time, 'monotonic', side_effect=[0, 1, 2]), \
+             mock.patch.object(promotion.time, 'sleep') as sleep, \
+             mock.patch.object(promotion, 'qualification') as qualify:
+            promotion.wait_for_landed('b'*40, 'd'*40, 60)
+            self.assertEqual(landed.call_count, 3)
+            self.assertEqual(sleep.call_count, 2)
+            qualify.assert_not_called()
+
+    def test_only_ancestor_main_waits_for_exact_reviewed_tree(self):
+        promotion.select_source('a'*40)
+        prefix=[{'commit':{'tree':{'sha':'b'*40}}}, {'status':'ahead','files':[]},
+                {'commit':{'tree':{'sha':'d'*40}}}, {'sha':'e'*40,'commit':{'tree':{'sha':'f'*40}}}]
+        with mock.patch.object(promotion,'api',side_effect=prefix+[{'status':'ahead'}]):
+            self.assertIs(promotion.verify_landed('b'*40,'c'*40,allow_pending=True),False)
+        with mock.patch.object(promotion,'api',side_effect=prefix+[{'status':'diverged'}]):
+            with self.assertRaisesRegex(ValueError,'Main tree differs'):
+                promotion.verify_landed('b'*40,'c'*40,allow_pending=True)
+
+    def test_merge_timeout_and_conflict_do_not_publish(self):
+        with mock.patch.object(promotion, 'verify_landed', return_value=False), \
+             mock.patch.object(promotion.time, 'monotonic', side_effect=[0, 61]), \
+             mock.patch.object(promotion, 'gh') as gh:
+            with self.assertRaises(TimeoutError):
+                promotion.wait_for_landed('b'*40, 'd'*40, 60)
+            gh.assert_not_called()
+        with mock.patch.object(promotion, 'verify_landed', side_effect=ValueError('conflict')), \
+             mock.patch.object(promotion.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(ValueError, 'conflict'):
+                promotion.wait_for_landed('b'*40, 'd'*40, 60)
+            sleep.assert_not_called()
+
+    def test_candidate_source_is_explicit_and_strict(self):
+        for source in ('latest', '', 'a'*39, 'A'*40):
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                promotion.select_source(source)
+        promotion.select_source('f'*40)
+        self.assertEqual(promotion.TAG, 'build-'+'f'*40)
+        self.assertIn('f'*40, promotion.BASE)
 
 
 if __name__ == "__main__":

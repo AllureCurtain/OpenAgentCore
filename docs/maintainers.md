@@ -64,17 +64,23 @@ operator host with gh authentication and SSH access to the qualification host:
 
 ```sh
 python3 scripts/promote-qualified-release.py \
+  --source FULL_CANDIDATE_SOURCE_SHA \
   --assets /absolute/path/to/flat-candidate-assets \
+  --qualification-package /absolute/path/to/reviewed-private-package \
+  --qualification-manifest-sha256 FULL_REVIEWED_MANIFEST_SHA256 \
+  --merge-wait-seconds 86400 \
   --state /absolute/path/to/new-promotion-evidence \
   --host zju_a100_2 --remote-root /absolute/path/to/existing-isolated-acceptance-root \
   --promotion-commit FULL_REVIEWED_TOOLING_COMMIT_SHA
 ```
 
 This command is an operational publication command, not a dry run. It does not
-build, merge PRs, install services or create host accounts. Its qualification adapter
-currently reports `ready=false`, so it stops before any Release operation until the
-real batch checks are integrated and reviewed. Do not change readiness just to
-bypass the missing implementation.
+build, merge PRs or create host accounts. Its directly supervised qualification
+scripts perform the reviewed fresh installation and real execution actions. Before
+starting, independently review the private package and record its manifest hash.
+The package is separate from the candidate. `ready=true` describes the generic
+adapter protocol only; it does not establish package review, host readiness or
+successful live qualification.
 
 Stage only the build's flat files, including thin/offline archives, both checksum
 files and every versioned Runtime asset; exclude the extracted bundle directory.
@@ -96,7 +102,34 @@ checks cover fresh installation, current lifecycle, managed native execution,
 current generations, node Runtime and diagnostics/observations. Their actual
 commands must operate on freshly extracted supplied assets and respect the agreed
 resource ownership. The controller verifies remote asset hashes before and after
-execution; it has no pass-file or arbitrary acceptance-command option.
+execution; it has no pass-file option. Execution commands come only from the
+maintainer-pinned package, never from candidate metadata or a stage result.
+
+The package root contains `manifest.json` and exactly its enumerated regular files;
+symlinks, extra files and changed bytes are rejected. Manifest version 1 has `files`
+(relative path to SHA256/size), `configuration` (reviewed resource bounds and private
+file paths, no credential values), and six ordered `stages`. Each stage has `name`,
+absolute `python` interpreter path, package-relative `.py` `script`, structured
+string `args`, and `timeout_seconds` (1–14400). No shell command or candidate-driven
+substitution is used. The explicit SHA256 covers the exact manifest bytes. Preserve
+the reviewed package together with all evidence.
+
+The supervisor gives each child the unchanged controller identity and inventory,
+`qualification_package`, `qualification_manifest_sha256`, `package_configuration`,
+`owned_resources`, and `previous_stage_result`. The latter two come from the actual
+preceding child, initially empty/null. Private wrappers adapt host-specific harness
+interfaces and must verify their detailed subchecks before returning
+`status: passed`, exact `checks: {stage-name: passed}`, the five identity fields
+(source/tree/run_id/inventory_sha256/adapter_sha256), and `owned_resources`.
+The run ID is a canonical UUID string. Child stdout/stderr remain private files;
+nonzero exit, timeout, changed bytes or mismatched identity stops the sequence.
+
+After all six stages pass, the same controller waits up to `--merge-wait-seconds`
+for main to reach the exact reviewed promotion tree. While main is an ancestor of
+that reviewed commit it continues waiting; divergent changes stop publication.
+Do not restart merely because the merge is pending. Cancellation or timeout retains
+resources and evidence but cannot resume from a recorded pass. The command never
+merges the batch itself.
 
 This finite command publishes automatically when all checks pass and the batch is
 landed. Candidate source and tag remain
