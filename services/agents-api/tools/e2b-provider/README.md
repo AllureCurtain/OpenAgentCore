@@ -32,6 +32,10 @@ stdout contains one bounded response with sanitized error codes. API keys never
 enter arguments, inherited environment or receipts. The process retains its
 allocation lock when the Core caller times out, until the bounded SDK operation
 returns. Core must serialize lifecycle requests and never replay Create.
+The request carries the deployment's explicit API origin and sandbox domain.
+Every SDK call uses these selectors after ambient `E2B_*` variables are removed.
+Receipts bind an allocation to those selectors; receipts written before this
+feature belong to official E2B. Endpoint changes require drained maintenance.
 
 `StateDir` must already exist, be owned by the service user and have mode 0700.
 Keep it on durable private storage through Core upgrades/restarts. Its receipts

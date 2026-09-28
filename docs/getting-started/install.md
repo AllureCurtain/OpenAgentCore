@@ -113,6 +113,8 @@ and rerunning `install.sh` accepts no flag except `--install-dir`.
 | `--accept-docker-risks` | | With `--sandbox docker`: accept Docker's [weaker isolation](#sandbox-backend) without the prompt; required without a terminal |
 | `--e2b-api-key-file FILE` | | With `--sandbox e2b`: absolute path of a private file (no group or other access, at most 4 KiB) holding the E2B API key |
 | `--e2b-template ID:BUILD` | | With `--sandbox e2b`: the ready template build, `template-id:build-uuid` |
+| `--e2b-api-url URL` | Official E2B | With `--sandbox e2b`: compatible service HTTPS API origin; use together with `--e2b-domain` |
+| `--e2b-domain DOMAIN` | Official E2B | With `--sandbox e2b`: sandbox data-plane DNS suffix; use together with `--e2b-api-url` |
 | `--core-only` | | [Mode](#modes): Core and PostgreSQL, without Web |
 | `--web-only` | | [Mode](#modes): Web only, connected to an existing Core. Needs `--core-url` and `--core-key-file` |
 | `--core-url URL` | | With `--web-only`: origin of the existing Core, HTTPS or loopback HTTP. Seeds `web.core_url` |

@@ -25,9 +25,9 @@ const MaxResponseBytes = 16 * 1024 * 1024
 
 // Config contains trusted deployment configuration; APIKey travels only on stdin.
 type Config struct {
-	Binary, StateDir, InstallationID, APIKey, Template string
-	TimeoutSeconds                                     int
-	Resources                                          *sandbox.Resources
+	Binary, StateDir, InstallationID, APIKey, Template, APIURL, Domain string
+	TimeoutSeconds                                                     int
+	Resources                                                          *sandbox.Resources
 }
 
 type Request struct {
@@ -82,6 +82,9 @@ func (c Config) Validate() error {
 	}
 	template, build, ok := strings.Cut(c.Template, ":")
 	if !ok || template == "" || !validID(build) || !validID(c.InstallationID) || c.TimeoutSeconds < 1 || c.TimeoutSeconds > 86400 || c.APIKey == "" || len(c.APIKey) > 4096 || strings.ContainsFunc(c.APIKey, func(r rune) bool { return unicode.IsSpace(r) || r == 0 }) {
+		return sandbox.ErrInvalid
+	}
+	if _, _, err := NormalizeEndpoint(c.APIURL, c.Domain); err != nil {
 		return sandbox.ErrInvalid
 	}
 	for _, r := range template {

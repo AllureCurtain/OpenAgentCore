@@ -48,6 +48,8 @@ export function SandboxDeploymentSettings({ deployment, disabled, fresh, onMaint
     {deployment.provider === "e2b" ? <div className="sandbox-cloud-summary">
       <dl className="sandbox-summary">
         <div><dt>{t("Immutable Runtime template")}</dt><dd>{deployment.e2b?.template || t("Unknown state")}</dd></div>
+        <div><dt>{t("Sandbox API URL")}</dt><dd><code>{deployment.e2b?.api_url}</code></dd></div>
+        <div><dt>{t("Sandbox data-plane domain")}</dt><dd><code>{deployment.e2b?.domain}</code></dd></div>
         <div>
           <dt>{t("Template build")}</dt>
           <dd>{[
@@ -68,7 +70,8 @@ export function SandboxDeploymentSettings({ deployment, disabled, fresh, onMaint
       {!changing ? <button type="button" className="button outline" disabled={disabled || !clean} onClick={() => setChanging(true)}>{t("Change provider or resources")}</button> : <>
         <SandboxSetupWizard
           coreUrl={deployment.core_url}
-          current={deployment.provider ? { provider: deployment.provider, specification: deployment.specification, e2bTemplate: deployment.e2b?.template } : undefined}
+          current={deployment.provider ? { provider: deployment.provider, specification: deployment.specification, e2bTemplate: deployment.e2b?.template,
+            e2bAPIURL: deployment.e2b?.api_url, e2bDomain: deployment.e2b?.domain } : undefined}
           disabled={disabled || !clean}
           switching
           onSubmit={onUpdate}

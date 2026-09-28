@@ -179,7 +179,8 @@ func (s *managedSetup) provider(setup store.SandboxSetup) (sandbox.Provider, err
 			resources = &setup.Specification.Resources
 		}
 		provider, err := e2b.New(e2b.Config{Binary: binary, StateDir: os.Getenv("OAC_E2B_STATE_DIR"),
-			Resources: resources, InstallationID: setup.InstallationID, APIKey: setup.E2B.APIKey, Template: setup.E2B.Template, TimeoutSeconds: 3600})
+			Resources: resources, InstallationID: setup.InstallationID, APIKey: setup.E2B.APIKey, Template: setup.E2B.Template,
+			APIURL: setup.E2B.APIURL, Domain: setup.E2B.Domain, TimeoutSeconds: 3600})
 		if err != nil {
 			return nil, errors.New("E2B provider cannot load; check the installed helper and private state directory")
 		}

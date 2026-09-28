@@ -16,6 +16,43 @@ import (
 func e2bSelection() SandboxDeploymentSetupRequest {
 	return SandboxDeploymentSetupRequest{DeploymentSpec: SandboxDeploymentTestSpec("e2b"), Provider: "e2b", E2B: &SandboxE2BConfiguration{APIKey: "fixture-private-api-key", Template: "runtime:" + uuid.NewString()}}
 }
+
+func TestSandboxE2BEndpointPersistenceAndSwitchGate(t *testing.T) {
+	_, pool := newManagedTestStore(t)
+	cipher, err := credentialcrypto.New(bytes.Repeat([]byte{7}, 32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := NewWithCredentialCipher(pool, cipher)
+	w := executionLease(t, s).Store()
+	id := uuid.NewString()
+	if err := w.ClaimWebSandboxDeployment(t.Context(), id); err != nil {
+		t.Fatal(err)
+	}
+	input := e2bSelection()
+	input.E2B.APIURL, input.E2B.Domain = "https://sandbox-test.sandbase.ai", "sandbox-test.sandbase.ai"
+	view, err := w.InitializeSandboxDeployment(t.Context(), id, input)
+	if err != nil || view.E2B == nil || view.E2B.APIURL != input.E2B.APIURL || view.E2B.Domain != input.E2B.Domain {
+		t.Fatal("custom endpoint was not returned", view, err)
+	}
+	setup, err := s.GetSandboxSetup(t.Context())
+	if err != nil || setup.E2B == nil || setup.E2B.APIURL != input.E2B.APIURL || setup.E2B.Domain != input.E2B.Domain {
+		t.Fatal("custom endpoint was not persisted", setup, err)
+	}
+	change := e2bSelection()
+	change.E2B.Template = input.E2B.Template
+	update := SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: change, ExpectedGeneration: view.Generation}
+	if _, err := w.UpdateSandboxDeployment(t.Context(), id, update); !errors.Is(err, ErrSandboxDeploymentConflict) {
+		t.Fatal("endpoint switch bypassed maintenance", err)
+	}
+	if _, err := w.SetSandboxMaintenance(t.Context(), id, SandboxMaintenanceRequest{Maintenance: true, ExpectedGeneration: view.Generation}); err != nil {
+		t.Fatal(err)
+	}
+	changed, err := w.UpdateSandboxDeployment(t.Context(), id, update)
+	if err != nil || changed.Generation != view.Generation+1 || changed.E2B == nil || changed.E2B.APIURL != "https://api.e2b.app" || changed.E2B.Domain != "e2b.app" {
+		t.Fatal("drained endpoint switch failed", changed, err)
+	}
+}
 func TestSandboxDirectDeploymentOwnershipAndCleanSwitch(t *testing.T) {
 	_, pool := newManagedTestStore(t)
 	cipher, err := credentialcrypto.New(bytes.Repeat([]byte{4}, 32))

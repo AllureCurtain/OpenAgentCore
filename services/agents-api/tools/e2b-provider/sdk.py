@@ -21,6 +21,13 @@ SDK_VERSION = '2.51.0'
 MAX_OUTPUT = 1024 * 1024
 
 
+def sdk_options(config, remaining):
+    # Explicit selectors survive the helper's removal of ambient E2B_* values.
+    return {'api_key': config['APIKey'], 'api_url': config.get('APIURL') or 'https://api.e2b.app',
+            'domain': config.get('Domain') or 'e2b.app', 'retries': 0, 'debug': False,
+            'request_timeout': remaining()}
+
+
 def validate_deployment(config, remaining):
     """Read the exact ready build through the pinned SDK, without allocating.
 
@@ -37,8 +44,7 @@ def validate_deployment(config, remaining):
     template, build_id = config['Template'].split(':', 1)
     cursor, seen = UNSET, set()
     for _ in range(100):
-        client = get_api_client(ConnectionConfig(api_key=config['APIKey'], retries=0,
-                                                debug=False, request_timeout=remaining()))
+        client = get_api_client(ConnectionConfig(**sdk_options(config, remaining)))
         response = get_templates_template_id.sync_detailed(template_id=template, client=client,
                                                           next_token=cursor, limit=100)
         if response.status_code != 200 or not isinstance(response.parsed, TemplateWithBuilds):
@@ -70,8 +76,7 @@ def read_metrics(config, sandbox_ids, remaining):
     """Latest metrics point per sandbox from one batch request of at most 100 IDs."""
     if not 1 <= len(sandbox_ids) <= 100:
         raise Failure('invalid')
-    client = get_api_client(ConnectionConfig(api_key=config['APIKey'], retries=0,
-                                            debug=False, request_timeout=remaining()))
+    client = get_api_client(ConnectionConfig(**sdk_options(config, remaining)))
     response = get_sandboxes_metrics.sync_detailed(client=client, sandbox_ids=sandbox_ids)
     if (response.status_code != 200 or not isinstance(response.parsed, SandboxesWithMetrics) or
             not isinstance(response.parsed.sandboxes, dict)):

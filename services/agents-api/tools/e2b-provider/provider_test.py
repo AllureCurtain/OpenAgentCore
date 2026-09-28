@@ -74,6 +74,32 @@ class ProviderTest(unittest.TestCase):
         self.assertEqual(self.record()['connection']['envd_access_token'], 'private-envd-secret')
         self.api.connect.assert_not_called()
 
+    def test_custom_endpoint_reaches_create_inspect_and_renew(self):
+        self.config.update(APIURL='https://sandbox-test.sandbase.ai', Domain='sandbox-test.sandbase.ai')
+        self.cloud.sandbox_domain = 'sandbox-test.sandbase.ai'
+        self.assertEqual(self.call('create')['ErrorCode'], '')
+        self.assertEqual(self.call('renew')['ErrorCode'], '')
+        for operation in (self.api.create, self.api.get_info, self.api.set_timeout):
+            self.assertEqual(operation.call_args.kwargs['api_url'], self.config['APIURL'])
+            self.assertEqual(operation.call_args.kwargs['domain'], self.config['Domain'])
+        self.assertEqual(self.record()['endpoint'], {'api_url': self.config['APIURL'],
+                                                     'domain': self.config['Domain']})
+
+    def test_custom_endpoint_reaches_unknown_create_discovery(self):
+        self.config.update(APIURL='https://sandbox-test.sandbase.ai', Domain='sandbox-test.sandbase.ai')
+        self.api.create.side_effect = TimeoutError('uncertain')
+        self.assertEqual(self.call('create')['ErrorCode'], 'unconfirmed')
+        self.call('inspect')
+        self.assertEqual(self.api.list.call_args.kwargs['api_url'], self.config['APIURL'])
+        self.assertEqual(self.api.list.call_args.kwargs['domain'], self.config['Domain'])
+
+    def test_create_refuses_foreign_data_plane_before_envd(self):
+        self.cloud.sandbox_domain = 'foreign.example'
+        self.assertEqual(self.call('create')['ErrorCode'], 'ownership')
+        self.assertEqual(self.record()['ids'], ['owned-id'])
+        self.cloud.files.write.assert_not_called()
+        self.cloud.commands.run.assert_not_called()
+
     def test_legacy_template_refuses_before_credentials_and_retains_owned_cleanup(self):
         with patch('provider.run', return_value={'ExitCode': 78, 'Stdout': '', 'Stderr': ''}):
             result = self.call('create')

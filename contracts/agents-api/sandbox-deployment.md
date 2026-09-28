@@ -70,7 +70,7 @@ POST and PUT take the same complete selection. PUT also requires a nonzero
 | `provider` | Exactly one of `docker`, `microsandbox`, `e2b` |
 | `resources` | Per-sandbox resource limits described below; required for Docker/microsandbox, optional for E2B |
 | `runtime` | Required immutable distribution identity for Docker/microsandbox; absent for E2B |
-| `e2b` | Required only for E2B: write-only `api_key` and immutable `template` build selector |
+| `e2b` | Required only for E2B: write-only `api_key`, immutable `template` build selector, and optional paired `api_url` and `domain` selectors |
 
 The request has no Core address. Core derives the deployment's `core_url` from the
 installation public URL (`public_url` in `config.json`, `OAC_PUBLIC_URL` for
@@ -146,6 +146,16 @@ be canonical and nonzero; a mutable template alias alone is insufficient. Omit
 `runtime`. The API key is encrypted in PostgreSQL and never returned in a safe
 view, bootstrap configuration, command argument or log. Replacing the key or
 build uses the same drained maintenance transition as changing resources.
+By default Core uses `https://api.e2b.app` and `e2b.app`. For a compatible
+service, set both `e2b.api_url` (HTTPS API origin, with no path, port, query,
+fragment or credentials) and `e2b.domain` (sandbox data-plane DNS suffix).
+Both must be public DNS names. Core passes these selectors to every pinned SDK
+operation, including template validation, lifecycle and metrics reads. Changing
+either selector requires the same drained maintenance transition; Core never
+migrates an existing sandbox to a different endpoint.
+The API host must equal the data-plane domain or be its subdomain. Core rejects
+a sandbox response whose data-plane domain lies outside the selected suffix
+before sending daemon credentials or using envd.
 
 ## Safe response
 
@@ -153,8 +163,8 @@ GET and successful mutations return `installation_id`, `provider`, `core_url`
 (read-only: the installation public URL, present before configuration), `mode`,
 `generation`, `owner_epoch`, `maintenance`, `suspension` and resource
 accounting. A configured deployment also returns `specification` and
-`specification_digest`. E2B returns only `e2b.template`,
-`e2b.credential_configured` and `e2b.template_build`; the `e2b` object is absent
+`specification_digest`. E2B returns `e2b.template`, `e2b.api_url`,
+`e2b.domain`, `e2b.credential_configured` and `e2b.template_build`; the `e2b` object is absent
 for Docker and microsandbox.
 
 `e2b.template_build` is `{status, resources: {cpus, memory_mib, root_disk_mib}}`:

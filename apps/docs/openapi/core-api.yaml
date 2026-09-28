@@ -4388,6 +4388,10 @@ components:
       properties:
         api_key:
           type: string
+        api_url:
+          type: string
+        domain:
+          type: string
         template:
           type: string
       type: object
@@ -5131,8 +5135,12 @@ components:
       type: object
     store.SandboxE2BView:
       properties:
+        api_url:
+          type: string
         credential_configured:
           type: boolean
+        domain:
+          type: string
         template:
           type: string
         template_build:

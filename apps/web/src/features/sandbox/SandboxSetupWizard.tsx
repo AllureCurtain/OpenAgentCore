@@ -32,6 +32,21 @@ function validTemplate(value: string): boolean {
   return build !== undefined && /[^0-]/.test(build);
 }
 
+export function validEndpoint(apiURL: string, domain: string): boolean {
+  const publicName = (host: string) => host.length <= 253 && host.includes(".") && !/^[0-9.]+$/.test(host) &&
+    !host.endsWith(".local") && !host.endsWith(".localhost") &&
+    host.split(".").every((label) => label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label));
+  if (!apiURL && !domain) return true;
+  if (!apiURL || !domain || apiURL.length > 512 || !publicName(domain)) return false;
+  try {
+    const url = new URL(apiURL);
+    return url.protocol === "https:" && url.origin === apiURL && !url.username && !url.password &&
+      !url.port && publicName(url.hostname) && (url.hostname === domain || url.hostname.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Per-sandbox presets around the deployment default: half and double of it.
  * Disks apply to microsandbox only, the one provider that enforces them.
@@ -79,7 +94,7 @@ function presetOf(provider: SandboxProvider, resources: SandboxResources): Prese
 export function SandboxSetupWizard({ coreUrl, current, disabled, switching = false, onSubmit }: {
   /** The deployment's read-only Core address. */
   coreUrl: string;
-  current?: { provider: SandboxProvider; specification?: SandboxSpecification; e2bTemplate?: string };
+  current?: { provider: SandboxProvider; specification?: SandboxSpecification; e2bTemplate?: string; e2bAPIURL?: string; e2bDomain?: string };
   disabled: boolean;
   switching?: boolean;
   onSubmit: (input: InitializeSandboxDeployment) => Promise<void>;
@@ -94,6 +109,8 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
   const [size, setSize] = useState<Size>(current?.specification ? presetOf(current.provider, current.specification.resources) ?? "current" : "standard");
   const [apiKey, setApiKey] = useState("");
   const [template, setTemplate] = useState(current?.e2bTemplate ?? "");
+  const [apiURL, setAPIURL] = useState(current?.e2bAPIURL === "https://api.e2b.app" ? "" : current?.e2bAPIURL ?? "");
+  const [domain, setDomain] = useState(current?.e2bDomain === "e2b.app" ? "" : current?.e2bDomain ?? "");
   const [runtime, setRuntime] = useState<Partial<SandboxRuntimeRelease>>({});
   const [busy, setBusy] = useState(false);
   const [dockerConfirmed, setDockerConfirmed] = useState(current?.provider === "docker");
@@ -113,7 +130,7 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
   const needsRuntime = provider === "docker" || provider === "microsandbox";
   const runtimeReady = !needsRuntime || isRuntimeRelease(release);
   // Core keeps no key across a change: E2B always needs one.
-  const e2bReady = provider !== "e2b" || (apiKey.trim().length > 0 && validTemplate(template.trim()));
+  const e2bReady = provider !== "e2b" || (apiKey.trim().length > 0 && validTemplate(template.trim()) && validEndpoint(apiURL.trim(), domain.trim()));
   // Core sizes E2B sandboxes from the template build, so E2B sends no resources.
   const sized = provider !== null && provider !== "e2b";
   const sizeReady = provider !== null && (!sized || validSandboxResources(provider, resources));
@@ -151,7 +168,8 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
         provider,
         ...(sized ? { resources } : {}),
         ...(needsRuntime ? { runtime: release as SandboxRuntimeRelease } : {}),
-        ...(provider === "e2b" ? { e2b: { api_key: apiKey.trim(), template: template.trim() } } : {}),
+        ...(provider === "e2b" ? { e2b: { api_key: apiKey.trim(), template: template.trim(),
+          ...(apiURL.trim() ? { api_url: apiURL.trim(), domain: domain.trim() } : {}) } } : {}),
       });
     } catch (error) {
       // A configuration Core rejected is explained here; the page reports every other failure.
@@ -197,6 +215,12 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
           <Field id={`${id}-template`} label={t("Template build")} help={t("The exact ready build, as template-id:build-uuid. A template alias alone is not enough. Each sandbox gets the build's CPU and memory.")} error={template && !validTemplate(template.trim()) ? t("Enter a template ID and build UUID separated by a colon.") : null}>
             <input id={`${id}-template`} value={template} onChange={(event) => setTemplate(event.target.value)} placeholder="oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b" autoComplete="off" spellCheck={false} aria-invalid={Boolean(template && !validTemplate(template.trim()))} />
           </Field>
+          <Field id={`${id}-api-url`} label={t("Sandbox API URL")} help={t("Leave both endpoint fields blank for official E2B. A compatible service needs its HTTPS API origin and data-plane domain.")}>
+            <input id={`${id}-api-url`} type="url" value={apiURL} onChange={(event) => setAPIURL(event.target.value)} placeholder="https://sandbox.example.com" autoComplete="off" spellCheck={false} />
+          </Field>
+          <Field id={`${id}-domain`} label={t("Sandbox data-plane domain")} error={(apiURL || domain) && !validEndpoint(apiURL.trim(), domain.trim()) ? t("Enter both a public HTTPS API origin and a domain.") : null}>
+            <input id={`${id}-domain`} value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="sandbox.example.com" autoComplete="off" spellCheck={false} />
+          </Field>
         </div>
         <Nav onBack={back} onNext={() => setStep("review")} nextDisabled={!e2bReady} t={t} />
       </Question>
@@ -234,6 +258,8 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
           <div><dt>{t("Sandboxes run on")}</dt><dd>{where === "direct" ? t("E2B cloud") : `${t("Own machines")} · ${provider === "docker" ? "Docker" : "microsandbox"}`}</dd></div>
           <div><dt>{t("Each sandbox")}</dt><dd>{sized ? sizeLabel(resources) : t("From the template build")}{provider === "microsandbox" ? <span className="wizard-review-sub">{diskLabel(resources)}</span> : null}</dd></div>
           {provider === "e2b" ? <div><dt>{t("Template build")}</dt><dd><code>{template || "—"}</code></dd></div> : null}
+          {provider === "e2b" ? <div><dt>{t("Sandbox API URL")}</dt><dd><code>{apiURL || "https://api.e2b.app"}</code></dd></div> : null}
+          {provider === "e2b" ? <div><dt>{t("Sandbox data-plane domain")}</dt><dd><code>{domain || "e2b.app"}</code></dd></div> : null}
           {needsRuntime ? (
             <div>
               <dt>{t("Runtime")}<HelpTip>{t("The Runtime release every node runs: the saved one while the backend stays the same, otherwise the one this console distributes.")}</HelpTip></dt>

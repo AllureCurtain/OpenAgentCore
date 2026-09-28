@@ -134,6 +134,8 @@ def arguments(argv=None):
                         help="With --sandbox docker: accept its weaker isolation without asking")
     parser.add_argument("--e2b-api-key-file", type=Path, help="With --sandbox e2b: private file containing the E2B API key")
     parser.add_argument("--e2b-template", help="With --sandbox e2b: the ready template build, template-id:build-uuid")
+    parser.add_argument("--e2b-api-url", help="With --sandbox e2b: compatible service HTTPS API origin")
+    parser.add_argument("--e2b-domain", help="With --sandbox e2b: compatible service data-plane domain")
     parser.add_argument("--sandbox-provider", nargs="?", const=True, help=argparse.SUPPRESS)
     parser.add_argument("--provider", nargs="?", const=True, help=argparse.SUPPRESS)
     parser.add_argument("--install-dir", type=Path)
@@ -194,10 +196,12 @@ def check_flags(args, document):
         raise InstallError("--accept-docker-risks requires --sandbox docker")
     if choice == "e2b" and not (args.e2b_api_key_file and args.e2b_template):
         raise InstallError("--sandbox e2b requires --e2b-api-key-file and --e2b-template")
-    if choice != "e2b" and (args.e2b_api_key_file or args.e2b_template):
-        raise InstallError("--e2b-api-key-file and --e2b-template require --sandbox e2b")
+    if choice != "e2b" and (args.e2b_api_key_file or args.e2b_template or args.e2b_api_url or args.e2b_domain):
+        raise InstallError("E2B flags require --sandbox e2b")
     if choice == "e2b" and not sandbox_setup.e2b_template(args.e2b_template):
         raise InstallError("--e2b-template must name a template build as template-id:build-uuid")
+    if choice == "e2b" and not sandbox_setup.e2b_endpoint(args.e2b_api_url, args.e2b_domain):
+        raise InstallError("--e2b-api-url and --e2b-domain must both name public HTTPS compatible-service endpoints")
     if mode == "web-only" and native:
         raise InstallError("--web-only cannot install native Core")
     if mode == "web-only" and not args.core_key_file:
@@ -606,7 +610,8 @@ def main(argv=None):
     check_public_url(config, choice)
     if config["mode"] == "web-only":
         read_core_key_file(args.core_key_file)
-    e2b = ({"api_key": read_private_file(args.e2b_api_key_file, "E2B API key file"), "template": args.e2b_template}
+    e2b = ({"api_key": read_private_file(args.e2b_api_key_file, "E2B API key file"), "template": args.e2b_template,
+            **({"api_url": args.e2b_api_url, "domain": args.e2b_domain} if args.e2b_api_url else {})}
            if choice == "e2b" else None)
     if choice == "docker":
         confirm_docker(args.accept_docker_risks)

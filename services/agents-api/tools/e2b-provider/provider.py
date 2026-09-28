@@ -11,7 +11,7 @@ from e2b import Sandbox, SandboxQuery, SandboxState
 from e2b.api.client.models.sandbox_metric import SandboxMetric
 from e2b.exceptions import FileNotFoundException, SandboxNotFoundException
 
-from sdk import connection_material, definitely_rejected, read_metrics, restore, run, validate_deployment
+from sdk import connection_material, definitely_rejected, read_metrics, restore, run, sdk_options, validate_deployment
 from state import Failure, Receipt, private_root, read_receipt
 
 PREFIX = 'oac_'
@@ -90,8 +90,7 @@ class Provider:
         return remaining
 
     def options(self):
-        return {'api_key': self.config['APIKey'], 'retries': 0, 'debug': False,
-                'request_timeout': self.remaining()}
+        return sdk_options(self.config, self.remaining)
 
     def info(self, cloud=None, absent=False):
         record = self.receipt.data or {}
@@ -114,7 +113,15 @@ class Provider:
             raise Failure('ownership')
         return cloud
 
+    def check_domain(self, cloud):
+        domain = self.options()['domain']
+        sandbox_domain = cloud.sandbox_domain
+        if not isinstance(sandbox_domain, str) or not (
+                sandbox_domain == domain or sandbox_domain.endswith('.' + domain)):
+            raise Failure('ownership')
+
     def qualified(self, cloud):
+        self.check_domain(cloud)
         resources = self.config.get('Resources')
         if resources is not None:
             template = self.config['Template'].split(':', 1)[0]
@@ -198,6 +205,8 @@ class Provider:
                 self.receipt.save(status='rejected', settled=True)
             raise Failure('unconfirmed') from None
         self.receipt.save(status='created', ids=[cloud.sandbox_id], connection=connection_material(cloud))
+        # A create response must not steer envd traffic to an unrelated host.
+        self.check_domain(self.owns(cloud))
         # Creation responses do not include resources. Inspect before credentials
         # or bootstrap are written, retaining the allocation for owned cleanup.
         if self.config.get('Resources') is not None:

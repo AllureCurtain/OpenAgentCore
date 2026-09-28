@@ -11,6 +11,18 @@ INSTALLATION = "94be54a1-138c-4f30-bc87-b13686272dbe"
 
 
 class SandboxSetupTests(unittest.TestCase):
+    def test_e2b_endpoint_pair(self):
+        for api_url, domain in ((None, None), ("https://sandbox-test.sandbase.ai", "sandbox-test.sandbase.ai")):
+            self.assertTrue(sandbox_setup.e2b_endpoint(api_url, domain))
+        for api_url, domain in (("https://sandbox-test.sandbase.ai", None),
+                                ("http://sandbox-test.sandbase.ai", "sandbox-test.sandbase.ai"),
+                                ("https://sandbox-test.sandbase.ai/path", "sandbox-test.sandbase.ai"),
+                                ("https://localhost", "sandbox-test.sandbase.ai"),
+                                ("https://127.0.0.1", "sandbox-test.sandbase.ai"),
+                                ("https://unrelated.example", "sandbox-test.sandbase.ai"),
+                                ("https://good.example", "-bad.example")):
+            self.assertFalse(sandbox_setup.e2b_endpoint(api_url, domain))
+
     def setUp(self):
         base = Path.home() / ".oac/tests/sandbox-setup"
         base.mkdir(parents=True, exist_ok=True)

@@ -263,6 +263,8 @@ type RuntimeDeployment struct {
 	E2bTemplateCpus        pgtype.Int4        `json:"e2b_template_cpus"`
 	E2bTemplateMemoryMib   pgtype.Int4        `json:"e2b_template_memory_mib"`
 	E2bTemplateRootDiskMib pgtype.Int4        `json:"e2b_template_root_disk_mib"`
+	E2bApiUrl              string             `json:"e2b_api_url"`
+	E2bDomain              string             `json:"e2b_domain"`
 }
 
 type RuntimeDeviceAuthority struct {

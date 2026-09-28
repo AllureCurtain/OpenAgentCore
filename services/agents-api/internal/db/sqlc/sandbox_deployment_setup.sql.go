@@ -33,8 +33,9 @@ func (q *Queries) ClaimWebSandboxDeployment(ctx context.Context, installationID 
 const initializeSandboxDeployment = `-- name: InitializeSandboxDeployment :exec
 UPDATE runtime_deployment SET provider_kind=$1, backend_fingerprint=$2,
 idle_seconds=$3, retention_seconds=$4, generation=$5, mode=$6, e2b_template=$7, e2b_credential=$8, specification=$9,
-e2b_template_build_status=$10, e2b_template_cpus=$11,
-e2b_template_memory_mib=$12, e2b_template_root_disk_mib=$13,
+e2b_api_url=$10, e2b_domain=$11,
+e2b_template_build_status=$12, e2b_template_cpus=$13,
+e2b_template_memory_mib=$14, e2b_template_root_disk_mib=$15,
 updated_at=clock_timestamp() WHERE singleton=true
 `
 
@@ -48,6 +49,8 @@ type InitializeSandboxDeploymentParams struct {
 	E2bTemplate            string      `json:"e2b_template"`
 	E2bCredential          []byte      `json:"e2b_credential"`
 	Specification          []byte      `json:"specification"`
+	E2bApiUrl              string      `json:"e2b_api_url"`
+	E2bDomain              string      `json:"e2b_domain"`
 	E2bTemplateBuildStatus pgtype.Text `json:"e2b_template_build_status"`
 	E2bTemplateCpus        pgtype.Int4 `json:"e2b_template_cpus"`
 	E2bTemplateMemoryMib   pgtype.Int4 `json:"e2b_template_memory_mib"`
@@ -65,6 +68,8 @@ func (q *Queries) InitializeSandboxDeployment(ctx context.Context, arg Initializ
 		arg.E2bTemplate,
 		arg.E2bCredential,
 		arg.Specification,
+		arg.E2bApiUrl,
+		arg.E2bDomain,
 		arg.E2bTemplateBuildStatus,
 		arg.E2bTemplateCpus,
 		arg.E2bTemplateMemoryMib,

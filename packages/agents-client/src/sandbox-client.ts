@@ -27,7 +27,7 @@ export interface InitializeSandboxDeployment {
   resources?: SandboxResources;
   /** Required for Docker/microsandbox; E2B uses its fixed template build. */
   runtime?: SandboxRuntimeRelease;
-  e2b?: { api_key: string; template: string };
+  e2b?: { api_key: string; template: string; api_url?: string; domain?: string };
 }
 export interface UpdateSandboxDeployment extends InitializeSandboxDeployment { expected_generation: number }
 export interface SetSandboxMaintenance { maintenance: boolean; expected_generation: number }
@@ -44,7 +44,7 @@ export interface SandboxDeployment {
   generation: number;
   mode: "nodes" | "direct" | "";
   resources: { allocations: number; pending: number };
-  e2b?: { template: string; credential_configured: boolean; template_build: SandboxE2BTemplateBuild };
+  e2b?: { template: string; api_url: string; domain: string; credential_configured: boolean; template_build: SandboxE2BTemplateBuild };
   /** Idle suspension policy; microsandbox only, otherwise null. */
   suspension: { idle_seconds: number; retention_seconds: number } | null;
 }
@@ -163,13 +163,16 @@ function projectSpecification(value: unknown): SandboxSpecification {
 }
 /** The safe E2B view; it has no key member. */
 function projectE2B(value: unknown): NonNullable<SandboxDeployment["e2b"]> {
-  const e2b = members(value, ["template", "credential_configured", "template_build"]);
+  const e2b = members(value, ["template", "credential_configured", "template_build"], ["api_url", "domain"]);
   const build = members(e2b.template_build, ["status", "resources"]);
   const resources = members(build.resources, ["cpus", "memory_mib", "root_disk_mib"]);
-  valid(typeof e2b.template === "string" && typeof e2b.credential_configured === "boolean" && (build.status === null || typeof build.status === "string") &&
+  valid(typeof e2b.template === "string" && typeof e2b.credential_configured === "boolean" &&
+    (!hasOwn(e2b, "api_url") || typeof e2b.api_url === "string") && (!hasOwn(e2b, "domain") || typeof e2b.domain === "string") &&
+    (hasOwn(e2b, "api_url") === hasOwn(e2b, "domain")) && (build.status === null || typeof build.status === "string") &&
     Object.values(resources).every(nullable(isNonnegativeInteger)));
   return {
-    template: e2b.template as string, credential_configured: e2b.credential_configured as boolean,
+    template: e2b.template as string, api_url: (e2b.api_url as string | undefined) ?? "https://api.e2b.app",
+    domain: (e2b.domain as string | undefined) ?? "e2b.app", credential_configured: e2b.credential_configured as boolean,
     template_build: { status: build.status as string | null, resources: { ...resources } as SandboxE2BTemplateBuild["resources"] },
   };
 }

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/db/sqlc"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox/e2b"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -59,7 +60,11 @@ func (s *Store) GetSandboxSetup(ctx context.Context) (SandboxSetup, error) {
 		if err != nil {
 			return SandboxSetup{}, ErrSandboxCredentialUnavailable
 		}
-		result.E2B = &SandboxE2BConfiguration{APIKey: string(credential), Template: d.E2bTemplate}
+		apiURL, domain, err := e2b.NormalizeEndpoint(d.E2bApiUrl, d.E2bDomain)
+		if err != nil {
+			return SandboxSetup{}, ErrSandboxDeploymentConflict
+		}
+		result.E2B = &SandboxE2BConfiguration{APIKey: string(credential), Template: d.E2bTemplate, APIURL: apiURL, Domain: domain}
 	}
 	return result, nil
 }
@@ -160,7 +165,8 @@ func runtimeDeploymentView(d sqlc.RuntimeDeployment, publicURL string) RuntimeDe
 		}
 	}
 	if d.ProviderKind == "e2b" {
-		result.E2B = &SandboxE2BView{Template: d.E2bTemplate, CredentialConfigured: len(d.E2bCredential) > 0,
+		apiURL, domain, _ := e2b.NormalizeEndpoint(d.E2bApiUrl, d.E2bDomain)
+		result.E2B = &SandboxE2BView{Template: d.E2bTemplate, APIURL: apiURL, Domain: domain, CredentialConfigured: len(d.E2bCredential) > 0,
 			TemplateBuild: SandboxE2BTemplateBuildView{Resources: SandboxTemplateResources{
 				CPUs: optionalInt32(d.E2bTemplateCpus), MemoryMiB: optionalInt32(d.E2bTemplateMemoryMib), RootDiskMiB: optionalInt32(d.E2bTemplateRootDiskMib)}}}
 		if d.E2bTemplateBuildStatus.Valid {

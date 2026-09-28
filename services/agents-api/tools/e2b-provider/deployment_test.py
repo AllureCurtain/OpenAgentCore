@@ -11,7 +11,7 @@ from e2b.api.client.models.template_build_status import TemplateBuildStatus
 from e2b.api.client.models.template_with_builds import TemplateWithBuilds
 
 from provider_test import ProviderTest
-from sdk import validate_deployment
+from sdk import read_metrics, sdk_options, validate_deployment
 from state import Failure
 from e2b.exceptions import SandboxNotFoundException
 
@@ -52,6 +52,24 @@ class ManagedResourcesTest(ProviderTest):
 
 
 class BuildValidationTest(unittest.TestCase):
+    def test_custom_endpoint_is_explicit_in_sdk_options(self):
+        options = sdk_options({'APIKey': 'synthetic-key', 'APIURL': 'https://sandbox-test.sandbase.ai',
+                               'Domain': 'sandbox-test.sandbase.ai'}, lambda: 5)
+        self.assertEqual(options['api_url'], 'https://sandbox-test.sandbase.ai')
+        self.assertEqual(options['domain'], 'sandbox-test.sandbase.ai')
+        self.assertEqual(options['request_timeout'], 5)
+
+    @patch('sdk.get_api_client')
+    @patch('sdk.get_sandboxes_metrics.sync_detailed')
+    def test_custom_endpoint_reaches_metrics_client(self, metrics, client):
+        self.config.update(APIURL='https://sandbox-test.sandbase.ai', Domain='sandbox-test.sandbase.ai')
+        metrics.return_value = SimpleNamespace(status_code=503, parsed=None)
+        with self.assertRaises(Failure):
+            read_metrics(self.config, ['owned-id'], lambda: 5)
+        configuration = client.call_args.args[0]
+        self.assertEqual((configuration.api_url, configuration.domain),
+                         (self.config['APIURL'], self.config['Domain']))
+
     def setUp(self):
         self.build_id = uuid4()
         self.config = {'Template': 'test:' + str(self.build_id), 'APIKey': 'synthetic-key',
@@ -69,6 +87,7 @@ class BuildValidationTest(unittest.TestCase):
     @patch('sdk.get_api_client')
     @patch('sdk.get_templates_template_id.sync_detailed')
     def test_exact_build_on_later_page_and_bounded_options(self, get, client):
+        self.config.update(APIURL='https://sandbox-test.sandbase.ai', Domain='sandbox-test.sandbase.ai')
         get.side_effect = [self.response([], 'next'), self.response([self.build])]
         validate_deployment(self.config, lambda: 5)
         self.assertEqual(get.call_count, 2)
@@ -76,6 +95,8 @@ class BuildValidationTest(unittest.TestCase):
         configuration = client.call_args.args[0]
         self.assertEqual(configuration.retries, 0)
         self.assertEqual(configuration.request_timeout, 5)
+        self.assertEqual((configuration.api_url, configuration.domain),
+                         (self.config['APIURL'], self.config['Domain']))
 
     @patch('sdk.get_api_client')
     @patch('sdk.get_templates_template_id.sync_detailed')
