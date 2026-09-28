@@ -1,4 +1,7 @@
-# Native self-hosted Runtime
+---
+title: "Native daemon installation"
+description: "Install and operate a self-hosted daemon on Linux, macOS or Windows."
+---
 
 A self-hosted Runtime runs the same `oac-daemon` on Linux, macOS or Windows.
 Core uses the same Environment protocol on all three platforms; native harness
@@ -31,7 +34,7 @@ already be available to its process. Claude on Windows requires Git Bash.
 Create a `self_hosted` Session with its model provider and an existing absolute
 `workspace_directory` on the executor host. Obtain its `environment.id` and
 `environment.remote_url`, then have the Core administrator issue an
-[executor credential](getting-started/self-hosted.md#without-web). Save the returned
+[executor credential](/self-hosted-execution#without-web). Save the returned
 JSON as a private local file. It contains `key_id`, `environment_id` and
 `executor_token`; do not put the token in command arguments.
 
@@ -136,7 +139,7 @@ created. Runtime snapshots them before execution and resolves Skills and Plugin
 MCP from the common `installed.json` format used for managed bundles. Paths use the
 executor host's native syntax, not Core's filesystem. Reconnect reuses the snapshot;
 source edits do not silently replace it. A new Session captures new configuration.
-See [local capability directories](getting-started/self-hosted.md#local-capability-directories).
+See [local capability directories](/self-hosted-execution#local-capability-directories).
 Read-only snapshot modes are an integrity hint, not protection from the same user.
 
 Installation is current-version only. It refuses an existing installation, and
@@ -152,3 +155,5 @@ Runtime does not run apt, request sudo or elevate the daemon's privileges.
 an empty or null value; it is never ignored. A missing preinstalled dependency
 fails the operation that requires it. npm/Python package installation and setup retain their supported
 initialization flow using the launching user's existing permissions.
+
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/281f243aa785ea25512a6157daa1d44197b9723e/docs/self-hosted-native.md)

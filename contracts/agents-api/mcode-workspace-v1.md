@@ -1,6 +1,10 @@
 # MiniMax Code workspace Runtime qualification
 
-Status: implementation, public qualification and independent review passed,
+Historical evidence only: the current daemon runs tools with its starting user's
+permissions and no inner sandbox. The isolation probes below apply to the recorded
+old binaries, not current native or managed support.
+
+Status at the recorded revision: implementation, public qualification and independent review passed,
 2026-09-20. Baseline main
 `55502c87c3f722bbefc5449348309e3fcc03a7ee`. Board batch:
 `MCODE-WORKSPACE-V1-001`, under `ENGINE-EXTENSIBILITY-001`.

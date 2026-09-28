@@ -751,7 +751,13 @@ package; both were deleted. The batch plan is
 | H7 | Delete | 200 `agent.session.deleted`, as officially, then 404. Deletion while provisioning is unchanged (HI-05 awaits a decision). |
 | H8 | Unchanged | `self_hosted` and `none` Environments, successful initialization and its timing, the two-minute step limit (HI-06), expiry and tenant isolation. |
 
-Decisions:
+Historical implementation decisions at the September 23 revision follow. The
+current daemon uses shared Go preparation and process settlement, with no bwrap,
+Python receipt decoder or old-image compatibility. System packages now reject
+before initialization. Safe fixed labels and bounded exit statuses remain the
+current public failure policy; see the [current initialization contract](environment-templates.md#packaged-runtime-initialization-contract).
+
+Recorded decisions:
 
 - **No output.** The shared Runtime initializer adds only an integer `exit_code`
   to its failed receipt, and only for a step run inside its bwrap isolation;

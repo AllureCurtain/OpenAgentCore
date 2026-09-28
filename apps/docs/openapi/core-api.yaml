@@ -5889,14 +5889,9 @@ components:
           items:
             type: string
           type: array
-        system:
-          items:
-            type: string
-          type: array
       required:
         - npm
         - python
-        - system
       type: object
     v1.EnvironmentTemplate:
       properties:

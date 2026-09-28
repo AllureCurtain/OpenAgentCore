@@ -36,7 +36,8 @@ See the [enrollment guide](../../services/agents-api/README.md#user-managed-runt
 
 An explicitly configured default managed Docker provider enables `type=openai_hosted`
 for the qualified Codex, Claude Code and MiniMax Code profiles. Each uses the same
-Runtime lifecycle and workspace interfaces with its own native adapter/isolation.
+Runtime lifecycle and workspace interfaces with its native adapter. The outer
+Environment provides managed isolation; the daemon adds no inner sandbox.
 See the [engine profile guides](README.md#public-engine-profiles) for setup and limits.
 The standalone [operator configuration](../../services/agents-api/deploy/codex/README.md#standalone-operator-configuration)
 selects the qualified immutable Runtime image; advertised capabilities alone do
@@ -45,15 +46,17 @@ and retry identity before the existing leased Worker provisions its allocation.
 A committed creation interrupted before bootstrap is recovered without replaying
 an existing allocation's Create.
 
-Omitted/null network defaults to enabled. Enabled, disabled and exact-host restricted
-policies use the same qualified image with adapter-selected immutable native policy.
+Omitted/null network defaults to enabled. The daemon does not enforce disabled
+or restricted networking. An execution combination must reject unless its outer
+Environment implements and qualifies the requested behavior.
 Templates and inline configuration share initial files, env, packages, ordered setup
 and inline or tenant-owned referenced Skills through ordered managed initialization.
 The same authenticated daemon handles initial files, tool configuration, packages,
 setup, Skill/Plugin import and directory snapshot finalization through
 `runtime_prepare`. Providers place, create, bootstrap, inspect, renew and reclaim
-compute. Package installation and setup retain enabled provisioning network access;
-the requested network policy constrains native execution after setup.
+compute. npm/Python installation and setup use the host's existing network and
+starting account. System dependencies must be preinstalled; `packages.system`
+rejects explicitly and never invokes apt, sudo or elevated execution.
 Unsupported hostname forms and installation combinations reject explicitly; see
 the [Template coverage and limits](environment-templates.md). Empty/null installation
 defaults produce safe empty metadata, not a live workspace inventory. Service-origin
@@ -162,11 +165,11 @@ accepts only local `capability_directories` with `workspace_directory`, not mana
 Skill/Plugin archive fields or a hosted Template. Local directory discovery does not
 populate the public API-managed `skills` or `plugins` installation arrays.
 
-Both origins use the packaged Linux Runtime's shared parser and protected
-`installed.json`. Its default root is `/environment/initialization/capabilities`;
-the operator may freeze another root with `OAC_RUNTIME_CAPABILITY_DIRECTORY`, kept
-separate from workspace and private Runtime state. Core and public requests cannot
-select this installation root. The manifest binds one
+Both origins use the common Runtime parser and `installed.json` on Linux, macOS
+and Windows. The operator selects the capability root; the native installer
+uses `capabilities` under `OAC_RUNTIME_HOME` by default. Core and public requests
+cannot select that destination. Read-only snapshot modes are integrity hints,
+not protection from the launching user. The manifest binds one
 Session and Environment to the source-selection digest. The admitted asynchronous
 preparation owner verifies or creates it before native execution, including for an
 empty selection. Reconnect and replacement executors reuse installed contents;
@@ -186,11 +189,12 @@ Core does not resolve these paths on its own host. The daemon applies its local
 path and access checks. Initial files and setup working directories use logical
 `/workspace` paths. Harness differences remain in adapters.
 
-The protocol is platform-neutral, but this implementation retains the existing Linux
-helpers, protected initialization storage and isolation requirements. It does not provide
-a new native-host installer, another platform layout, or Windows/macOS isolation.
-This implementation description does not extend historical real-deployment acceptance;
-new managed and self-hosted capability coverage requires its own evidence. See the
+The protocol and Go preparation implementation are shared by all three native
+platforms. Resource directories are operator settings, not deployment branches.
+Managed Providers remain Linux-only. The daemon does not sandbox tools, files or
+network access; tools use the starting account's permissions. Native installation
+and current validation limits are in the [native guide](../../docs/self-hosted-native.md).
+Historical deployment acceptance does not qualify later platform or capability changes. See the
 [canonical preparation rules](../../CONTRIBUTING.md#shared-runtime-capability-preparation).
 
 ## Contract inventory

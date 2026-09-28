@@ -11,7 +11,7 @@ filesystem, permission or network sandbox. Its tools may access that user's file
 and Runtime credentials. Managed isolation belongs to the outer Environment;
 self-hosted operators choose any outer isolation they need. See the
 [native installation guide](../self-hosted-native.md) for prerequisites, commands
-and the current platform validation status.
+and supported platforms.
 
 An executor credential works for one Environment only. It cannot call the Agent
 API, Core API or node enrollment. Default model providers never apply to

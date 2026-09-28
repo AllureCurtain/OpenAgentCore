@@ -8,7 +8,7 @@ const app = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repo = path.resolve(app, '../..')
 const guides = JSON.parse(fs.readFileSync(path.join(app, 'scripts/guides.json'), 'utf8'))
 const routes = new Map(guides.map(g => [g.source, g.slug === 'index' ? '/' : '/' + g.slug]))
-const sourceRevision = 'e35d3c9eda2cdb717fd4c3627404d362cc2e4dca'
+const sourceRevision = '281f243aa785ea25512a6157daa1d44197b9723e'
 const sourceURL = relative => `https://github.com/MiniMax-AI/parsar-core/blob/${sourceRevision}/${relative}`
 const digest = text => crypto.createHash('sha256').update(text).digest('hex')
 function mdx(text) {
