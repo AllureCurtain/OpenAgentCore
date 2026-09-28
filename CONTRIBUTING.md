@@ -1619,7 +1619,12 @@ channel, and retains the terminal observation until Start publication, Turn
 settlement and admitted operation receipts finish. Natural Done never calls
 Cancel. Input, function and interaction admission close before settlement, and
 operations already admitted hold their barrier through native receipts and
-outbound acknowledgement. Only then forward Done or an applied cancellation
+outbound acknowledgement. Send cancellation to the fixed Turn before waiting
+for that barrier: a written input may need native interruption to produce its
+receipt. Join native settlement, any required confirmed Executor close, output
+drain and all admitted operations before an applied acknowledgement or reuse.
+A failed Close may report failure while retaining the same Run and outstanding
+operations for retry. Closing a caller wait cannot manufacture an applied input receipt. Only then forward Done or an applied cancellation
 receipt. Commit native continuity and release the old Run admission before
 publishing Done, since the receiver may immediately start another Turn. A late
 terminal-send failure belongs to the old Run; it cannot invalidate a successor
