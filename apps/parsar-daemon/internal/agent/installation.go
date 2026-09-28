@@ -1,0 +1,11 @@
+package agent
+
+// Installation is an optional adapter-owned native distribution contract.
+// It supplies activation paths and readiness checks, never execution or model
+// configuration. Runtime owns copying, checksums, publication and installation locks.
+type Installation struct {
+	Version     string
+	Supported   func() bool
+	Environment func(directory, node string) map[string]string
+	Check       func(directory, node string, environment []string) error
+}

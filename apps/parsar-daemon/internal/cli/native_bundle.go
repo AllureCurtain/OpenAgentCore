@@ -33,7 +33,13 @@ type nativeFile struct {
 	Executable bool   `json:"executable"`
 }
 
-var nativePins = map[string]string{"node": "22.22.0", "codex": "0.153.4", "claude": "0.3.269", "minimax": "0.4.12"}
+var nativePins = func() map[string]string {
+	out := map[string]string{"node": "22.22.0"}
+	for name, spec := range nativeHarnesses {
+		out[name] = spec.Version
+	}
+	return out
+}()
 
 func readNativeJSON(file string, value any) error {
 	f, err := os.Open(file)
@@ -189,11 +195,12 @@ func selectedNativeHarnesses(value string) ([]string, error) {
 	var out []string
 	for _, name := range strings.Split(value, ",") {
 		name = strings.TrimSpace(name)
-		if name != "codex" && name != "claude" && name != "minimax" {
+		spec, ok := nativeHarnesses[name]
+		if !ok {
 			return nil, errors.New("install: --harness requires codex,claude,minimax (comma-separated)")
 		}
-		if name == "minimax" && runtime.GOOS == "windows" {
-			return nil, errors.New("install: MiniMax Code adapter is unsupported on Windows; select Codex or Claude Code")
+		if !spec.Supported() {
+			return nil, fmt.Errorf("install: %s adapter is unsupported on %s; select a supported Harness", name, runtime.GOOS)
 		}
 		if !slices.Contains(out, name) {
 			out = append(out, name)
