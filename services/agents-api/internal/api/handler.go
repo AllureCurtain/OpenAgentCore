@@ -245,8 +245,9 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 	selectedEngine := h.engine
 	var provider *v1.ModelProviderInput
 	var providerSource string
+	var deploymentRevision uuid.UUID
 	if err == nil {
-		selectedEngine, provider, providerSource, err = h.resolveSessionExecution(r.Context(), input, inheritedProvider, configuration)
+		selectedEngine, provider, providerSource, deploymentRevision, err = h.resolveSessionExecution(r.Context(), input, inheritedProvider, configuration)
 	}
 	if err == nil {
 		if invalid := h.policy.ValidateSessionConfiguration(selectedEngine, configuration); invalid != nil {
@@ -279,10 +280,11 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 	}
 	executionConfiguration := sessionExecutionProjection(input, saved, inheritedProvider, provider, selectedEngine, configuration)
 	createInput := store.CreateSessionInput{
-		ExecutionConfiguration: &executionConfiguration,
-		ModelProvider:          provider,
-		ModelProviderSource:    providerSource,
-		Creator:                sessionCreator(r), InitialFiles: input.initialFiles, Initialization: input.initialization,
+		ExecutionConfiguration:     &executionConfiguration,
+		ModelProvider:              provider,
+		ModelProviderSource:        providerSource,
+		DeploymentProviderRevision: deploymentRevision,
+		Creator:                    sessionCreator(r), InitialFiles: input.initialFiles, Initialization: input.initialization,
 		Engine: selectedEngine, IdempotencyKey: key, Metadata: input.Metadata, Configuration: configuration, InitialInputs: initialInputs, CreationRequest: creationRequest,
 	}
 	if input.Stream {

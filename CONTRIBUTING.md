@@ -2502,6 +2502,26 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   retries return committed state without replay. No Turn-level overrides or provider catalog is
   included. Public input/null semantics and examples live in
   `contracts/agents-api/model-execution.md`.
+- Deployment-default observations use a private UUID generated on every PUT,
+  including identical replacements. Read its ciphertext/revision together and freeze
+  the pair only at new Session creation; retries and historical Sessions never gain
+  or replace revision metadata. After a successful root terminal commit, one
+  independent pool operation has at most one second to update the matching current
+  revision. SQL verifies tenant, root Turn and committed outcome; only completed
+  Turns and fixed native provider failures with authoritative `engine_failed` qualify.
+  Never observe cancelled work, Core/runtime errors or input-policy classifications.
+  The metadata-only transaction sets server statement/lock timeouts within the
+  remaining client budget and issues one UPDATE, so a client timeout cannot leave
+  an indefinitely waiting statement. The update locks only the default and samples
+  DB receipt time after the lock.
+  Errors throttle for 30 seconds regardless of code; ordinary successes throttle
+  for 30 seconds, with one immediate recovery write after each accepted error.
+  An unchanged revision has at most three effective writes in any half-open
+  30-second interval of nondecreasing DB time. Clock rollback may suppress ordinary
+  writes; private recovery state permits only one recovery without clamping time.
+  Observations never change `updated_at`, readiness or execution truth. They can be
+  lost or stay stale indefinitely without another eligible Turn; there is no queue,
+  retry, probe, history backfill or provider text in the safe fields.
 - Session execution-configuration reads use a separate immutable safe projection,
   written with provenance in the same creation transaction as Session resources.
   Read no credential ciphertext and never recompute sources from current Agents

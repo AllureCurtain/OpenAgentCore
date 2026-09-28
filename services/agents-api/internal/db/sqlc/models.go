@@ -61,6 +61,11 @@ type DeploymentModelProvider struct {
 	MaxOutputTokens int32              `json:"max_output_tokens"`
 	EncryptedConfig []byte             `json:"encrypted_config"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	Revision        pgtype.UUID        `json:"revision"`
+	LastUsedAt      pgtype.Timestamptz `json:"last_used_at"`
+	LastErrorCode   pgtype.Text        `json:"last_error_code"`
+	LastErrorAt     pgtype.Timestamptz `json:"last_error_at"`
+	RecoveryPending bool               `json:"recovery_pending"`
 }
 
 type Device struct {
@@ -407,8 +412,9 @@ type SessionEvent struct {
 }
 
 type SessionExecutionConfiguration struct {
-	SessionID     pgtype.UUID `json:"session_id"`
-	Configuration []byte      `json:"configuration"`
+	SessionID                  pgtype.UUID `json:"session_id"`
+	Configuration              []byte      `json:"configuration"`
+	DeploymentProviderRevision pgtype.UUID `json:"deployment_provider_revision"`
 }
 
 type SessionItem struct {

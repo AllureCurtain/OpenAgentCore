@@ -45,7 +45,7 @@ func TestDeploymentModelProviderEncryptedAuditedAndReplaced(t *testing.T) {
 	if err != nil || len(listed) != 1 || listed[0].Provider != *provider.SafeView() {
 		t.Fatal("reader without the key could not list safe fields", listed, err)
 	}
-	if got, err := s.DeploymentModelProvider(ctx, "codex"); err != nil || got == nil || *got != provider {
+	if got, err := s.DeploymentModelProvider(ctx, "codex"); err != nil || got == nil || *got.Provider != provider {
 		t.Fatal("default did not decrypt", err)
 	}
 	if got, err := s.DeploymentModelProvider(ctx, "mcode"); err != nil || got != nil {
@@ -59,7 +59,7 @@ func TestDeploymentModelProviderEncryptedAuditedAndReplaced(t *testing.T) {
 	if _, err := s.SetDeploymentModelProvider(ctx, "codex", replacement); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := s.DeploymentModelProvider(ctx, "codex"); err != nil || *got != replacement {
+	if got, err := s.DeploymentModelProvider(ctx, "codex"); err != nil || *got.Provider != replacement {
 		t.Fatal("replacement not complete", err)
 	}
 	deleteCtx := adminaudit.WithSource(t.Context(), adminaudit.Source{CredentialID: "abcd1234", RequestID: "request-delete", TraceID: "trace-delete"})

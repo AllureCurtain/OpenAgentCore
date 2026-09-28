@@ -1,7 +1,7 @@
 {
   "sources": {
     "contracts/agents-api/openapi.yaml": "a8896e8b67d78ed0608c7cc5636077ec33f4b4895a04bd6cfb8b038afe941e01",
-    "contracts/agents-api/core.openapi.yaml": "8fe158844c170eea78d4b24e30e7caa2adbedd58ffb4a863bdd9c98ecbb50618",
+    "contracts/agents-api/core.openapi.yaml": "7801fc77259893815fe9cdcb404f045b375711b9b075eab2b2ed8c5dba55e24b",
     "contracts/agents-api/runtime.openapi.yaml": "23852205d3b45892f2de9ecf3d52518c0dd0808962c0c512f219b565aa7ccef2"
   },
   "outputs": {
@@ -22,7 +22,7 @@
     "content/docs/api-reference/meta.json": "56bf1dc145ccc8adde38c5f956f1a06f18ef18b646122250d01a294c516f8f83",
     "content/docs/api-reference/index.mdx": "9fd6b1c54149874d2999235067c101326f9e8a2e707a70b6672c81eb3ebfe63f",
     "content/docs/api-reference/core/core-administration.mdx": "5fc3ada51d2190a141f13738151e4d513390cc3bd66ce6f5013994bda68569b0",
-    "content/docs/api-reference/core/deployment-model-providers.mdx": "b2795fadcc05a1e7195b6d34c3f234cb29cc5e3f580d1521e31965453e654347",
+    "content/docs/api-reference/core/deployment-model-providers.mdx": "d2e1ed267def55e1b64fdf28fbec81f83b9c2556b1db4392ede6a19b1465b50c",
     "content/docs/api-reference/core/administrator-projects.mdx": "8fd687bb2a7119fa16e938d7c71710c2816afb9cf959eb6849ef5e6300c5419b",
     "content/docs/api-reference/core/agents.mdx": "b6c089fbea4b07bc4249e7c7ca5699d47f1512a4fc2d8ee01cb26910ae541a84",
     "content/docs/api-reference/core/environment-templates.mdx": "05907f35d7f02d66af9da8b1efaa3765badb4cdf7b94d0f6c3ab0413a2cfa1a9",
@@ -40,7 +40,7 @@
     "content/docs/api-reference/core/vaults.mdx": "12d0aac96cd4a3472ef4eaa287f7945f78862017956e79bfc3ed0ef8e772e78a",
     "content/docs/api-reference/core/credentials.mdx": "27d586b9a8fd738b9947802f32c80458195370252886bc26abedccf2125ee981",
     "content/docs/api-reference/core/sandbox-manager.mdx": "6be7c52e057365949f0247c18c710561d680847a955f78f1bbe57825d4d5f549",
-    "openapi/core-api.yaml": "4d72411e4fc9945aba575a91b9c95e7231262e2749f87796646ef17768022238",
+    "openapi/core-api.yaml": "7079694e447c0783f85aeb3b73f23af68ebb066540c67251bbae34e7e4bd8e62",
     "content/docs/api-reference/core/meta.json": "588b163ed2de2100b0f8376688274f80698a6bf6ac037eef56d17c93fa8a5062",
     "content/docs/api-reference/core/index.mdx": "ddf0a8d87a6c21761beac703a32f2a40486a1c74abb341bd726f40c44a866405",
     "content/docs/api-reference/machine/sandbox-node.mdx": "5b367a08d43cea82686345d2ba1c75cc90627a7b2970fe42a0df9d77fb3e1e80",

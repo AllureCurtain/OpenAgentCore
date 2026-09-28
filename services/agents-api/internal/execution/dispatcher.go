@@ -122,7 +122,10 @@ func (d *Dispatcher) finishRun(tenantID, sessionID, turnID, model string, result
 	if errors.Is(err, store.ErrUnappliedInputs) {
 		result.ErrorCode = "input_not_applied"
 		encoded, _ = json.Marshal(result)
-		return d.Store.CompleteExecution(finishCtx, tenantID, sessionID, turnID, store.TurnFailed, encoded, nativeID, result.AppliedThrough)
+		turn, err = d.Store.CompleteExecution(finishCtx, tenantID, sessionID, turnID, store.TurnFailed, encoded, nativeID, result.AppliedThrough)
+	}
+	if err == nil {
+		d.observeDeploymentProvider(tenantID, sessionID, turn)
 	}
 	return turn, err
 }

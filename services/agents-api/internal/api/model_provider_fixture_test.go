@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
+	"github.com/google/uuid"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
 )
@@ -19,8 +21,8 @@ func fixtureModelProvider(harness string) *v1.ModelProviderInput {
 
 // withFixtureDeploymentProvider configures a deployment default for every harness.
 func withFixtureDeploymentProvider() Option {
-	return WithModelProviderDefaults(func(_ context.Context, harness string) (*v1.ModelProviderInput, error) {
-		return fixtureModelProvider(harness), nil
+	return WithModelProviderDefaults(func(_ context.Context, harness string) (*store.DeploymentModelProviderSnapshot, error) {
+		return &store.DeploymentModelProviderSnapshot{Provider: fixtureModelProvider(harness), Revision: uuid.New()}, nil
 	})
 }
 

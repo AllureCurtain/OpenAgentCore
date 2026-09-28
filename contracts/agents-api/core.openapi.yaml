@@ -346,6 +346,27 @@ definitions:
           - codex
           - mcode
         type: string
+      last_error_at:
+        format: date-time
+        type: string
+        x-nullable: true
+      last_error_code:
+        enum:
+          - authentication_error
+          - connection_failed
+          - rate_limit_exceeded
+          - usage_limit_exceeded
+          - server_overloaded
+          - server_error
+          - resource_not_found
+          - request_timeout
+          - invalid_request
+        type: string
+        x-nullable: true
+      last_used_at:
+        format: date-time
+        type: string
+        x-nullable: true
       max_output_tokens:
         type: integer
       object:
@@ -363,6 +384,9 @@ definitions:
       - api_key_configured
       - base_url
       - harness
+      - last_error_at
+      - last_error_code
+      - last_used_at
       - object
       - protocol
       - updated_at
@@ -3429,7 +3453,7 @@ paths:
       tags:
         - Deployment Model Providers
     get:
-      description: Core key only. Returns the safe view; the key is never returned. 404 when the harness does not exist or has no deployment default.
+      description: Core key only. Returns the safe view; the key is never returned. 404 when the harness does not exist or has no deployment default. Nullable last_used_at, last_error_code and last_error_at are best-effort observations of committed root Turns using this exact default revision; they do not establish current readiness and may remain stale indefinitely.
       parameters:
         - description: Harness
           enum:
@@ -3467,7 +3491,7 @@ paths:
     put:
       consumes:
         - application/json
-      description: 'Core key only. The body is the complete x_agents_core.model_provider bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, the harness''s protocol (responses for codex, anthropic for claude_sdk and mcode) and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions that resolve no Session or Agent bundle freeze this default into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key.'
+      description: 'Core key only. The body is the complete x_agents_core.model_provider bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, the harness''s protocol (responses for codex, anthropic for claude_sdk and mcode) and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions that resolve no Session or Agent bundle freeze this default into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key and resets last_used_at, last_error_code and last_error_at to null, including identical writes.'
       parameters:
         - description: Harness
           enum:

@@ -182,3 +182,30 @@ Parsar manages its own workspace catalog and encrypted keys, sends this extensio
 only on the first Core Session request, and retains a private encrypted snapshot
 for uncertain creation retries. Catalog updates and deletion affect new Sessions;
 existing Sessions retain their original model, endpoint and key.
+
+### Deployment default observations
+
+The Core-only harness/default-provider reads include nullable `last_used_at`,
+`last_error_code` and `last_error_at`. PUT resets all three, even for the same bundle.
+Completed root Turns contribute use observations only when their Session froze
+that exact current default revision. Failed root Turns contribute only the fixed
+native provider codes `authentication_error`, `connection_failed`,
+`rate_limit_exceeded`, `usage_limit_exceeded`, `server_overloaded`, `server_error`,
+`resource_not_found`, `request_timeout` and `invalid_request`. Input-policy,
+Core/runtime, cancelled and waiting outcomes do not contribute. Successful use
+retains the earlier error; comparing timestamps is only a display convention.
+
+These are best-effort Core receipt times after terminal commit, not provider health
+or remote completion times. Private revision identity is independent of timestamps;
+old, explicit-provider and historical Sessions cannot update a replacement default.
+No public Session/Turn fields or retry identity change. The observation has a
+one-second budget including pool/row-lock acquisition and cannot change the committed
+Turn. A crash, failure or throttle can omit the last observation indefinitely.
+
+Errors throttle for 30 seconds regardless of code. Ordinary successful writes
+throttle for 30 seconds; the first success after an accepted error records recovery
+immediately. For an unchanged revision this allows at most three effective metadata
+writes in any half-open 30-second interval of nondecreasing DB-clock time. Equal or
+backwards clock readings are preserved and can make timestamp-based display
+ambiguous; recovery does not impose a total order. No readiness probe, automatic
+refresh, observation history or credential/raw-error read is provided.

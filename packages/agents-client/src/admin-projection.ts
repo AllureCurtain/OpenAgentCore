@@ -2,7 +2,7 @@ import { AgentCoreError, projectRuntimeObservation, projectSavedAgentConfigurati
 import { projectTokenUsage } from "./usage-projection";
 import { safeProvider } from "./execution-configuration-projection";
 import { canonicalUuid, exactFields, isNonnegativeInteger, isRecord, onlyFields, sameResourceId } from "./response-projection";
-import type { CoreHarness, CoreHarnessKind, HarnessModelProvider, ListPage, SavedAgent } from "./types";
+import type { CoreHarness, CoreHarnessKind, HarnessModelProvider, ProviderObservationErrorCode, ListPage, SavedAgent } from "./types";
 import type { AdminAPIKey, AdminProject, AdminAuditPage, AdminSummary, AdminRuntimeObservation, RuntimeDiskObservation, AdminKeyProvenance, AdminResourceOwner, AdminWriteOperationPage, AdminAuditResultID, AdminDeleted, AdminIssuedAPIKey, AdminPage, AdminSessionArchive, SessionArtifact, Skill, SkillVersion, ExecutorCredentialList, ExecutorConnection, IssuedExecutorCredential, CoreInstallation, CoreInstallationSetting } from "./admin-types";
 
 export function invalidAdminResponse(): never {
@@ -223,16 +223,21 @@ export function projectIssuedExecutorCredential(value: unknown, keyId: string, e
   return { key_id: issued.key_id, environment_id: issued.environment_id, executor_token: issued.executor_token };
 }
 
+const providerObservationErrors = new Set<string>(["authentication_error", "connection_failed", "rate_limit_exceeded", "usage_limit_exceeded", "server_overloaded", "server_error", "resource_not_found", "request_timeout", "invalid_request"]);
 const harnessKinds = new Set<string>(["claude_sdk", "codex", "mcode"]);
 /** A deployment default model provider: exactly the safe view, never `api_key`. */
 export function projectHarnessModelProvider(value: unknown, harness?: CoreHarnessKind): HarnessModelProvider {
-  if (!isRecord(value) || !onlyFields(value, new Set(["object", "harness", "updated_at", "protocol", "base_url", "context_window", "max_output_tokens", "api_key_configured"]))) return invalidAdminResponse();
-  const { object, harness: kind, updated_at, ...view } = value;
+  if (!isRecord(value) || !onlyFields(value, new Set(["object", "harness", "updated_at", "last_used_at", "last_error_code", "last_error_at", "protocol", "base_url", "context_window", "max_output_tokens", "api_key_configured"]))) return invalidAdminResponse();
+  const { object, harness: kind, updated_at, last_used_at, last_error_code, last_error_at, ...view } = value;
+  if ((last_used_at !== null && (typeof last_used_at !== "string" || !date(last_used_at))) ||
+    (last_error_at !== null && (typeof last_error_at !== "string" || !date(last_error_at))) ||
+    (last_error_code !== null && (typeof last_error_code !== "string" || !providerObservationErrors.has(last_error_code))) ||
+    ((last_error_code === null) !== (last_error_at === null))) return invalidAdminResponse();
   if (object !== "core.model_provider" || typeof kind !== "string" || !harnessKinds.has(kind) || (harness !== undefined && kind !== harness) ||
     typeof updated_at !== "string" || !date(updated_at)) return invalidAdminResponse();
   const provider = safeProvider(view, invalidAdminResponse);
   if (!provider.api_key_configured) return invalidAdminResponse();
-  return { object, harness: kind as CoreHarnessKind, ...provider, updated_at };
+  return { object, harness: kind as CoreHarnessKind, ...provider, updated_at, last_used_at, last_error_at, last_error_code: last_error_code as ProviderObservationErrorCode | null };
 }
 export function projectCoreHarnessList(value: unknown): { object: "list"; data: CoreHarness[] } {
   const page = record(value, ["object", "data"]);

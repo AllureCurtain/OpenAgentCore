@@ -57,18 +57,20 @@ type Session struct {
 }
 
 type CreateSessionInput struct {
-	ExecutionConfiguration *v1.SessionExecutionConfiguration
-	ModelProvider          *v1.ModelProviderInput
-	ModelProviderSource    string // session, agent or deployment; empty allows only openai_hosted
-	Initialization         EnvironmentSetup
-	InitialFiles           []InitialFile
-	Creator                identity.Subject
-	CreationRequest        json.RawMessage
-	Engine                 string
-	Metadata               map[string]string
-	IdempotencyKey         string
-	Configuration          json.RawMessage
-	InitialInputs          []Input
+	// DeploymentProviderRevision is private creation metadata, never retry identity.
+	DeploymentProviderRevision uuid.UUID `json:"-"`
+	ExecutionConfiguration     *v1.SessionExecutionConfiguration
+	ModelProvider              *v1.ModelProviderInput
+	ModelProviderSource        string // session, agent or deployment; empty allows only openai_hosted
+	Initialization             EnvironmentSetup
+	InitialFiles               []InitialFile
+	Creator                    identity.Subject
+	CreationRequest            json.RawMessage
+	Engine                     string
+	Metadata                   map[string]string
+	IdempotencyKey             string
+	Configuration              json.RawMessage
+	InitialInputs              []Input
 }
 
 type SessionPage struct {
@@ -193,7 +195,7 @@ func (s *Store) createSession(ctx context.Context, tenantID string, input Create
 		Configuration: configuration, CreationRequestHash: creationHash,
 		CreatorKind: pgtype.Text{String: input.Creator.Kind, Valid: true}, CreatorID: pgtype.Text{String: input.Creator.ID, Valid: true},
 	}
-	row, environment, err := s.createSessionResources(ctx, tenantID, params, batch, encodedInput, input.InitialFiles, input.Initialization, input.ModelProvider, input.ExecutionConfiguration)
+	row, environment, err := s.createSessionResources(ctx, tenantID, params, batch, encodedInput, input.InitialFiles, input.Initialization, input.ModelProvider, input.ExecutionConfiguration, input.ModelProviderSource, input.DeploymentProviderRevision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return SessionCreation{}, ErrIdempotencyConflict
 	}
