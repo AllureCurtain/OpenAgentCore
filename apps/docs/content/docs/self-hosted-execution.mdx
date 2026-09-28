@@ -143,7 +143,7 @@ key_id=$(python3 -c 'import uuid; print(uuid.uuid4())'); echo "credential ID: $k
 Rotate with `{"key_id":"…","rotate":true}` on the same route; revoke with
 `DELETE …/executor-credentials/<key_id>`. After an uncertain response, list the
 credentials with `GET` before trying again. The
-[credential contract](https://github.com/MiniMax-AI/parsar-core/blob/f9871472eb49e6f8f2d7fa61d4345354588751c7/contracts/agents-api/environment-executor-credentials.md)
+[credential contract](https://github.com/MiniMax-AI/parsar-core/blob/cd6a32c3de31d26b73ab92d21ba2aa7b067ba226/contracts/agents-api/environment-executor-credentials.md)
 has every rule and error.
 
 
@@ -159,4 +159,4 @@ continuation or automatic data deletion.
 Credential replacement for executors created by the current installer updates and
 restarts the same owned container. It does not authorize adopting an older executor.
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f9871472eb49e6f8f2d7fa61d4345354588751c7/docs/getting-started/self-hosted.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/cd6a32c3de31d26b73ab92d21ba2aa7b067ba226/docs/getting-started/self-hosted.md)
