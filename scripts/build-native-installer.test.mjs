@@ -59,3 +59,10 @@ test('component rejects nonportable paths', { skip: process.platform === 'win32'
   await writeFile(join(source, 'bad:name'), 'bad');
   await assert.rejects(copyComponent(source, output), /non-portable/);
 });
+
+test('bundle rejects output entering a component through an aliased parent', async t => {
+  const { root, source } = await fixture(t);
+  const alias = join(root, 'alias');
+  await symlink(source, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  await assert.rejects(buildBundle({ daemon: join(source, 'daemon'), node: source, codex: source, output: join(alias, 'new-parent', 'out') }), /outside/);
+});

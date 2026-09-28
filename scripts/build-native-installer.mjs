@@ -3,7 +3,7 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rename, rm, stat, writeFile } from 'node:fs/promises';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const pins = { node: '22.22.0', codex: '0.153.4', claude: '0.3.269', minimax: '0.4.12' };
@@ -13,6 +13,16 @@ const inside = (root, path) => {
   const rel = relative(root, path);
   return rel !== '..' && !rel.startsWith('..' + sep) && !isAbsolute(rel);
 };
+
+// Resolve existing parents even when the output does not exist yet. macOS
+// temporary paths and Windows short paths can alias a component source.
+async function outputRealPath(path) {
+  try { return await realpath(path); }
+  catch (error) {
+    if (error.code !== 'ENOENT' || dirname(path) === path) throw error;
+    return join(await outputRealPath(dirname(path)), basename(path));
+  }
+}
 
 // Flatten contained links, including directory links used by pnpm exports. Every
 // traversal checks its resolved target; active ancestors detect directory cycles.
@@ -105,12 +115,13 @@ export async function buildBundle(options) {
   if (!names.length) throw new Error('At least one Harness source is required');
   if (process.platform === 'win32' && options.minimax) throw new Error('MiniMax is not supported on Windows');
   try { await lstat(options.output); throw new Error('Bundle output already exists'); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+  const output = await outputRealPath(options.output);
   // Refuse staging inside a source: recursive copying must not ingest its own output.
-  for (const name of ['node', ...names]) if (inside(await realpath(options[name]), resolve(options.output))) throw new Error('Output must be outside component sources');
+  for (const name of ['node', ...names]) if (inside(await realpath(options[name]), output)) throw new Error('Output must be outside component sources');
   const daemonVersion = probe(options.daemon, ['version'], dirname(options.daemon), process.env);
   if (!/^[0-9A-Za-z][0-9A-Za-z.+_-]{0,127}$/.test(daemonVersion)) throw new Error('Invalid daemon version');
-  await mkdir(dirname(options.output), { recursive: true });
-  const staging = await mkdtemp(join(dirname(options.output), '.native-bundle-'));
+  await mkdir(dirname(output), { recursive: true });
+  const staging = await mkdtemp(join(dirname(output), '.native-bundle-'));
   try {
     const daemon = join(staging, process.platform === 'win32' ? 'oac-daemon.exe' : 'oac-daemon');
     await copyFile(options.daemon, daemon); await chmod(daemon, 0o755);
@@ -128,7 +139,7 @@ export async function buildBundle(options) {
     await validateComponents(staging, names, daemonVersion);
     const manifest = { schema: 1, daemon_version: daemonVersion, os: platforms[process.platform], arch: architectures[process.arch], components };
     await writeFile(join(staging, 'bundle.json'), JSON.stringify(manifest, null, 2) + '\n');
-    await rename(staging, options.output);
+    await rename(staging, output);
     return manifest;
   } finally { await rm(staging, { recursive: true, force: true }); }
 }
