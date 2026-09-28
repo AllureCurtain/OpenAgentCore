@@ -10,6 +10,15 @@ business assets, the Parsar product Web, product API and product migrations rema
 in Parsar. Do not import `server/`, `apps/parsar/`, product CLI/plugin packages or
 their deployment stack.
 
+`example/parsar/` is an optional, independently started application example,
+authorized to reuse the Parsar product's UI primitives and branding. It uses only
+the public `/v1` application API through `OpenAIAgentsClient`, with a Project API
+key held by its loopback server. It is not the Core administrator console and is
+not included in Core distributions. It imports no product backend or database.
+One task maps to one Core Session; Session metadata stores only its display title
+and application marker. Core remains the sole owner of execution state and history.
+Changes to examples must not make the Core service depend on an example.
+
 Preserve copied runtime and protocol behavior. Existing Go import paths remain unchanged and do not require fetching the original
 repository. Installed commands and environment settings use the OpenAgentCore names
 documented below. The source snapshot and per-file
@@ -173,6 +182,10 @@ Comments and documentation are English. Reuse existing helpers and error mapping
 split oversized components before extending them. Use `internal/obs/log` for logs.
 
 ## Required checks
+
+`make check-example` validates the optional application example with TypeScript,
+proxy/history tests, a build and fixture browser acceptance; it also runs in
+`make check`. Its synthetic responses are not live model qualification.
 
 Run `make check` before completion. The standalone gate includes all daemon/shared
 Go tests, Core contract/client/service tests, Core Web and TypeScript client

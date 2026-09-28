@@ -823,5 +823,35 @@
     "path": "apps/docs/lib/legacy-redirects.ts",
     "regex": "\"agents-api(?:-sessions|-errors)?\"",
     "reason": "Retired documentation URL keys redirect to the current public API guide; these are not current commands or API namespaces."
+  },
+  {
+    "path": "example/*",
+    "regex": "(?i)parsar",
+    "reason": "The explicitly named Parsar application example retains product branding; it does not rename the Core runtime."
+  },
+  {
+    "path": "pnpm-workspace.yaml",
+    "regex": "example/parsar",
+    "reason": "The explicitly named Parsar application example retains product branding; it does not rename the Core runtime."
+  },
+  {
+    "path": "pnpm-lock.yaml",
+    "regex": "(?:example/parsar|@oac/parsar-example)",
+    "reason": "The explicitly named Parsar application example retains product branding; it does not rename the Core runtime."
+  },
+  {
+    "path": "Makefile",
+    "regex": "@oac/parsar-example",
+    "reason": "The explicitly named Parsar application example retains product branding; it does not rename the Core runtime."
+  },
+  {
+    "path": "CONTRIBUTING.md",
+    "regex": "example/parsar/",
+    "reason": "The explicitly named Parsar application example retains product branding; it does not rename the Core runtime."
+  },
+  {
+    "path": "README.md",
+    "regex": "example/parsar(?:/README.md)?",
+    "reason": "The explicitly named Parsar application example retains product branding; it does not rename the Core runtime."
   }
 ]

@@ -65,6 +65,10 @@ native differences.
 
 ## Documentation
 
+For a complete application example using the Parsar product UI, see
+[`example/parsar`](example/parsar/README.md): Agent configuration, task submission,
+execution history, follow-up messages and cancellation through the public API.
+
 | Page | Covers |
 | --- | --- |
 | [Install Core and Web](docs/getting-started/install.md) | Prerequisites, download, installer options, HTTPS and the reverse proxy, first sign-in |
