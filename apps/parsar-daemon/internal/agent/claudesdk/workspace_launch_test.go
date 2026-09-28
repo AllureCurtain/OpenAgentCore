@@ -24,12 +24,13 @@ test "$ANTHROPIC_AUTH_TOKEN" = selected-provider-fixture || exit 23
 test "$TMPDIR" != "$CLAUDE_CONFIG_DIR/tmp" || exit 24
 case "$1" in
   */runtime_check.js)
-    printf '%s\n' '{"type":"runtime_ready","protocol":2,"node":"fixture","sdk":"fixture","mcp":"fixture","native":"fixture","features":["workspace_tools","workspace_prepare"]}' ;;
+    printf '%s\n' '{"type":"runtime_ready","protocol":3,"node":"fixture","sdk":"fixture","mcp":"fixture","native":"fixture","features":["workspace_tools","workspace_prepare"]}' ;;
   *)
     IFS= read -r request
-    printf '%s\n' '{"type":"prepared"}'
+    printf '%s\n' '{"type":"executor_ready","protocol":3}'
     IFS= read -r request
-    printf '%s\n' '{"type":"result","session_id":"native","text":"completed"}' ;;
+    printf '%s\n' '{"type":"result","turn_id":"run","session_id":"native","text":"completed"}'
+    printf '%s\n' '{"type":"turn_settled","turn_id":"run","reusable":true,"reason":""}' ;;
 esac
 `
 	if err := os.WriteFile(config.Node, []byte(script), 0o700); err != nil {

@@ -114,7 +114,7 @@ func TestEnvironmentMCPCancelSettlesPendingObservationBeforeDone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = session.Cancel(context.Background()) })
+	t.Cleanup(func() { _ = resource.(*prepared).Cancel(context.Background()) })
 	select {
 	case event := <-out:
 		var call proto.ToolCallPayload
@@ -124,8 +124,12 @@ func TestEnvironmentMCPCancelSettlesPendingObservationBeforeDone(t *testing.T) {
 	case <-ctx.Done():
 		t.Fatal("MCP start was not observed")
 	}
-	if err := session.Cancel(ctx); err != nil {
-		t.Fatal(err)
+	if err := session.Cancel(ctx); err == nil {
+		t.Fatal("unconfirmed MCP completion authorized reusable cancellation")
+	}
+	settlement, err := session.(*Session).AwaitSettlement(ctx)
+	if err != nil || settlement.Reusable {
+		t.Fatal("pending MCP work retained a reusable owner", settlement, err)
 	}
 	closed, done := false, false
 	for event := range out {

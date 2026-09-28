@@ -3,6 +3,7 @@ package codex
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -139,6 +140,9 @@ func TestPreparationFakeCodexProcess(t *testing.T) {
 	frames := json.NewEncoder(log)
 	output := json.NewEncoder(os.Stdout)
 	scanner := bufio.NewScanner(os.Stdin)
+	turnNumber := 0
+	currentTurn := ""
+	executorMode := os.Getenv("OAC_TEST_EXECUTOR_MODE")
 	for scanner.Scan() {
 		var frame preparationFrame
 		if json.Unmarshal(scanner.Bytes(), &frame) != nil {
@@ -182,10 +186,40 @@ func TestPreparationFakeCodexProcess(t *testing.T) {
 			}
 			result = map[string]any{"thread": map[string]string{"id": "fixture-native-thread"}, "model": "fixture-model"}
 		case "turn/start":
+			if executorMode != "" {
+				turnNumber++
+				currentTurn = fmt.Sprintf("fixture-turn-%d", turnNumber)
+				if turnNumber > 1 {
+					_ = output.Encode(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": "fixture-native-thread", "turn": map[string]string{"id": fmt.Sprintf("fixture-turn-%d", turnNumber-1)}}})
+				}
+				if executorMode == "disconnect" {
+					os.Exit(0)
+				}
+				if executorMode == "start-error" {
+					_ = output.Encode(map[string]any{"id": frame.ID, "error": map[string]any{"code": -32603, "message": "start rejected"}})
+					continue
+				}
+				result = map[string]any{"turn": map[string]string{"id": currentTurn}}
+				break
+			}
 			result = map[string]any{"turn": map[string]string{"id": "fixture-native-turn"}}
 		}
 		if output.Encode(map[string]any{"jsonrpc": "2.0", "id": frame.ID, "result": result}) != nil {
 			os.Exit(5)
+		}
+
+		if executorMode != "" && (frame.Method == "turn/start" || frame.Method == "turn/interrupt") {
+			if frame.Method == "turn/start" {
+				_ = output.Encode(map[string]any{"method": "turn/started", "params": map[string]any{"threadId": "fixture-native-thread", "turn": map[string]string{"id": currentTurn}}})
+			}
+			if frame.Method == "turn/interrupt" || !strings.Contains(string(frame.Params), "hold") {
+				status := "completed"
+				if frame.Method == "turn/interrupt" {
+					status = "interrupted"
+				}
+				_ = output.Encode(map[string]any{"method": "turn/completed", "params": map[string]any{"threadId": "fixture-native-thread", "turn": map[string]string{"id": currentTurn, "status": status}}})
+			}
+			continue
 		}
 		if frame.Method == "turn/start" {
 			_ = output.Encode(map[string]any{"jsonrpc": "2.0", "method": "turn/started", "params": map[string]any{"threadId": "fixture-native-thread", "turn": map[string]string{"id": "fixture-native-turn"}}})

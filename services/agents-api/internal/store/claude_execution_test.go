@@ -30,7 +30,7 @@ func claudeSession(t *testing.T, h *dispatchHarness, configuration string, prebo
 
 func claudeHeartbeat(t *testing.T, h *dispatchHarness, ready bool) {
 	t.Helper()
-	caps := proto.AgentKindCapabilities{Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: ready, ExecutionControls: true, EnvironmentNone: true, SubagentControl: true, FunctionTools: true, ToolObservations: true}
+	caps := proto.AgentKindCapabilities{Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: ready, ExecutionControls: true, EnvironmentNone: true, SubagentControl: true, FunctionTools: true, ToolObservations: true, Preparation: true}
 	h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{SupportedAgentKinds: []proto.SupportedAgentKind{{Kind: "claude_sdk", Available: true, Capabilities: caps}}})
 	deadline := time.Now().Add(3 * time.Second)
 	for {
@@ -85,7 +85,7 @@ func TestClaudeWorkerSelectsStoredEngineAndRestrictiveCapabilities(t *testing.T)
 			queued() // Durable application receipts are required for this engine too.
 			claudeHeartbeat(t, h, true)
 			var prompt proto.PromptRequestPayload
-			if h.read(proto.TypePromptRequest).DecodePayload(&prompt) != nil {
+			if h.read(testExecutionRequest).DecodePayload(&prompt) != nil {
 				t.Fatal("invalid prompt")
 			}
 			if prompt.AgentKind != "claude_sdk" || len(prompt.FunctionTools) != 1 || !prompt.DisableExecutionEnvironment || !prompt.DisableSubagents || prompt.ExecutionControls == nil || *prompt.ExecutionControls != (proto.ExecutionControls{WebSearch: "disabled", TextVerbosity: "medium"}) {

@@ -127,7 +127,9 @@ func runFunctionHelper(request startRequest, mode string, scanner *bufio.Scanner
 	}
 	if mode == "functions-cancel" {
 		emit(bridgeEvent{Type: "delta", Delta: "waiting for confirmation"})
-		time.Sleep(time.Hour)
+		if scanner.Scan() {
+			emit(bridgeEvent{Type: "error", Code: "cancelled"})
+		}
 		return
 	}
 	if mode == "functions-no-receipt" {

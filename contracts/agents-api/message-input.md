@@ -74,7 +74,7 @@ before.
 
 ## Runtime boundary
 
-Private wire 0.5.0 uses `MessageInput` for initial requests, prepared start and
+Private wire 0.6.0 uses `MessageInput` for initial requests, prepared start and
 active steering. Each message contains ordered `InputContent` parts, also reused
 by function-result content. Core does not download, transcode or repair media.
 The separate Claude bridge reports protocol 2; daemon readiness rejects protocol 1.

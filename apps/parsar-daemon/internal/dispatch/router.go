@@ -47,6 +47,7 @@ type Router struct {
 	shutdownWG          dispatchWork  // waits for all pump goroutines
 	idleTimeout         time.Duration
 	closed              bool
+	executors           map[string]*executorState
 	preparations        map[string]*preparationState
 	preparationRequests map[string]*preparationState
 	preparationTimeout  time.Duration
@@ -135,6 +136,7 @@ func New(cfg Config) (*Router, error) {
 		applied:             make(map[string]appliedInteractionDecision),
 		shutdownCh:          make(chan struct{}),
 		idleTimeout:         idleTimeout,
+		executors:           make(map[string]*executorState),
 		preparations:        make(map[string]*preparationState),
 		preparationRequests: make(map[string]*preparationState),
 		preparationTimeout:  preparationTimeout,

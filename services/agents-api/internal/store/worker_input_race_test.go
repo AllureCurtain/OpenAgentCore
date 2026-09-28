@@ -100,7 +100,7 @@ func TestWorkerInputReadSkipsConcurrentlyCancelledCandidate(t *testing.T) {
 				t.Fatal("a stale candidate terminated the global Worker", err)
 			case <-time.After(650 * time.Millisecond):
 			}
-			frame := h.read(proto.TypePromptRequest)
+			frame := h.read(testExecutionRequest)
 			if frame.ID != healthy.TurnID {
 				t.Fatal("cancelled candidate reached the Runtime", frame.ID)
 			}

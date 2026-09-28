@@ -36,7 +36,7 @@ func TestSubagentIdentityUsesLeasedDispatchJournal(t *testing.T) {
 			input := h.message("first", "root message")
 			running := h.run(ctx, input.TurnID)
 			var request proto.PromptRequestPayload
-			if err = h.read(proto.TypePromptRequest).DecodePayload(&request); err != nil || request.ObserveSubagentIdentities != enabled || request.MaxConcurrentSubagents == nil || *request.MaxConcurrentSubagents != 3 {
+			if err = h.read(testExecutionRequest).DecodePayload(&request); err != nil || request.ObserveSubagentIdentities != enabled || request.MaxConcurrentSubagents == nil || *request.MaxConcurrentSubagents != 3 {
 				t.Fatal("private observation policy not carried", err)
 			}
 			identity := proto.SubagentIdentityPayload{NativeID: "child", ParentNativeID: "root", NativeCreatedAt: 100, ParentTurnID: "native-turn", SourceItemID: "spawn-item"}

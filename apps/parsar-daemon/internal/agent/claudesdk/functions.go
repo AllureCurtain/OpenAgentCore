@@ -115,9 +115,10 @@ func (s *session) SubmitFunctionResult(ctx context.Context, result proto.Functio
 		return err
 	}
 	data, err := json.Marshal(struct {
-		Type string `json:"type"`
+		Type   string `json:"type"`
+		TurnID string `json:"turn_id"`
 		proto.FunctionResultPayload
-	}{Type: "function_result", FunctionResultPayload: result})
+	}{Type: "function_result", TurnID: s.runID, FunctionResultPayload: result})
 	if err != nil {
 		return err
 	}
@@ -139,7 +140,7 @@ func (s *session) SubmitFunctionResult(ctx context.Context, result proto.Functio
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	// A lost receipt has an unknown outcome; terminate this execution instead of resending.
-	stop := context.AfterFunc(ctx, s.process.Cancel)
+	stop := context.AfterFunc(ctx, s.invalidate)
 	defer stop()
 	s.writeMu.Lock()
 	if err = ctx.Err(); err == nil {
@@ -147,7 +148,7 @@ func (s *session) SubmitFunctionResult(ctx context.Context, result proto.Functio
 	}
 	s.writeMu.Unlock()
 	if err != nil {
-		s.process.Cancel()
+		s.invalidate()
 		return fmt.Errorf("claudesdk: function result transport failed")
 	}
 	select {

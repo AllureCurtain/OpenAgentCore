@@ -14,7 +14,7 @@ func TestExecutionFunctionInputBatchStillSteersMessages(t *testing.T) {
 	h := newFunctionHarness(t)
 	input := h.message("start", "Run")
 	running := h.run(t.Context(), input.TurnID)
-	h.read(proto.TypePromptRequest)
+	h.read(testExecutionRequest)
 	h.write(input.TurnID, proto.TypeFunctionCall, proto.FunctionCallPayload{CallID: "a", Name: "lookup_ticket", Arguments: json.RawMessage(`{}`)})
 	state := functionState(t, h, 1)
 	raw, _ := json.Marshal(store.FunctionResultInput{TurnID: input.TurnID, CallID: state.RequiredActions[0].CallID, Result: json.RawMessage(`{"success":true,"output":"answer"}`)})

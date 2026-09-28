@@ -26,7 +26,7 @@ func newFunctionHarness(t *testing.T) *dispatchHarness {
 	if err := h.s.BindSessionDevice(t.Context(), h.tenant, h.session.ID, h.device.ID); err != nil {
 		t.Fatal(err)
 	}
-	h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{SupportedAgentKinds: []proto.SupportedAgentKind{{Kind: "codex", Available: true, Capabilities: proto.AgentKindCapabilities{Streaming: true, Steering: true, Resume: true, DurableTurns: true, DurableInputReceipts: true, WebSearchControl: true, TextVerbosity: true, ExecutionControls: true, SubagentControl: true, ToolObservations: true, EnvironmentNone: true, FunctionTools: true, FunctionResultImages: true}}}})
+	h.write("", proto.TypeHeartbeat, proto.HeartbeatPayload{SupportedAgentKinds: []proto.SupportedAgentKind{{Kind: "codex", Available: true, Capabilities: proto.AgentKindCapabilities{Streaming: true, Steering: true, Resume: true, DurableTurns: true, DurableInputReceipts: true, WebSearchControl: true, TextVerbosity: true, ExecutionControls: true, SubagentControl: true, ToolObservations: true, EnvironmentNone: true, FunctionTools: true, FunctionResultImages: true, Preparation: true}}}})
 	deadline := time.Now().Add(time.Second)
 	for {
 		peer, _ := h.registry.LookupDevice(h.device.ID)
@@ -64,7 +64,7 @@ func TestExecutionFunctionsWaitForEveryApplicationReceipt(t *testing.T) {
 	input := h.message("start", "Run functions")
 	result := h.run(t.Context(), input.TurnID)
 	var prompt proto.PromptRequestPayload
-	_ = h.read(proto.TypePromptRequest).DecodePayload(&prompt)
+	_ = h.read(testExecutionRequest).DecodePayload(&prompt)
 	if len(prompt.FunctionTools) != 1 || prompt.FunctionTools[0].Name != "lookup_ticket" {
 		t.Fatal(prompt.FunctionTools)
 	}
@@ -107,7 +107,7 @@ func TestExecutionFunctionsWaitForEveryApplicationReceipt(t *testing.T) {
 	functionState(t, h, 0)
 	next := h.message("next", "Resume")
 	result = h.run(t.Context(), next.TurnID)
-	_ = h.read(proto.TypePromptRequest).DecodePayload(&prompt)
+	_ = h.read(testExecutionRequest).DecodePayload(&prompt)
 	if prompt.AgentSessionID != "native-functions" || len(prompt.FunctionTools) != 1 {
 		t.Fatal(prompt)
 	}
@@ -121,7 +121,7 @@ func TestExecutionFunctionsCancellationAndUnconfirmedResults(t *testing.T) {
 			h := newFunctionHarness(t)
 			input := h.message("start", "Run")
 			result := h.run(t.Context(), input.TurnID)
-			h.read(proto.TypePromptRequest)
+			h.read(testExecutionRequest)
 			h.write(input.TurnID, proto.TypeFunctionCall, proto.FunctionCallPayload{CallID: "a", Name: "lookup_ticket", Arguments: json.RawMessage(`{}`)})
 			state := functionState(t, h, 1)
 			id := state.RequiredActions[0].CallID
@@ -178,7 +178,7 @@ func TestExecutionFunctionsRejectUndeclaredCallsAndPrematureDone(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 			defer cancel()
 			result := h.run(ctx, input.TurnID)
-			h.read(proto.TypePromptRequest)
+			h.read(testExecutionRequest)
 			h.write(input.TurnID, proto.TypeFunctionCall, proto.FunctionCallPayload{CallID: "a", Name: name, Arguments: json.RawMessage(`{}`)})
 			h.write(input.TurnID, proto.TypeDone, proto.DonePayload{})
 			h.finished(result, store.TurnFailed)

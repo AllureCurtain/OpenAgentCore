@@ -40,12 +40,13 @@ func (release *preparedRelease) aborted() bool {
 	}
 }
 
-// preparedHandoff owns the exact PreparedCancellation from Start admission
-// through native cleanup and output settlement. It never falls back to the
-// returned Session or Prepared.Close.
+// preparedHandoff owns one Turn admission and settlement on a retained Executor.
 type preparedHandoff struct {
 	preparation *preparationState
-	target      agent.PreparedCancellation
+	target      agent.Executor
+	turn        agent.Turn
+	startErr    error
+	protocolErr error
 
 	startDone   chan struct{}
 	outputReady chan struct{}
@@ -62,7 +63,7 @@ type preparedHandoff struct {
 	shutdownInterrupted bool
 }
 
-func newPreparedHandoff(p *preparationState, target agent.PreparedCancellation) *preparedHandoff {
+func newPreparedHandoff(p *preparationState, target agent.Executor) *preparedHandoff {
 	return &preparedHandoff{
 		preparation: p,
 		target:      target,
@@ -116,6 +117,9 @@ func (r *Router) claimPreparedReleaseLocked(state *sessionState, abort bool, fai
 	}
 	if abort && !release.aborted() {
 		close(release.abort)
+		if handoff.turn == nil {
+			handoff.preparation.cancel()
+		}
 	}
 	if release.succeeded {
 		return release, release.attempt
@@ -142,66 +146,134 @@ func (r *Router) claimPreparedReleaseLocked(state *sessionState, abort bool, fai
 
 func (r *Router) runPreparedRelease(state *sessionState, handoff *preparedHandoff, release *preparedRelease, attempt *preparedReleaseAttempt) {
 	defer r.shutdownWG.Done()
-
-	// Natural completion must publish started before it can release the native
-	// resource. Abort is allowed to fence a Start that is still in progress.
 	select {
 	case <-handoff.startDone:
 	case <-release.abort:
+		select {
+		case <-handoff.startDone:
+		default:
+			if err := r.closeExecutor(handoff.preparation.executor); err != nil {
+				r.mu.Lock()
+				attempt.err = err
+				handoff.preparation.busy = false
+				handoff.preparation.closeErr = err
+				close(attempt.done)
+				r.mu.Unlock()
+				return
+			}
+		}
+		<-handoff.startDone
 	}
+	// Admission is closed; all earlier mutations retain their native receipt wait.
 	handoff.operations.Lock()
-	ctx, cancel := context.WithTimeout(context.Background(), preparedCancelTimeout)
-	nativeErr := handoff.target.Cancel(ctx)
-	cancel()
-	var outcome *proto.DonePayload
-	if nativeErr == nil {
-		observed := handoff.target.CancellationOutcome()
-		outcome = &observed
-	}
 	handoff.operations.Unlock()
-
+	turn := handoff.turn
+	var settlement agent.TurnSettlement
+	var nativeErr error
+	var outcome *proto.DonePayload
+	if turn == nil {
+		outcome = &proto.DonePayload{}
+	}
+	if turn != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), preparedCancelTimeout)
+		cancelDone := make(chan error, 1)
+		settled := make(chan struct{})
+		go func() {
+			select {
+			case <-release.abort:
+				err := turn.Cancel(ctx)
+				if err != nil {
+					cancel()
+				}
+				cancelDone <- err
+			case <-settled:
+				cancelDone <- nil
+			}
+		}()
+		settlement, nativeErr = turn.AwaitSettlement(ctx)
+		close(settled)
+		nativeErr = errors.Join(nativeErr, <-cancelDone)
+		cancel()
+		if nativeErr == nil {
+			value := turn.CancellationOutcome()
+			outcome = &value
+		}
+	}
+	if nativeErr == nil {
+		<-handoff.outputDone
+	}
+	r.mu.Lock()
+	owner := handoff.preparation.executor
+	if turn != nil && handoff.terminal == nil && !release.aborted() {
+		handoff.protocolErr = errors.New("executor output ended without a terminal result")
+	}
+	if handoff.protocolErr != nil {
+		release.failure = handoff.protocolErr.Error()
+	}
+	invalidate := nativeErr != nil || !settlement.Reusable || handoff.startErr != nil || handoff.outputErr != nil || handoff.protocolErr != nil || r.closed || owner.invalid
+	if invalidate {
+		owner.invalid = true
+	}
+	r.mu.Unlock()
+	var closeErr error
+	if invalidate {
+		closeErr = r.closeExecutor(owner)
+		// A failed Turn settlement is not repaired into a cancellation receipt by Close.
+		nativeErr = errors.Join(nativeErr, closeErr)
+	}
 	r.mu.Lock()
 	attempt.err = nativeErr
-	if nativeErr != nil {
+	if closeErr != nil {
 		handoff.preparation.busy = false
 		handoff.preparation.closeErr = nativeErr
 		close(attempt.done)
 		r.mu.Unlock()
 		return
 	}
-	release.succeeded = true
-	release.outcome = outcome
+	if nativeErr != nil {
+		release.failure = "executor Turn settlement failed"
+	}
+	release.succeeded, release.outcome = true, outcome
 	close(attempt.done)
 	r.mu.Unlock()
-
-	// Cancel success promises local cleanup and no further output writes. Wait
-	// for Start and the one output consumer before publishing terminal state.
-	<-handoff.startDone
 	<-handoff.outputDone
-
 	r.mu.Lock()
-	outputErr := handoff.outputErr
-	terminal := handoff.terminal
-	closed := r.closed
+	outputErr, terminal, closed := handoff.outputErr, handoff.terminal, r.closed
 	r.mu.Unlock()
-
 	var terminalErr error
-	if outputErr == nil && !closed {
-		terminalErr = r.forwardPreparedTerminal(state, release.failure, terminal, release.failure != "" && terminal == nil)
+	if outputErr == nil && !closed && turn != nil {
+		terminalErr = r.forwardPreparedTerminal(state, release.failure, terminal, terminal == nil)
 	}
 	r.cleanupSession(state)
-
 	r.mu.Lock()
 	handoff.outputErr = errors.Join(handoff.outputErr, terminalErr)
 	p := handoff.preparation
-	p.busy = false
+	p.busy, p.owns, p.handoff = false, false, nil
 	p.closeErr = terminalErr
-	p.prepared = nil
-	p.owns = false
-	p.handoff = nil
 	p.cancel()
+	owner.run = nil
+	if owner.invalid && owner.closeDone != nil && owner.closeErr == nil && r.executors[owner.sessionID] == owner {
+		delete(r.executors, owner.sessionID)
+	}
+	if owner.admission == p {
+		owner.admission = nil
+	}
+	if outcome != nil {
+		if id, ok := outcome.Metadata[proto.DoneMetaAgentSessionID].(string); ok && id != "" {
+			owner.nativeID = id
+		}
+	}
+	if terminalErr != nil {
+		owner.invalid = true
+	}
+	if !owner.invalid {
+		r.scheduleExecutorIdleLocked(owner)
+	}
 	close(release.settled)
 	r.mu.Unlock()
+	if terminalErr != nil {
+		_ = r.closeExecutor(owner)
+	}
 }
 
 func (r *Router) forwardPreparedOutput(state *sessionState) {
@@ -230,7 +302,9 @@ func (r *Router) forwardPreparedOutput(state *sessionState) {
 				return
 			}
 			r.mu.Lock()
-			if handoff.terminal != nil {
+			if env.ID != state.runID || handoff.terminal != nil {
+				handoff.protocolErr = errors.New("executor output crossed the Turn boundary")
+				r.claimPreparedReleaseLocked(state, true, handoff.protocolErr.Error(), false)
 				r.mu.Unlock()
 				continue
 			}

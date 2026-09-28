@@ -147,10 +147,11 @@ func TestSteeringReceiptsAndLifecycle(t *testing.T) {
 			if err := s.Steer(ctx, input); !errors.Is(err, agent.ErrSteeringInactive) {
 				t.Fatal("completed execution accepted input", err)
 			}
-			select {
-			case <-s.process.Done():
-			default:
-				t.Fatal("completion preceded process release")
+			if _, err := s.AwaitSettlement(ctx); err != nil && (mode == "success" || mode == "phased" || mode == "timeout") {
+				t.Fatal(err)
+			}
+			if err := s.owner.Close(ctx); err != nil {
+				t.Fatal(err)
 			}
 		})
 	}
@@ -186,7 +187,9 @@ func runSteeringHelper(request startRequest, mode string, scanner *bufio.Scanner
 		os.Exit(3)
 	}
 	if mode == "steering-cancel" {
-		time.Sleep(time.Hour)
+		if scanner.Scan() {
+			emit(bridgeEvent{Type: "error", Code: "cancelled"})
+		}
 		return
 	}
 	if mode == "steering-timeout" {

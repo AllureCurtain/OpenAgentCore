@@ -387,8 +387,8 @@ func mainLoopRemote(rc *runContext, profile string, prof auth.Profile, agentCLIs
 
 // pumpConn runs the per-connection workload: a dispatch.Router fed by
 // conn.Recv(), heartbeats every boot.HeartbeatInterval(), and a
-// graceful router.Shutdown on exit so any in-flight subprocesses get
-// SIGTERM.
+// confirmed router.Shutdown before returning ownership to the reconnect loop.
+// Failed cleanup keeps this exact Router alive, including after a shutdown signal.
 func pumpConn(parentCtx context.Context, conn *transport.Conn, registry *agent.Registry, boot *transport.BootstrapResponse, agentCLIs agentCLIDiscovery) error {
 	local, err := localworkspace.Load()
 	if err != nil {
@@ -406,9 +406,8 @@ func pumpConn(parentCtx context.Context, conn *transport.Conn, registry *agent.R
 		return fmt.Errorf("router init: %w", err)
 	}
 	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		_ = router.Shutdown(shutdownCtx)
-		cancel()
+		_ = conn.Close()
+		shutdownRouterUntilConfirmed(router.Shutdown, time.Second)
 	}()
 
 	conn.StartHeartbeats(parentCtx, boot.HeartbeatInterval(), func() proto.HeartbeatPayload {

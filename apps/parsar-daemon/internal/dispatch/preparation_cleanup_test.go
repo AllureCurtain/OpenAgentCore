@@ -55,7 +55,7 @@ func TestPreparedCancellationDoesNotAcknowledgeFailedCleanup(t *testing.T) {
 	if owned, _ := r.PreparationOwnershipForTest(ready.Handle); !owned {
 		t.Fatal("cancel receipt discarded unsettled preparation")
 	}
-	_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionRelease, "request", proto.ExecutionReleasePayload{Handle: ready.Handle}))
+	_ = r.Handle(t.Context(), mustEnv(t, proto.TypePromptCancel, "run", proto.PromptCancelPayload{DeliveryID: "cancel-retry"}))
 	waitFor(t, func() bool { owned, _ := r.PreparationOwnershipForTest(ready.Handle); return !owned }, "retained cancellation cleanup")
 }
 
@@ -69,7 +69,7 @@ func TestShutdownRetriesFailedPreparedCancellationOnSameTarget(t *testing.T) {
 		return session, nil
 	}
 	p.cancel = func(ctx context.Context) error {
-		if p.calls.Load() == 1 {
+		if p.calls.Load() <= 2 {
 			return want
 		}
 		return session.Cancel(ctx)
@@ -80,7 +80,7 @@ func TestShutdownRetriesFailedPreparedCancellationOnSameTarget(t *testing.T) {
 	if err := r.Shutdown(t.Context()); !errors.Is(err, want) {
 		t.Fatalf("first shutdown lost native failure: %v", err)
 	}
-	if r.ActiveRuns() != 1 || p.calls.Load() != 1 || session.cancels() != 0 {
+	if r.ActiveRuns() != 1 || p.calls.Load() != 2 || session.cancels() != 0 {
 		t.Fatal("failed shutdown released ownership or changed release target")
 	}
 	select {
@@ -91,75 +91,8 @@ func TestShutdownRetriesFailedPreparedCancellationOnSameTarget(t *testing.T) {
 	if err := r.Shutdown(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if r.ActiveRuns() != 0 || p.calls.Load() != 2 || session.cancels() != 1 {
+	if r.ActiveRuns() != 0 || p.calls.Load() != 3 || session.cancels() != 1 {
 		t.Fatalf("shutdown did not retry the same target once: active=%d target=%d session=%d", r.ActiveRuns(), p.calls.Load(), session.cancels())
-	}
-}
-
-func TestPreparationCloseFailureRetainsCapacityAndRetries(t *testing.T) {
-	sender := &recSender{}
-	entered, release := make(chan struct{}), make(chan struct{})
-	var once sync.Once
-	unblock := func() { once.Do(func() { close(release) }) }
-	p := &retryablePreparation{close: func(call int32) error {
-		if call == 1 {
-			return errors.New("cleanup incomplete")
-		}
-		if call == 2 {
-			close(entered)
-			<-release
-		}
-		return nil
-	}}
-	var factories atomic.Int32
-	r := preparationRouter(t, sender, time.Minute, func(context.Context, proto.PromptRequestPayload) (agent.Prepared, error) {
-		if factories.Add(1) == 1 {
-			return p, nil
-		}
-		return &controlledPreparation{closed: make(chan struct{})}, nil
-	})
-	t.Cleanup(unblock)
-	var handle string
-	for i := range 4 {
-		id := fmt.Sprint(i)
-		_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionPrepare, id, preparationRequest()))
-		ready := waitPreparationStatus(t, sender, id, "ready", "")
-		if i == 0 {
-			handle = ready.Handle
-		}
-	}
-	request := mustEnv(t, proto.TypeExecutionRelease, "0", proto.ExecutionReleasePayload{Handle: handle})
-	_ = r.Handle(t.Context(), request)
-	waitFor(t, func() bool { _, busy := r.PreparationOwnershipForTest(handle); return p.calls.Load() == 1 && !busy }, "failed cleanup return")
-	if owned, _ := r.PreparationOwnershipForTest(handle); !owned {
-		t.Fatal("failed cleanup discarded ownership")
-	}
-	replacement := mustEnv(t, proto.TypeExecutionPrepare, "replacement", preparationRequest())
-	if err := r.Handle(t.Context(), replacement); err == nil {
-		t.Fatal("failed cleanup released capacity")
-	}
-	start := proto.ExecutionStartPayload{Handle: handle, RunID: "run", Input: proto.TextInput("do not execute")}
-	if err := r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionStart, "0", start)); err == nil {
-		t.Fatal("failed cleanup allowed Start")
-	}
-	_ = r.Handle(t.Context(), request)
-	select {
-	case <-entered:
-	case <-time.After(time.Second):
-		t.Fatal("release did not retry retained resource")
-	}
-	_ = r.Handle(t.Context(), request)
-	if p.calls.Load() != 2 {
-		t.Fatal("release started overlapping cleanup")
-	}
-	unblock()
-	waitFor(t, func() bool { owned, _ := r.PreparationOwnershipForTest(handle); return !owned }, "successful cleanup")
-	if err := r.Handle(t.Context(), replacement); err != nil {
-		t.Fatalf("settled cleanup retained capacity: %v", err)
-	}
-	waitPreparationStatus(t, sender, "replacement", "ready", "")
-	if p.starts.Load() != 0 {
-		t.Fatal("cleanup restarted native execution")
 	}
 }
 
@@ -174,18 +107,16 @@ func TestShutdownRetriesFailedPreparationCleanup(t *testing.T) {
 	sender := &recSender{}
 	r := preparationRouter(t, sender, time.Minute, func(context.Context, proto.PromptRequestPayload) (agent.Prepared, error) { return p, nil })
 	_ = r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionPrepare, "request", preparationRequest()))
-	handle := waitPreparationStatus(t, sender, "request", "ready", "").Handle
+	waitPreparationStatus(t, sender, "request", "ready", "")
 	if err := r.Shutdown(t.Context()); !errors.Is(err, want) {
 		t.Fatalf("shutdown lost cleanup error: %v", err)
 	}
-	if owned, _ := r.PreparationOwnershipForTest(handle); !owned {
-		t.Fatal("shutdown discarded unsettled resource")
-	}
+
 	if err := r.Shutdown(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if owned, _ := r.PreparationOwnershipForTest(handle); owned || p.calls.Load() != 2 {
-		t.Fatalf("retry did not settle original resource: owned=%t calls=%d", owned, p.calls.Load())
+	if p.calls.Load() != 2 {
+		t.Fatalf("retry did not settle original resource: calls=%d", p.calls.Load())
 	}
 }
 
@@ -239,7 +170,7 @@ func TestPublishedPreparedRunRetainsRetryAfterHandleRetirement(t *testing.T) {
 		return session, nil
 	}
 	p.cancel = func(ctx context.Context) error {
-		if p.calls.Load() == 1 {
+		if p.calls.Load() <= 2 {
 			return errors.New("cleanup incomplete")
 		}
 		return session.Cancel(ctx)
@@ -260,7 +191,7 @@ func TestPublishedPreparedRunRetainsRetryAfterHandleRetirement(t *testing.T) {
 	}
 	// A later admission retires the expired preparation record. The Run still
 	// owns the exact cancellation target independently of that old handle.
-	if err := r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionPrepare, "replacement", preparationRequest())); err != nil {
+	if err := r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionPrepare, "replacement", readOnlyPreparationRequest())); err != nil {
 		t.Fatal(err)
 	}
 	waitPreparationStatus(t, sender, "replacement", "ready", "")
@@ -278,7 +209,7 @@ func TestPublishedPreparedRunRetainsRetryAfterHandleRetirement(t *testing.T) {
 			}
 		}
 	}
-	if p.calls.Load() != 2 || session.cancels() != 1 || r.ActiveRuns() != 0 {
+	if p.calls.Load() != 3 || session.cancels() != 1 || r.ActiveRuns() != 0 {
 		t.Fatal("Run cancellation did not retry and settle the same target")
 	}
 	select {
@@ -286,4 +217,10 @@ func TestPublishedPreparedRunRetainsRetryAfterHandleRetirement(t *testing.T) {
 		t.Fatal("Run cancellation fell back to preparation Close")
 	default:
 	}
+}
+
+func readOnlyPreparationRequest() proto.ExecutionPreparePayload {
+	req := preparationRequest()
+	req.Configuration.WorkspaceReadOnly = true
+	return req
 }

@@ -96,6 +96,11 @@ export class Inputs implements AsyncIterable<SDKUserMessage> {
 
   get hasInput(): boolean { return this.submitted.size > 0; }
 
+  cancelQueued(): boolean {
+    const discarded = this.queue.length > 0;
+    this.queue.length = 0; this.close(); return discarded;
+  }
+
   close(): void { this.ended = true; this.wake?.(); }
 
   async *[Symbol.asyncIterator](): AsyncIterator<SDKUserMessage> {

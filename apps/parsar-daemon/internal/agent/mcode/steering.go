@@ -18,6 +18,16 @@ func (s *Session) Steer(ctx context.Context, input proto.PromptSteerPayload) err
 
 // Native acceptance belongs to the active ACP Turn; it does not promise model consumption.
 func (s *Session) SteerWithReceipt(ctx context.Context, input proto.PromptSteerPayload, written func()) error {
+	if s.executor != nil {
+		s.mu.Lock()
+		if s.closing || s.cancelled {
+			s.mu.Unlock()
+			return agent.ErrSteeringInactive
+		}
+		s.operations.Add(1)
+		s.mu.Unlock()
+		defer s.operations.Done()
+	}
 	text, err := input.Input.TextOnly()
 	if strings.TrimSpace(input.InputID) == "" || err != nil {
 		return agent.ErrSteeringRejected
@@ -40,10 +50,9 @@ func (s *Session) SteerWithReceipt(ctx context.Context, input proto.PromptSteerP
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	stop := context.AfterFunc(ctx, s.process.Cancel)
-	err = s.write(rpcFrame{JSONRPC: "2.0", ID: json.RawMessage(id), Method: "mcode/session/steer", Params: raw})
-	stop()
+	err = s.writeContext(ctx, rpcFrame{JSONRPC: "2.0", ID: json.RawMessage(id), Method: "mcode/session/steer", Params: raw})
 	if err != nil {
+		s.markInputUncertain()
 		return fmt.Errorf("mcode: input transport failed")
 	}
 	if written != nil {
@@ -53,7 +62,7 @@ func (s *Session) SteerWithReceipt(ctx context.Context, input proto.PromptSteerP
 	var stopped error
 	select {
 	case frame = <-response:
-	case <-s.finished:
+	case <-s.inputSettlementDone():
 		stopped = fmt.Errorf("mcode: run ended with unknown input outcome")
 	case <-s.exited:
 		stopped = fmt.Errorf("mcode: input transport closed")
@@ -65,6 +74,7 @@ func (s *Session) SteerWithReceipt(ctx context.Context, input proto.PromptSteerP
 		select {
 		case frame = <-response:
 		default:
+			s.markInputUncertain()
 			return stopped
 		}
 	}
@@ -72,6 +82,7 @@ func (s *Session) SteerWithReceipt(ctx context.Context, input proto.PromptSteerP
 		if frame.Error.Code == -32602 || frame.Error.Code == -32601 {
 			return agent.ErrSteeringRejected
 		}
+		s.markInputUncertain()
 		return fmt.Errorf("mcode: native steering failed with unknown input outcome")
 	}
 	var result struct {
@@ -79,23 +90,41 @@ func (s *Session) SteerWithReceipt(ctx context.Context, input proto.PromptSteerP
 		Mode   string `json:"mode"`
 	}
 	if json.Unmarshal(frame.Result, &result) != nil || result.TurnID == "" || (result.Mode != "steered" && result.Mode != "duplicate") {
+		s.markInputUncertain()
 		return fmt.Errorf("mcode: invalid steering receipt")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.steeringTurn != "" && s.steeringTurn != result.TurnID {
+		s.inputUncertain = true
 		return fmt.Errorf("mcode: steering turn changed")
 	}
 	s.steeringTurn = result.TurnID
 	return nil
 }
 
+func (s *Session) inputSettlementDone() <-chan struct{} {
+	if s.inputDone != nil {
+		return s.inputDone
+	}
+	return s.finished
+}
+
 func (s *Session) CancellationOutcome() proto.DonePayload {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.outcome.Metadata != nil {
+		return s.outcome
+	}
 	metadata := map[string]any{proto.DoneMetaAgentSessionType: "mcode"}
 	if s.sessionID != "" {
 		metadata[proto.DoneMetaAgentSessionID] = s.sessionID
 	}
 	return proto.DonePayload{Metadata: metadata}
+}
+
+func (s *Session) markInputUncertain() {
+	s.mu.Lock()
+	s.inputUncertain = true
+	s.mu.Unlock()
 }

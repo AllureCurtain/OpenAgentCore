@@ -20,14 +20,24 @@ import (
 )
 
 func runWorkspaceDirectoryHelper(scanner *bufio.Scanner, state, mode string) {
+	turnID := ""
 	for scanner.Scan() {
 		var req struct {
 			Type, ID string
+			TurnID   string `json:"turn_id"`
 			Path     string `json:"directory"`
 			Max      int    `json:"max_entries"`
 		}
 		_ = json.Unmarshal(scanner.Bytes(), &req)
-		if req.Type == "start" {
+		if req.Type == "turn_cancel" {
+			reusable := false
+			_ = json.NewEncoder(os.Stdout).Encode(bridgeEvent{Type: "error", TurnID: turnID, Code: "cancelled"})
+			_ = json.NewEncoder(os.Stdout).Encode(bridgeEvent{Type: "turn_settled", TurnID: turnID, Reusable: &reusable, Reason: "fixture_closed"})
+			return
+		}
+		if req.Type == "turn_start" {
+			turnID = req.TurnID
+			_ = json.NewEncoder(os.Stdout).Encode(bridgeEvent{Type: "turn_started", TurnID: turnID})
 			_ = os.WriteFile(filepath.Join(state, "directory-started"), []byte("{}"), 0600)
 			continue
 		}

@@ -57,12 +57,14 @@ func (r *Router) Shutdown(ctx context.Context) error {
 		close(r.shutdownCh)
 	}
 	preparations := r.closePendingPreparationsLocked()
+	executors := r.closeIdleExecutorsLocked()
 	attempt := &shutdownAttempt{done: make(chan struct{})}
 	r.shutdownAttempt = attempt
 	// Keep the WaitGroup non-zero until all cancellation dispatch is complete.
 	r.shutdownWG.Add(1)
 	r.mu.Unlock()
 
+	r.closeIdleExecutors(executors)
 	for _, p := range preparations {
 		go func() { defer r.shutdownWG.Done(); r.closePreparationResource(p) }()
 	}
@@ -110,6 +112,9 @@ func (r *Router) runShutdownAttempt(attempt *shutdownAttempt, victims []sessionC
 			attempt.err = errors.Join(attempt.err, fmt.Errorf("dispatch: preparation %s: %w", p.status.Handle, cause))
 		}
 	}
+	for _, owner := range r.executors {
+		attempt.err = errors.Join(attempt.err, fmt.Errorf("dispatch: executor %s cleanup unconfirmed: %w", owner.id, owner.closeErr))
+	}
 	close(attempt.done)
 	r.mu.Unlock()
 }
@@ -155,7 +160,9 @@ func (r *Router) handleDeviceShutdown(ctx context.Context, env proto.Envelope) e
 	}
 	r.idle = make(map[string]map[*sessionState]struct{})
 	preparations := r.closePendingPreparationsLocked()
+	executors := r.closeIdleExecutorsLocked()
 	r.mu.Unlock()
+	r.closeIdleExecutors(executors)
 	for _, p := range preparations {
 		go func() { defer r.shutdownWG.Done(); r.closePreparationResource(p) }()
 	}

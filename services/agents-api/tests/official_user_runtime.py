@@ -43,7 +43,9 @@ def _prompt_deadline():
         signal.signal(signal.SIGALRM, previous)
 
 
-def run_acceptance(client, foreign, http, session, runtime, evidence_path, secret_markers=()):
+def run_acceptance(client, foreign, http, session, runtime, evidence_path, secret_markers=(),
+                   expected_environment_type="self_hosted",
+                   protected_credential_path="/home/runtime/.oac/daemon/executor-key.json", turn_observer=None):
     """Return a safe report after real execution; raise on any failed assertion."""
     assert threading.current_thread() is threading.main_thread(), "Run acceptance on the main thread"
     pin = json.loads((Path(__file__).resolve().parents[3] / "contracts/agents-api/upstream.json").read_text())
@@ -71,7 +73,7 @@ def run_acceptance(client, foreign, http, session, runtime, evidence_path, secre
     outputs = {"/workspace/outputs/a.bin": bytes(range(256)),
                "/workspace/outputs/b.txt": ("native-user-runtime-" + nonce + "\n").encode()}
     artifacts = {}
-    private_paths = ["/home/runtime/.oac/daemon/executor-key.json",
+    private_paths = [protected_credential_path,
                      "/home/runtime/.oac/daemon/.user-runtime-isolation-canary",
                      "/environment/staging/.user-runtime-isolation-canary"]
 
@@ -149,6 +151,7 @@ def run_acceptance(client, foreign, http, session, runtime, evidence_path, secre
 
     def run_turn(text, number, cancellation=False):
         observed, stop, requested = [], threading.Event(), threading.Event()
+        submitted_at, first_text_at, terminal_at = None, None, None
         cancel_key = nonce + "-cancel"
 
         def cancel_running():
@@ -165,6 +168,7 @@ def run_acceptance(client, foreign, http, session, runtime, evidence_path, secre
             raise AssertionError("Cancellation ended before observing native effects")
 
         def consume(stream, journal, cancelling=None):
+            nonlocal first_text_at, terminal_at
             for event in stream:
                 value = event.to_dict()
                 journal.write(json.dumps(redact(value)) + "\n")
@@ -172,6 +176,10 @@ def run_acceptance(client, foreign, http, session, runtime, evidence_path, secre
                 safe(value)
                 observed.append(value)
                 kind = value["type"]
+                if kind == "agent.session.turn.output_text.delta" and first_text_at is None and value.get("delta"):
+                    first_text_at = time.monotonic()
+                if kind in ("agent.session.turn.completed", "agent.session.turn.cancelled", "agent.session.turn.failed"):
+                    terminal_at = time.monotonic()
                 assert kind not in ("error", "agent.session.failed", "agent.session.turn.failed"), "Native execution failed"
                 if cancelling is not None and cancelling.done():
                     cancelling.result()
@@ -194,6 +202,7 @@ def run_acceptance(client, foreign, http, session, runtime, evidence_path, secre
             with _prompt_deadline(), path.open("w") as journal:
                 path.chmod(0o600)
                 with sessions.events.stream(sid, timeout=240) as stream:
+                    submitted_at = time.monotonic()
                     sessions.events.create(sid, events=[{"type": "agent.session.input.message", "input": [
                         {"role": "user", "content": [{"type": "input_text", "text": text}]}]}], idempotency_key=nonce + "-turn-" + str(number))
                     if cancellation:
@@ -216,7 +225,11 @@ def run_acceptance(client, foreign, http, session, runtime, evidence_path, secre
             assert current, "Native Turn has no public Items"
             if not cancellation:
                 assert all(item.get("status") not in ("failed", "incomplete", "in_progress") for item in current), "Completed Turn contains failed native work"
-            report["turns"].append({"id": turn.id, "status": turn.status, "event_count": len(observed)})
+            report["turns"].append({"id": turn.id, "status": turn.status, "event_count": len(observed),
+                                    "input_to_first_text_ms": round((first_text_at - submitted_at) * 1000, 3) if first_text_at is not None else None,
+                                    "input_to_terminal_ms": round((terminal_at - submitted_at) * 1000, 3) if terminal_at is not None else None})
+            if turn_observer is not None:
+                report["turns"][-1]["runtime_observation"] = safe(turn_observer(number, turn.id))
             return turn, current
         except BaseException:
             # No model request is retried; an already started tool is cancelled for cleanup.
@@ -236,7 +249,8 @@ def run_acceptance(client, foreign, http, session, runtime, evidence_path, secre
         safe([item.to_dict() for item in values])
 
     try:
-        assert session.environment.type == "self_hosted" and session.environment.workspace_directory == "/workspace"
+        assert expected_environment_type in ("self_hosted", "openai_hosted")
+        assert session.environment.type == expected_environment_type and session.environment.workspace_directory == "/workspace"
         assert client.beta.agents.environments.retrieve(eid).status == "connected", "Runtime is not connected"
         assert not list(sessions.turns.list(sid)) and not list(sessions.items.list(sid)), "Use an unused Session"
         assert not list(sessions.artifacts.list(sid)), "Use a Session without existing Artifacts"
@@ -299,6 +313,12 @@ def run_acceptance(client, foreign, http, session, runtime, evidence_path, secre
             pass
         else:
             raise AssertionError("Foreign tenant accessed SDK Items")
+        warm, items = run_turn("Return the entire exact conversation-only remember- token from our previous turn, including its prefix. "
+                               "Do not use tools, read files, or repeat any earlier command.", 2)
+        assert memory in answer(items), "Warm continuation lost native conversation history"
+        assert runtime.read(prefix + "-published") == b"published\n", "Warm continuation repeated side effects"
+        check_artifacts()
+        report["checks"].append("ordinary_warm_turn_preserves_history_and_effect_counts")
         committed = snapshot_items("before-restart")
         report["checks"].append("native_outputs_files_artifacts_items_and_tenant_isolation")
         runtime.restart()
@@ -307,7 +327,7 @@ def run_acceptance(client, foreign, http, session, runtime, evidence_path, secre
         assert snapshot_items("after-restart") == committed, "Restart changed committed Items"
         second, items = run_turn("Run exactly `python3 " + prefix + "-recover.py` once with your native shell tool; do not edit or retry it. "
                                 "Then return the entire exact conversation-only remember- token from our previous turn, including its prefix. "
-                                "Do not look for the token in files or rerun any earlier command.", 2)
+                                "Do not look for the token in files or rerun any earlier command.", 3)
         assert any(item.get("type") == "command_execution" and item.get("status") == "completed" and prefix + "-recover.py" in item.get("command", "") for item in items), "Missing recovered native isolation command"
         isolation_proof("recovered")
         assert memory in answer(items), "Cold continuation lost native conversation history"
@@ -316,18 +336,18 @@ def run_acceptance(client, foreign, http, session, runtime, evidence_path, secre
         check_artifacts()
         report["checks"].append("runtime_and_core_restart_preserve_history_and_outputs")
         third, items = run_turn("Use your native shell tool to run exactly `python3 " + prefix + "-hold.py` once and wait in the foreground. "
-                                "It intentionally runs until cancelled. Do not background, delegate, retry, edit the script, or restart the command.", 3, cancellation=True)
+                                "It intentionally runs until cancelled. Do not background, delegate, retry, edit the script, or restart the command.", 4, cancellation=True)
         commands = [item for item in items if item.get("type") == "command_execution" and prefix + "-hold.py" in item.get("command", "")]
         assert len(commands) == 1 and commands[0].get("status") in ("failed", "incomplete"), "Cancelled command lost its native outcome"
         stopped = runtime.read(ticks)
         time.sleep(2)
         assert runtime.read(ticks) == stopped and runtime.read(starts) == b"started\n", "Effects continued after cancellation settled"
         sessions.events.create(sid, events=[{"type": "agent.session.input.cancel"}], idempotency_key=nonce + "-cancel")
-        assert len(list(sessions.turns.list(sid))) == 3, "Duplicate cancellation created work"
+        assert len(list(sessions.turns.list(sid))) == 4, "Duplicate cancellation created work"
         check_artifacts()
         fourth, items = run_turn("Continue after the cancelled command. Never restart it or rerun the publish script. "
                                  "Run exactly `python3 " + prefix + "-resume.py` once with your native shell tool, without retries. "
-                                 "Then return the entire original conversation-only remember- token, including its prefix.", 4)
+                                 "Then return the entire original conversation-only remember- token, including its prefix.", 5)
         assert any(item.get("type") == "command_execution" and item.get("status") == "completed" and prefix + "-resume.py" in item.get("command", "") for item in items), "Missing resumed native command observation"
         assert memory in answer(items) and runtime.read(prefix + "-resumed") == b"resumed\n", "Post-cancel continuation failed"
         assert runtime.read(starts) == b"started\n" and runtime.read(ticks) == stopped, "Continuation repeated cancelled effects"

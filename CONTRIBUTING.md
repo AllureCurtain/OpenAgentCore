@@ -473,7 +473,7 @@ forwarding. The explicit daemon-executor decision supersedes the previous native
 executor interoperability requirement. The superseded execution route is removed;
 retain reusable filesystem helpers,
 necessary regressions and historical evidence without a compatibility layer.
-The private daemon wire protocol is 0.5.0. Initial, prepared and active input use
+The private daemon wire protocol is 0.6.0. Initial, prepared and active input use
 the same ordered MessageInput contract, replacing scalar prompts and attachments.
 User-message boundaries and text/image order remain intact through Core and the
 Runtime wire; adapters own native conversion and receipt aggregation. Text-only
@@ -485,8 +485,8 @@ input list and uses blank-line separators between messages; this does not preser
 independent native user-message boundaries. No old wire fallback is maintained.
 Deploy Core and daemon together; the existing major/minor WebSocket check rejects
 older major/minor peers before dispatch rather than ignoring removed fields.
-The independently packaged Claude bridge uses protocol 2 for ordered input;
-readiness rejects packages reporting the old string-input protocol.
+The independently packaged Claude bridge uses protocol 3 for a prepared Executor
+and separately identified Turns; readiness rejects other protocol versions.
 Image-bearing messages require a qualified profile/placement before persistence
 and image support from the selected Runtime before native delivery. These checks
 apply to that operation only; ordinary text retains offline queueing. Initial,
@@ -1032,7 +1032,7 @@ a chain of old writable disks across suspension cycles. No Kubernetes, distribut
 scheduler or snapshot replication belongs in this V1 profile.
 
 Queued work and live Environment file access request wake. History and published
-artifact reads do not. Planned suspension uses private daemon wire 0.5.0 with an
+artifact reads do not. Planned suspension uses private daemon wire 0.6.0 with an
 Environment and suspension token; a PID/start-time fenced local control signal
 wakes the parked daemon, which reauthenticates before admitting new work. A
 transient disconnect before confirmation retries the same armed suspension with
@@ -1561,103 +1561,106 @@ reconciles old connection observations before admitting new ones. A connection o
 heartbeat does not prove native readiness or process quiescence. Failed or stale
 observations cannot establish a current connection.
 
-Preparation resolves the immutable local binding and holds the existing native
-resource without creating model work. Start transfers that resource once; failed
-start and abandoned preparation retain the established cleanup rules. Strict resume
-uses the bound native history and never falls back to a new Session.
+A Session owns one reusable Executor in its connected Runtime. A Turn owns one
+input execution, its output stream and its cancellation. `agent.ExecutorFactory`
+prepares the fixed configuration; `Executor.StartTurn` creates a new `agent.Turn`
+without replacing healthy native resources. Normal completion settles only the
+Turn. `Executor.Close` releases native resources on idle expiry, environment
+shutdown or confirmed invalidation. Core does not keep a second Executor cache.
+The same lifecycle applies after managed or user-managed environments connect,
+and to the qualified no-environment profiles. Resource management owns machine
+selection, allocation and Environment creation/reclamation. Closing an Executor
+does not release the Environment allocation or delete its workspace. Environment
+reclamation explicitly coordinates with Runtime execution. Connection, installed
+capability snapshot, Session Executor and Turn retain separate lifetimes.
 
-Every executable preparation must implement `PreparedCancellation`; read-only
-preparations may implement only `Prepared`. The Router rejects and closes an
-executable preparation before `ready` when that contract is missing. Codex fences
-future Start under the transfer lock; unused resources use preparation teardown,
-while transferred resources use the existing Session cancellation path inside the
-adapter. `Close` remains inert after transfer.
-`CancellationOutcome` exposes observed content, Usage and verified native identity;
-an unstarted resource has no measured Usage or observed resume identity. This is
-best-effort cancellation and an observed snapshot, not immutable final output,
-notification drain, caller-deadline compliance or remote process quiescence.
-From Start admission onward, the exact `PreparedCancellation` object is the sole
-release target: a late Session never receives fallback `Cancel`, and the Router
-never falls back to preparation `Close` or owner-context cancellation. Successful
-`Cancel` means local cleanup is complete and no more output writes can occur. A
-failed or timed-out call returns without waiting for output, retains execution
-ownership, and permits only a later explicit serialized retry on that same object.
-Before publication, failed cleanup also retains the preparation slot. Successful
-publication permanently transfers resource tracking to the Run; subsequent release
-does not restore preparation ownership or make its old handle cancel that Run.
-Forwarded permission and user-choice observations from that cancelled handoff do
-not register actionable interactions. Codex prepared cancellation also waits for
-the transferred Session's local cleanup, which can finish after output closes.
-Codex cancellation has one continuing native owner: caller deadlines bound only
-their wait, leaving child observation and cleanup alive for an explicit retry.
-Only observed child terminal facts can settle the child; actual observation
-failures remain failures. Native process-exit confirmation remains retryable.
-One prepared-output consumer starts before `Prepared.Start`, so native output beyond
-the 64-frame channel capacity cannot deadlock Start. It retains the first terminal
-frame, drains later output, and forwards accepted frames before the observed cancellation
-outcome receipt. Missing capability, failed cancellation or failed forwarding cannot
-produce an applied receipt. An unused resource may supply an empty observed outcome;
-the Router never fabricates one.
+The Runtime binds its Executor record to Session, Environment, connection and
+immutable execution configuration. Resume identity and prior-Turn recovery flags
+are continuity assertions, not configuration changes. A supplied native identity
+must match the retained owner; exact-history recovery never starts a new root
+when existing history is required. A configuration conflict is an error, not a
+hot switch. Lost connections retire their owners and handles. Old timers, output
+and cancellation cannot affect replacements.
 
-The returned Session remains private until the `started` status send succeeds. The
-handoff has one permanent release claim, one current native attempt and one
-success-only settlement. Function results, permission decisions, user-choice
-decisions and steering admitted before the claim hold the same operation barrier
-through native submission, replay bookkeeping and receipt delivery. Natural
-completion waits for Start publication before cancellation; an abort wakes that
-same attempt and may fence a concurrent Start. The initial started-status send is
-bounded by the preparation deadline, which is rechecked at publication commit.
-Delayed expiry callbacks cannot cancel a successfully published handoff. The successful attempt waits for Start and the sole output
-consumer, then forwards the retained terminal frame and removes the Run. Internal
-paths join the current attempt; only an explicit cancel, Release, expiry, device
-shutdown or later Router Shutdown may retry a failed attempt. Workspace reads require
-a published, open Session but keep their independent bounded lifecycle.
+Each Turn receives a fresh wrapper, output channel and receipt state. Optional
+steering, functions, permissions and user-choice interfaces belong to that fixed
+Turn. Native callbacks capture the originating Turn before asynchronous work;
+late events cannot be assigned to whichever Turn happens to be active. Native
+processes, query/transport connections, fixed capability configuration and native
+Session identity belong to the Executor. Do not reset completed `sync.Once`
+values or repurpose an old Turn object.
 
-Receipt settlement waits at most ten seconds, with a separate five-second send
-budget and the existing gateway settlement deadline. A timeout does not free the
-resource or stop tracking late cleanup. Shutdown cancels receipt waits while owned
-Start/cleanup work remains tracked. This ordering covers cancellation received while
-Start is pending; ordinary post-transfer cancellation, complete native output and
-remote process exit retain their separate limitations.
+`StartTurn` returning nil guarantees that no native input was submitted and the
+output channel was not retained. The Runtime then closes that channel. Once input
+may have been submitted, return a non-nil Turn even with an error: the Turn owns
+exactly-once output closure and remains tracked until settlement. Unknown input
+is never replayed. A definite `executor_unavailable` Start rejection permits one
+common recovery attempt only after the previous Executor has been closed and no
+input was submitted. Recheck the same physical peer and current authorization.
 
-The private daemon preparation controls reuse execution configuration but reject
-input, RunID, Conversation, attachments and product authoring. The local profile
-requires an exact Environment binding, stable state key, strict resume and completion
-release. Its separate capability is registered through an execution-only factory
-and preserved through the product registry wrapper and heartbeat mapping. Native
-details remain inside the adapter; this private profile does not narrow upstream.
+`Turn.Cancel` targets only that Turn and does not close a healthy Executor.
+`AwaitSettlement` applies after both natural completion and cancellation. Success
+means output can no longer be written and the Turn's native events, input,
+functions, interactions and child work have settled. `Reusable=true` additionally
+confirms that the native owner can accept the next Turn. `Reusable=false` requires
+a reason and subsequent confirmed Executor close. An error means settlement is
+unconfirmed; it cannot free ownership or capacity. Caller deadlines stop waiting,
+not tracked cleanup. Retry the same cleanup target serially. Failed cleanup
+blocks replacement and retains its resource slot.
 
-Preparation request IDs correlate only control responses. The daemon returns a
-fresh opaque handle before slow work; Start supplies that handle and the actual
-RunID/prompt. Handles belong to one daemon connection. Gateway preparation
-subscriptions do not register Runs. Per-handle revisions order asynchronous status
-snapshots; reject responses describe control errors without inventing run events.
-At most four native preparations may be preparing, ready, starting or closing.
-Start admission expires five minutes after acceptance; retries do not extend it.
-Failed cleanup retains the native resource and its capacity until Close succeeds;
-terminal handles with retained resources cannot be pruned or started again.
-At most 64 request records are retained; retired request IDs may allocate a fresh
-handle, while old handles cannot consume replacements. This is not durable
-exactly-once preparation or cross-connection recovery.
+One output consumer starts before native Start, drains the bounded 64-frame
+channel, and retains the terminal observation until Start publication, Turn
+settlement and admitted operation receipts finish. Natural Done never calls
+Cancel. Input, function and interaction admission close before settlement, and
+operations already admitted hold their barrier through native receipts and
+outbound acknowledgement. Only then forward Done or an applied cancellation
+receipt. Preserve the ten-second settlement wait and separate five-second receipt
+send budget; timeout is not proof of quiescence. The observed cancellation outcome
+retains native identity, Usage and output without fabricating missing evidence.
 
-Preparation and Start execute outside the receive loop and router lock, with
-tracked lifetime work. Start reserves the real RunID and fixed cancellation target
-before native work; cancellation in that phase uses the adapter contract across
-the transfer. A late result cannot resurrect released ownership. Shutdown claims
-or retries every prepared release under the lock before closing its cancellation
-signal. A failed native attempt returns Shutdown without waiting on an output
-consumer that may still be blocked; a later Shutdown retries the same target.
-Successful publication stops the preparation deadline and uses the same prepared
-output consumer and completion release;
-later preparation Release cannot cancel that Run. Released/expired status makes
-the handle unusable; asynchronous native cleanup still counts toward capacity and
-does not promise immediate OS quiescence. Release retries retained cleanup.
-Concurrent Shutdown calls join one tracked attempt within their caller deadlines;
-a later call retries failed preparation cleanup and reports any remaining error.
-A caller timeout does not discard ownership or repeat in-flight cleanup. These
-records remain connection-local, not a persistent remote retirement fence.
-The public idle-text path uses this
-admission/start wiring; complete Environment lifecycle remains required work.
+Private preparation controls reserve a per-Turn admission, not a new Executor.
+They carry an explicit Session identity and immutable configuration without model
+input or Run identity. A fresh request returns a connection-local admission handle
+and the owning Executor ID. Start supplies both identities and its actual Run ID
+and ordered MessageInput. Per-admission revisions order status observations;
+rejections describe control errors without inventing Run events. A reused healthy
+Executor returns ready without native preparation. An admission release abandons
+that admission; it does not close the Session's healthy idle Executor or cancel a
+later Turn. Cancellation uses the exact Run identity.
+
+Preparations and Start execute outside the receive loop and Router lock. Admission
+expires after five minutes; retries do not extend that deadline. Bound active
+preparation and execution separately from idle retained resources, and count
+closing or uncertain resources until cleanup succeeds. At most 64 admission
+records are retained; old handles never consume replacement admissions. Idle expiry
+is a Runtime resource policy, not Core active-Turn concurrency. Shutdown tracks and
+closes active and idle Executors, retains failed close targets, and allows a later
+serialized retry. Ordinary disconnection closes the failed transport and keeps
+the exact Router until shutdown succeeds. A wait timeout or failed cleanup cannot
+authorize reconnect; process shutdown also keeps waiting rather than silently
+discarding owned native resources. These records are connection-local, not durable
+input replay.
+
+Read-only workspace preparations remain separate bounded filesystem operations;
+they cannot start model work. Workspace operations retain exact binding and
+settlement rules across Turn boundaries and Executor closure.
+
+Successful input commits send a coalesced hint to the existing Worker scheduler.
+The scheduler keeps lease, capacity, cursor fairness and per-Session ownership
+checks; a hint does not admit work itself. If capacity is occupied, preserve one
+rescan for completion without turning failed preparation into a busy retry loop.
+HTTP readiness waits and active input delivery subscribe before reading relevant
+state and wake after committed promotion or input. They recheck storage after each
+hint. Polling remains the fallback for external writers, expiry and lost hints;
+notifications contain no execution authority and no durable input data.
+
+Core readiness, Start acknowledgement and input-to-first-text logs use a single
+process monotonic clock. Start acknowledgement confirms adapter ownership, not
+model input consumption.
+Runtime logs identify Executor creation, reuse, idle and close independently of
+Turn completion. Do not call these durations model-only latency or subtract clocks
+from different machines. Native process creation and same-owner successive Turns,
+real provider results and same-condition timings must substantiate reuse claims.
 
 The Dispatcher prepares pending Environment input only on its exact enrolled or
 managed device. Preserve the same physical peer and preparation handle through
@@ -2579,31 +2582,28 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   require native steering receipts. Commit terminal outcome and native Session ID
   together under the admission lock; unapplied messages prevent successful completion.
   Resolve credentials separately from the immutable non-secret snapshot.
-- Internal execution requires the advertised `durable_turns` engine capability,
-  strict resume, and optional cancellation receipts
-  and `release_on_completion` support. Reject unadvertised peers before claiming;
-  failed strict resumes must not fall back to a new native thread. Release the native writer before forwarding
-  completion, so the next Turn can resume its durable native ID. For
-  release_on_completion Runs, close new steering admission and finish all
-  existing steering receipt sends before releasing the executor and forwarding
-  Done. Cached input identities and conflicts remain readable while completing;
+- Internal execution requires advertised durable Turns, strict resume, preparation,
+  applied input receipts and the qualified operation capabilities. Reject
+  unadvertised peers before claiming; failed strict resume cannot start unrelated
+  history. A completed Turn closes steering admission, settles existing native
+  operations and receipt sends, and closes its output before the retained Executor
+  can accept another Turn. Normal completion does not cancel the Executor.
+  Cached input identities and conflicts remain readable while completing;
   queue/write success is not consumption. The receipt worker stays busy through
   its send, and router shutdown cancels its native and transport waits.
-  `durable_input_receipts` is required before execution binding/claiming. The
-  per-input `durable_receipt` opt-in requires release-on-completion and a phased
-  adapter. Its ten-second transport timer stops only after a complete native write;
-  a separate `written` acknowledgement stops the API's thirty-second delivery timer.
-  Neither that phase nor legacy `in_flight` advances the input cursor. Await final
-  native acceptance/consumption under the Run lifetime without automatic redelivery.
-  Receipt sends retain a separate five-second shutdown-aware context, and Done
-  retains a fifteen-second final settlement bound. Once cancellation is sent, its
-  receipt owns the terminal outcome even if an input becomes unknown first.
-  Calls without the opt-in retain their existing response deadlines. Existing product
-  requests retain their default idle-process policy. Native history still requires
-  the device's persisted engine files; IDs alone cannot restore deleted history.
-  Cancellation receipts carry the stopped engine's continuity snapshot when no
-  Done is emitted. Preserve separately reported usage on failure; do not add the
-  same counters again when Done also includes them.
+  The per-input `durable_receipt` opt-in requires a phased adapter. Its ten-second
+  transport timer stops only after a complete native write; a separate `written`
+  acknowledgement stops the API's thirty-second delivery timer. Neither phase
+  advances the input cursor. Await final native acceptance/consumption under the
+  Turn lifetime without automatic redelivery. Receipt sends retain a separate
+  five-second shutdown-aware context, and Done retains a fifteen-second final
+  settlement bound. Once cancellation is sent, its receipt owns the terminal
+  outcome even if an input becomes unknown first. Calls without the opt-in retain
+  their existing response deadlines. Native history still requires the device's
+  persisted engine files; IDs alone cannot restore deleted history. Cancellation
+  receipts carry the stopped Turn's confirmed continuity snapshot when no Done is
+  emitted. Preserve separately reported usage on failure; do not add the same
+  counters again when Done also includes them.
   Usage frames carry cumulative snapshots for the current execution, not deltas.
   Adapters publish observed snapshots promptly through the same ordered stream;
   waiting for Done unnecessarily loses known measurements if the Runtime stops.
@@ -2983,14 +2983,14 @@ Owned output pipes remain readable after the leader exits. Consumers must drain
 stdout and stderr before calling `Wait`, which joins the cached process result
 and closes the readers. `Done` reports leader reaping and group cleanup signals;
 it is not a native execution receipt or proof of persisted history. SDK adapters
-must close their query, await their native child and drain observations before
-publishing completion. Process groups are lifecycle supervision, not OS isolation
+must settle each Turn and drain its observations before publishing completion.
+Executor close additionally closes the query and awaits the native child. Process groups are lifecycle supervision, not OS isolation
 or containment of descendants that deliberately leave the group.
 
 ### Harness qualification and onboarding
 
 Codex, Claude and future harnesses have equal architectural status. The common
-Runtime wire protocol and Factory/Session/Prepared interfaces own lifecycle,
+Runtime wire protocol and Executor/Turn interfaces own lifecycle,
 input receipts, cancellation, recovery and resource access; each native adapter
 retains its implementation and model/tool loop. A new engine supplies an adapter,
 a qualified profile in `services/agents-api/internal/engine`, registration and
@@ -3038,9 +3038,12 @@ workspace, functions or MCP. Enabled Subagents use the separately qualified
 common observation path below. Native configuration disables
 file/shell authority and external
 capability discovery; the child receives a private Session home and a restricted
-environment. Active-input application requires a native ACP receipt, cancellation
-settles the process and output, and continuation requires the exact owned native
-history. Do not infer history IDs or qualify hosted execution from this text
+environment. Active-input application requires a native ACP receipt. Normal
+Turns retain one ACP connection and native Session. Cancellation requires native
+root and child completion evidence before reuse. Without a qualified root-state
+reader, the ACP cancellation response is insufficient: stop the invalid native
+process and wait for its exit before settling the Turn as non-reusable. Common
+Runtime recovery then loads the exact owned native history in a new Executor. Do not infer history IDs or qualify hosted execution from this text
 profile. See [deployment and acceptance](services/agents-api/deploy/mcode/README.md).
 
 The MiniMax workspace profile builds one CLI from the fixed upstream source and
@@ -3190,11 +3193,11 @@ qualification limits are recorded in [the coverage note](contracts/agents-api/st
 ### Claude SDK adapter foundation
 
 `packages/claude-sdk-adapter` privately owns the pinned official TypeScript SDK
-and native message translation. The Go `claudesdk.NewFactory` uses the shared
+and native message translation. The Go `claudesdk.NewExecutorFactory` uses the shared
 owned process runner and emits the existing daemon delta/error/Done frames.
-The SDK owns the model loop. Its narrow stdio protocol carries a start request,
-text deltas, function calls/results/receipts, active text input/receipts, usage
-snapshots and one terminal result/error; native translation stays inside the adapter.
+The SDK owns the model loop. Its narrow stdio protocol carries Executor preparation and identified Turn starts,
+text deltas, function calls/results/receipts, active input/receipts, usage snapshots
+and terminal result/error plus settlement; native translation stays inside the adapter.
 With `observe_messages`, it also emits the existing neutral `output_message`
 start/completion snapshots and tags deltas with the native Messages API message
 ID, not the SDK event UUID. Text blocks in one native message share that identity.
@@ -3202,7 +3205,8 @@ The SDK's per-block assistant snapshots replace draft block text; only native
 `message_stop` completes the message, without replaying its text as another delta.
 Thinking/tool-only messages produce no text Items; interrupted messages retain
 their streamed partial text. No phase is inferred from the final result.
-SDK/native child release and output draining precede daemon completion.
+Turn-owned native work and output draining precede reuse. Executor close releases
+the SDK Query and native process.
 
 `claudesdk.Config.Workspace` is a private, trusted operator binding for one
 qualified placement. It enables native Bash/Read/Edit and declared host functions
@@ -3237,50 +3241,39 @@ public preparation, shared placement quotas, command Items and Files ownership.
 `TestLiveClaudeWorkspaceFactory` is explicit real-provider acceptance inside a
 qualified placement, including effects, cancellation and same-history continuation.
 
-The private workspace bridge also accepts `prepare` without a prompt. It freezes
+The private bridge accepts `executor_prepare` without model input. It freezes
 validated configuration and resume identity, checks required history, and retains
-one native process through the pinned SDK's `startup`/`query` API. Preparation
-requires initialization and acknowledgement of the required hooks while the input
-iterator remains empty. Its `prepared` receipt permits one later `start` containing
-only the initial prompt; configuration replacement, premature or duplicate start
-is rejected. Native Session identity and actual tool inventory are still checked
-at execution initialization before `input_ready`. Existing direct execution uses
-the same observation and completion path.
+one native process and SDK Query across Turns. Preparation requires initialization
+and acknowledgement of required hooks while the input iterator remains empty.
+An `executor_ready` receipt permits later `turn_start` messages containing only
+Turn identity and ordered input; configuration replacement and concurrent starts
+are rejected. Every Turn event carries its originating `turn_id`. Native Session
+identity and actual tool inventory are checked before `input_ready`.
 
-Unused EOF, owner signals, invalid control input and native exit release owned
-resources before a terminal event. The private `workspace_prepare` runtime feature
-identifies this bridge contract only. It does not register daemon preparation,
-enable public admission, or project public Environment readiness. Preparation may
-write native runtime metadata outside the workspace and perform startup traffic;
-it does not prove provider authentication, complete sandbox health or tenant
-placement authorization.
+Each Turn ends with a result/error and `turn_settled`, independently of process
+exit. The outer input iterator remains open for later Turns. `turn_cancel` invokes
+the native interrupt control for that exact Turn. Unconfirmed input, native child
+work or queue state invalidates the Executor and requires close before replacement.
+EOF, owner signals and invalid control input close owned resources. Preparation
+may write native metadata and perform startup traffic; readiness does not prove
+provider authentication, complete sandbox health or placement authorization.
 
-`claudesdk.NewPreparationFactory` privately binds that workspace bridge to
-`agent.Prepared`; the existing workspace factory uses the same Prepare/Start path.
-Preparation receives configuration and required resume identity without a RunID or
-prompt, checks the installed `workspace_prepare` feature, and owns the process until
-one successful Start transfers it. The selected configuration and environment are
-fixed before returning; a later Start supplies only its actual RunID, prompt and
-output channel. Early preparation failure returns without an executing Session or
-fabricated completion. The non-workspace direct factory keeps its existing path.
+`claudesdk.NewExecutorFactory` binds this bridge to `agent.Executor`. Direct-call
+and read-only preparation wrappers delegate to the same implementation. Runtime
+execution uses the Executor registry for both none and workspace configurations.
+Its owner context spans all Turns; a Turn's caller cannot replace fixed resources.
+A failed preparation returns its Executor when cleanup remains unconfirmed.
+Installed runtime checks are cached by package/file identity, while capability
+and request validation still run for each Executor configuration.
 
-The preparation owner context spans the eventual Session. Start's context bounds
-that operation only, and Close is inert after successful transfer. Abandoned or
-failed preparation, owner cancellation and native exit release owned work. The
-same output consumer and cancellation settlement follow the resource across Start;
-an unstarted preparation has no measured Usage or observed native Session identity.
-A cancellation deadline cannot establish cleanup completion while cleanup remains
-pending. This adapter ownership seam does not register a daemon capability or
-supply per-Session placement authorization, public admission or an idle Files owner.
-
-The optional private `agent.WorkspaceReader` on this preparation and transferred
-Session requires the packaged `workspace_read` feature. It sends bounded relative
+The optional private `agent.WorkspaceReader` on this Executor and its delegated wrappers
+requires the packaged `workspace_read` feature. It sends bounded relative
 paths to that same SDK Query's native `readFile` control. Only the adapter combines
 the path with the frozen workspace root; callers cannot replace the placement.
 The pinned native read handler awaits file-handle close before its successful
 base64 response. The adapter validates bytes and truncation, bounds each result
 to 1 MiB and each request to 8 KiB, and admits one read at a time. Its continuous
-bridge output consumer retains read receipts during preparation and across Start.
+bridge output consumer retains read receipts during preparation and across Turns.
 Caller cancellation detaches observation without cancelling the Run or discarding
 an admitted waiter; its original deadline still applies. Owner closure stops
 admission. Native null, malformed receipts, timeout and interrupted delivery remain
@@ -3293,7 +3286,7 @@ before input and during real execution, plus effects before cancellation and rea
 on fresh-process history continuation.
 
 The optional private `agent.WorkspaceDirectoryLister` requires the Linux-only
-`workspace_directory` bridge feature on the same preparation or transferred Session.
+`workspace_directory` bridge feature on the same Executor.
 The pinned SDK has no directory-enumeration control; its fuzzy file suggestions are
 not an inventory. This narrow adapter operation therefore reads metadata inside the
 already qualified co-located mount/process boundary. It pins the configured workspace
@@ -3310,7 +3303,7 @@ ordering, snapshots, recursion, or public pagination. Missing and permission err
 are returned only from distinguishable filesystem outcomes; unknown results stop the
 owner. Each operation closes its directory and intermediate descriptors before a
 successful receipt; the root descriptor remains owned until bridge release.
-Caller cancellation, Start transfer and owner shutdown retain the existing workspace
+Caller cancellation, Turn transitions and owner shutdown retain the existing workspace
 read settlement rules. This adapter gap fill alone does not enable public Claude Files; the dedicated
 Runtime integration supplies public placement and ownership.
 
@@ -3516,9 +3509,10 @@ also retain all snapshots in order under `claude_sdk_results`. Main-loop `usage`
 is per native turn, while query-pipeline `modelUsage` and estimated `total_cost_usd`
 are cumulative within the query. Retain subtype/error provenance and earlier
 snapshots even when a later failure reports zero counters. Reuse the latest full
-snapshot set in Usage and Done; never sum cumulative measurements. Each factory
-invocation owns one SDK query, including cold resume, so no prior query counters
-are carried forward. Missing native results do not imply zero consumption. SDK estimates stay
+snapshot set in Usage and Done; never sum cumulative measurements. Each Executor owns one SDK query, including cold resume. Raw snapshots explicitly
+identify per-native-turn usage versus query-cumulative model usage and cost. A new
+Turn has a fresh snapshot list, but query totals may include earlier Turns; never
+represent those totals as consumption by the current Turn. Missing native results do not imply zero consumption. SDK estimates stay
 in raw evidence, outside the billed cost field; do not select an arbitrary model
 or invent missing public token breakdowns. The API does not parse native counters.
 Precise public usage projection, unreported costs and crash/partial accounting
@@ -3534,18 +3528,19 @@ confirm applied input. Typed mid-turn folds may appear only on the native result
 Preserve that receipt even when the result reports failure. Check pending functions
 after the query drains: the SDK may dispatch later-turn callbacks before the
 earlier result handler finishes.
-Keep the iterator open until every submitted input has a consuming result, even
-when an earlier result reports an empty native queue. Close admission before
-releasing final receipt waiters; drain and release the SDK/native processes before
-one daemon Done. Cancellation resolves unconfirmed pending receipts as unknown and ends the
-owned execution. Successful private SDK Cancel waits for owned-process exit and
-stdout/stderr drain, then exposes the same settled CancellationOutcome as Done.
-It retains native identity verified at input readiness, partial text and observed
-Usage even on cancellation/failure; requested resume identity alone is not evidence.
-A caller deadline before settlement reports failure/unknown, while cleanup continues.
-Settlement precedes terminal publication so router completion cleanup cannot wait
-on its own Done consumer. Cancellation releases intermediate event backpressure;
-the settled outcome remains readable even when connection loss prevents publication.
+Keep Turn input admission open until every submitted input has a consuming result,
+even when an earlier result reports an empty native queue. Close admission before
+releasing final receipt waiters. The outer SDK iterator remains open across Turns.
+Cancellation resolves unconfirmed pending receipts as unknown and interrupts the
+exact native Turn. Successful Cancel requires confirmed Turn settlement; process
+exit alone cannot establish a successful cancellation. Reuse also requires an
+empty confirmed native queue and settled child work. Otherwise close the Executor.
+The settled CancellationOutcome retains verified native identity, partial text
+and observed Usage; a requested resume identity alone is not evidence. Caller
+wait expiry reports failure/unknown while cleanup retains ownership. Output
+backpressure cannot turn missing native facts into confirmed settlement. Closed
+Turn output precedes successful AwaitSettlement; the settled outcome remains
+readable when connection loss prevents publication.
 A receipt timeout after a full write preserves the process and pending identity
 without redelivery; a blocked write is cancelled and released.
 The private adapter permits one input awaiting consumption and at most 63 extra

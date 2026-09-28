@@ -16,7 +16,7 @@ func TestExecutionNegotiatesAndPersistsToolObservations(t *testing.T) {
 	ctx := context.Background()
 	input := h.message("observed", "run tools")
 	result := h.run(ctx, input.TurnID)
-	env := h.read(proto.TypePromptRequest)
+	env := h.read(testExecutionRequest)
 	var request proto.PromptRequestPayload
 	_ = env.DecodePayload(&request)
 	if !request.ObserveToolObservations || request.ObserveTools || request.ObserveMessages {

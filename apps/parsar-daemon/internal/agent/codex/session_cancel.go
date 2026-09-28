@@ -7,6 +7,9 @@ import (
 )
 
 func (s *Session) Cancel(ctx context.Context) error {
+	if s.executor != nil {
+		return s.cancelExecutorTurn(ctx)
+	}
 	s.cancelled.Store(true)
 	s.cancelOnce.Do(func() {
 		s.cancelReady = make(chan struct{})

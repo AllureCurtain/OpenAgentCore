@@ -19,7 +19,7 @@ func TestExecutionDurableInputReceiptLifetime(t *testing.T) {
 			defer cancel()
 			first := h.message("first", "initial")
 			result := h.run(ctx, first.TurnID)
-			h.read(proto.TypePromptRequest)
+			h.read(testExecutionRequest)
 			extra := h.message("extra", "additional")
 			var input proto.PromptSteerPayload
 			if err := h.read(proto.TypePromptSteer).DecodePayload(&input); err != nil || !input.DurableReceipt {
