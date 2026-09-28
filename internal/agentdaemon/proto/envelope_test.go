@@ -88,12 +88,17 @@ func TestVersionCompatible(t *testing.T) {
 		ok     bool
 	}{
 		{Version, true},    // exact match
-		{"0.7.99", true},   // patch drift OK
+		{"0.8.99", false},  // patch drift NOT OK
 		{"0.6.99", false},  // minor drift NOT OK
 		{"1.0.0", false},   // major drift NOT OK
 		{"", false},        // missing
 		{"garbage", false}, // unparseable
-		{"0.3", false},     // truncated
+		{"0.8", false},     // truncated
+		{"0.8.", false},
+		{"0.8.invalid", false},
+		{Version + "-dev", false},
+		{Version + "+build", false},
+		{" " + Version, false},
 	}
 	for _, tc := range cases {
 		if got := VersionCompatible(tc.client); got != tc.ok {

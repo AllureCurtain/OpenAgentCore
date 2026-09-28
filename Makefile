@@ -44,6 +44,11 @@ check-sqlc:
 check-go:
 	go test ./apps/parsar-daemon/... ./internal/... ./contracts/agents-api/... ./scripts/openapi-split -count=1
 
+.PHONY: check-runtime-contract
+check-runtime-contract:
+	go test ./internal/agentdaemon/proto ./internal/agentdaemon/gateway ./apps/parsar-daemon/internal/transport ./apps/parsar-daemon/internal/dispatch ./apps/parsar-daemon/internal/contracttest -count=1
+	go test ./services/agents-api/internal/execution -run '^TestRuntimeProtocol' -count=1
+
 build-daemon:
 	@set -e; output="$${OAC_DEV_HOME:-$$HOME/.oac}/build/daemon"; \
 	[[ "$$output" == /* ]] || { echo 'Daemon output directory must be absolute' >&2; exit 1; }; \

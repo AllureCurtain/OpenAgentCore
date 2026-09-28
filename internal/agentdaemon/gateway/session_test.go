@@ -206,7 +206,8 @@ func TestSession_DispatchDeliversToSubscriber(t *testing.T) {
 	sess.Start()
 	defer sess.Close("test done")
 
-	ch, err := sess.Subscribe("run-1")
+	sub, err := sess.SubscribeDurable("run-1")
+	ch := sub.Events
 	if err != nil {
 		t.Fatalf("Subscribe: %v", err)
 	}
@@ -231,7 +232,8 @@ func TestSession_DoneFrameAutoUnsubscribes(t *testing.T) {
 	sess.Start()
 	defer sess.Close("test done")
 
-	ch, _ := sess.Subscribe("run-1")
+	sub, _ := sess.SubscribeDurable("run-1")
+	ch := sub.Events
 	env, _ := proto.NewEnvelope(proto.TypeDone, "run-1", proto.DonePayload{Content: "ok"})
 	raw, _ := jsonMarshal(env)
 	conn.Feed(raw)
@@ -265,7 +267,8 @@ func TestSession_PermissionRequestIndexedInRegistry(t *testing.T) {
 	sess.Start()
 	defer sess.Close("test done")
 
-	ch, err := sess.Subscribe("run-1")
+	sub, err := sess.SubscribeDurable("run-1")
+	ch := sub.Events
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
@@ -299,34 +302,27 @@ func TestSession_PermissionRequestIndexedInRegistry(t *testing.T) {
 	}
 }
 
-func TestSession_CloseFansSyntheticErrorAndDone(t *testing.T) {
-	reg := NewRegistry()
-	conn := newFakeConn()
-	sess := NewSession(conn, "dev-1", "wks-1", "0.1.0", reg, nil)
-	sess.Start()
-
-	ch, _ := sess.Subscribe("run-1")
+func TestSession_CloseReportsUnknownWithoutExecutionEvents(t *testing.T) {
+	sess := NewSession(newFakeConn(), "device", "tenant", proto.Version, NewRegistry(), nil)
+	sub, err := sess.SubscribeDurable("run")
+	if err != nil {
+		t.Fatal(err)
+	}
 	sess.Close("simulated drop")
+	for env := range sub.Events {
+		t.Fatalf("disconnect fabricated execution event: %s", env.Type)
+	}
+	if !errors.Is(sub.Err(), ErrSessionClosed) {
+		t.Fatalf("missing transport error: %v", sub.Err())
+	}
+}
 
-	gotErr, gotDone := false, false
-	deadline := time.After(2 * time.Second)
-	for !gotErr || !gotDone {
-		select {
-		case env, ok := <-ch:
-			if !ok {
-				if !gotErr || !gotDone {
-					t.Fatalf("channel closed before delivering synthetic error+done (gotErr=%v gotDone=%v)", gotErr, gotDone)
-				}
-				return
-			}
-			switch env.Type {
-			case proto.TypeError:
-				gotErr = true
-			case proto.TypeDone:
-				gotDone = true
-			}
-		case <-deadline:
-			t.Fatalf("synthetic frames not delivered (gotErr=%v gotDone=%v)", gotErr, gotDone)
+func TestSession_NoCapabilitiesBeforeHeartbeat(t *testing.T) {
+	sess := NewSession(newFakeConn(), "device", "tenant", proto.Version, NewRegistry(), nil)
+	defer sess.Close("test done")
+	for _, kind := range []string{"claude_code", "codex", "contract"} {
+		if info, found, known := sess.AgentKindStatus(kind); found || known || info.Available {
+			t.Fatalf("unadvertised engine was available: %+v", info)
 		}
 	}
 }
@@ -443,33 +439,45 @@ func TestSession_HeartbeatPersistsSupportedAgentKinds(t *testing.T) {
 	}
 }
 
-func TestSession_HeartbeatInfersClaudeCodeFromLegacyFlag(t *testing.T) {
+func TestSession_HeartbeatDoesNotInferCapabilities(t *testing.T) {
 	reg := NewRegistry()
 	conn := newFakeConn()
 	heartbeat := newFakeHeartbeatStore()
-	sess := NewSession(conn, "dev-legacy", "wks-1", "0.1.0", reg, nil)
+	sess := NewSession(conn, "device", "tenant", proto.Version, reg, nil)
 	sess.heartbeat = heartbeat
 	sess.Start()
 	defer sess.Close("test done")
 
-	env, _ := proto.NewEnvelope(proto.TypeHeartbeat, "", proto.HeartbeatPayload{
-		Timestamp:       1710000100,
-		DaemonVersion:   "0.1.0-old",
-		ClaudeAvailable: true,
-	})
-	raw, _ := jsonMarshal(env)
-	conn.Feed(raw)
-
+	conn.Feed([]byte(`{"type":"heartbeat","payload":{"ts":1710000100,"claude_available":true}}`))
 	got := heartbeat.waitDaemonHeartbeat(t)
-	if len(got.SupportedAgentKinds) != 1 {
-		t.Fatalf("SupportedAgentKinds len = %d, want 1: %#v", len(got.SupportedAgentKinds), got.SupportedAgentKinds)
+	if len(got.SupportedAgentKinds) != 0 {
+		t.Fatalf("undeclared capabilities inferred: %#v", got.SupportedAgentKinds)
 	}
-	claude := got.SupportedAgentKinds[0]
-	if claude.Kind != "claude_code" || !claude.Available || !claude.Capabilities.Streaming || !claude.Capabilities.Permissions || !claude.Capabilities.Usage || !claude.Capabilities.Resume {
-		t.Fatalf("legacy claude_available fallback not inferred: %#v", claude)
+}
+
+func TestSession_PermissionRequiresPayloadIdentity(t *testing.T) {
+	reg := NewRegistry()
+	sess := NewSession(newFakeConn(), "device", "tenant", proto.Version, reg, nil)
+	defer sess.Close("test done")
+	sub, err := sess.SubscribeDurable("run")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if claude.Capabilities.Steering {
-		t.Fatal("legacy daemon must not advertise steering")
+	env, _ := proto.NewEnvelope(proto.TypePermissionRequest, "run", proto.PermissionRequestPayload{Tool: "test"})
+	sess.dispatch(env)
+	if _, err := reg.LookupPermission("run"); !errors.Is(err, ErrPermissionNotRegistered) {
+		t.Fatal("run ID was treated as an interaction ID")
+	}
+	if len(sub.Events) != 0 {
+		t.Fatal("invalid permission request was forwarded")
+	}
+	env, _ = proto.NewEnvelope(proto.TypePermissionRequest, "run", proto.PermissionRequestPayload{RequestID: "permission", Tool: "test"})
+	sess.dispatch(env)
+	if got, err := reg.LookupPermission("permission"); err != nil || got != sess {
+		t.Fatalf("declared interaction identity was not registered: %v", err)
+	}
+	if got := <-sub.Events; got.ID != "run" {
+		t.Fatal("run correlation lost")
 	}
 }
 

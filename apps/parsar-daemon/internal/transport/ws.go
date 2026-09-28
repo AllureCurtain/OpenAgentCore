@@ -33,7 +33,7 @@ type DialOptions struct {
 	Credential string
 
 	// DaemonVersion is the X.Y.Z string used for
-	// proto.VersionCompatible. Mismatches close at upgrade time (4126).
+	// proto.VersionCompatible. Mismatches reject the HTTP upgrade with 426.
 	DaemonVersion string
 
 	// HandshakeTimeout caps WS upgrade wait. Zero → 10s.
@@ -192,7 +192,7 @@ func (c *Conn) Close() error {
 // StartHeartbeats kicks off a ticker that calls payloadFn every
 // interval and Sends the resulting HeartbeatPayload. Returns
 // immediately. Caller-controlled because the heartbeat carries fields
-// (active_requests, claude_available) only the agent layer knows.
+// (active_requests, supported_agent_kinds) only the agent layer knows.
 // Nil logger falls back to log.Bg().
 func (c *Conn) StartHeartbeats(parentCtx context.Context, interval time.Duration, payloadFn func() proto.HeartbeatPayload, logger *slog.Logger) {
 	if interval <= 0 || payloadFn == nil {
