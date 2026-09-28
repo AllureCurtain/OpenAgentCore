@@ -65,8 +65,8 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   open: boolean;
   fresh: boolean;
   onClose: () => void;
-  /** Reads the page's node list again; settles when the read has. */
-  onRefresh: () => Promise<unknown>;
+  /** Returns the confirmed node list, or null when the read failed. */
+  onRefresh: () => Promise<SandboxNode[] | null>;
 }) {
   const { t, i18n } = useTranslation("sandbox");
   const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
@@ -85,8 +85,8 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   const [copiedMode, setCopiedMode] = useState<NodeInstallMode>("sudo");
   const queryClient = useQueryClient();
   const installation = useQuery(installationQuery);
-  // When the latest node-list read this dialog asked for began (Date.now()), once it has finished.
-  const [checkedAt, setCheckedAt] = useState(0);
+  // Keep the completed read's start time paired with its data: query notifications can render later.
+  const [checked, setChecked] = useState<{ startedAt: number; nodes: SandboxNode[] } | null>(null);
   const reading = useRef(false);
   const generation = useRef(0);
   const request = useRef<AbortController | null>(null);
@@ -137,7 +137,7 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   const expiresAt = enrollment ? Date.parse(enrollment.expires_at) : 0;
   const lapsed = Boolean(enrollment && expiresAt <= now);
   // Expired only once a read begun after the expiry found no node for the command.
-  const expired = lapsed && checkedAt >= expiresAt;
+  const expired = lapsed && fresh && checked !== null && checked.startedAt >= expiresAt && checked.nodes === nodes;
   const commandFor = (mode: NodeInstallMode) => enrollment && provider && available && publicUrl && (registered || !expired) && !ready
     ? nodeInstallCommand({ token: enrollment.token, coreUrl: publicUrl, sourceUrl: publicUrl, provider, installationId: deployment.installation_id, scriptDigest: consoleConfig.node_installer_sha256, mode }) : "";
   const command = commandFor("sudo");
@@ -147,8 +147,10 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
     if (reading.current) return;
     reading.current = true;
     const started = Date.now();
-    try { await onRefresh(); } finally { reading.current = false; }
-    setCheckedAt((current) => Math.max(current, started));
+    try {
+      const confirmedNodes = await onRefresh();
+      if (confirmedNodes) setChecked({ startedAt: started, nodes: confirmedNodes });
+    } finally { reading.current = false; }
   }, [onRefresh]);
   useEffect(() => () => { generation.current++; request.current?.abort(); }, []);
   useEffect(() => { if (open) rememberRequirementsSeen(); }, [open]);
@@ -167,8 +169,8 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   useEffect(() => { if (open && enrollment) void check(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   // At expiry, one more read decides between the command's node and "Command expired".
   useEffect(() => {
-    if (open && lapsed && !registered && checkedAt < expiresAt) void check();
-  }, [open, lapsed, registered, checkedAt, expiresAt, check]);
+    if (open && lapsed && !registered && !expired) void check();
+  }, [open, lapsed, registered, expired, check]);
   // The installer's wait for readiness counts from when the node appears.
   useEffect(() => {
     if (nodeId) setAppeared((current) => (current?.id === nodeId ? current : { id: nodeId, at: Date.now() }));
