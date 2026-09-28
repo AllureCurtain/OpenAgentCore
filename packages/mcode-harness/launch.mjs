@@ -29,7 +29,7 @@ try {
  mkdirSync(profile.scratch,{recursive:true});
  await SandboxManager.initialize({
   network:{allowedDomains:domains,deniedDomains:profile.network==='disabled'?['*']:[],allowAll:profile.network==='enabled',strictAllowlist:true,allowAllUnixSockets:false,allowLocalBinding:false},
-  filesystem:{denyRead:profile.protectedDirs,allowWrite:[profile.workspace,profile.scratch,...(profile.toolEnvironment ? ['/environment/packages'] : [])],denyWrite:[...(profile.capabilityRoot ? [profile.capabilityRoot] : []),...(profile.systemPackages ? ['/environment/packages/system'] : [])]},
+  filesystem:{denyRead:profile.protectedDirs,allowRead:profile.capabilityRoot?[profile.capabilityRoot]:[],allowWrite:[profile.workspace,profile.scratch,...(profile.toolEnvironment ? ['/environment/packages'] : [])],denyWrite:[...(profile.capabilityRoot ? [profile.capabilityRoot] : []),...(profile.systemPackages ? ['/environment/packages/system'] : [])]},
   seccomp:{applyPath:join(here,'dist/vendor/seccomp/x64/apply-seccomp')},
  },undefined,false);
  const quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
