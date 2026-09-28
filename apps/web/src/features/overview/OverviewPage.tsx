@@ -26,12 +26,12 @@ import { useConsoleNavigation } from "../../lib/console-navigation";
 import { formatClock, formatCompact, formatInteger, formatPercent, formatRelative, MISSING } from "../../lib/format";
 import { ProjectName, useProjects } from "../../lib/projects";
 import { capacitySummary, coreStatus, type CoreStatus } from "../fleet/fleet-model";
-import { SandboxRolloutSummary } from "../sandbox/SandboxRolloutSummary";
 import { FleetReadNotice, fleetObservationStale } from "../fleet/FleetReadNotice";
 import { SandboxResetNotice } from "../fleet/SandboxResetNotice";
 import { fleetSnapshot, useSandboxFleet, type FleetSnapshot, type FleetState } from "../fleet/use-sandbox-fleet";
 import { type InProject } from "../metrics/project-sessions";
 import { FleetTopology, TOPOLOGY_LIMIT, type CloudHost } from "./FleetTopology";
+import { SessionFailure } from "../sessions/session-diagnostics";
 import { useWaitingFor } from "../sessions/SessionStatus";
 import { GettingStarted } from "./GettingStarted";
 import { type OverviewData } from "./overview-loader";
@@ -175,7 +175,6 @@ export function OverviewPage() {
       />
       <PageBody>
         <SandboxResetNotice deployment={deployment.data} failed={deployment.isError} onRetry={() => void deployment.refetch()} />
-        {deployment.data ? <SandboxRolloutSummary deployment={deployment.data} stale={deployment.isError} compact onOpen={() => navigate("nodes")} /> : null}
         <FleetReadNotice state={fleetState} onRetry={refreshFleet} />
         <InstallationNotice installation={installation.data} />
         {installation.isError ? <ReadFailure onRetry={() => void installation.refetch()} partial={installation.data !== undefined} /> : null}
@@ -340,9 +339,9 @@ function FleetCard({ fleetState, core, localOnly }: { fleetState: FleetState; co
         </div>
         {fleetState.status === "ready" ? (
           !fleet?.deployment.provider
-            ? <button className="button outline" type="button" onClick={() => navigate("nodes")}>{t("fleet.setUp")}</button>
+            ? <button className="button outline" type="button" onClick={() => navigate("system", { id: "sandbox" })}>{t("fleet.setUp")}</button>
             : cloud || hosts.length
-              ? <button className="button outline" type="button" onClick={() => navigate("nodes")}>{cloud ? t("fleet.cloud.openBackend") : t("fleet.manageNodes")}</button>
+              ? <button className="button outline" type="button" onClick={() => cloud ? navigate("system", { id: "sandbox" }) : navigate("nodes")}>{cloud ? t("fleet.cloud.openBackend") : t("fleet.manageNodes")}</button>
               : <button className="button outline" type="button" onClick={() => navigate("nodes", {}, localOnly ? undefined : "add-node")}>{t(localOnly ? "fleet.manageNodes" : "fleet.addNode")}</button>
         ) : null}
       </header>
@@ -350,7 +349,7 @@ function FleetCard({ fleetState, core, localOnly }: { fleetState: FleetState; co
         <FleetTopology
           nodes={hosts}
           cloud={cloud}
-          onOpenBackend={() => navigate("nodes")}
+          onOpenBackend={() => navigate("system", { id: "sandbox" })}
           coreLabel={t(`coreStatus.${core}`)}
           coreTone={coreTone[core]}
           stale={fleetObservationStale(fleetState)}
@@ -502,7 +501,7 @@ function AttentionTable({ sessions, expected, unread, truncated, now, onOpen }: 
                 </th>
                 <td><ProjectName project={entry.project} /></td>
                 <td><StatusDot tone={failed ? "danger" : "neutral"} label={t(`sessions.${failed ? "failed" : "requires_action"}`)} /></td>
-                <td className="table-truncate" title={failed ? session.error ?? undefined : waitingFor(session).join(" · ")}>{failed ? session.error || t("attention.noError") : waitingFor(session).join(" · ")}</td>
+                <td className="table-truncate" onClick={(event) => event.stopPropagation()}>{failed ? <SessionFailure projectId={entry.project.id} session={session} truncate /> : waitingFor(session).join(" · ")}</td>
                 <td className="numeric">{formatRelative(session.last_active_at, now, locale)}</td>
               </tr>
             );

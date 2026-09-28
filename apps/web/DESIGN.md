@@ -736,7 +736,7 @@ while the deployment cannot be read; Show Getting started, a quiet row above the
 sidebar's account controls, opens it again at any time.
 
 ### Sandbox setup
-Setting up hosted sandboxes is a set of pages inside the Nodes page, one decision each: where sandboxes run (own
+Setting up hosted sandboxes is a set of pages inside System’s Sandbox configuration secondary page, one decision each: where sandboxes run (own
 machines or E2B), then the backend or the E2B account, then the size of each sandbox
 (three presets; E2B skips it, since each sandbox takes the template build's size),
 then a review. Choices are large cards that advance on a click; short indigo dashes
@@ -767,8 +767,8 @@ or auto-resubmit. Optional explanations sit behind help tips; errors and safety
 consequences remain visible.
 
 ### Configuration generations
-Use the existing compact fact panel for Core's target generation, previous-generation
-sandboxes and rollout counts. Poll rapidly only while Core reports preparing, or
+A single rollout row opens a details dialog for Core's target generation,
+previous-generation sandboxes and rollout counts. Poll rapidly only while Core reports preparing, or
 while the independent reset is active. Settled is preparation state, not proof that
 all nodes are ready or all older Sessions have ended. Retained old resources alone
 must not keep rapid polling alive. Render failed, update-required and unknown target
@@ -789,12 +789,14 @@ establish native online-upgrade capability.
 
 ### Sandbox reset
 The deployment section offers explicit reset rather than maintenance/resume. Reuse
-its existing panels and confirmation dialogs. Auto clear is selected first, with a
+its existing panels and confirmation dialogs. Keep the confirmation to one concise
+consequence paragraph, two mode choices, the auto deadline and footer actions.
+Put cleanup sequencing and preservation details in help tips. Auto clear is selected first, with a
 one-hour deadline editable from 5 minutes to 24 hours; Force clear and escalation
 require destructive confirmation. State directly that hosted work is archived,
 remaining active work may be cancelled, archived Sessions cannot resume and
-unpersisted workspace contents may be lost. Histories and persisted Files/Artifacts
-remain, and self-hosted execution is unaffected. Cancelling an active reset stops
+unpersisted workspace contents may be lost. Details about preserved histories, Files/Artifacts and unaffected self-hosted
+execution live behind the reset impact help tip. Cancelling an active reset stops
 further clearing but cannot undo completed archives.
 
 A persistent progress panel uses Core's busy, idle and cleanup counts, deadline and
@@ -811,9 +813,9 @@ successful facts with a visible stale/unavailable notice. An uncertain write ope
 the existing recovery dialog and requires a new authoritative read before another
 mutation; refresh reads state and never resubmits the write. The connection's
 QueryClient owns both the authoritative deployment and pending or uncertain writes
-across route transitions. Leaving Nodes cannot cancel or forget a submitted reset,
+across route transitions. Leaving Sandbox configuration cannot cancel or forget a submitted reset,
 and a cached node snapshot cannot replace a newer reset or completion learned on
-Overview or System. Returning to Nodes reads the shared deployment immediately and
+Overview. Returning to Nodes or Sandbox configuration reads the shared deployment immediately and
 refreshes node evidence separately. Only a successful authoritative read begun after
 the write settles can release the mutation block; an earlier or still-pending read
 cannot. Submitting consumes the reset confirmation even if its outcome is uncertain;
@@ -832,12 +834,34 @@ a help tip), then the provider's protocol, base URL, whether a key is configured
 token limits when set and the update time, or Not set. Set and Replace open one form
 dialog; the key field is a required password input, never prefilled or shown and
 forgotten when the form closes. Core's rejection stays in red inside the form; Clear
-is a ConfirmDialog. Sandboxes: the shared sandbox configuration, with a "Change on
-the Nodes page" text action in the section header. Startup settings: a line naming
+is a ConfirmDialog. Usage details opens Core’s observations in a separate dialog.
+Sandboxes: one navigation row to the Sandbox configuration secondary page; do not
+repeat its configuration facts on System. Startup settings: a line naming
 the config file and the apply command as copyable chips, with when they were last
 applied, over a table of each setting, its value and the services a change restarts.
 Sensitive settings show only Configured or Not set; Default and Fixed after install
 are neutral pills beside the value.
+
+### One place for each task
+A configuration or operation has one home. Other pages link to it instead of
+repeating the same panel. System links to the Sandbox configuration secondary
+page; Nodes contains node management. Keep the configuration page flat: the
+resource editor is a dialog, and rollout is one status row with a details
+action. Put low-frequency counts and generation metadata in that dialog.
+Explanatory prose belongs in help tips, not rows of small print. Keep actionable
+errors and unresolved state visible without duplicating the whole workflow.
+
+### Diagnostic observations
+Failure reasons belong beside the failed Session or Turn status. Their first
+read uses a skeleton; an unavailable reason names that state and puts the read
+retry beside its help tip. Technical classifications are
+translated through one catalogue, not shown as raw error codes. Trace Timing
+labels Core receipt times separately from tool-reported duration; explanations
+of batched delivery, clock differences and historical gaps live in help tips.
+
+The self-hosted connection panel names Core's observed state, the bound key and
+last heartbeat. The bound-key action follows the existing rotation confirmation
+and one-time credential flow. Stale observations cannot complete Run on host.
 
 ### Loading and motion
 The console has no spinners and no "Loading…" lines. Reads are cached (TanStack

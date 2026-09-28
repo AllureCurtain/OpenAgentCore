@@ -118,7 +118,7 @@ function reset(mode = "login", fresh = false, sandbox = "configured", nodes = "d
     // The demo deployment's default harness has a default model; a fresh install has none.
     harnesses: {
       claude_sdk: { enabled: true, default: false, provider: null },
-      codex: { enabled: true, default: true, provider: fresh ? null : { object: "core.model_provider", harness: "codex", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, updated_at: new Date((now - 86400) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") } },
+      codex: { enabled: true, default: true, provider: fresh ? null : { object: "core.model_provider", harness: "codex", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, last_used_at: null, last_error_code: null, last_error_at: null, updated_at: new Date((now - 86400) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") } },
       mcode: { enabled: false, default: false, provider: null },
     },
     // "none": the deployment is not configured yet, so the Nodes page offers setup.
@@ -285,6 +285,20 @@ function adminRead(response, path, url) {
     const session = own.sessions.find((entry) => entry.id === m[1]);
     if (!session) return error(response, 404, "No such Session.");
     if (!m[2]) return send(response, 200, session);
+    if (m[2] === "diagnostics") {
+      const failedTurn = (state.turns.get(session.id) ?? []).findLast((turn) => turn.status === "failed");
+      return send(response, 200, { object: "core.session_diagnostics", session_id: session.id, status: session.status,
+        failure: session.status === "failed" ? { source: failedTurn ? "turn" : "environment_input", ...(failedTurn ? { turn_id: failedTurn.id } : {}), code: "internal_error", params: {}, failed_at: null } : null });
+    }
+    const diagnostics = m[2].match(/^turns\/([^/]+)\/diagnostics$/);
+    if (diagnostics) {
+      const turn = (state.turns.get(session.id) ?? []).find((entry) => entry.id === diagnostics[1]);
+      if (!turn) return error(response, 404, "No such Turn.");
+      return send(response, 200, { object: "core.turn_diagnostics", session_id: session.id, turn_id: turn.id, status: turn.status,
+        failure: turn.status === "failed" ? { code: "internal_error", params: {}, failed_at: null } : null,
+        items: (state.items.get(session.id) ?? []).filter((item) => item.turn_id === turn.id).slice(0, 1000).map((item) => ({ item_id: item.id, started_at: new Date((turn.started_at ?? turn.created_at) * 1000).toISOString(), completed_at: null, observed_duration_ms: null })),
+        items_truncated: false });
+    }
     if (m[2] === "turns") return send(response, 200, list([...(state.turns.get(session.id) ?? [])].reverse(), url));
     if (m[2] === "items") return send(response, 200, list([...(state.items.get(session.id) ?? [])].reverse(), url));
     if (m[2] === "runtime-observation") {
@@ -552,6 +566,7 @@ async function harnessRoute(request, response, path) {
     object: "core.model_provider", harness, protocol: input.protocol, base_url: input.base_url, api_key_configured: true,
     ...(input.context_window ? { context_window: input.context_window } : {}),
     ...(input.max_output_tokens ? { max_output_tokens: input.max_output_tokens } : {}),
+    last_used_at: null, last_error_code: null, last_error_at: null,
     updated_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
   };
   return send(response, 200, entry.provider);

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { HelpTip } from "../../components/console-ui";
 import { Modal } from "../../components/Modal";
 import { formatDateTime, formatInteger } from "../../lib/format";
+import "./reset-confirmation.css";
 import { validResetDeadline } from "./sandbox-reset";
 
 type Action = "start" | "force" | "cancel";
@@ -75,19 +76,16 @@ export function SandboxResetControls({ deployment, disabled, stale, onStart, onC
     </>}>
       <div className="confirm-dialog-body sandbox-reset-dialog">
         {dialog?.action === "cancel" ? <p>{t("Stop the reset and allow new hosted Sessions again. Sessions already archived stay archived and cannot be resumed.")}</p> : <>
-          <p>{t("Reset archives this deployment's hosted Sessions. Archived Sessions cannot be resumed. History, Files and Artifacts are kept; self-hosted Sessions are unchanged.")}</p>
-          <p>{t("Unsaved workspace contents may be lost.")}</p>
-          <p>{t("After cleanup, Core clears the provider and saved E2B credential, retires nodes and enrollment commands, and returns to setup.")}</p>
+          <p>{t("Hosted Sessions will be archived permanently. Deployment configuration and node registrations will be cleared. Unsaved workspace contents may be lost.")} <HelpTip label={t("What reset affects")}>{t("Reset archives this deployment's hosted Sessions. Archived Sessions cannot be resumed. History, Files and Artifacts are kept; self-hosted Sessions are unchanged.")} {t("After cleanup, Core clears the provider and saved E2B credential, retires nodes and enrollment commands, and returns to setup.")}</HelpTip></p>
           {dialog?.action === "force" ? <p>{t("Force immediately cancels remaining work. Offline resources can still block cleanup.")}</p> : <fieldset className="sandbox-reset-options" disabled={submitting || disabled}>
             <legend>{t("Clear hosted work")}</legend>
-            <label><input type="radio" name={`${id}-clear`} value="auto" checked={clear === "auto"} onChange={() => setClear("auto")} />{t("Auto — let busy work finish")}</label>
-            <p>{t("Idle, suspended and queued Sessions are archived immediately. Running or waiting Turns and file writes may finish until the deadline; then Core forces the rest.")}</p>
+            <div className="sandbox-reset-choice"><label><input type="radio" name={`${id}-clear`} value="auto" checked={clear === "auto"} onChange={() => setClear("auto")} />{t("Auto — let busy work finish")}</label><HelpTip label={t("How automatic reset works")}>{t("Idle, suspended and queued Sessions are archived immediately. Running or waiting Turns and file writes may finish until the deadline; then Core forces the rest.")}</HelpTip></div>
+            <div className="sandbox-reset-choice"><label><input type="radio" name={`${id}-clear`} value="force" checked={clear === "force"} onChange={() => setClear("force")} />{t("Force — cancel remaining work now")}</label><HelpTip>{t("Force immediately cancels remaining work. Offline resources can still block cleanup.")}</HelpTip></div>
             {clear === "auto" ? <label className="field" htmlFor={`${id}-deadline`}>
-              <span>{t("Force remaining work after (seconds)")}<HelpTip>{t("Default: 1 hour. Choose a whole number from 300 to 86400 seconds (5 minutes to 24 hours).")}</HelpTip></span>
+              <span>{t("Wait before forcing (seconds)")}<HelpTip>{t("Default: 1 hour. Choose a whole number from 300 to 86400 seconds (5 minutes to 24 hours).")}</HelpTip></span>
               <input id={`${id}-deadline`} type="number" min={300} max={86400} step={1} value={deadline} onChange={(event) => setDeadline(event.target.value)} aria-invalid={!validResetDeadline(deadline)} />
               {!validResetDeadline(deadline) ? <span role="alert" className="field-error">{t("Enter a whole number from 300 to 86400 seconds.")}</span> : null}
             </label> : null}
-            <label><input type="radio" name={`${id}-clear`} value="force" checked={clear === "force"} onChange={() => setClear("force")} />{t("Force — cancel remaining work now")}</label>
             {clear === "force" ? <p>{t("Force immediately cancels remaining work. Offline resources can still block cleanup.")}</p> : null}
           </fieldset>}
         </>}

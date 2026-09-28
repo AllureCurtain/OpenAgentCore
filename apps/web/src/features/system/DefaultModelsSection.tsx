@@ -4,18 +4,18 @@ import { useCallback, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { EmptyState, HelpTip, revealInPageBody, Section, StatusDot } from "../../components/console-ui";
+import { EmptyState, HelpTip, revealInPageBody, Section } from "../../components/console-ui";
 import { ErrorState } from "../../components/ErrorState";
 import { Modal } from "../../components/Modal";
 import { TableSkeleton } from "../../components/Skeleton";
 import { failedLast, useFailureToast, useToast } from "../../components/Toast";
 import { coreError, coreFieldError } from "../../lib/core-error";
 import { useDeleteFlow } from "../../lib/delete-flow";
-import { formatDateTime, formatInteger } from "../../lib/format";
+import { formatInteger } from "../../lib/format";
 import { useConsoleIntent } from "../../lib/console-navigation";
 import { harnessNames, protocolNames } from "../../lib/harness-labels";
 import { admin } from "../../lib/projects";
-import { Fact } from "./Fact";
+import { HarnessCard } from "./HarnessCard";
 import { harnessesQuery } from "./harness-queries";
 
 /** A write that gets no answer in this time has an unknown outcome. */
@@ -102,7 +102,7 @@ export function DefaultModelsSection() {
     body = (
       <div className="system-models">
         {harnesses.map((harness) => (
-          <HarnessCard key={harness.id} harness={harness} busy={clear.busy} onEdit={() => setEditing(harness.id)} onClear={() => clear.ask(harness.id)} />
+          <HarnessCard key={harness.id} harness={harness} busy={clear.busy} stale={failedLast(query)} onEdit={() => setEditing(harness.id)} onClear={() => clear.ask(harness.id)} />
         ))}
       </div>
     );
@@ -144,49 +144,7 @@ export function DefaultModelsSection() {
   );
 }
 
-function HarnessCard({ harness, busy, onEdit, onClear }: { harness: CoreHarness; busy: boolean; onEdit: () => void; onClear: () => void }) {
-  const { t, i18n } = useTranslation("system");
-  const locale = i18n.resolvedLanguage;
-  const headingId = useId();
-  const name = harnessNames[harness.id];
-  const provider = harness.model_provider;
-  return (
-    <article className="system-model" aria-labelledby={headingId} data-default={harness.default ? "" : undefined}>
-      <header className="system-model-header">
-        <h3 id={headingId}>{name}</h3>
-        <div className="system-model-actions">
-          {/* A disabled harness may still be configured; Core keeps the provider until it is enabled. */}
-          <button className="button outline" type="button" aria-label={t(provider ? "models.replaceLabel" : "models.setLabel", { harness: name })} disabled={busy} onClick={onEdit}>
-            {provider ? t("models.replace") : t("models.set")}
-          </button>
-          {provider ? (
-            <button className="button outline" type="button" aria-label={t("models.clearLabel", { harness: name })} disabled={busy} onClick={onClear}>
-              {t("models.clear")}
-            </button>
-          ) : null}
-        </div>
-      </header>
-      <dl className="system-model-facts">
-        <Fact label={t("models.harness")} help={t("models.startupHelp")}>
-          <span className="system-model-state">
-            <StatusDot tone={harness.enabled ? "ok" : "neutral"} label={harness.enabled ? t("models.enabled") : t("models.disabled")} />
-            {harness.default ? <span className="pill">{t("models.default")}</span> : null}
-          </span>
-        </Fact>
-        {provider ? <>
-          <Fact label={t("models.protocol")}>{protocolNames[provider.protocol]}</Fact>
-          <Fact label={t("models.baseUrl")}><code className="system-code">{provider.base_url}</code></Fact>
-          <Fact label={t("models.apiKey")}>{provider.api_key_configured ? t("models.keyConfigured") : t("models.keyNotConfigured")}</Fact>
-          {provider.context_window !== undefined ? <Fact label={t("models.contextWindow")}>{formatInteger(provider.context_window, locale)}</Fact> : null}
-          {provider.max_output_tokens !== undefined ? <Fact label={t("models.maxOutputTokens")}>{formatInteger(provider.max_output_tokens, locale)}</Fact> : null}
-          <Fact label={t("models.updated")}>{formatDateTime(Math.floor(Date.parse(provider.updated_at) / 1000), locale)}</Fact>
-        </> : (
-          <Fact label={t("models.provider")}><span className="system-muted">{t("models.notSet")}</span></Fact>
-        )}
-      </dl>
-    </article>
-  );
-}
+
 
 /**
  * Sets or replaces one harness's provider. Non-secret fields start from the
@@ -300,11 +258,10 @@ function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
       )}
     >
       <form id={formId} className="form-stack" autoComplete="off" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-        <p className="detail-note">{t("models.form.modelName")}</p>
         <div className="field">
           <span className="field-label-row">
             <span>{t("models.protocol")}</span>
-            <HelpTip>{t("models.form.protocolHelp")}</HelpTip>
+            <HelpTip>{t("models.form.protocolHelp")} {t("models.form.modelName")}</HelpTip>
           </span>
           <p className="system-model-protocol">{protocolNames[protocol]}</p>
           {fieldError("protocol") ? <span className="field-error" role="alert">{fieldError("protocol")}</span> : null}

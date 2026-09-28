@@ -2,6 +2,7 @@ import type { AgentTurn, SessionItem } from "@agents-core-web/agents-client";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
+import { TurnFailure } from "./session-diagnostics";
 import { StatusDot } from "../../components/console-ui";
 import { formatDateTime, formatDuration, formatInteger } from "../../lib/format";
 import { ThreadItems } from "./items/ItemRenderers";
@@ -38,7 +39,8 @@ export function SessionTranscript({ turns, items, agentName }: { turns: readonly
             ) : null}
             {group.items.length || turn?.error || (turn && activityOf(turn.status)) ? (
               <div className="chat-stack">
-                <ThreadItems items={group.items} agentName={agentName} error={turn?.error?.message ?? null} activity={turn ? activityOf(turn.status) : null} />
+                <ThreadItems items={group.items} agentName={agentName} activity={turn ? activityOf(turn.status) : null} />
+                {turn ? <TurnFailure turn={turn} /> : null}
               </div>
             ) : null}
           </li>

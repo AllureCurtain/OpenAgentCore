@@ -33,7 +33,6 @@ import { DiagnosticTip } from "../fleet/DiagnosticTip";
 import { capacitySummary, nodeHealth, suspendedSandboxes, type NodeHealth } from "../fleet/fleet-model";
 import { nodeDetailQuery } from "../fleet/fleet-queries";
 import { NodeRolloutStatus } from "../sandbox/NodeRolloutStatus";
-import { SandboxRolloutSummary } from "../sandbox/SandboxRolloutSummary";
 import { FleetReadNotice, fleetObservationStale } from "../fleet/FleetReadNotice";
 import { SandboxResetNotice } from "../fleet/SandboxResetNotice";
 import { fleetSnapshot, useSandboxFleet, type FleetState } from "../fleet/use-sandbox-fleet";
@@ -133,7 +132,6 @@ export function SandboxMetricsPage() {
       />
       <PageBody>
         <SandboxResetNotice deployment={deployment.data} failed={deployment.isError} onRetry={() => void deployment.refetch()} />
-        {deployment.data ? <SandboxRolloutSummary deployment={deployment.data} stale={deployment.isError} compact onOpen={() => navigate("nodes")} /> : null}
         <FleetReadNotice state={fleetState} onRetry={refreshFleet} />
         {cloud && fleet ? <CloudSection deployment={fleet.deployment} /> : <Section
           headingId="node-capacity-heading"
@@ -192,7 +190,7 @@ export function SandboxMetricsPage() {
               <EmptyState
                 icon={Server}
                 title={t("sandbox.notSetUpTitle")}
-                action={<button className="button primary" type="button" onClick={() => navigate("nodes")}>{t("sandbox.setUp")}</button>}
+                action={<button className="button primary" type="button" onClick={() => navigate("system", { id: "sandbox" })}>{t("sandbox.setUp")}</button>}
               />
             )
           ) : fleetState.status === "checking" || fleetState.status === "loading"
@@ -245,7 +243,7 @@ function CloudSection({ deployment }: { deployment: SandboxDeployment }) {
       headingId="cloud-heading"
       title={t("sandbox.cloud.title")}
       help={t("sandbox.cloud.help")}
-      actions={<button className="button outline" type="button" onClick={() => navigate("nodes")}>{t("sandbox.cloud.manage")}</button>}
+      actions={<button className="button outline" type="button" onClick={() => navigate("system", { id: "sandbox" })}>{t("sandbox.cloud.manage")}</button>}
     >
       <p className="detail-note">{t("sandbox.cloud.counts")}</p>
       <KpiStrip label={t("sandbox.cloud.title")}>

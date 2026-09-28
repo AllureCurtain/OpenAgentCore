@@ -1,6 +1,10 @@
 import { consoleAuthChinese } from "./console-auth-strings";
 export const chinese = {
   ...consoleAuthChinese,
+  "Hosted Sessions will be archived permanently. Deployment configuration and node registrations will be cleared. Unsaved workspace contents may be lost.": "托管 Session 将归档且无法恢复，部署配置与节点注册将清除。未保存的工作区内容可能丢失。",
+  "What reset affects": "重置影响范围",
+  "How automatic reset works": "自动清理规则",
+  "Wait before forcing (seconds)": "等待时长（秒）",
   "No active preparation": "没有正在进行的准备任务",
   "Review nodes": "检查节点",
   "Configuration rollout": "配置更新进度",
