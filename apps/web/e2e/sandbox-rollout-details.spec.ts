@@ -23,7 +23,7 @@ test("keeps rollout summary brief and opens all Core observations in details", a
   await expect(fact(dialog, "Target generation")).toHaveText("4");
   await expect(fact(dialog, "Previous-generation sandboxes")).toHaveText("8");
   await expect(fact(dialog, "Preparation failed")).toHaveText("2");
-  await expect(fact(dialog, "Node update required")).toHaveText("3");
+  await expect(fact(dialog, "Node software incompatible")).toHaveText("3");
   await expect(fact(dialog, "Target readiness unknown")).toHaveText("4");
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();

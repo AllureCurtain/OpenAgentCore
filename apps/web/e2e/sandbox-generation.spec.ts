@@ -113,7 +113,7 @@ test("unknown target preparation preserves live old-generation service while an 
   await setNode(request, { id: "node-edge", online: false, provider_ready: true, rollout: { state: "unknown", ready_generation: 1 } });
   await setNode(request, { id: "node-gpu", rollout: { state: "update_required", ready_generation: 1 } });
   await page.getByRole("button", { name: "Refresh sandbox state", exact: true }).click();
-  await inspectRollout(page, { "Node update required": "1" });
+  await inspectRollout(page, { "Node software incompatible": "1" });
   await page.getByRole("button", { name: "Nodes", exact: true }).click();
   const serving = page.getByRole("row", { name: /core-01/ });
   await expect(serving).toContainText("Available");
@@ -134,7 +134,7 @@ test("unknown target preparation preserves live old-generation service while an 
   await page.getByRole("button", { name: "System", exact: true }).click();
   await expect(rollout(page)).toHaveCount(0);
   await page.getByRole("button", { name: "Manage sandbox configuration", exact: true }).click();
-  await inspectRollout(page, { "Target generation": "2", "Target readiness unknown": "2", "Node update required": "1" });
+  await inspectRollout(page, { "Target generation": "2", "Target readiness unknown": "2", "Node software incompatible": "1" });
   await capture(page, info, "generation-configuration-summary-en", rollout(page));
   expect(await writes(request)).toEqual([]);
 });

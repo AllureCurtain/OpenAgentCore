@@ -30,7 +30,7 @@ export function SandboxRolloutSummary({ deployment, stale = false, onOpen }: { d
           <StatusDot tone={tone} label={t(label)} />
           <HelpTip>
             {t(stale ? "Rollout state is unconfirmed. These are the last confirmed observations." : rollout.state === "settled" ? "Core reports no active preparation. This does not mean every node is ready." : "Core is preparing the target configuration.")}
-            {needsAttention || unknown ? ` ${t("Review affected nodes for preparation errors, required updates or an unconfirmed connection. Qualified earlier generations may still serve work.")}` : null}
+            {needsAttention || unknown ? ` ${t("Review affected nodes for preparation errors, incompatible node software or an unconfirmed connection. Qualified earlier generations may still serve work.")}` : null}
           </HelpTip>
         </div>
         <dl className="sandbox-rollout-facts">
@@ -41,7 +41,7 @@ export function SandboxRolloutSummary({ deployment, stale = false, onOpen }: { d
             <div><dt>{t("Ready for target")}</dt><dd>{count(rollout.nodes.ready)}</dd></div>
             <div><dt>{t("Preparing target")}</dt><dd>{count(rollout.nodes.preparing)}</dd></div>
             <div><dt>{t("Preparation failed")}</dt><dd>{count(rollout.nodes.failed)}</dd></div>
-            <div><dt>{t("Node update required")}</dt><dd>{count(rollout.nodes.update_required)}</dd></div>
+            <div><dt>{t("Node software incompatible")}</dt><dd>{count(rollout.nodes.update_required)}</dd></div>
             <div><dt>{t("Target readiness unknown")}</dt><dd>{count(rollout.nodes.unknown)}</dd></div>
           </> : null}
         </dl>
