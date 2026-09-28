@@ -23,7 +23,7 @@ function Probe() {
 function render(latest: SandboxDeployment, previous = configured, failed = false) {
   const cache = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const snapshot: FleetSnapshot = { deployment: previous, nodes: [node("n1")], allocations: [], loadedAt: 1 };
-  const config: SandboxConsoleConfig = { sandbox_admin: true, node_installer: false, node_installer_sha256: "", self_hosted_installer: false, self_hosted_installer_sha256: "" };
+  const config: SandboxConsoleConfig = { sandbox_admin: true, node_installer: false, node_installer_sha256: "" };
   cache.setQueryData<SandboxConsoleConfig | null>(consoleConfigQuery.queryKey, () => config);
   cache.setQueryData(fleetQuery(false).queryKey, snapshot);
   cache.setQueryData(sandboxDeploymentQuery.queryKey, latest);

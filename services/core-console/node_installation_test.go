@@ -62,6 +62,7 @@ func TestPairedConsoleProxiesOnlyAdministration(t *testing.T) {
 		{"GET", "/console/config", "none", 401},
 		{"GET", "/node-install/node-install.pyz", "none", 200},
 		{"GET", "/node-install/caller.key", "none", 404},
+		{"GET", "/node-install/self-hosted-install.pyz", "none", 404},
 		{"POST", "/node-install/node-install.pyz", "none", 405},
 	} {
 		r := consoleRequest(t, server, tc.method, tc.path)
@@ -82,9 +83,9 @@ func TestPairedConsoleProxiesOnlyAdministration(t *testing.T) {
 			t.Fatal("credential leaked")
 		}
 		// Web verifies each downloaded installer against these digests before running it.
-		selfHostedDigest := sha256.Sum256([]byte("print('self-hosted')"))
+		nodeDigest := sha256.Sum256([]byte("print('installer')"))
 		if tc.path == "/console/config" && tc.status == 200 && (!strings.Contains(body, `"node_installer":true`) ||
-			!strings.Contains(body, `"self_hosted_installer":true,"self_hosted_installer_sha256":"`+hex.EncodeToString(selfHostedDigest[:])+`"`) ||
+			!strings.Contains(body, `"node_installer_sha256":"`+hex.EncodeToString(nodeDigest[:])+`"`) || strings.Contains(body, "self_hosted_installer") ||
 			strings.Contains(body, "sandbox_admin") || strings.Contains(body, "api_keys")) {
 			t.Fatalf("console configuration = %s", body)
 		}

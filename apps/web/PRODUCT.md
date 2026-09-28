@@ -54,9 +54,8 @@ workbench.
 - The Core key is not an Agents API identity and cannot call `/v1`. An administrator
   who wants to call the Agents API issues a project API key like any other caller.
 - `/console/config` reports the node installer (`node_installer`,
-  `node_installer_sha256`) and the self-hosted executor installer
-  (`self_hosted_installer`, `self_hosted_installer_sha256`); an installer is
-  offered only with a 64-hex digest. It also lists the providers it has node files
+  `node_installer_sha256`), offered only with a 64-hex digest. Native self-hosted
+  installation does not depend on this endpoint. It also lists the providers it has node files
   for (`node_artifacts`); without the deployment's provider, Add node says so and
   issues no command. Signing in grants administration, so sandbox
   administration is available unless the console explicitly reports
@@ -204,8 +203,8 @@ workbench.
   executor needs, with the deployment's Core key. A Session page whose environment
   is self-hosted has an Executor credentials section: issue a credential (shown
   once as one line of JSON, to copy or download, never stored), rotate it (the
-  old one stops working immediately) or revoke it (the executor disconnects and
-  won't retry; its container keeps running until stopped). The file lets one
+  old one stops working immediately) or revoke it (the executor disconnects;
+  installed Runtime state and workspace contents are not deleted). The file lets one
   executor connect for that environment only; it cannot call the Agents API.
 - **Default provider observations.** Each configured harness offers Usage details
   for Core's last successful use and any newer classified provider error. Missing
@@ -217,19 +216,20 @@ workbench.
   share one five-second read while visible. Never connected, connected,
   disconnected, bound credential revoked, and unknown are distinct; a recent
   heartbeat alone never proves connectivity. Only a fresh connected read marks
-  Run on host done. Stale or failed reads withhold completion. Recovery rotates
-  the bound key and reruns the same command rather than suggesting a new key.
-- **Connect a host.** When the console serves the self-hosted installer, the
-  section also gives the command that installs the executor on the
-  administrator's host from Core's `public_url` (checksum-verified, no secret in
-  it; the installer asks for the credential at a hidden prompt, or reads
-  `--credential-file`). The same command is safe to rerun. Revoking or rotating
-  disconnects the host's executor; reconnecting takes that same credential,
-  rotated (Restore on a revoked row rotates and restores it), and the same command, because a
-  newly issued credential does not reconnect an environment that already
-  connected. Without a `public_url`, with a loopback one, or when the Session's
-  `remote_url` is not `wss://`, the section says why instead of showing a
-  command.
+  Host connected. Stale or failed reads withhold completion. Recovery rotates
+  the bound key, stops the installed daemon, replaces the host credential file
+  and starts the daemon again.
+- **Connect a host.** Native Linux/macOS and PowerShell installation instructions
+  depend on the Session's remote URL, Environment ID and workspace, not console
+  installer flags or served Python assets. Users privately save the issued JSON,
+  obtain a matching native distribution through the linked guide, and run the
+  interactive install command from its root. Installation asks for the credential
+  file path and does not automatically start the daemon. Run the installed binary
+  in the installation's bin directory with `start`. No model readiness is implied.
+  Credential rotation requires stopping the installed daemon, replacing the
+  configured file and starting that same daemon again. A disconnected daemon may
+  still be running; `start` alone does not replace it. A new key cannot reconnect an already-bound Environment.
+  Accept wss or loopback ws; withhold commands for missing or invalid facts.
 - **Typed write errors.** Known Core codes use shared bilingual copy and safe
   typed details. Exact Core field paths attach definite refusals to the relevant
   input. Unknown codes retain Core's fallback message; uncertain write outcomes

@@ -15,15 +15,15 @@ import (
 // These are distribution artifacts, never installation configuration or secrets.
 // Serving the fixed list avoids a package registry or an arbitrary file endpoint.
 var nodePayloadFiles = map[string]bool{
-	"node-install.pyz": true, "self-hosted-install.pyz": true,
-	"manifest.json": true, "SHA256SUMS": true, "runtime/seccomp.json": true,
+	"node-install.pyz": true,
+	"manifest.json":    true, "SHA256SUMS": true, "runtime/seccomp.json": true,
 }
 
 // An offline distribution exposes only artifacts declared for these payloads.
 var optionalPayloadFiles = map[string]bool{
 	"native/bin/oac-node": true, "native/bin/oac-daemon": true,
-	"native/bin/oac-selfhost": true, "native/bin/oac-microsandbox-provider": true,
-	"native/microsandbox/msb": true, "native/microsandbox/libkrunfw.so.5.6.1": true,
+	"native/bin/oac-microsandbox-provider": true,
+	"native/microsandbox/msb":              true, "native/microsandbox/libkrunfw.so.5.6.1": true,
 	"images/runtime.tar.gz": true, "runtime/seccomp.json": true,
 }
 
@@ -202,10 +202,8 @@ func (h *console) nodeArtifacts() []string {
 func (h *console) serveConsoleConfiguration(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {
-		NodeInstaller             bool     `json:"node_installer"`
-		NodeInstallerSHA256       string   `json:"node_installer_sha256"`
-		NodeArtifacts             []string `json:"node_artifacts"`
-		SelfHostedInstaller       bool     `json:"self_hosted_installer"`
-		SelfHostedInstallerSHA256 string   `json:"self_hosted_installer_sha256"`
-	}{h.nodePayload != nil, h.nodeInstallerDigest, h.nodeArtifacts(), h.nodePayload != nil, h.selfHostedInstallerDigest})
+		NodeInstaller       bool     `json:"node_installer"`
+		NodeInstallerSHA256 string   `json:"node_installer_sha256"`
+		NodeArtifacts       []string `json:"node_artifacts"`
+	}{h.nodePayload != nil, h.nodeInstallerDigest, h.nodeArtifacts()})
 }

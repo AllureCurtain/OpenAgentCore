@@ -132,7 +132,7 @@ class GenerationReviewRegressions(unittest.TestCase):
         for name in ('node', 'helper'):
             raw = (name + ' verified artifact').encode()
             entries[name] = {'filename': name + '-' + source, 'size': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
-        files = {'node-install.pyz': b'node', 'self-hosted-install.pyz': b'self', 'SHA256SUMS': b'fixture', 'runtime/seccomp.json': b'{}', 'manifest.json': json.dumps({'source_commit': source, 'artifacts': entries}).encode()}
+        files = {'node-install.pyz': b'node', 'SHA256SUMS': b'fixture', 'runtime/seccomp.json': b'{}', 'manifest.json': json.dumps({'source_commit': source, 'artifacts': entries}).encode()}
         for name, raw in files.items():
             path = bundle / name; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(raw)
         install.prepare_node_payload(root, {'mode': 'all'}, bundle)
@@ -263,9 +263,11 @@ class GenerationReviewRegressions(unittest.TestCase):
         self.assertIn(1,node_generations.retained_configs(case.root,installer))
 
     def test_operator_update_refuses_before_download_or_update(self):
-        for kind in ("RuntimeDownloadError", "distribution.ArtifactError"):
-            script = "import sys,runpy,node_update; sys.argv=['node_install.py','--installation-id','94be54a1-138c-4f30-bc87-b13686272dbe','--update','--source-url','https://core.invalid','--core-url','https://core.invalid'];\ndef fail(args,installer): raise installer." + kind + "('Check the matched release and network, then rerun')\nnode_update.update=fail; runpy.run_module('node_install',run_name='__main__',alter_sys=True)"
-            result = subprocess.run([sys.executable, '-c', script], capture_output=True, text=True, timeout=10, cwd=Path(__file__).parent)
-            self.assertEqual(result.returncode, 1, result.stderr)
-            self.assertIn('updates are not supported', result.stderr)
-            self.assertIn('reinstall', result.stderr)
+        result = subprocess.run(
+            [sys.executable, 'node_install.py', '--installation-id', '94be54a1-138c-4f30-bc87-b13686272dbe',
+             '--update', '--source-url', 'https://core.invalid', '--core-url', 'https://core.invalid'],
+            capture_output=True, text=True, timeout=10, cwd=Path(__file__).parent,
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn('updates are not supported', result.stderr)
+        self.assertIn('reinstall', result.stderr)

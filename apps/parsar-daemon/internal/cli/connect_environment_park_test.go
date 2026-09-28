@@ -76,7 +76,7 @@ func TestEnvironmentRejectionParksUntilTerminated(t *testing.T) {
 				t.Fatal(err)
 			}
 			args, _ := json.Marshal([]string{"connect", "--remote", "ws" + strings.TrimPrefix(server.URL, "http") + "/api/v1/agent-daemon/ws",
-				"--environment-id", environment, "--credential-file", credential, "--self-hosted-install"})
+				"--environment-id", environment, "--credential-file", credential})
 			cmd := exec.Command(os.Args[0], "-test.run=^TestEnvironmentRejectionParksUntilTerminated$")
 			cmd.Env = append(os.Environ(), "OAC_TEST_ENVIRONMENT_CONNECT="+string(args), "OAC_RUNTIME_HOME="+home)
 			var stderr lockedBuffer
@@ -137,19 +137,17 @@ func TestEnvironmentRejectionParksUntilTerminated(t *testing.T) {
 
 func TestEnvironmentRejectionClassifiesConnectionErrors(t *testing.T) {
 	for _, tc := range []struct {
-		err        error
-		selfHosted bool
-		want       string
+		err  error
+		want string
 	}{
-		{fmt.Errorf("connect: runtime deleted: %w", transport.ErrPermanent), true, "rerun the self-hosted install command"},
-		{fmt.Errorf("connect: runtime deleted: %w", transport.ErrPermanent), false, "install it for this Runtime and restart it"},
-		{fmt.Errorf("connect: permanent error: %w: %w", transport.ErrPermanent, transport.ErrIncompatibleVersion), true, "daemon version"},
-		{errors.New("connect: bootstrap: Environment bootstrap failed"), true, ""},
-		{nil, true, ""},
+		{fmt.Errorf("connect: runtime deleted: %w", transport.ErrPermanent), "install it for this Runtime and restart it"},
+		{fmt.Errorf("connect: permanent error: %w: %w", transport.ErrPermanent, transport.ErrIncompatibleVersion), "daemon version"},
+		{errors.New("connect: bootstrap: Environment bootstrap failed"), ""},
+		{nil, ""},
 	} {
-		got := environmentRejection(tc.err, uuid.NewString(), uuid.NewString(), tc.selfHosted)
-		if tc.want == "" && got != "" || !strings.Contains(got, tc.want) || !tc.selfHosted && strings.Contains(got, "container") {
-			t.Errorf("environmentRejection(%v, %v) = %q", tc.err, tc.selfHosted, got)
+		got := environmentRejection(tc.err, uuid.NewString(), uuid.NewString())
+		if tc.want == "" && got != "" || !strings.Contains(got, tc.want) || strings.Contains(got, "container") {
+			t.Errorf("environmentRejection(%v) = %q", tc.err, got)
 		}
 	}
 }

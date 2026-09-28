@@ -32,7 +32,7 @@ Application → Core API → common daemon protocol → Runtime → native Harne
 
 Managed Providers supply Linux environments. Self-hosted daemons run on Linux,
 macOS and Windows, subject to the selected Harness's
-[platform support](docs/self-hosted-native.md#supported-platforms). The daemon uses
+[platform support](docs/self-hosted-native.md#platforms-and-prerequisites). The daemon uses
 its starting account's permissions; isolation belongs to an outer sandbox.
 Releasing an executor does not destroy its Environment.
 

@@ -12,7 +12,7 @@ import (
 
 func TestOfflineArtifactsAreManifestAllowlisted(t *testing.T) {
 	dist, payload := t.TempDir(), t.TempDir()
-	for _, item := range []struct{ root, name, body string }{{dist, "index.html", "console"}, {payload, "node-install.pyz", "bootstrap"}, {payload, "self-hosted-install.pyz", "bootstrap"}} {
+	for _, item := range []struct{ root, name, body string }{{dist, "index.html", "console"}, {payload, "node-install.pyz", "bootstrap"}} {
 		if err := os.WriteFile(filepath.Join(item.root, item.name), []byte(item.body), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -20,12 +20,12 @@ func TestOfflineArtifactsAreManifestAllowlisted(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(payload, "artifacts"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	manifest := map[string]any{"artifacts": map[string]any{"native/bin/oac-node": map[string]string{"filename": "matched-node"}, "private/key": map[string]string{"filename": "private-key"}}}
+	manifest := map[string]any{"artifacts": map[string]any{"native/bin/oac-node": map[string]string{"filename": "matched-node"}, "private/key": map[string]string{"filename": "private-key"}, "native/bin/oac-selfhost": map[string]string{"filename": "retired-launcher"}}}
 	raw, _ := json.Marshal(manifest)
 	if err := os.WriteFile(filepath.Join(payload, "manifest.json"), raw, 0600); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"matched-node", "private-key", "undeclared"} {
+	for _, name := range []string{"matched-node", "private-key", "undeclared", "retired-launcher"} {
 		if err := os.WriteFile(filepath.Join(payload, "artifacts", name), []byte("payload"), 0600); err != nil {
 			t.Fatal(err)
 		}
@@ -38,7 +38,7 @@ func TestOfflineArtifactsAreManifestAllowlisted(t *testing.T) {
 	defer h.Close()
 	server := httptest.NewServer(h)
 	defer server.Close()
-	for _, name := range []string{"matched-node", "private-key", "undeclared"} {
+	for _, name := range []string{"matched-node", "private-key", "undeclared", "retired-launcher"} {
 		req := consoleRequest(t, server, "GET", "/node-install/artifacts/"+name)
 		response, body := responseBody(t, server, req)
 		if name == "matched-node" {
@@ -67,7 +67,6 @@ func TestConsoleReportsServableNodeProviders(t *testing.T) {
 	}
 	write(filepath.Join(dist, "index.html"), "console")
 	write(filepath.Join(payload, "node-install.pyz"), "bootstrap")
-	write(filepath.Join(payload, "self-hosted-install.pyz"), "executor bootstrap")
 	artifacts := map[string]any{}
 	for logical := range map[string]bool{"native/bin/oac-node": true, "images/runtime.tar.gz": true, "native/microsandbox/msb": true} {
 		name := strings.ReplaceAll(logical, "/", "-")

@@ -221,14 +221,17 @@ Unfinished observed calls become incomplete on shutdown, without claiming that
 remote tool effects were cancelled. Rich content, native truncation and asynchronous
 MCP task results remain unverified.
 
-Daemon `connect` optionally registers this factory as `claude_sdk` when the
-operator sets `OAC_RUNTIME_CLAUDE_SDK_ENTRYPOINT` to the absolute packaged `dist/main.js`.
+For unmanaged bootstrap, daemon `connect` optionally registers this factory as
+`claude_sdk` when the operator sets `OAC_RUNTIME_CLAUDE_SDK_ENTRYPOINT` to the absolute packaged `dist/main.js`.
 `OAC_RUNTIME_CLAUDE_SDK_NODE` selects Node (default: `node` on PATH). Discovery resolves
 Node once and checks that exact configuration before pairing; the SDK's bounded
 runtime check is independent of legacy CLI version probes. A ready SDK alone is
 sufficient to start the daemon. No configuration means no SDK probe or descriptor;
 failed readiness reports an unavailable descriptor with a rejecting factory.
-Runtime checks establish local readiness, not provider authentication.
+Runtime checks establish local readiness, not provider authentication. Installed
+daemons use `start` and their verified installation manifest for adapter selection
+and activation; ambient activation variables cannot extend that selection. See
+[the native installation contract](../../CONTRIBUTING.md#native-daemon-and-harness-installation).
 
 SDK state lives under `paths.ProfileDir(profile)/runtime/claude-sdk`, independently
 of the replaceable runtime bundle. Both the entrypoint and managed state root must
@@ -390,8 +393,9 @@ SDK/MCP dependencies, including the native package for the build host, into a
 platform/architecture/libc-specific `.tar.gz` and SHA256 file under
 `${OAC_DEV_HOME:-$HOME/.oac}/build/claude-sdk-runtime`. `CLAUDE_SDK_BUILD_DIR`
 may select another absolute output directory. The production dependency closure
-requires Node20 or newer; Node22 is the tested version. Node is operator-supplied
-and is not bundled; the bundle is independent of product sources, services and databases.
+requires Node20 or newer; Node22 is the tested version. This standalone archive
+requires operator-supplied Node and is independent of product sources, services
+and databases.
 It does not add Node or SDK assets to the Agents API binaries/image.
 
 The build validates source manifests with the repository-pinned pnpm frozen
@@ -410,9 +414,10 @@ and use its absolute `dist/main.js` as the private factory entrypoint. Validate
 relocation and real provider cancellation/continuation before accepting an
 artifact. Linux x64/glibc with Node22 is the currently exercised platform;
 other hosts require their own native acceptance. Do not reuse a bundle across
-platforms or libc variants. Automatic Node installation, managed activation and
-release publication remain separate work. Operator-configured daemon discovery/registration is supported as
-specified above.
+platforms or libc variants. The native installer bundles Node and owns
+user-managed activation; release publication remains separate. Operator-configured
+discovery and registration remain available for unmanaged bootstrap as specified
+above.
 
 The exported `dist/runtime_check.js` companion is the local readiness contract.
 It checks Node20+, installed SDK/MCP/native versions against the package manifest,
@@ -420,11 +425,12 @@ contained dependency resolution, native startup, and the exact `dist/main.js` br
 with stdin EOF. It emits one versioned JSON report without calling a model or
 creating Session state. The artifact check reuses this companion and separately
 checks all exported links, the lockfile and source pins. `claudesdk.CheckRuntime`
-uses the same operator-supplied Node, entrypoint and environment as execution,
+uses the same Node, entrypoint and environment as execution,
 with shared process-group ownership, bounded output and a 15-second deadline
 plus bounded cleanup. Both native and bridge probes have five-second limits.
 Return unavailable on failed or malformed probes; never forward native diagnostics
 or treat local readiness as provider authentication, public capability acceptance
-or filesystem isolation. Automatic installation remains separate.
+or filesystem isolation. The native installer reuses this readiness check after
+copying its release components.
 
 

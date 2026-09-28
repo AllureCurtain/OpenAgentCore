@@ -29,7 +29,7 @@ Web 提供管理员控制台。
 ```
 
 托管 Provider 提供 Linux 环境；自托管 daemon 支持 Linux、macOS 和 Windows，
-具体组合见 [Harness 平台支持表](docs/self-hosted-native.md#supported-platforms)。
+具体组合见 [Harness 平台支持表](docs/self-hosted-native.md#platforms-and-prerequisites)。
 daemon 使用启动账户的权限，隔离由外层沙箱负责。释放执行器不会销毁 Environment。
 
 公开接口遵循固定版本的 OpenAI Agents API，已支持的操作和原生引擎差异见

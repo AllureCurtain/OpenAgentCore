@@ -36,7 +36,6 @@ const LOCAL_URL = "http://127.0.0.1:8091";
 const OLD_URL = "https://core-old.example.com";
 const publicUrl = () => (state.installation === "local" ? LOCAL_URL : PUBLIC_URL);
 /** The digest the console reports for its self-hosted executor installer; the same value as in monitoring.spec.ts. */
-const SELF_HOSTED_INSTALLER_SHA256 = "5e1f".repeat(16);
 /** Core reports one installation ID, a canonical UUID, in the installation and the deployment. */
 const INSTALLATION_ID = "7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f";
 
@@ -201,14 +200,11 @@ async function consoleRoute(request, response, url) {
     return send(response, 200, { mode: "login" }, { "set-cookie": `${SESSION_COOKIE.split("=")[0]}=; Path=/; Max-Age=0` });
   }
   if (url.pathname === "/console/config") {
-    // As Core's console: signing in grants administration, so it reports only its installers,
-    // both served from the node installation payload, and without that payload neither, and the
-    // providers whose node files that payload holds (always a list, empty without it).
+    // Console assets cover node enrollment only; native self-hosted installation is independent.
     const served = state.installers;
     return send(response, 200, {
       node_installer: served, node_installer_sha256: served ? "a".repeat(64) : "",
       node_artifacts: served ? state.nodeArtifacts : [],
-      self_hosted_installer: served, self_hosted_installer_sha256: served ? SELF_HOSTED_INSTALLER_SHA256 : "",
     });
   }
   return error(response, 404, "Not found.");

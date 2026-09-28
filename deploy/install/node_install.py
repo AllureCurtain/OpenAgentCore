@@ -35,7 +35,6 @@ import uuid
 import distribution
 import node_spec
 import node_generations
-import node_update
 
 
 class InstallError(Exception):
