@@ -1,5 +1,7 @@
 package cli
 
+import "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
+
 import (
 	"context"
 	"errors"
@@ -41,7 +43,7 @@ func TestPreparationRegistrationBypassesProductWrappers(t *testing.T) {
 				t.Fatal("real heartbeat registry lost preparation")
 			}
 		}
-		wrapped.Register("codex", func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
+		wrapped.Register("codex", harnessconfig.Configuration{}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
 			return nil, stop
 		})
 		if _, err := wrapped.ResolvePreparation("codex"); err == nil {

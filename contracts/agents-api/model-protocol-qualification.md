@@ -1,4 +1,11 @@
-# Model protocol qualification (2026-09-28)
+# Model protocol qualification (2026-09-28) — historical, retired
+
+> Historical record of the retired built-in model proxy and converter. The
+> implementation, dependency choices, commands and results below describe that
+> earlier revision only; they are not current setup instructions, dependencies
+> or supported protocol combinations. The current native-only contract is
+> [model execution](model-execution.md#saved-defaults-and-precedence). No
+> compatibility alias, automatic migration or restoration of this converter is supported.
 
 The pinned converter is CLIProxyAPI v8.0.3. Real execution used MiniMax-M2.7
 through the configured MiniMax Chat Completions, Responses and Messages APIs,

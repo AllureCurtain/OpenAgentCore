@@ -113,8 +113,13 @@ func (s *Store) DeploymentModelProvider(ctx context.Context, harness string) (*D
 		return nil, ErrCredentialStorageUnavailable
 	}
 	var configuration v1.ModelConfigurationInput
-	if json.Unmarshal(raw, &configuration) != nil || configuration.ValidateHarness(harness) != nil {
+	if json.Unmarshal(raw, &configuration) != nil {
 		return nil, ErrCredentialStorageUnavailable
+	}
+	// A decrypted but unsupported configuration is not a credential failure.
+	// Keep its stored snapshot intact so the operator can inspect and replace it.
+	if err := configuration.ValidateHarness(harness); err != nil {
+		return nil, err
 	}
 	return &DeploymentModelProviderSnapshot{Provider: &configuration.ModelProvider, Model: configuration.Model, HarnessConfig: v1.ResolvedHarnessConfig(configuration.HarnessConfig), Revision: uuid.UUID(snapshot.Revision.Bytes)}, nil
 }

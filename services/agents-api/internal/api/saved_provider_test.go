@@ -155,6 +155,13 @@ func TestSavedProviderProtocolHarnessMatrix(t *testing.T) {
 				body := `{"model":"fixture","x_agents_core":{"harness":"` + harness + `","model_provider":` + provider + `}}`
 				for _, path := range []string{"/v1/agents", "/v1/agents/" + uuid.NewString()} {
 					response := credentialRequest(h, http.MethodPost, path, body)
+					native := harness == "mcode" || harness == "codex" && protocol == "responses" || harness == "claude_sdk" && protocol == "anthropic"
+					if !native {
+						if response.Code != http.StatusBadRequest || s.provider != nil || !strings.Contains(response.Body.String(), "does not support this model provider protocol") || strings.Contains(response.Body.String(), "saved-provider-secret") {
+							t.Fatalf("non-native provider reached storage or returned an unsafe rejection: status=%d", response.Code)
+						}
+						continue
+					}
 					want := http.StatusOK
 					if path == "/v1/agents" {
 						want = http.StatusCreated

@@ -12,7 +12,6 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
-	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 	obslog "github.com/MiniMax-AI-Dev/parsar/internal/obs/log"
 )
 
@@ -55,7 +54,6 @@ func Factory(ctx context.Context, req proto.PromptRequestPayload, out chan<- pro
 //  5. turn/completed emits TypeDone + closes out. Cancel can short-cut
 //     this by killing the child early.
 type Session struct {
-	modelRoute                modeltransport.Route
 	retiredTurns              map[string]bool
 	executor                  *Executor
 	outputDone                chan struct{}

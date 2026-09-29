@@ -9,11 +9,9 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent/clirunner"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
-	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 )
 
 type session struct {
-	modelRoute     modeltransport.Route
 	owner          *executor
 	runID          string
 	frames         chan []byte

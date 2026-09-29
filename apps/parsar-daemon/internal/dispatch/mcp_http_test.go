@@ -1,5 +1,7 @@
 package dispatch_test
 
+import "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
+
 import (
 	"context"
 	"encoding/json"
@@ -53,7 +55,7 @@ func TestMCPHTTPBearerRejectsUnsupportedRequestsBeforeFactory(t *testing.T) {
 			}
 			called := false
 			h.reg.RegisterKind(proto.SupportedAgentKind{Kind: req.AgentKind, Available: mode != "unavailable", Capabilities: caps},
-				func(_ context.Context, got proto.PromptRequestPayload, _ chan<- proto.Envelope) (agent.Session, error) {
+				harnessconfig.Configuration{}, func(_ context.Context, got proto.PromptRequestPayload, _ chan<- proto.Envelope) (agent.Session, error) {
 					called = true
 					if mode == "required" && !(*got.MCPHTTPServers)[0].Required {
 						t.Error("required initialization lost before adapter")
@@ -98,7 +100,7 @@ func TestLocalMCPRejectsBeforePreparationFactory(t *testing.T) {
 				req.Configuration.MCPHTTPServers = nil
 			}
 			entered := make(chan struct{}, 1)
-			h.reg.RegisterKind(proto.SupportedAgentKind{Kind: "prepared", Available: true, Capabilities: proto.AgentKindCapabilities{LocalEnvironment: true, MCPHTTPTools: true, MCPHTTPBearerAuth: true, MCPHTTPRequired: true}}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
+			h.reg.RegisterKind(proto.SupportedAgentKind{Kind: "prepared", Available: true, Capabilities: proto.AgentKindCapabilities{LocalEnvironment: true, MCPHTTPTools: true, MCPHTTPBearerAuth: true, MCPHTTPRequired: true}}, harnessconfig.Configuration{}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
 				t.Error("ordinary factory called")
 				return nil, errors.New("unexpected")
 			})

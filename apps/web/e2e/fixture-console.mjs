@@ -538,7 +538,7 @@ function providerProblem(harness, input) {
  * DELETE is 204 and safe to repeat. A disabled harness may still be configured.
  */
 async function harnessRoute(request, response, path) {
-  const support = (id) => ({ protocols: ["anthropic", "responses", "chat_completions"], native_protocols: id === "codex" ? ["responses"] : id === "claude_sdk" ? ["anthropic"] : ["anthropic", "responses", "chat_completions"], accepts_harness_config: id !== "mcode", token_limits_required: id === "mcode" });
+  const support = (id) => ({ protocols: id === "codex" ? ["responses"] : id === "claude_sdk" ? ["anthropic"] : ["anthropic", "responses", "chat_completions"], accepts_harness_config: id !== "mcode", token_limits_required: id === "mcode" });
   const view = (id) => ({ model_configuration_support: support(id), object: "core.harness", id, enabled: state.harnesses[id].enabled, default: state.harnesses[id].default, model_configuration: state.harnesses[id].provider });
   if (path === "/harnesses" && request.method === "GET") return send(response, 200, { object: "list", data: Object.keys(state.harnesses).map(view) });
   const match = path.match(HARNESS_PROVIDER);
@@ -566,7 +566,7 @@ async function harnessRoute(request, response, path) {
   if (typeof input !== "object" || Array.isArray(input)) return error(response, 400, `Invalid type: expected an object, but got ${jsonKind(input)} instead.`, "invalid_request_error");
   if (typeof input.model !== "string" || !input.model.trim()) return error(response, 400, "A model ID is required.", "model_configuration_model_invalid");
   if (input.harness_config !== undefined && (!input.harness_config || typeof input.harness_config !== "object" || Array.isArray(input.harness_config))) return error(response, 400, "Harness configuration must be an object.", "harness_config_invalid");
-  if (Object.keys(input.harness_config ?? {}).length && !support(harness).native_protocols.includes(input.model_provider?.protocol)) return error(response, 400, "The selected route cannot preserve native model settings.", "model_configuration_route_unsupported");
+  if (!support(harness).protocols.includes(input.model_provider?.protocol)) return error(response, 400, "This harness does not support this protocol.", "model_provider_protocol_unsupported");
   const problem = providerProblem(harness, input.model_provider ?? {});
   if (problem) return error(response, 400, problem, "invalid_request_error");
   // As Core's error mapping: sealing the key needs the credential encryption key.

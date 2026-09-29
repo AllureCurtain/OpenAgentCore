@@ -16,19 +16,23 @@ describe("deployment default observations", () => {
 });
 
 describe("adapter model configuration support", () => {
-  const support = { protocols: ["anthropic", "responses", "chat_completions"], native_protocols: ["responses", "anthropic"], accepts_harness_config: true, token_limits_required: false };
+  const support = { protocols: ["responses"], accepts_harness_config: true, token_limits_required: false };
   const harness = { object: "core.harness", id: "codex", enabled: false, default: false, model_configuration: null, model_configuration_support: support };
   it("preserves build declarations and native default order without inferring readiness", () => {
-    const value = { object: "list", data: [harness] };
+    const claude = { ...harness, id: "claude_sdk", model_configuration_support: { ...support, protocols: ["anthropic"] } };
+    const minimax = { ...harness, id: "mcode", model_configuration_support: { protocols: ["anthropic", "responses", "chat_completions"], accepts_harness_config: false, token_limits_required: true } };
+    const value = { object: "list", data: [harness, claude, minimax] };
     expect(projectCoreHarnessList(value)).toEqual(value);
-    const requiredLimits = { ...harness, id: "mcode", model_configuration_support: { ...support, native_protocols: ["anthropic"], accepts_harness_config: false, token_limits_required: true } };
-    expect(projectCoreHarnessList({ object: "list", data: [requiredLimits] }).data).toEqual([requiredLimits]);
+    const projected = projectCoreHarnessList(value).data[2]!.model_configuration_support.protocols;
+    expect(projected).not.toBe(minimax.model_configuration_support.protocols);
+    expect(projected[0]).toBe("anthropic");
   });
-  it("rejects missing, malformed or contradictory declarations", () => {
-    for (const value of [undefined, null, {}, { ...support, protocols: [] }, { ...support, protocols: ["unknown"] },
-      { ...support, protocols: ["responses", "responses"] }, { ...support, native_protocols: [] },
-      { ...support, native_protocols: ["unknown"] }, { ...support, protocols: ["responses"], native_protocols: ["anthropic"] },
-      { ...support, native_protocols: ["responses", "responses"] }, { ...support, accepts_harness_config: "true" },
+  it("rejects missing, malformed or obsolete declarations", () => {
+    for (const value of [undefined, null, {}, { ...support, protocols: undefined }, { ...support, protocols: null },
+      { ...support, protocols: "responses" }, { ...support, protocols: [] }, { ...support, protocols: ["unknown"] },
+      { ...support, protocols: [null] }, { ...support, protocols: ["responses", "responses"] },
+      { ...support, native_protocols: ["responses"] }, { ...support, accepts_harness_config: "true" },
+      { ...support, accepts_harness_config: undefined }, { ...support, token_limits_required: undefined },
       { ...support, token_limits_required: null }, { ...support, ready: true }]) {
       expect(() => projectCoreHarnessList({ object: "list", data: [{ ...harness, model_configuration_support: value }] })).toThrow();
     }

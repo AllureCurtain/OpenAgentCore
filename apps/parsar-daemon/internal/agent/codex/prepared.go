@@ -42,9 +42,6 @@ func (p *Prepared) start(ctx context.Context, runID string, prompt proto.Message
 	if out == nil || strings.TrimSpace(runID) == "" || prompt.Validate() != nil {
 		return nil, errors.New("codex: start requires a run identity, prompt and output channel")
 	}
-	if err := p.plan.ModelRoute.ValidateInput(prompt); err != nil {
-		return nil, err
-	}
 	p.mu.Lock()
 	if p.claimed || p.closed {
 		p.mu.Unlock()

@@ -1,41 +1,37 @@
 package codex
 
 import (
+	"reflect"
+	"strings"
 	"testing"
-
-	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
-	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 )
 
-func TestConvertedExecutorRejectsFutureImageBeforeOwnership(t *testing.T) {
-	e, root := executorFixture(t, "complete")
-	route := modeltransport.Route{Native: modeltransport.Responses, Upstream: modeltransport.Anthropic}
-	e.prepared.plan.ModelRoute = route
-	e.prepared.session.modelRoute = route
-	out := make(chan proto.Envelope, 20)
-	turn, err := e.StartTurn(t.Context(), "text-first", proto.TextInput("hello"), out)
-	if err != nil {
-		t.Fatal(err)
+func TestPlanRejectsNonNativeFrozenProvider(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	for _, protocol := range []string{"anthropic", "chat_completions"} {
+		t.Run(protocol, func(t *testing.T) {
+			provider := map[string]any{"protocol": protocol, "base_url": "https://model.invalid/v1", "api_key": "private-sentinel"}
+			plan, err := BuildSessionPlan("recovered", "frozen-state", t.TempDir(), map[string]any{"model": "frozen-model", "model_provider": provider})
+			if plan.Cleanup != nil {
+				plan.Cleanup()
+			}
+			if err == nil || !strings.Contains(err.Error(), "does not support") || strings.Contains(err.Error(), "private-sentinel") {
+				t.Fatalf("non-native snapshot accepted: %v", err)
+			}
+			if !reflect.DeepEqual(provider, map[string]any{"protocol": protocol, "base_url": "https://model.invalid/v1", "api_key": "private-sentinel"}) {
+				t.Fatal("frozen provider was rewritten")
+			}
+		})
 	}
-	if !awaitExecutorTurn(t, turn, out).Reusable {
-		t.Fatal("text did not settle")
+}
+
+func TestPlanRejectsIncompleteExplicitProvider(t *testing.T) {
+	for _, options := range []map[string]any{
+		{"model": "chosen", "model_provider": nil},
+		{"model_provider": map[string]any{"protocol": "responses", "base_url": "https://model.example/v1", "api_key": "fixture"}},
+	} {
+		if _, err := BuildSessionPlan("frozen", "state", "", options); err == nil {
+			t.Fatal("explicit provider fell back to native defaults")
+		}
 	}
-	before := len(preparationFrames(t, root))
-	ref := "data:image/png;base64,AA=="
-	input := proto.MessageInput{{Content: []proto.InputContent{{Type: "input_image", ImageURL: &ref}}}}
-	out = make(chan proto.Envelope, 20)
-	if next, err := e.StartTurn(t.Context(), "image-next", input, out); next != nil || err != modeltransport.ErrUnsupported {
-		t.Fatalf("image acquired output/native ownership: %v", err)
-	}
-	session := turn.(*Session)
-	if err := session.SteerWithReceipt(t.Context(), proto.PromptSteerPayload{InputID: "image", Input: input}, nil); err != modeltransport.ErrUnsupported {
-		t.Fatalf("steer accepted image: %v", err)
-	}
-	if err := session.SubmitFunctionResult(t.Context(), proto.FunctionResultPayload{CallID: "call", DeliveryID: "delivery", Success: true, Content: input[0].Content}); err != modeltransport.ErrUnsupported {
-		t.Fatalf("tool image accepted: %v", err)
-	}
-	if len(preparationFrames(t, root)) != before {
-		t.Fatal("rejected content reached native process")
-	}
-	close(out)
 }

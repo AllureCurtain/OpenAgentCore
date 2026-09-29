@@ -98,20 +98,19 @@ func TestAgentExecutionDefaultsPublicSnapshotAndPrecedence(t *testing.T) {
 	assertSnapshot(sid, "model-original", "https://override.example/v1", "override-canary")
 	for _, protocol := range []string{"anthropic", "chat_completions"} {
 		crossProtocol := strings.Replace(replacement, `"protocol":"responses"`, `"protocol":"`+protocol+`"`, 1)
-		created := id(call("POST", "/v1/agents/sessions", crossProtocol, uuid.NewString(), 201))
-		assertSnapshot(created, "model-original", "https://override.example/v1", "override-canary")
-		provider, err := st.SessionModelExecution(t.Context(), tenant, created)
-		if err != nil || provider == nil || provider.Protocol != protocol {
-			t.Fatal("Session did not freeze the chosen upstream protocol", err)
-		}
+		call("POST", "/v1/agents/sessions", crossProtocol, uuid.NewString(), 400)
 	}
 	crossHarness := strings.Replace(modelOnly, `"model":"model-override"`, `"model":"model-override","x_agents_core":{"harness":"claude_sdk"}`, 1)
-	created := id(call("POST", "/v1/agents/sessions", crossHarness, uuid.NewString(), 201))
-	assertSnapshot(created, "model-override", "https://saved.example/v1", "saved-canary")
+	call("POST", "/v1/agents/sessions", crossHarness, uuid.NewString(), 400)
+	assertSnapshot(sessionID, "model-original", "https://saved.example/v1", "saved-canary")
+	// Switching to another harness requires a complete native provider bundle.
+	nativeHarness := strings.TrimSuffix(crossHarness, "}") + `,"x_agents_core":{"model_provider":{"protocol":"anthropic","base_url":"https://override.example/v1","api_key":"override-canary"}}}`
+	created := id(call("POST", "/v1/agents/sessions", nativeHarness, uuid.NewString(), 201))
+	assertSnapshot(created, "model-override", "https://override.example/v1", "override-canary")
 	resolved, err := st.GetSession(t.Context(), tenant, created)
 	frozen, providerErr := st.SessionModelExecution(t.Context(), tenant, created)
-	if err != nil || providerErr != nil || resolved.Engine != "claude_sdk" || frozen == nil || frozen.Protocol != "responses" {
-		t.Fatal("harness override changed the inherited upstream protocol", err, providerErr)
+	if err != nil || providerErr != nil || resolved.Engine != "claude_sdk" || frozen == nil || frozen.Protocol != "anthropic" {
+		t.Fatal("harness override did not freeze the native provider", err, providerErr)
 	}
 	for _, raw := range []string{
 		strings.Replace(replacement, `,"api_key":"override-canary"`, "", 1),

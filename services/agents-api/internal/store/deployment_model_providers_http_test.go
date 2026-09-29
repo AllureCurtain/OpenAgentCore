@@ -152,14 +152,37 @@ func TestDeploymentModelProvidersHTTP(t *testing.T) {
 
 	for _, protocol := range []string{"anthropic", "chat_completions"} {
 		bundle := strings.Replace(codexDefault, `"protocol":"responses"`, `"protocol":"`+protocol+`"`, 1)
-		safe := call("PUT", path, coreKey, bundle, 200)
-		if text(providerView(safe)["protocol"]) != protocol || text(safe["harness"]) != "codex" || string(providerView(safe)["api_key_configured"]) != "true" {
-			t.Fatal("safe deployment view changed the selected upstream protocol")
+		failure := call("PUT", path, coreKey, bundle, 400)
+		if !strings.Contains(string(failure["error"]), "model_provider_protocol_unsupported") {
+			t.Fatal("unsupported native protocol not explained")
 		}
 		provider, err := st.DeploymentModelProvider(t.Context(), "codex")
-		if err != nil || provider == nil || provider.Provider == nil || provider.Provider.Protocol != protocol || provider.Provider.BaseURL != "https://deployment.example/v1" || provider.Provider.APIKey != "deployment-canary" {
-			t.Fatal("cross-protocol deployment bundle did not round trip", err)
+		if err != nil || provider == nil || provider.Provider.Protocol != "responses" || provider.Provider.APIKey != "deployment-canary" {
+			t.Fatal("rejected protocol changed the stored default", err)
 		}
+	}
+	call("PUT", path, coreKey, codexDefault, 200)
+
+	// Simulate a default persisted when cross-protocol execution was supported.
+	// It must remain readable, but cannot create new Sessions or be rewritten.
+	historical := strings.Replace(codexDefault, `"protocol":"responses"`, `"protocol":"anthropic"`, 1)
+	encrypted, err := cipher.SealDeploymentModelProvider([]byte(historical), "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), "UPDATE deployment_model_providers SET protocol='anthropic', encrypted_config=$1 WHERE harness='codex'", encrypted); err != nil {
+		t.Fatal(err)
+	}
+	incompatible := call("POST", "/v1/agents/sessions", projectKey, hosted, 400)
+	if !strings.Contains(string(incompatible["error"]), "does not support this model provider protocol") || strings.Contains(string(incompatible["error"]), "credential_storage_unavailable") {
+		t.Fatal("unsupported stored protocol was reported as a credential failure")
+	}
+	if text(providerView(call("GET", path, coreKey, "", 200))["protocol"]) != "anthropic" {
+		t.Fatal("unsupported default was rewritten")
+	}
+	var retained []byte
+	if err := pool.QueryRow(t.Context(), "SELECT encrypted_config FROM deployment_model_providers WHERE harness='codex'").Scan(&retained); err != nil || !bytes.Equal(retained, encrypted) {
+		t.Fatal("rejected default changed its encrypted snapshot", err)
 	}
 	call("PUT", path, coreKey, codexDefault, 200)
 

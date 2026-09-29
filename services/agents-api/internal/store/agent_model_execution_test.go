@@ -102,8 +102,8 @@ func TestAgentModelExecutionAtomicEncryptedSnapshot(t *testing.T) {
 	if err := pool.QueryRow(ctx, "SELECT count(*) FROM agents WHERE tenant_id=$1", tenant).Scan(&count); err != nil || count != 1 {
 		t.Fatal("failed create persisted partial Agent", err)
 	}
-	if _, err := s.UpdateAgent(ctx, tenant, agent.ID, UpdateAgentInput{Configuration: []byte(`{"x_agents_core":{"harness":"claude_sdk"}}`)}); err != nil {
-		t.Fatal("Runtime-translatable merged provider rejected", err)
+	if _, err := s.UpdateAgent(ctx, tenant, agent.ID, UpdateAgentInput{Configuration: []byte(`{"x_agents_core":{"harness":"claude_sdk"}}`)}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatal("incompatible Harness-only update accepted", err)
 	}
 	// Provider-only replacement preserves the existing harness.
 	patch, _ := json.Marshal(map[string]any{"x_agents_core": map[string]any{"model_provider": replacement.SafeView()}})
@@ -111,7 +111,7 @@ func TestAgentModelExecutionAtomicEncryptedSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	current, inherited, err = s.GetAgentForSession(ctx, tenant, agent.ID, true)
-	if err != nil || inherited == nil || *inherited != *replacement || !bytes.Contains(current.Configuration, []byte(`"harness": "claude_sdk"`)) {
+	if err != nil || inherited == nil || *inherited != *replacement || !bytes.Contains(current.Configuration, []byte(`"harness": "codex"`)) {
 		t.Fatal("provider-only replacement failed", err)
 	}
 	if _, err := withoutKey.UpdateAgent(ctx, tenant, agent.ID, UpdateAgentInput{Configuration: []byte(`{"x_agents_core":{"harness":"codex"}}`)}); err != nil {
