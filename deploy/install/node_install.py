@@ -35,6 +35,8 @@ import uuid
 import distribution
 import node_spec
 import node_generations
+import install_display
+import node_output
 
 
 class InstallError(Exception):
@@ -62,7 +64,6 @@ SYSTEM_UNITS = Path("/etc/systemd/system")
 SYSTEM_LOCKS = Path("/run")
 SYSTEMD_RUNNING = Path("/run/systemd/system")
 SELINUX_ENFORCE = Path("/sys/fs/selinux/enforce")
-USER_RUNTIME = Path("/run/user")
 SAFE_PATH = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 # A root-owned, empty Docker configuration for the service user's docker calls, so no
 # CLI plugin or credential helper the service user controls runs in the installer.
@@ -136,40 +137,14 @@ def discard_unregistered(root):
         shutil.rmtree(root / "state/node")
 
 
-def preflight(provider, system=False):
-    """Host access for the node's own user; a system service needs no user session."""
+def preflight(provider):
+    """Check host access after dropping to the node service account."""
     if sys.version_info < (3, 9) or platform.system() != "Linux" or platform.machine() not in ("x86_64", "amd64") or os.getuid() == 0:
         raise InstallError("Run with Python 3.9+ as a non-root user on Linux amd64")
-    if not system:
-        user_bus()
-        checked(["systemctl", "--user", "show", "--property=Version", "--value"], "A systemd user session is required")
-        if checked(["loginctl", "show-user", str(os.getuid()), "--property=Linger", "--value"], "Cannot check user lingering") != "yes":
-            raise InstallError("Ask the host administrator to enable user lingering before installing a node, or run the command with sudo")
     if provider == "docker":
         checked(list(DOCKER) + ["info", "--format", "{{.ServerVersion}}"], "Docker access through /var/run/docker.sock is required")
     elif not os.access(KVM, os.R_OK | os.W_OK):
         raise InstallError("microsandbox requires read/write access to /dev/kvm")
-
-
-def user_bus():
-    """Reach this user's systemd manager from a session that has no bus address.
-
-    su or sudo -iu from a root shell leaves XDG_RUNTIME_DIR unset; lingering keeps the
-    user manager and its bus running under /run/user/<uid>."""
-    if os.environ.get("XDG_RUNTIME_DIR"):
-        return
-    runtime = USER_RUNTIME / str(os.getuid())
-    bus = runtime / "bus"
-    try:
-        info = bus.lstat()
-    except OSError:
-        info = None
-    if info is None or not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
-        user = pwd.getpwuid(os.getuid()).pw_name
-        raise InstallError("No systemd user manager is running for " + user + ". Ask the host administrator to run "
-                           "`sudo loginctl enable-linger " + user + "`, or run the command with sudo.")
-    os.environ["XDG_RUNTIME_DIR"] = str(runtime)
-    os.environ["DBUS_SESSION_BUS_ADDRESS"] = "unix:path=" + str(bus)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -371,35 +346,19 @@ def prepare_runtime(root, args, manifest):
                 raise InstallError("Imported microsandbox runtime image identity or platform differs")
 
 
-def service_unit(root):
-    def quote(value):
-        return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%") + '"'
-    # The node keeps retrying while Core is unreachable (no start limit). It exits 78
-    # when Core rejects its credential, as after removal; that ends the restarts.
-    return ("[Unit]\nDescription=OpenAgentCore sandbox node\nStartLimitIntervalSec=0\n\n[Service]\nType=exec\nExecStart=:"
-            + quote(root / COMMON[0]) + " run --config " + quote(root / "provider.json") + " --state-dir " + quote(root / "state/node")
-            + "\nWorkingDirectory=" + str(root).replace("%", "%%")
-            + "\nRestart=on-failure\nRestartSec=5s\nRestartPreventExitStatus=78\nKillMode=process\nUMask=0077"
-            + "\n\n[Install]\nWantedBy=default.target\n")
-
-
 def unit_name(installation_id):
     return "oac-node-" + installation_id + ".service"
 
 
-def open_node(args, token, system=False):
+def open_node(args, token):
     """Read the Core specification and check the host; returns the node's state directory."""
     root = Path.home() / ".oac/nodes" / args.installation_id
     safe_directory(root)
     identity_file = root / "state/node/identity.json"
     retained = json.loads(identity_file.read_text()) if existing_file(identity_file) else None
-    if not system:  # In sudo mode, root has already said so.
-        print("Reading the Core deployment specification...", flush=True)
     args.configuration = node_spec.fetch(args, token, retained, open_request, allow_enrollment=not (root / "registered.json").exists())
     args.provider = args.configuration["provider"]
-    if not system:
-        print("Checking host requirements...", flush=True)
-    preflight(args.provider, system)
+    preflight(args.provider)
     if args.provider == "microsandbox":
         runtime_home = micro_home(args.installation_id)
         safe_directory(runtime_home)
@@ -423,7 +382,7 @@ def install_lock(root):
 
 def register_node(root, args, token, helper_archive=None):
     """Download and verify the payload, prepare the Runtime and register; not the service."""
-    print("Downloading and verifying node files...", flush=True)
+    install_display.step("Downloading and verifying node files")
     program_manifest, program_sums = metadata(args.source_url, getattr(args, "bundle", None))
     selected = args.configuration["specification"]["runtime"]
     manifest, sums = program_manifest, program_sums
@@ -464,7 +423,7 @@ def register_node(root, args, token, helper_archive=None):
     with node_generations.collection_lease(root, args.configuration["generation"], sys.modules[__name__], lease_identity,
                                            initialize=not (root / "provider.json").exists()):
         pass
-    print("Checking the sandbox runtime...", flush=True)
+    install_display.step("Checking the sandbox runtime")
     runtime_image = prepare_runtime(root, args, manifest)
     # Retain the original network policy when recovering a partial installation.
     if not existing_file(root / "provider.json"):
@@ -478,7 +437,7 @@ def register_node(root, args, token, helper_archive=None):
         try:
             with os.fdopen(descriptor, "w") as secret:
                 secret.write(token)
-            print("Registering this node with Core...", flush=True)
+            install_display.step("Registering this node with Core")
             try:
                 checked([str(root / COMMON[0]), "register", "--config", str(root / "provider.json"), "--state-dir", str(root / "state/node"),
                          "--core-url", args.core_url, "--name", socket.gethostname(),
@@ -547,12 +506,10 @@ def refuse_legacy_node(args):
             raise InstallError("Cannot inspect possible legacy node state at " + str(path)
                                + "; check this path before installing." + NOTHING_CHANGED) from None
     if not found and shutil.which("systemctl") is not None:
-        modes = [[], ["--user"]] if os.geteuid() != 0 else [[]]
-        for mode in modes:
-            result = subprocess.run(["systemctl", *mode, "show", unit, "--property=LoadState", "--value"],
-                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
-            if result.returncode == 0 and result.stdout.strip() not in ("", "not-found"):
-                found.append(unit)
+        result = subprocess.run(["systemctl", "show", unit, "--property=LoadState", "--value"],
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=10)
+        if result.returncode == 0 and result.stdout.strip() not in ("", "not-found"):
+            found.append(unit)
     # Inspect only the fixed local engine. A microsandbox user without Docker
     # access does not need that unrelated host capability to install its node.
     if not found and shutil.which("docker") is not None and DOCKER_SOCKET.exists() and (
@@ -569,37 +526,11 @@ def refuse_legacy_node(args):
                            + ", or follow \"Remove a node added before the rename\" in the node guide." + NOTHING_CHANGED)
 
 
-def install(args, token):
-    """Non-root mode: the node runs as this user's systemd user service."""
-    try:
-        system_node = (SYSTEM_RECORDS / (args.installation_id + ".json")).exists()
-    except PermissionError:
-        system_node = True
-    if system_node:
-        raise InstallError("This host already runs a node for this installation as a system service. Rerun the command "
-                           "with sudo, or uninstall that node with sudo first." + NOTHING_CHANGED)
-    refuse_legacy_node(args)
-    root = open_node(args, token)
-    with host_lock(), install_lock(root):
-        register_node(root, args, token)
-        unit = root / unit_name(args.installation_id)
-        write_once(unit, service_unit(root))
-        print("Starting the node service...", flush=True)
-        checked(["systemctl", "--user", "daemon-reload"], "Cannot reload the systemd user manager")
-        checked(["systemctl", "--user", "enable", "--now", str(unit)], "Cannot start the node service; retained identity is unchanged")
-        checked(["systemctl", "--user", "is-active", "--quiet", unit.name], "Node service is unavailable; inspect its systemd user journal")
-        print("Waiting for Core connection and provider readiness...", flush=True)
-        wait_ready(root, args)
-    print("Node connected to Core and provider ready. State: " + str(root))
-    print("Logs: journalctl --user -u " + unit.name)
-
-
 def prepare_service_node(args, token, helper_archive):
     """Sudo mode, as the service user: everything but the root-owned system unit."""
-    root = open_node(args, token, system=True)
+    root = open_node(args, token)
     with install_lock(root):
         register_node(root, args, token, helper_archive)
-
 
 
 # Sudo mode -----------------------------------------------------------------
@@ -786,7 +717,7 @@ def service_child(account, function, arguments, parent, mask, read_ends, output_
         function(*arguments)
         code = 0
     except (InstallError, node_spec.SpecificationError, distribution.DistributionError) as error:
-        print(str(error), file=sys.stderr)
+        install_display.error(str(error))
     except Exception as error:  # noqa: BLE001 - the child must always report and exit
         print("The step running as " + SERVICE_USER + " failed unexpectedly (" + type(error).__name__
               + "). Inspect the host, then rerun the command.", file=sys.stderr)
@@ -814,40 +745,22 @@ def child_docker_config():
 
 @contextlib.contextmanager
 def host_lock():
-    """One node installation or uninstallation at a time on this host.
-
-    Root takes it exclusively around every sudo-mode change, so installing one node
-    never races removing another's account. Normal users share it when it exists.
-    It lives in /run, which the next boot clears."""
+    """Serialize root-owned installation and removal, including account changes."""
     path = SYSTEM_LOCKS / "oac-node.lock"
-    root = os.geteuid() == 0
-    descriptor = None
-    try:
-        if root:
-            descriptor = os.open(path, os.O_CREAT | os.O_RDONLY | os.O_NOFOLLOW, 0o644)
-            os.fchmod(descriptor, 0o644)  # Readable by normal users despite the command's umask 077.
-        else:
-            descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
-    except OSError:
-        if root:
-            raise
-    if descriptor is None:
-        yield  # No sudo-mode run has happened on this host since boot.
-        return
+    descriptor = os.open(path, os.O_CREAT | os.O_RDONLY | os.O_NOFOLLOW, 0o600)
     with os.fdopen(descriptor) as lock:
-        operation = fcntl.LOCK_EX if root else fcntl.LOCK_SH
         deadline = time.monotonic() + LOCK_WAIT_SECONDS
         waiting = False
         while True:
             try:
-                fcntl.flock(lock, operation | fcntl.LOCK_NB)
+                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
                 break
             except BlockingIOError:
                 if time.monotonic() > deadline:
                     raise InstallError("Another node installation or uninstallation on this host still holds "
                                        + str(path) + "; find it with `sudo fuser " + str(path) + "`, then rerun.") from None
                 if not waiting:
-                    print("Waiting for another node installation or uninstallation on this host...", flush=True)
+                    install_display.step("Waiting for another node installation or uninstallation on this host")
                     waiting = True
                 time.sleep(1)
         yield
@@ -866,8 +779,7 @@ def host_checks():
     except OSError:
         enforcing = False
     if enforcing:
-        raise InstallError("SELinux is enforcing on this host, which sudo mode does not support yet. Run the no-sudo "
-                           "command as a prepared user instead." + NOTHING_CHANGED)
+        raise InstallError("SELinux is enforcing on this host, which the node installer does not support." + NOTHING_CHANGED)
 
 
 def root_file(path, content, replace=False):
@@ -882,7 +794,7 @@ def root_file(path, content, replace=False):
         if not replace:
             raise InstallError(str(path) + " differs from this installer's version; preserve it and inspect the node")
     if not path.parent.exists():
-        # Readable by every user, so a no-sudo run can see a sudo-mode node; the caller's umask is 077.
+        # Set the root-owned unit and record mode independently of the caller's umask.
         path.parent.mkdir(parents=True, mode=0o755)
         os.chmod(path.parent, 0o755)
     descriptor, temporary = tempfile.mkstemp(prefix=".oac-node-", dir=path.parent)
@@ -1023,9 +935,9 @@ def device_group(provider, device, gid):
 def other_node(args, provider):
     """Refuse a second sudo-mode Core on this host, or a second node for this installation.
 
-    Sudo-mode nodes share the oac-node account, so one host serves one Core. Nodes
-    installed without sudo are found in the invoking user's home and, for Docker, by
-    their network on this engine; other users' homes are not searched."""
+    Sudo-mode nodes share the oac-node account, so one host serves one Core. Retained node
+    state is checked in the invoking user's home and, for Docker, on this engine;
+    other users' homes are not searched or modified."""
     for installation in node_records():
         if installation != args.installation_id:
             raise InstallError("This host already runs a sudo-mode node for another Core (installation " + installation
@@ -1038,8 +950,8 @@ def other_node(args, provider):
         except KeyError:
             home = ""
         if home.startswith("/") and listdir_nofollow(home, ".oac", "nodes", args.installation_id):
-            raise InstallError("This host already runs a node for this installation, installed without sudo by " + sudo_user
-                               + ". Remove it on the Nodes page and uninstall it as that user first." + NOTHING_CHANGED)
+            raise InstallError("Existing node state for this installation belongs to " + sudo_user
+                               + ". Preserve it and arrange cleanup separately before installing a system node." + NOTHING_CHANGED)
     if provider == "docker":
         networks = checked(list(DOCKER) + ["network", "ls", "--format", "{{.Name}}"], "Cannot inspect Docker networks").splitlines()
         if "oac-node-" + args.installation_id in networks:
@@ -1135,7 +1047,7 @@ def install_system(args, token):
     record = node_record(args.installation_id)
     configuration = None
     if record is None:
-        print("Reading the Core deployment specification...", flush=True)
+        install_display.step("Reading the Core deployment specification")
         configuration = node_spec.fetch(args, token, None, open_request, allow_enrollment=True)
         provider = configuration["provider"]
     else:
@@ -1143,7 +1055,7 @@ def install_system(args, token):
         if record["core_url"] != args.core_url:
             raise InstallError("This host's node uses " + record["core_url"] + ", but this command uses " + args.core_url
                                + ". Remove the node on the Nodes page, uninstall it, then run a new command." + NOTHING_CHANGED)
-    print("Checking host requirements...", flush=True)
+    install_display.step("Checking host requirements")
     group, details = provider_group(provider)
     if record is None:
         other_node(args, provider)
@@ -1154,6 +1066,7 @@ def install_system(args, token):
         account, account_record = account_plan()
         helper_archive = node_generations.helper_archive(args, sys.modules[__name__])
         # Every check has passed; from here on the host changes.
+        install_display.step("Preparing the node service account")
         account = prepare_account(account, account_record, group)
         child_docker_config()
         root = SERVICE_HOME / ".oac/nodes" / args.installation_id
@@ -1164,14 +1077,13 @@ def install_system(args, token):
         args.system, args.provider = True, provider
         run_as(account, prepare_service_node, args, token, helper_archive)
         root_file(unit, system_unit(root, provider))
-        print("Starting the node service...", flush=True)
+        install_display.step("Starting the node service")
         checked(["systemctl", "daemon-reload"], "Cannot reload systemd")
         checked(["systemctl", "enable", "--now", unit.name], "Cannot start the node service; retained identity is unchanged")
         checked(["systemctl", "is-active", "--quiet", unit.name], "Node service is unavailable; inspect sudo journalctl -u " + unit.name)
-        print("Waiting for Core connection and provider readiness...", flush=True)
+        install_display.step("Waiting for Core connection and provider readiness")
         run_as(account, wait_ready, root, args)
-    print("Node connected to Core and provider ready. It runs as " + SERVICE_USER + " in the system service " + unit.name + ".")
-    print("Logs: sudo journalctl -u " + unit.name)
+    node_output.summary(root, args, unit.name, SERVICE_USER)
 
 
 # Uninstall -------------------------------------------------------------------
@@ -1286,8 +1198,7 @@ def uninstall_system(args):
     unit = SYSTEM_UNITS / unit_name(args.installation_id)
     # Only root-owned files decide whether a node is installed; the service home is not read here.
     if record is None and not unit.exists() and not (SYSTEM_RECORDS / "account.json").exists():
-        print("No node for installation " + args.installation_id + " was installed with sudo on this host. If it was "
-              "installed without sudo, run the uninstall command as that user without sudo.")
+        print("No node for installation " + args.installation_id + " has a system installation on this host. Nothing was changed.")
         return
     with host_lock():
         record = node_record(args.installation_id)
@@ -1352,35 +1263,6 @@ def release_account(account, record):
     (SYSTEM_RECORDS / "account.json").unlink()
     with contextlib.suppress(OSError):
         SYSTEM_RECORDS.rmdir()
-
-
-def uninstall_user(args):
-    refuse_legacy_node(args)
-    with host_lock():
-        root = Path.home() / ".oac/nodes" / args.installation_id
-        if not root.exists():
-            print("No node for installation " + args.installation_id + " is installed for this user. If it was installed "
-                  "with sudo, run the uninstall command with sudo.")
-            return
-        identity = private_json(root / "state/node/identity.json") or {}
-        core_url = identity.get("core_url")
-        if core_url is not None:
-            recorded_origin(core_url, str(root / "state/node/identity.json"))
-        elif (root / "registered.json").exists() and not args.force:
-            raise InstallError("Retained node identity is missing or invalid; rerun with --force only if Core no longer exists." + NOTHING_CHANGED)
-        confirm_removed(root, core_url, args.force)
-        unit = root / unit_name(args.installation_id)
-        service = unit.exists()
-        if service:
-            user_bus()
-            checked(["systemctl", "--user", "disable", "--now", unit.name], "Cannot stop the node service " + unit.name)
-        release_docker_network(args.installation_id)
-        remove_node_files(root, args.installation_id)
-        if service:
-            checked(["systemctl", "--user", "daemon-reload"], "Cannot reload the systemd user manager")
-            with contextlib.suppress(InstallError):
-                checked(["systemctl", "--user", "reset-failed", unit.name], "Cannot reset " + unit.name)
-    print("Node for installation " + args.installation_id + " uninstalled for this user.")
 
 
 def wait_ready(root, args, timeout=60):
@@ -1458,7 +1340,10 @@ def main(argv=None):
     parser.add_argument("--update", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--uninstall", action="store_true", help="Remove this host's node after it was removed on the Nodes page")
     parser.add_argument("--force", action="store_true", help="With --uninstall: skip the Core check, for a Core that no longer exists")
+    parser.add_argument("--no-color", action="store_true", help="Disable terminal colors")
     args = parser.parse_args(argv)
+    if args.no_color:
+        os.environ["NO_COLOR"] = "1"
     if RETIRED_TOKEN_VARIABLE in os.environ:
         parser.exit(2, RETIRED_TOKEN_VARIABLE + " is retired: pass the enrollment token on standard input with "
                        "--enrollment-token-stdin.\n")
@@ -1476,10 +1361,12 @@ def main(argv=None):
             print("Runtime artifact transfer or verification failed", file=sys.stderr)
             raise SystemExit(65) from None
         return
+    if os.geteuid() != 0:
+        raise InstallError("Node installation and removal require root. Run this command with sudo.")
     if args.uninstall:
         if args.source_url or args.bundle or args.core_url or args.provider or args.enrollment_token_stdin:
             parser.error("--uninstall takes only --installation-id and --force")
-        (uninstall_system if os.geteuid() == 0 else uninstall_user)(args)
+        uninstall_system(args)
         return
     if args.force:
         parser.error("--force applies only to --uninstall")
@@ -1490,10 +1377,7 @@ def main(argv=None):
     token = read_token(args)
     if len(token) > 4096 or any(c.isspace() for c in token):
         raise InstallError("A valid one-time enrollment credential is required")
-    if os.geteuid() == 0:
-        install_system(args, token)
-    else:
-        install(args, token)
+    install_system(args, token)
 
 
 if __name__ == "__main__":
@@ -1507,5 +1391,5 @@ if __name__ == "__main__":
         print(INTERRUPTED, file=sys.stderr)
         sys.exit(130)
     except (InstallError, node_spec.SpecificationError, distribution.DistributionError, OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
-        print(str(error) if isinstance(error, (InstallError, node_spec.SpecificationError, distribution.DistributionError)) else "Node installation failed; check host prerequisites and retained private files", file=sys.stderr)
+        install_display.error(str(error) if isinstance(error, (InstallError, node_spec.SpecificationError, distribution.DistributionError)) else "check host prerequisites and retained private files")
         sys.exit(1)
