@@ -144,11 +144,13 @@ class BootstrapTests(unittest.TestCase):
                 bootstrap.main([])
         self.http.assert_not_called()
 
-    def test_nonroot_requirement_is_preserved(self):
+    def test_root_uses_the_same_verified_installation_path(self):
         with mock.patch.object(bootstrap.os, "geteuid", return_value=0):
-            with self.assertRaisesRegex(bootstrap.ReleaseError, "non-root"):
-                bootstrap.main([])
-        self.http.assert_not_called()
+            self.assertEqual(bootstrap.main(["--core-only"]), 0)
+        command = self.invoke.call_args.args[0]
+        self.assertEqual(command, ["bash", command[1], "--core-only"])
+        self.assertTrue(pathlib.Path(command[1]).is_relative_to(self.root / ".oac/releases"))
+        self.assertTrue(pathlib.Path(command[1]).is_file())
 
     def test_installer_failure_is_returned_and_bundle_retained(self):
         self.invoke.return_value = 17

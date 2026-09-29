@@ -2166,6 +2166,12 @@ not widen sandbox network policies or change credential admission.
 The distribution build sets umask 022 for non-root-readable payloads; installation
 credentials and state retain their explicit private permissions.
 
+The Core/Web installer uses the launching account, including root, and a writable
+installation directory. It never invokes sudo, switches accounts or changes host
+Docker permissions. Check actual platform, Docker and directory prerequisites;
+root alone is not a reason to refuse installation. Native Core retains its
+systemd user-manager and lingering prerequisites for that same account.
+
 The first installer targets a trusted Linux amd64 Docker host. It installs a
 private dedicated PostgreSQL service and separate Core and console services in
 Compose by default, with zero execution nodes. The default requires neither KVM
