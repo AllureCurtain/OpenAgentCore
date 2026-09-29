@@ -303,6 +303,18 @@ function nodeDetail(node) {
 }
 
 async function sandboxRoute(request, response, path) {
+  const e2bTemplates = ["/e2b/templates", "/e2b/templates/template/builds"];
+  if (e2bTemplates.includes(path)) {
+    if (request.method !== "POST") return error(response, 405, "Method not allowed.");
+    const input = await body(request);
+    const knownEndpoint = [
+      ["https://sandbox.sandbase.ai", "sandbox.sandbase.ai"],
+      ["https://api.e2b.app", "e2b.app"],
+    ].some(([apiURL, domain]) => input.api_url === apiURL && input.domain === domain);
+    if (input.api_key !== "fixture-private-key" || !knownEndpoint) return error(response, 400, "Invalid E2B connection.");
+    if (path === "/e2b/templates") return send(response, 200, { templates: [{ id: "template", names: ["fixture-runtime"] }] });
+    return send(response, 200, { builds: [{ id: "94be54a1-138c-4f30-bc87-b13686272dbe", cpus: 2, memory_mib: 2048 }] });
+  }
   if (path === "/runtime-observations" && request.method === "GET") {
     // Only E2B reports a sandbox's disk.
     const e2b = state.deployment?.provider === "e2b";
@@ -550,4 +562,3 @@ http.createServer(async (request, response) => {
     error(response, 500, String(caught));
   }
 }).listen(port, "127.0.0.1", () => console.log(`Console acceptance fixture on http://127.0.0.1:${port}`));
-
