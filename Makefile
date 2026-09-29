@@ -129,6 +129,7 @@ check-distribution:
 	go test ./services/core-console -count=1
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy/install -p 'test_*.py'
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/core-distribution-manifest.test.py
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/publish-core-release.test.py
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/promote-qualified-release.test.py
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/qualification-control.test.py
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/config-reference.py --check

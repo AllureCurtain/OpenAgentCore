@@ -1,6 +1,12 @@
 name: core-check
 
 on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Source commit to check
+        required: false
+        type: string
   push:
     branches: [main]
   pull_request:
@@ -9,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: core-check-${{ github.ref }}
+  group: core-check-${{ github.workflow }}-${{ inputs.ref || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,6 +38,8 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
