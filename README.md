@@ -15,6 +15,12 @@ administrator console.
 
 ## Quick start
 
+On a Linux amd64 host with Docker and Python 3.9+, install the latest stable release:
+
+```sh
+curl -fsSL https://github.com/MiniMax-AI/parsar-core/releases/latest/download/install.sh | bash
+```
+
 1. [Install Core and Web](docs/getting-started/install.md) on a Linux host. The guide
    covers prerequisites, release download, local trials and HTTPS setup.
 2. Sign in to Web with the installer-created Core key. Configure a model provider,

@@ -10,6 +10,12 @@ Web 提供管理员控制台。
 
 ## 快速开始
 
+在已准备 Docker 和 Python 3.9+ 的 Linux amd64 主机上，一条命令安装最新正式版：
+
+```sh
+curl -fsSL https://github.com/MiniMax-AI/parsar-core/releases/latest/download/install.sh | bash
+```
+
 1. 在 Linux 主机上[安装 Core 和 Web](docs/getting-started/install.md)。安装指南包含环境要求、
    发行包下载、本地试用和 HTTPS 配置。
 2. 用安装器生成的 Core key 登录 Web，配置模型提供方，创建 Project 并签发应用 API key。

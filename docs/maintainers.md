@@ -50,7 +50,10 @@ then builds the Linux amd64 Core, Web, Runtime and database images, installation
 archives and versioned Runtime assets. Tag builds include the offline archive.
 It uploads the matched files as an Actions artifact and automatically publishes
 them in the same tag's GitHub Release. Downloads in the manifest refer to that
-tag. Images are shipped as archives; this workflow does not push an image registry.
+tag. Each Release also includes the standalone `install.sh` bootstrap and its
+checksum. It defaults to the latest stable release and accepts `--version`;
+the [installation guide](getting-started/install.md#install) owns its usage.
+Images are shipped as archives; this workflow does not push an image registry.
 Publishing a Release does not change the repository's visibility.
 
 Build and check jobs have read-only repository permissions. Only the publication

@@ -1979,6 +1979,10 @@ matched assets automatically; manual runs remain artifact-only or draft-only.
 Only publication receives repository write permission. Never overwrite release
 assets or move an existing version tag. The [maintainer guide](docs/maintainers.md#publish-a-version)
 owns tag syntax, prereleases and failed-publication recovery.
+Release assets include `deploy/install-release.sh` as standalone `install.sh`
+with a checksum. This public downloader resolves latest once (or a selected tag),
+verifies the offline archive before safe extraction, and delegates to that bundle's
+installer. It introduces no separate installation state, upgrade path or login flow.
 Build/test success is distinct from real-model qualification; maintainers assess
 that evidence before pushing a release tag, and no synthetic result substitutes
 for native execution acceptance.
