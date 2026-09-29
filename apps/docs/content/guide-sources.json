@@ -23,7 +23,7 @@
     "docs/getting-started/operations.md": "61de153e6a835e70531ca06e7be18bb23f14bb5b4f735ffd0670d45517f3296c",
     "docs/user-guide.md": "a601c7f9df02c3bfe9c4ca3a43b91ab5721f3f8e904fccd116418dbdc1665a53",
     "docs/development.md": "3e03e2666c92380d207ab53285e3b85fdcb042481c8ca76219ed08d629d52812",
-    "contracts/agents-api/harness-onboarding.md": "9802f6cbc6e2db6e3c99a8a1cf5c2373836855f9ac77ff6e3d17cc7056674afd",
+    "contracts/agents-api/harness-onboarding.md": "2c744598f39c156f868418423abdf45d0b52e04b7debaa50ffc95b1b4bb91a87",
     "docs/runtime-protocol.md": "6baa332705743e34b8565613d743d1b30099d8af78159b06ad921ffa7e164a9f",
     "docs/sandbox-provider.md": "dd8c2c2b2e2acf4d6ae564f56ffaf5685d74a84fa7a7a15b4cad851015ee36ab",
     "apps/docs/scripts/guides.json": "109374d4bf1a1d20d10ea85c9400ec6a2f9b62ca0fc6ee6030d3aab94a50d217"
@@ -51,7 +51,7 @@
     "content/docs/troubleshooting.mdx": "c4b7d3b747f1f40007a2976020e9451bdd407517c4ed9977352421462c0a425d",
     "content/docs/user-guide.mdx": "005b775680b170032fa7f94c6f406f4ceef1d184bb6e58096e38fb6c5be13d43",
     "content/docs/development.mdx": "ae9ac498827cd2ec3eab71277d709de0dd41abb2a5476ba5c976ba76c5dbd791",
-    "content/docs/harness-onboarding.mdx": "8b0bfd3a2b1ec77a9be60ee3b96a8454c45acdc215544564ffbd2645b8060cbe",
+    "content/docs/harness-onboarding.mdx": "774a071a5e7ab4a38ddc67264a58bf1def6d0782c808e5181f688747a783d54b",
     "content/docs/runtime-protocol.mdx": "8b7e610cca3350ab744c551f3123d9bc80ea76844a966010e5091c5d96ff849a",
     "content/docs/sandbox-provider.mdx": "f14b45e46ce8a63103c865c6de6859940dad1ced9056405a5e0ee34a63b61f1c"
   }
