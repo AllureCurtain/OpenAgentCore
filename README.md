@@ -1,8 +1,12 @@
-# OpenAgentCore
+![Open AgentCore red pixel wordmark](docs/assets/openagentcore-banner.png)
+
+<h1 align="center">OpenAgentCore</h1>
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-![OpenAgentCore](docs/assets/openagentcore-banner.png)
+<p align="center"><strong>Open-source Agents API infrastructure, with your choice of native harness.</strong></p>
+
+[Get started](#quick-start) · [Documentation](#documentation) · [Call the API](docs/getting-started/quickstart.md) · [Contributing](CONTRIBUTING.md)
 
 Run native Codex, Claude Code and MiniMax Code through one Agents API. Core owns
 Sessions and execution state; a daemon prepares capabilities and runs the selected
