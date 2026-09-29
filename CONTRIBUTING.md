@@ -2779,25 +2779,18 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   identity; retries cannot replace it. Keep this administrator query separate from
   runtime observations and do not touch activity or wake sandboxes. The versioned
   contract is `contracts/agents-api/execution-configuration.md`.
-- Model communication uses `internal/modeltransport` in the Runtime. Core sends one
-  frozen confidential `model_provider` bundle, independent of engine and placement;
-  it must not manufacture native provider options or retain a historical-options
-  dispatch path. The adapter declares native protocols. Native matches connect
-  directly; mismatches use one private loopback endpoint owned by the existing
-  Session execution resource. Its credential is distinct from the upstream key.
-  Keep endpoint cleanup on final native teardown, including preparation failure,
-  rather than on individual Turn completion. No second Session manager is added.
-  CLIProxyAPI's pinned translator is an embedded conversion dependency, not a
-  gateway service. Requests, JSON responses and incremental SSE events share the
-  same conversion implementation for hosted and self-hosted execution. The
-  dependency owns protocol fields, tools, reasoning and usage conversion. Do not
-  add local field maps, parameter restoration or parallel compatibility rules.
-  Keep SDK format selection, HTTP/SSE framing, limits, cancellation and resource
-  cleanup here. Pin dependency versions and qualify upgrades with contract and
-  native engine tests; document upstream limitations instead of silently promising
-  lossless conversion. Preserve model identity, reject incomplete streams and
-  never redirect upstream credentials. See `contracts/agents-api/model-protocol-conversion.md` for coverage,
-  limits and dependency qualification. Go 1.26.8 is the pinned build toolchain.
+- Model communication uses native direct connections only. Core sends one frozen
+  confidential `model_provider` bundle, independent of engine and placement;
+  adapters apply it through their native provider configuration. The shared
+  `internal/harnessconfig` descriptor declares one ordered `protocols` list,
+  with the first entry as the default. Core admission and Runtime enforce it.
+  There is no built-in model API proxy, passthrough gateway or cross-protocol
+  conversion, including inside individual Harnesses. Unsupported combinations
+  fail explicitly; saved configurations and immutable Session snapshots are
+  never rewritten, aliased or migrated to another protocol. Provider validation,
+  credential encryption, capability checks and native lifecycle ownership remain
+  mandatory. See `contracts/agents-api/model-execution.md` for the current
+  protocol matrix. Go 1.26.8 is the pinned build toolchain.
 - Provider input validation uses the adapter-owned rules in `internal/harnessconfig`.
   Keep one internal registry for protocol and token-limit validation; Core owns
   credential environment and endpoint admission policy. These rules are not a
@@ -3600,16 +3593,15 @@ The configuration preparation contract in `apps/parsar-daemon/internal/agent/har
 is mandatory for every Executor factory. Shared wire types live in
 `internal/agentdaemon/proto`; native model fields and their application are documented
 in [Harness onboarding](contracts/agents-api/harness-onboarding.md#native-model-configuration).
-The standalone Core build includes the shared `internal/modeltransport` route
-qualification code alongside the adapter declarations; Runtime still owns proxy
-startup and request forwarding.
+Core and Runtime consume the same native protocol and parameter declarations in
+`internal/harnessconfig`; adapters configure direct native connections.
 Implemented public configuration sources and inheritance belong to
 [model execution](contracts/agents-api/model-execution.md).
 [Unified model configuration design](contracts/agents-api/model-configuration-design.md)
 is the canonical planned field/ownership contract. Extend Web defaults and the
 public API through the same types, resolver, validators and adapter planner;
 source and authority may differ. Implement planned fields and qualify their
-native/proxy application before exposing them as accepted HTTP input. This design
+native application before exposing them as accepted HTTP input. This design
 does not change current native configuration or require speculative Runtime
 scaffolding. The planned adapter obligations are indexed in `agent/harness.go`.
 

@@ -11,14 +11,11 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
 	harnessconfiguration "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/codex"
-	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 )
 
 // SessionPlan holds the resolved per-prompt launch plan derived from
 // the daemon's PromptRequestPayload.
 type SessionPlan struct {
-	ModelRoute modeltransport.Route
-
 	// Cwd is the validated working directory passed to codex (and to
 	// the spawned app-server). Empty when the caller provided no work_dir.
 	Cwd string
@@ -111,6 +108,10 @@ func BuildSessionPlan(runID, agentStateKey, workDir string, opts map[string]any)
 		return plan, err
 	}
 
+	if value, present := opts["model_provider"]; present && (value == nil || stringOpt(opts, "model") == "") {
+		return plan, errors.New("codex: model and complete model_provider are required")
+	}
+
 	if value, present := opts["web_search"]; present {
 		switch value {
 		case "disabled", "cached", "live":
@@ -175,17 +176,7 @@ func BuildSessionPlan(runID, agentStateKey, workDir string, opts map[string]any)
 		}
 	}
 
-	// The native adapter selects Responses; Runtime converts other upstream protocols.
-	preparedOptions, endpoint, err := modeltransport.PrepareOptions(opts, harnessconfiguration.Configuration().NativeProtocols()...)
-	if err != nil {
-		return plan, err
-	}
-	if endpoint != nil {
-		plan.ModelRoute = endpoint.Route
-		cleanup = func() { _ = endpoint.Close() }
-		plan.Cleanup = cleanup
-	}
-	provider, hasProvider, err := normaliseProviderConfig(preparedOptions["model_provider"])
+	provider, hasProvider, err := normaliseProviderConfig(opts["model_provider"])
 	if err != nil {
 		cleanup()
 		return plan, err
@@ -388,14 +379,14 @@ func normaliseMCPServers(raw any) (map[string]mcpServerConfig, error) {
 	return out, nil
 }
 
-// normaliseProviderConfig receives the adapter's prepared native endpoint.
+// normaliseProviderConfig validates and renders the frozen native provider.
 func normaliseProviderConfig(raw any) (providerConfig, bool, error) {
 	if raw == nil {
 		return providerConfig{}, false, nil
 	}
-	provider, err := modeltransport.ParseProvider(raw)
-	if err != nil || provider.Protocol != modeltransport.Responses {
-		return providerConfig{}, false, modeltransport.ErrConfiguration
+	provider, err := harnessconfiguration.Configuration().ParseProvider(raw)
+	if err != nil {
+		return providerConfig{}, false, err
 	}
 	return providerConfig{BaseURL: provider.BaseURL, BearerToken: provider.APIKey, WireAPI: "responses"}, true, nil
 }

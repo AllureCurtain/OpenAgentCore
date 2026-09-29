@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
-	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 )
 
 // Resolve mutable defaults once, before constructing the immutable Agent. Model
@@ -105,7 +104,7 @@ func freezeSessionHarnessConfig(raw json.RawMessage, native json.RawMessage) (js
 	return json.Marshal(cfg)
 }
 
-func validateSessionTransport(engine string, provider *v1.ModelProviderInput, raw json.RawMessage) error {
+func validateSessionModelConfiguration(engine string, provider *v1.ModelProviderInput, raw json.RawMessage) error {
 	if provider == nil {
 		return nil
 	}
@@ -113,24 +112,9 @@ func validateSessionTransport(engine string, provider *v1.ModelProviderInput, ra
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return err
 	}
-	requirements := modeltransport.Requirements{
-		StructuredOutput:    cfg.Agent.Text.Format.Type == "json_schema",
-		NonDefaultVerbosity: cfg.Agent.Text.Verbosity != "" && cfg.Agent.Text.Verbosity != "medium",
-	}
-	for _, rawTool := range cfg.Agent.Tools {
-		var tool struct {
-			Type string `json:"type"`
-			Mode string `json:"mode"`
-		}
-		if err := json.Unmarshal(rawTool, &tool); err != nil {
-			return err
-		}
-		requirements.ToolSearch = requirements.ToolSearch || tool.Type == "tool_search"
-		requirements.WebSearch = requirements.WebSearch || (tool.Type == "web_search" && tool.Mode != "disabled")
-	}
 	var native json.RawMessage
 	if cfg.Agent.XAgentsCore != nil {
 		native = cfg.Agent.XAgentsCore.HarnessConfig
 	}
-	return v1.ValidateModelConfigurationRoute(engine, provider.Protocol, native, requirements)
+	return provider.ValidateConfiguration(engine, native)
 }

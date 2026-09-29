@@ -72,12 +72,15 @@ These are native settings, not a shared reasoning vocabulary; model availability
 and provider support remain the selected harness's responsibility.
 
 Native protocol and parameter declarations also feed Core administration's small
-configuration-support descriptor. `modeltransport` selects and validates routes
-from those declarations. Its conversion qualification is distinct from adapter
-acceptance and remote-model support. Follow the route and per-input requirements
-in `agent/harness.go`; do not add a second model capability registry or infer
-capabilities from model names. Nonempty `harness_config` currently requires a native
-protocol route because the translator has no loss report for those parameters.
+configuration-support descriptor. Its ordered `protocols` list is the sole source
+for accepted protocols and the default (the first entry). Core and Runtime reject
+unsupported combinations through the same declaration. The current protocol
+matrix belongs to [model execution](model-execution.md#saved-defaults-and-precedence).
+Adapters connect directly through native configuration; they must not introduce
+a model API proxy or protocol converter. Follow the per-input capability
+requirements in `agent/harness.go`; do not add a second model capability registry
+or infer capabilities from model names. Native protocol acceptance and remote
+model support remain separate facts.
 
 ## Required adapter interfaces
 

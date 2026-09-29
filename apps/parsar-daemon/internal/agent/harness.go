@@ -37,46 +37,41 @@ import (
 // adapter owns field names, meanings and native validation. See the native model
 // configuration section of contracts/agents-api/harness-onboarding.md.
 // Core freezes model, model_provider and proto.HarnessConfig in the Session.
-// Runtime resolves modeltransport first; adapters consume only its final effective
-// connection (address, protocol and authentication).
+// Runtime validates the frozen provider against the shared native support
+// descriptor; adapters configure that direct connection before native startup.
 // Each adapter declares safe native model fields in internal/harnessconfig and
 // validates the same declaration at admission and again before native application.
 // Unknown fields and conflicts with model, provider/authentication, workspace,
 // tools/MCP, permissions or lifecycle controls fail with a value-free error.
-// Current native fields apply directly to native config or SDK options. The
-// planned common-field contract below supersedes this restriction when implemented.
+// Current native fields apply directly to native config or SDK options.
 // Never merge arbitrary host config.
-// Preparation failure cleans up owned configuration files, processes/SDK resources
-// and proxies. Unconfirmed cleanup returns a non-nil Executor with the error under
+// Preparation failure cleans up owned configuration files and processes/SDK
+// resources. Unconfirmed cleanup returns a non-nil Executor with the error under
 // the factory ownership contract. The logical configuration snapshot remains fixed
-// across Turns and reconnects; rebuilding an Executor may regenerate local proxy
-// addresses or short-lived credentials. Configuration defaults and inheritance
-// belong to the public API contract.
+// across Turns and reconnects. Configuration defaults and inheritance belong to
+// the public API contract. Incompatible snapshots fail explicitly; do not rewrite,
+// alias or migrate their protocol or parameters.
 
 // Configuration support is declared once by each adapter in internal/harnessconfig:
-// accepted upstream protocols, native protocols, token-limit requirements and its
-// native model-parameter validator. Core admission, Runtime and modeltransport
-// consume that declaration; adding a Harness must not introduce another public
-// configuration shape or a Harness-name branch in orchestration.
+// protocols is the sole ordered list of accepted native protocols, with its first
+// entry as the default, alongside token-limit requirements and the native model
+// parameter validator. Core admission and Runtime consume that declaration;
+// adding a Harness must not introduce another public configuration shape or a
+// Harness-name branch in orchestration.
 //
-// modeltransport owns route selection and preservation requirements. JSON parsing,
-// adapter acceptance, conversion qualification and upstream model support are
-// separate facts. A registered translator alone does not prove preservation.
-// Native routes keep the original protocol; conversion routes must reject an
-// unqualified requirement before forwarding model input. Nonempty native parameters,
-// structured output, tool search, native web search and nondefault verbosity are
-// currently native-route-only. Existing text, ordinary tools and streaming retain
-// their qualified conversion paths; no model-name heuristic establishes support.
-// Direct transport does not prove that the selected remote model accepts a native
-// parameter: the native Harness/provider remains responsible for that response.
+// Native connections are direct. Do not introduce a model API proxy, passthrough
+// gateway or cross-protocol conversion, including inside individual Harnesses.
+// JSON parsing, adapter acceptance, operation qualification and upstream model
+// support are separate facts. Direct protocol support does not qualify structured
+// output, tool search, native web search, verbosity or image forms by itself.
+// The native Harness/provider remains responsible for remote parameter acceptance.
 //
 // Input capability uses the existing MessageImages/MessageImagePlacements and
 // proto.MessageInput contracts, not another image type in model configuration.
 // Configuration preparation checks known requirements. Each Turn, steer and tool
-// result must also check newly introduced input requirements against the fixed
-// route before native submission or proxy forwarding. Unqualified image forms
-// must fail explicitly, never be dropped or reduced to text. The proxy performs
-// the final request check before forwarding; it cannot silently weaken semantics.
+// result must also check newly introduced input requirements before native
+// submission. Unqualified image forms must fail explicitly, never be dropped or
+// reduced to text.
 
 // Planned unified model contract (design only; no registration/API change yet).
 //
@@ -86,25 +81,27 @@ import (
 // Implement the following obligations together before advertising common fields:
 //
 // Register an adapter-owned support description and pure model-planning function.
-// Core admission and Runtime use that same function over resolved configuration,
-// selected route and execution context. Web consumes its support description.
-// Different configuration sources do not select different validators or adapters.
-// Model declarations, Harness expression and route preservation are distinct;
-// unknown model support may be tried only with a qualified local execution plan.
+// Core admission and Runtime use that same function over resolved configuration
+// and execution context. Web consumes its support description. Different sources
+// do not select different validators or adapters. Model declarations, Harness
+// expression and native protocol support are distinct; unknown model support may
+// be tried only with a qualified local execution plan.
 //
-// Every explicit generation field has exactly one application owner: native
-// configuration or the proxy's final upstream request mapper. Missing native CLI
-// switches alone do not rule out safe proxy application. Model limits and identity
-// are typed metadata, not arbitrary request fields. Use tested pure mappings and
-// existing wire/adapter versions, without a mapping registry or rules DSL.
+// Each supported explicit generation field is applied once through native
+// configuration, SDK options or Turn settings. A common vocabulary is not a
+// promise that each Harness supports every field. If native interfaces cannot
+// express a field's semantics, reject it explicitly. Do not rewrite outgoing
+// requests or add transport mapping to implement missing native settings.
+// Model limits and identity are typed metadata, not arbitrary request fields.
+// Use tested pure native mappings and existing wire/adapter versions, without a
+// mapping registry or rules DSL.
 //
 // Plan before creating native resources or submitting input. Use the frozen
 // Session configuration on every inference, including subsequent Turns, native
-// retries, tool continuations and recovery. Proxy-owned values cannot be replaced
-// by later native defaults; native-owned values require route preservation.
-// Newly introduced input requirements are checked before submission. Unsupported
-// behavior rejects explicitly; no silent drop, weaker retry or prompt emulation.
-// Preserve the Executor/Turn lifecycle and cleanup ownership defined below.
+// retries, tool continuations and recovery. Native defaults cannot replace
+// explicit frozen values. Newly introduced input requirements are checked before
+// submission. Unsupported behavior rejects explicitly; no silent drop, weaker
+// retry or prompt emulation. Preserve the lifecycle and cleanup ownership below.
 
 // Required execution lifecycle.
 

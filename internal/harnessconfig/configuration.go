@@ -13,7 +13,6 @@ import (
 // credential admission and endpoint security; native launch options stay private.
 type Provider struct {
 	Protocol            string
-	Native              bool
 	RequiresTokenLimits bool
 }
 

@@ -7,11 +7,12 @@ func TestModelExecutionValidation(t *testing.T) {
 		for _, protocol := range []string{"anthropic", "responses", "chat_completions"} {
 			t.Run(harness+"/"+protocol, func(t *testing.T) {
 				p := ModelProviderInput{Protocol: protocol, BaseURL: "https://example.com/v1", APIKey: "secret", ContextWindow: 200000, MaxOutputTokens: 8000}
-				if err := p.ValidateHarness(harness); err != nil {
-					t.Fatalf("Runtime-translatable provider rejected: %v", err)
+				native := harness == "mcode" || (harness == "codex" && protocol == "responses") || (harness == "claude_sdk" && protocol == "anthropic")
+				if err := p.ValidateHarness(harness); (err == nil) != native {
+					t.Fatalf("wrong native protocol admission: %v", err)
 				}
 				p.ContextWindow, p.MaxOutputTokens = 0, 0
-				if err := p.ValidateHarness(harness); (err == nil) != (harness != "mcode") {
+				if err := p.ValidateHarness(harness); (err == nil) != (native && harness != "mcode") {
 					t.Fatalf("incorrect optional token-limit admission: %v", err)
 				}
 			})

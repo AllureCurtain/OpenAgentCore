@@ -267,7 +267,7 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err == nil {
-		err = validateSessionTransport(selectedEngine, provider, configuration)
+		err = validateSessionModelConfiguration(selectedEngine, provider, configuration)
 	}
 	if err != nil {
 		if h.recoverSessionCreation(w, r, key, creationRequest, input.Stream) {

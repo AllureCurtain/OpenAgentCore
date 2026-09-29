@@ -30,10 +30,21 @@ for the resolved harness. `self_hosted` never uses deployment model settings.
 There is no model-name inference. Provider precedence is: complete Session bundle, complete
 saved bundle, then the deployment default for the resolved harness. Never merge a
 replacement endpoint with an inherited key. A model-only override reuses the entire
-inherited bundle. All three engines accept `responses`, `anthropic` and `chat_completions` as
-upstream protocols. Runtime automatically uses native support or converts to the
-engine protocol. MiniMax Code requires positive context/output limits. Validate the
-resolved combination before writing a Session.
+inherited bundle. Connections use only the selected Harness's native protocols:
+
+| Harness | Supported protocols, in default order |
+| --- | --- |
+| Codex | `responses` |
+| Claude SDK / Claude Code | `anthropic` |
+| MiniMax Code | `anthropic`, `responses`, `chat_completions` |
+
+The first protocol is the default. MiniMax Code requires positive context/output
+limits. Validate the resolved combination before writing a Session. Core and
+Runtime consume the same ordered `protocols` declaration in
+`internal/harnessconfig`. There is no built-in model API proxy, passthrough
+gateway or automatic cross-protocol conversion, including inside a Harness.
+Unsupported saved configurations and Session snapshots fail explicitly when used;
+they are never silently rewritten, aliased or migrated.
 
 Where each source applies depends on who owns the compute that receives the key:
 
@@ -110,8 +121,8 @@ See the [TypeScript client example](../../packages/agents-client/saved-agent-def
 ```
 
 `protocol` names the upstream API: `anthropic`, `responses` or `chat_completions`.
-It does not select an engine. [Protocol conversion](model-protocol-conversion.md)
-is automatic when the selected engine cannot use that upstream protocol natively.
+It does not select an engine. The selected Harness must support that protocol
+natively, as listed above; a mismatch is rejected.
 The endpoint must use HTTPS without embedded credentials, a query or a fragment.
 Keys must be nonempty, at most 16 KiB, and contain no NUL/CR/LF. Unknown fields and
 unsupported protocol/Harness/environment combinations are rejected before creating
@@ -133,7 +144,8 @@ Environment, event or ordinary configuration contains the key. The top-level
 extension is write-only and has no update endpoint.
 
 At dispatch, Core delivers its encrypted snapshot as one common confidential
-provider bundle. Runtime adapters own native options and protocol conversion. It does not fall back to other credentials when a snapshot is missing or
+provider bundle. Runtime adapters apply native options and connect directly to the
+configured provider. Core does not fall back to other credentials when a snapshot is missing or
 cannot decrypt. The same snapshot path serves every environment: Core sends the
 options only over the daemon connection bound to the Session. For `self_hosted`,
 that is the executor enrolled for the Session's own Environment with a current
@@ -167,16 +179,16 @@ public `reasoning` execution options that the service does not already support.
 
 Core validates the resolved configuration before persistence and freezes it in the
 Session Agent configuration. The administrator execution-configuration read records
-its value and source. Nonempty native parameters require a native protocol route. Converted routes also
-reject structured output, tool discovery, native web search and nondefault verbosity
-until those combinations are qualified. Runtime checks newly introduced images at
-input admission and the proxy checks the request before forwarding. A supported
-transport route does not establish that the remote model accepts a parameter.
+its value and source. Native protocol support does not qualify structured output,
+tool discovery, native web search, verbosity or image forms by itself. Existing
+operation and input capability checks still apply before native submission,
+including newly introduced images. A supported native connection does not
+establish that the remote model accepts a parameter.
 
 Model parameters are safe, non-confidential fields; provider
 keys remain in the separate encrypted bundle. Reconnect uses the frozen logical
-configuration. New proxy endpoints may have different local addresses and short-lived
-credentials, but cannot change the selected upstream or native parameters.
+configuration and cannot change the selected provider, protocol or native
+parameters. An incompatible frozen configuration fails explicitly.
 
 ## Deployment defaults
 
@@ -245,9 +257,8 @@ refresh, observation history or credential/raw-error read is provided.
 
 The harness list also returns `model_configuration_support`, derived from the
 same adapter declaration used by Core and Runtime: `protocols` lists selectable
-upstream protocols, `native_protocols` lists direct protocols in default order,
-`accepts_harness_config` reports whether native parameters are accepted, and
-`token_limits_required` reports required provider token limits. The first native
-protocol is the configuration form's default. This descriptor describes the
-current build, not a live Runtime, proxy support for arbitrary parameters, or a
-remote model's availability.
+native upstream protocols in default order, `accepts_harness_config` reports
+whether native parameters are accepted, and `token_limits_required` reports
+required provider token limits. `protocols` is the sole protocol list; its first
+entry is the configuration form's default. This descriptor describes the current
+build, not a live Runtime or a remote model's availability.
