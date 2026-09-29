@@ -45,8 +45,8 @@ Tags use `vMAJOR.MINOR.PATCH`, optionally with a prerelease suffix such as
 `-rc.1` and build metadata such as `+build.1`. A prerelease suffix creates a
 GitHub prerelease. Tag creation is the maintainer's release decision.
 
-The workflow checks that exact source with the shared `make check` workflow,
-then builds the Linux amd64 Core, Web, Runtime and database images, installation
+The workflow checks that exact source with the shared `make check` workflow
+while building the Linux amd64 Core, Web, Runtime and database images, installation
 archives and versioned Runtime assets. Tag builds include the offline archive.
 It uploads the matched files as an Actions artifact and automatically publishes
 them in the same tag's GitHub Release. Downloads in the manifest refer to that
@@ -55,6 +55,23 @@ checksum. It defaults to the latest stable release and accepts `--version`;
 the [installation guide](getting-started/install.md#install) owns its usage.
 Images are shipped as archives; this workflow does not push an image registry.
 Publishing a Release does not change the repository's visibility.
+
+Checks and builds run concurrently, and publication requires both jobs to succeed.
+Both check out the same full commit SHA (the tag event's commit or the explicit
+manual input). A failed check never permits publication, even if its build succeeds.
+The build may consume runner time before another job fails; this trades some failed-run
+cost for shorter successful releases.
+
+Both jobs use the same Go module and compiler-cache directories under
+`~/.oac/cache/`. Cache keys include runner OS/architecture, all Go module manifests
+and checksums (including the toolchain version), and the checked-out commit.
+A dependency-matched older cache is only a compiler/download seed: Go resolves
+inputs again, and all checks still run with their existing assertions and timeouts.
+No test result, installation state or release archive is accepted from this cache.
+Main-branch checks can populate the default-branch cache for later release runs;
+GitHub's branch/tag cache visibility rules still apply. New keys are saved only
+after successful jobs; concurrent writers for the same key may retain either
+job's valid cache. Missing or evicted entries affect speed, not correctness.
 
 Build and check jobs have read-only repository permissions. Only the publication
 job receives `contents: write`. Before publication it verifies archive checksums

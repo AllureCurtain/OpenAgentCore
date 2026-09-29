@@ -279,6 +279,15 @@ split oversized components before extending them. Use `internal/obs/log` for log
 
 ## Required checks
 
+Release checks and distribution builds may run concurrently against the same
+immutable source commit. Publication must depend on both successful jobs; building
+an artifact does not qualify it for release. Use the shared content-addressed Go
+compiler/module caches in CI, keyed by platform, module inputs and source revision.
+Caches may seed compilation/downloads, never replace checks or select release
+artifacts. The [maintainer guide](docs/maintainers.md#publish-a-version) owns the
+workflow, cache behavior and failure-cost tradeoff.
+
+
 Run `make check` before completion. The standalone gate includes all daemon/shared
 Go tests, Core contract/client/service tests, Core Web and TypeScript client
 checks (including fixture-only Playwright acceptance), a real dedicated PostgreSQL test
