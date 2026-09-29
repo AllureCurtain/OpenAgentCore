@@ -115,3 +115,23 @@ retention and execution lifecycles keep their existing owners and timing.
 No additional telemetry database, monitoring server, model-provider probe,
 message queue, object store, host disk measurement or scheduling mechanism is
 introduced. Metrics cannot authorize execution or change resource ownership.
+
+## Implementation rules
+
+The Core-key-only `/core/v1/metrics` contract is documented in
+[core-metrics.md](core-metrics.md). Keep this separate from
+Agent outcome and Sandbox capacity views. Instrument existing worker and job
+owners without changing scheduling, lease or retention behavior. Periodic pool
+pings and bounded in-process samples have explicit restart gaps; unknown values
+must remain null. Complete UTC buckets exclude the active partial bucket. Root
+Turn history is queried read-only from PostgreSQL with native timestamps.
+Count `execution_unavailable` at the existing HTTP error writer, once per rejected
+response; never record request/response bodies or infer this count from every
+503 or failed Turn. Builds inject the source commit with ldflags. No new monitoring
+service or storage system is required. Keep the frontend response shape aligned
+with the paired console contract.
+
+Core process CPU, RSS and cgroup limits are sampled by the existing 30-second
+Core metrics loop; Go heap and goroutine reads retain their meaning. Process
+series use the same bounded ring and complete buckets, with null first CPU
+intervals and restart gaps. Do not substitute host usage for process usage.

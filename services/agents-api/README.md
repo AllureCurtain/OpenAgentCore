@@ -74,7 +74,7 @@ The default output is `${OAC_DEV_HOME:-$HOME/.oac}/build/oac-core`:
 Use these executables in place of the corresponding `go run` commands below.
 The build needs Go and access to its pinned module dependencies; it does not need
 Node, Docker, the product service or frontend. An isolated source context enforces
-that boundary on every build. [Contributor rules](../../CONTRIBUTING.md#independent-build-artifacts)
+that boundary on every build. [Contributor rules](../../docs/maintainers.md#independent-core-build-artifacts)
 define the allowed shared packages and required checks. Runtime database/key
 configuration and a separately installed execution daemon are still required;
 these binaries do not establish full protocol coverage. For a standalone Linux
@@ -282,6 +282,20 @@ A provisioning failure fails the Session with a safe step and exit-status reason
 ([initialization failure](../../contracts/agents-api/environment-templates.md#initialization-failure--september-23));
 other exact hosted failure and expiry semantics remain unverified.
 
+The independent Docker Provider consumes an immutable Runtime image and retains
+one caller-owned allocation reference through partial creation and cleanup. Persist
+that reference before Create and serialize its lifecycle; resolve a lost response
+with observed state, without rewriting bootstrap credentials or replaying startup.
+Provider state is compute state, not public Environment readiness. Named Runtime
+volumes need explicit owned cleanup after container removal. A second mount of the
+same workspace volume subdirectory provides the public `/workspace` path to native
+tools; trusted staging and atomic rename retain the original parent mount. Do not
+copy files or widen private-path reads to preserve an alias. Initialization command
+timeouts can leave processes alive and require allocation cleanup before reuse.
+The [managed Runtime build and operator configuration](deploy/codex/README.md#managed-runtime-image-and-docker-adapter)
+defines the explicit opt-in for basic hosted admission. Building an image alone
+does not qualify its isolation or enable public creation.
+
 ## Internal execution device connection
 
 The standalone service can accept existing daemon connections without a Parsar
@@ -330,7 +344,7 @@ Build and extract the runtime archive into a fresh managed directory on a matchi
 executor host. The archive contains the compiled bridge and pinned production
 SDK/MCP/native dependencies; Node is installed separately. Linux x64/glibc with
 Node22 is the accepted platform. See the
-[runtime artifact contract](../../CONTRIBUTING.md#private-claude-sdk-runtime-artifact)
+[runtime artifact contract](../../packages/claude-sdk-adapter/README.md#runtime-artifact)
 for build outputs, version checks and platform restrictions.
 
 ```bash
@@ -391,6 +405,13 @@ IDs without truncating tables. Missing test configuration skips DB tests locally
 the `OpenAgentCore checks` CI workflow always supplies its own PostgreSQL service. Run the
 full `make check` before review as well. Product OpenAPI generation excludes this
 service; its supported HTTP contract is generated separately.
+
+Run `make openapi` after handler annotation changes. It reuses the original
+Core-only swaggo v1.16.4 generator, then splits the result by namespace: `/v1`
+into `openapi.yaml`, `/core/v1` into `core.openapi.yaml` and `/api/v1` into
+`runtime.openapi.yaml`; the last two use base path `/`, and each document keeps
+only the security schemes its operations use. All generated schemas remain free
+of product routes.
 
 ## Public text execution
 
@@ -598,7 +619,7 @@ Anonymous requests suppress native OAuth/credential injection with a blank
 Authorization header, without deleting native state. Servers rejecting that header, normalized
 name collisions, changing inventories and original MCP metadata fidelity remain
 gaps. Items retain the observed native JSON, which may differ from the original
-MCP envelope. See the [Claude SDK profile](../../CONTRIBUTING.md#claude-sdk-adapter-foundation).
+MCP envelope. See the [Claude SDK profile](../../packages/claude-sdk-adapter/README.md#bridge-and-native-lifecycle).
 
 The current subset rejects native OAuth login, inline authorization, nonempty headers or
 request metadata, URL userinfo/query/fragment, the `environment` origin, stdio
@@ -610,9 +631,56 @@ service compute; it does not provide filesystem isolation or guard against
 concurrent operator configuration mutation. These limits are implementation gaps,
 not changes to the pinned official protocol.
 
+A dedicated local Runtime uses one Environment-scoped device credential and an
+immutable binding to that Environment's Session. It is excluded from general
+device selection; another Session cannot claim it, including within the same
+tenant. Deleting its Session invalidates credential lookup and heartbeat renewal.
+Provision a new scoped device atomically rather than widening an existing shared
+device credential. Revocation does not authorize silent placement replacement.
+
+The private local Environment reference contains its identity and, for policy-aware
+execution, its immutable network policy. Trusted Runtime deployment configuration
+freezes the Environment, Session and workspace root;
+requests cannot supply a replacement root. The V1 path uses only the exact local
+Environment reference. Use the same preparation/start lifecycle for native execution and the
+existing bounded workspace controls for directory access. Local idle directory
+reads use the common Go filesystem implementation without a temporary Harness. These private capabilities alone do not authorize public requests or establish
+Provider lifecycle. Self-hosted enrollment supplies the exact local binding.
+Core rechecks the persisted Environment/device binding for preparation and active
+reads; capability discovery cannot select or authorize a general device for this
+placement. Local work uses the existing pending-input reservation and Worker
+ownership without a remote connection resolver. The hosted profile supports `network.access: enabled`, `disabled` and exact-host
+`restricted`; each image must qualify the supported policies before public deployment. Omitted
+network settings mean enabled upstream and must not be silently treated as disabled.
+
+User-managed Runtime enrollment authenticates the existing principal executor key
+against the exact live Session/Environment and its recorded creator. Keys retain
+stable management IDs, immutable principals, optional exact-Environment restrictions,
+rotation/revocation and digest-only storage. They grant connection authority, never
+Session API access. No raw-token import or secret read-back is added.
+
+Enrollment atomically creates or recovers one dedicated device and immutable Session
+binding under the Session lock. The frozen workspace and capability directory selection come from the Session
+configuration and must match the local binding. Runtime snapshots declared local
+Skill or Plugin directories before creating the native executor. No `runtime_allocation` is
+created for user-owned compute. A retry cannot replace a device, change its bound
+key or adopt another native history. Gateway authentication and dispatch recheck
+current key authority; rotation/revocation and deletion deny further use.
+
+The daemon, selected harness, local tools and workspace run together. The Dispatcher
+passes the existing typed `LocalEnvironment` after exact tenant/Session/Environment/
+device checks. Native preparation, Files and Artifacts reuse the same protected
+local workspace and existing lifecycle owners. There is no registry/Noise relay,
+transient harness credential, service-side harness or remote tool forwarding path.
+Keep model credentials, daemon authorization and native histories private; connection
+success alone establishes neither native readiness nor filesystem isolation.
+
 ## Hosted sandbox nodes
 
 The release includes `oac-node` for local and remote hosts. Add nodes with
 Web's one-command flow in the [nodes guide](../../docs/getting-started/nodes.md); the
 [operator reference](HOSTED-SANDBOX-MANAGER.md) covers provider selection, manual
 registration, administrator credentials, fixed Session placement and reset.
+
+Implementation rules for hosted sandbox nodes and optional suspension are in
+[Agents API implementation constraints](IMPLEMENTATION.md#hosted-sandbox-nodes-and-optional-suspension).

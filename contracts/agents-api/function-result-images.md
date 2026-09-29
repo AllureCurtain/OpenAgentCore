@@ -61,7 +61,7 @@ Files/Artifacts and cold Core/Runtime continuation. It checks Claude's rejected
 error/remote result directly on an outstanding call before accepting a valid
 image on that same call; no mixed-message rejection substitutes for this check.
 
-The accepted combinations and run evidence are recorded in the task board. This
+Run evidence is retained outside the repository. This
 coverage does not qualify self-hosted/user-managed image results, all native image limits, provider
 parity, arbitrary managed output rewrites, crash recovery or full Agents API
 compatibility. No downloader, image converter or second tool loop belongs in Core.

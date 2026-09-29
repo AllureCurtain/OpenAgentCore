@@ -164,8 +164,8 @@ this documentation update. Evidence on `zju_a100_2`:
   `acceptance-results.json`: final baseline, runs, reused evidence and cleanup.
 - `~/.parsar/remediation/20260919/docker-mvp/` and `claude-v1/`:
   preceding deployment and safety acceptance.
-- [MiniMax workspace qualification](mcode-workspace-v1.md) and
-  `~/.parsar/remediation/20260919/mcode-workspace/`: native isolation and recovery.
+- `~/.parsar/remediation/20260919/mcode-workspace/`: MiniMax workspace native
+  isolation and recovery (historical).
 
 Qualification is Linux amd64 Docker V1, not arbitrary host isolation, production
 HA, E2B, or Anthropic-model acceptance for Claude Code. No exactly-once guarantee
@@ -211,8 +211,7 @@ user-managed enrollment remain outside this qualification.
 
 An implementation gap and an unknown upstream behavior require different follow-up
 work. Retain both explicitly; a restrictive local policy or successful SDK parse
-cannot establish upstream equivalence. The Feishu board owns live task selection,
-including further deployment qualification; this inventory describes merged behavior.
+cannot establish upstream equivalence. This inventory describes merged behavior.
 
 ## Public semantics
 
@@ -920,7 +919,7 @@ establish complete ownership, hosted key lifecycle or error compatibility. See t
 
 Core documents its optional [harness selection extension](harness-selection.md) separately from the pinned upstream contract.
 
-The former [Core startup configuration](startup-configuration.md) read is removed.
+The former Core startup configuration read is removed; the [installation read](installation.md) reports the public URL and installer process settings.
 
 Model endpoints and credentials may be supplied at Session creation through the
 [write-only execution extension](model-execution.md). Provider catalogs and their

@@ -179,6 +179,13 @@ action `set` or `delete`; a `project_id` filter excludes them.
 No credential values or request bodies are recorded. Logs and historical copy
 ownership do not cascade away on resource removal or key revocation.
 
+Administrator writes and their audit record share one PostgreSQL transaction.
+Reuse existing resource deletion and serialization code. Cross-Project copying was
+removed; only the historical `source:"admin_copy"` provenance read remains, fed by
+`admin_resource_owners`. Unknown historical provenance remains unknown. No secrets
+or request bodies enter logs. The console's fixed actor label (`console`) is only
+an audit display label, never an authorization input.
+
 ## Private installation transition
 
 The old configured business keys, inherited-binding issuer and key-space

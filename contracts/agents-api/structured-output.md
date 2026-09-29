@@ -54,6 +54,43 @@ Recovery uses the existing Session/Turn/Items queries and native continuation.
 SSE is still live-only. Frozen schemas apply to both initial and resumed execution;
 ordinary text configuration retains its prior behavior.
 
+The public `text.format={type:"json_schema",schema:{...}}` is resolved with saved
+Agent overrides and frozen in the existing Session configuration. Core transports
+it in `ExecutionControls.OutputFormat`; it does not append prompt instructions,
+validate/retry model answers, repair JSON or select native tool names. Public
+admission requires the selected profile's structured-output qualification, and
+only requests using this option require the Runtime's `structured_output` and
+message-observation capabilities. A capability advertisement does not qualify a
+new public combination. Claude advertises this operation only when the installed
+SDK bridge reports its `structured_output` feature. A workspace Runtime also
+requires the complete local Runtime contract and `workspace_structured_output`;
+preparation checks that bundle before native launch. These remain adapter readiness
+features, not new Core lifecycle or public protocol variants.
+
+The current qualified path is Claude SDK, `environment:none` or Core-managed
+Docker `openai_hosted`, medium verbosity, single Agent, with optional ordinary
+function tools and text results. The workspace uses its existing preparation and
+bypass execution profile with the SDK's configured `StructuredOutput` tool added to
+inventory and permission checks. Frozen schemas reach preparation before the
+input handoff; Start cannot replace them. Skills, Plugins, capability directories,
+HTTP MCP, Subagent/tool-discovery combinations and schemas without an explicit
+object root remain unqualified; an explicit non-object root type is a protocol
+error for every harness. Check resolved template contents as well as inline configuration;
+ordinary text requests retain their existing qualifications.
+The SDK uses binary64 JSON numbers: reject execution schemas whose numeric values
+would change during that conversion, without narrowing saved Agent storage.
+Codex and MiniMax structured output remain explicit execution gaps.
+
+The Claude adapter passes `outputFormat` to the maintained native SDK and allows
+its native `StructuredOutput` terminal tool. A matching live root tool result and
+an attributed successful SDK result confirm the final output. Publish the native
+`result.result` string unchanged as a completed `final_answer` Message using the
+native tool-use ID; the parent assistant ID can already own a prose Item. Do not
+publish unvalidated retry candidates or serialize `structured_output` back to
+JSON. Native retries remain harness-owned. Existing input receipts, usage,
+cancellation, release and recovery rules apply unchanged. The implementation and
+qualification limits are recorded in [the coverage note](structured-output.md).
+
 ## Acceptance
 
 `TestNativeStructuredOutputPublicExecution` and

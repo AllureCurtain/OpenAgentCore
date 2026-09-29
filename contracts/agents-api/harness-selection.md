@@ -85,3 +85,19 @@ before creating a Session; provider model availability is checked during native
 startup/execution. There is no invented cross-provider model-name catalog.
 
 Current profile limits remain in the [engine coverage table](README.md#public-engine-profiles).
+
+## Implementation rules
+
+Core accepts the optional `agent.x_agents_core.harness` extension through the
+saved Agent and inline Session configuration paths. Define the extension once in
+`contracts/agents-api/v1`; never use metadata or a competing top-level selector.
+Resolve saved overrides before selecting the existing Session engine, and apply
+that engine's execution policy before persistence. Omitted selection preserves
+the deployment default; explicit unavailable selection fails without fallback.
+Effective extension reads use the persisted engine; Sessions without the extension
+retain the official Agent response shape. Null and retry behavior are described above.
+
+Hosted provider selection belongs to deployment configuration and is independent
+of the engine. Session creation fixes a node through automatic placement; retained allocations keep that node and provider identity. Runtime images must satisfy their existing qualification rules.
+Transient model options are partitioned by engine and must not expose another
+engine's credentials. Do not infer an engine from a model name or template.

@@ -126,3 +126,27 @@ report. These checks do not establish cloud authentication, native isolation or
 real execution. Live acceptance must use owned E2B compute and the same Runtime,
 with actual lease renewal, restart/unknown outcome reconciliation and confirmed
 cleanup. Initializer and three-harness qualification remain deployment checks.
+
+## Adapter rules
+
+Core-managed E2B is a separate hosted deployment choice, using the official pinned
+Python SDK through a packaged private helper. Do not restore the retired custom
+HTTP/Connect or envd implementation. The adapter implements the same five operations;
+cloud allocations use direct placement with no synthetic node, while Runtime execution
+and file access keep the shared daemon contract. Its immutable Runtime template build
+is deployment configuration, not a public Environment Template. Keep the account API
+key encrypted in the database, write-only through admin input and absent from helper
+arguments, logs, metadata and receipts. SDK connection materials and attempted-create
+receipts belong in the private durable provider state directory; never replace missing
+state to make cleanup appear successful. Create runs once. Unknown control-plane
+outcomes remain blockers even if a listing is empty. Explicit matching-reference
+CreateSettled evidence proves that the original initialization cannot mutate further;
+confirmed absent compute may then be released. Ordinary 404 responses do not prove it.
+The helper's pinned SDK, dependencies and licenses ship with Core; users do not install
+Python packages after selecting E2B in Web. Application-managed self_hosted tooling
+remains independent and uses the same Runtime. Qualify each changed path using actual
+provider and model execution before claiming acceptance. Run `make check-e2b-provider`
+with `OAC_TEST_E2B_SDK_PYTHON` pointing to the pinned SDK environment; the packaged
+helper build runs the provider tests as well. The SDK gate also covers the
+application-managed launch tests. `make check` covers shared initialization and
+managed initialization using only the Python standard library.

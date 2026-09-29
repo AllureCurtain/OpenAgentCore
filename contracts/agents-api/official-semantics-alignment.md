@@ -31,7 +31,7 @@ query envelopes and accumulated usage; their owned Sessions and Agent were also
 deleted. Separate missing File/Skill probes used randomly generated IDs.
 Private request/status/body evidence and cleanup results are retained under
 `~/.parsar/remediation/20260922/official-semantics-alignment/`; no API keys or
-credential values belong in the repository or task board.
+credential values belong in the repository.
 
 ## Explicit remaining differences
 
@@ -51,7 +51,7 @@ credential values belong in the repository or task board.
   malformed queries, page limits and overlapping mutation behavior need qualification.
   The error mapping above must not be extrapolated to every status or resource.
 - Template references with inline installation overrides, optional Skill version
-  semantics and the other active board entries remain outstanding.
+  semantics and the other open items remain outstanding.
 - Files.create cannot tell a file written by an earlier Files.create from any other
   existing file, so both report the untracked-file message; see the
   [write semantics](environment-files.md#write-semantics--september-23-2026).

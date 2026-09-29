@@ -237,7 +237,7 @@ failed readiness reports an unavailable descriptor with a rejecting factory.
 Runtime checks establish local readiness, not provider authentication. Installed
 daemons use `start` and their verified installation manifest for adapter selection
 and activation; ambient activation variables cannot extend that selection. See
-[the native installation contract](../../CONTRIBUTING.md#native-daemon-and-harness-installation).
+[the native installation contract](../../docs/maintainers.md#native-daemon-and-harness-installation).
 
 SDK state lives under `paths.ProfileDir(profile)/runtime/claude-sdk`, independently
 of the replaceable runtime bundle. Both the entrypoint and managed state root must

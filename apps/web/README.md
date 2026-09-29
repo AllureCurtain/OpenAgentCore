@@ -25,6 +25,125 @@ See the [Core Web guide](../../docs/web/README.md),
 [frontend handoff](../../docs/web/roadmap.md) and
 [administrator API](../../contracts/agents-api/admin-api.md).
 
+The Core Web is an administrator console. Web calls only `/core/v1`, with the Core
+key held on its server, and never `/v1` or `/api/v1`. Applications use an API key issued inside a Project. One Project owns one execution
+tenant and principal; all its keys share assets and permissions while writes retain
+individual key provenance. Projects and keys are database-owned, with no static
+business keys or configuration synchronization. Revocation affects one key;
+archiving a Project revokes all its keys, retaining assets and admitted execution.
+Do not add Core users, roles, memberships or cross-Project sharing. Management
+provides safe reads, public deletion preconditions, explicit hosted Session archive,
+Project and key operations and credential issuance; it cannot copy, execute or edit
+arbitrary assets.
+Keep administrator target scope separate from caller principals. See
+[design principles](../../docs/design-principles.md) and the
+[administrator contract](../../contracts/agents-api/admin-api.md).
+
+### Console structure
+
+Core Web leads with operations: Monitor (Overview, Core metrics, Agent metrics,
+Sandbox metrics, Session log), Resources and Platform. Pages use the shared
+components in `apps/web/src/components` and the tokens in `apps/web/src/styles`,
+described in `apps/web/DESIGN.md`. Keep explanations behind help tips, but keep
+errors, warnings and safety notices visible. Browser-derived metrics state their
+coverage, keep missing values missing, bound their fan-out and time, report a failed
+read as failed and never imply deployment-wide or billing totals.
+Sandbox deployment setup, configuration, reset and progress belong to the System
+secondary page (`#system?id=sandbox`). Nodes owns node management; Overview and
+metrics pages link to these owners instead of repeating their controls or details.
+Keep uncommon resource edits and rollout details in dialogs, and avoid repeating
+the same information within or across pages. Core responses remain the source of
+truth for deployment and connection state.
+
+### Console server and sign-in
+
+`services/core-console` serves the production Web build and, after console login
+and same-origin checks, forwards every `/core/v1` request with the Core key; Core
+decides whether the route exists. It requires the private Core key file named by
+`OAC_WEB_CORE_KEY_FILE` and holds no project caller credential. Every `/v1`
+and `/api/v1` request returns 404, including explicit Bearer and WebSocket
+requests; Web forwards no node or daemon transport. The installer mounts only the
+Core key into Web and only its digest (`OAC_CORE_KEY_DIGESTS_FILE`) into
+Core. The browser receives safe configuration, never that key. The deployment's
+TLS reverse proxy routes `/v1` (applications) and `/api/v1` (nodes and Runtime
+daemons, with their own credentials) directly to Core and everything else,
+including `/core/v1`, to Web. Operator scripts call `/core/v1` on Core's loopback
+port.
+Nodes and Core come from one distribution. Older nodes using the removed
+`/core/v1/sandbox` paths are unsupported; preserve their installation and data and
+use a separate fresh installation. There is no drained in-place upgrade or
+historical re-enrollment procedure. Current-version Runtime generation rollout
+retains its separate resource lifecycle.
+
+The Web manager offers no manual Core key entry outside sign-in, and Web refuses
+to start without its Core key file. It holds no Project API key and never calls
+`/v1`.
+Chinese/English sandbox text, status and diagnostic formatting live in the shared
+`apps/web/src/lib/` locale modules. A persisted explicit language preference wins
+before the first browser language; unrelated product surfaces are outside this
+translation scope. Preserve zero-node setup and node installation behavior when
+localizing their controls. The sandbox manager centers node readiness and capacity in a desktop topology,
+with Core surrounded by actual node buttons. Connection animation represents
+liveness only, never invented traffic or work; offline/stale connections are
+static and reduced-motion preferences disable decorative animation. Node selection
+reveals inspection details. Installation identifiers, provider metadata and
+allocation records are secondary content. Node enrollment is an explicit Add node action in a focused
+dialog, using the deployment's `core_url` (the installation public URL).
+Do not expose routine network wiring or manual runtime setup as the primary flow.
+Generate a one-time command only on user intent, never retry enrollment writes
+automatically, and discard credentials and late responses when the dialog closes
+or the Core connection changes. Core reports the command's `enrollment_id` on the
+node it registered (null for nodes enrolled before Core recorded it), and Web follows
+the added node by an exact match on it; an existing node reconnecting is not a new
+enrollment.
+The command verifies the installer checksum before execution, retains normal TLS
+verification, and passes the enrollment credential only to the installer process,
+on standard input.
+
+
+The `/core/v1` proxy retains fixed-origin, cross-site, safe-path, redirect and Upgrade
+restrictions through the standard Go reverse proxy with streaming/cancellation;
+literal or encoded dot segments can never move a request out of `/core/v1`.
+The console implements no product identity, resource semantics, Runtime discovery
+or execution loop. Signing in with the Core key grants the complete console
+surface; do not introduce Web accounts, roles, invitations or per-project Web
+identities. Agent API caller keys remain independent of the Core key and cookie.
+
+Web signs in only with the Core key (`POST /console/auth/login` with
+`{"core_key":"…"}`), compared in constant time with the console's configured key
+and never logged or echoed. There are no accounts, passwords, first-run setup or
+Basic authentication. The retired authentication-mode, state-directory,
+password-file and admin-token-file settings fail startup; their names are listed
+in [`config.go`](../../services/core-console/config.go). Cookie sessions are in memory, bounded, HttpOnly, SameSite Strict and
+Secure for HTTPS origins; a restart or Core key rotation requires sign-in again.
+Unauthenticated access is limited to the static login UI, finite console
+authentication routes and the static node installation payload. Sign-in uses
+same-origin JSON POSTs with bounded bodies and bounded concurrent work. Only
+failed attempts are rate limited, so the correct key always signs in; Web and the
+installer therefore require Core keys of at least 32 characters. See the
+[Core key operations guide](../../docs/getting-started/operations.md#core-key).
+
+Projects and application API keys live in Core PostgreSQL. Project creation owns
+its scope and shared principal; key issuance, revocation and Project archive share
+a transaction with audit. Issuance stores only a digest and metadata and returns
+plaintext once. Keys cannot be read back or reset in place; rotate by issuing a
+new key in the same Project and revoking the old key. Authentication checks the
+key and Project on every request, without a credential cache, and fails closed on
+database errors. Deployment credentials cannot authenticate to the public API.
+Configuration defines no Projects or business API keys. Fresh installation starts
+with no Projects; an administrator creates a Project and then issues a key.
+
+Administrator onboarding covers console login, Project creation, key issuance and
+optional node enrollment. Model execution belongs in an external API example using an issued
+key. Keep secrets out of browser persistence, generated examples and URLs. Observe
+confirmed resources through the management API; do not infer Agent-to-node ownership
+or execution readiness from a host connection. Preserve keyboard focus, reduced
+motion and the existing node enrollment/topology contract.
+The console has neither KVM nor Docker authority; its static root contains no
+secrets. Installation exposes only loopback API/console ports. Remote exposure
+requires an operator-configured HTTPS/access boundary. Web-only mode can connect
+to a loopback existing Core on the same Linux host or a remote HTTPS Core.
+
 ## Local checks
 
 From the repository root, with Node 22 and pnpm 10.30.3:

@@ -55,38 +55,48 @@ self-hosted platforms or every feature combination. The existing
 `environment:none` function/MCP profile is separate. This is not complete upstream
 protocol compatibility.
 
+## Runtime and adapter rules
+
+Build the pinned SDK bundle with `scripts/build-claude-sdk-runtime.sh`, then use
+`scripts/build-claude-runtime.sh`. Native self-hosted installations use the same
+bundle and daemon protocol. See [Build and configure](#build-and-configure).
+The shared local binding selects the actual workspace. SDK history, home and
+scratch remain under `OAC_RUNTIME_HOME/runtime/claude-sdk` for session ownership,
+without restricting tools. Authentication remains under `OAC_RUNTIME_HOME/daemon`.
+The daemon requires neither nested sandbox privileges nor host security changes.
+
+The `local_runtime_v2` capability identifies the current workspace and direct MCP
+launcher contract. Reject earlier workspace bundles; matching SDK versions alone
+do not establish adapter compatibility.
+The adapter advertises `local_runtime_v2` after checking the installed bridge and
+native binary. Windows additionally needs Git Bash for its Bash tool. Registration
+combines that check with the local binding; Core consumes the same readiness
+contract on every platform. The profile supports Bash/Read/Edit, preparation,
+shared Files/Artifacts, cancellation and history continuation. Other capabilities
+remain subject to their actual engine qualification; bypass execution does not
+silently qualify a new MCP or function combination.
+
+Recovery uses the SDK's history APIs. An explicitly supplied native identity must
+exist. If Core requires existing history without having recorded an identity, the
+adapter accepts only one nonempty native history for the exact bound cwd. Missing,
+foreign, ambiguous or metadata-only history rejects before model input. The Runtime
+volume and shared Environment/Session binding establish ownership; this lookup
+cannot select another Session's home or infer ownership from a model response.
+
+Claude hosted functions compose the existing SDK function bridge with the common
+workspace execution profile. Only declared function tools and the verified native tool
+inventory are available. The bundle advertises this combination separately from
+basic workspace execution; function preparations require that verified combination.
+Service-origin hosted MCP remains unqualified; Environment Plugin declarations
+use the separately qualified initialization path above. Function callbacks do not change file,
+credential, history, subagent or network authority.
+
 ## Adding another native engine
 
-Start with the existing `agent.Factory`, `agent.Session` and
-`agent.PreparationFactory` interfaces; do not create another scheduler or loop.
-Registration itself is small:
-
-```go
-registry.RegisterKind(descriptor, adapter.NewFactory(config))
-registry.RegisterPreparation(descriptor.Kind, true, adapter.NewPreparationFactory(config))
-```
-
-These calls refer to the existing daemon registry. `descriptor` must advertise
-only capabilities established by your adapter and deployment tests. A dedicated
-local Runtime automatically reuses workspace authorization, idle directory reads,
-file writes and output export; it does not need an engine-specific Files API.
-
-The adapter translates native configuration and events, owns its child processes,
-confirms input receipts, and implements cancellation and preparation ownership.
-`Prepared.Start` transfers ownership once; `Close` releases only unused preparation;
-`PreparedCancellation.Cancel` follows the same resource through transfer and waits
-for output settlement. Reuse the shared process runner and existing error types.
-Native history belongs to the bound API Session, not the device descriptor.
-
-Add the qualified placement and value constraints to the qualified profile in
-`services/agents-api/internal/engine/` and register it in its catalog. That declaration gates public support independently
-of Runtime capability flags. Do not add engine branches to handlers, stores,
-resource managers or scheduling. A genuinely new public capability may require a
-bounded extension of the shared contract; registration alone cannot make an
-incompatible harness conformant.
-
-Acceptance must use the pinned official OpenAI client, raw HTTP and a real model:
-execute and continue; list/create files and retrieve artifacts; cancel and prove
-process settlement; reconnect/restart without replay; verify tenant, credential and
-history isolation. Missing history fails closed. Run focused race tests, `make
-check` and independent review before merging. Keep unsupported combinations explicit.
+Follow [Add a native Harness](../../../../contracts/agents-api/harness-onboarding.md).
+The Claude adapter is one of its [native references](../../../../contracts/agents-api/harness-onboarding.md#native-references):
+it implements the shared `agent.ExecutorFactory`, `Executor` and `Turn`
+interfaces and registers them in
+[`cli/claude_sdk.go`](../../../../apps/parsar-daemon/internal/cli/claude_sdk.go).
+Acceptance requirements are in
+[Harness integration](../../../../contracts/agents-api/harnesses.md#acceptance-checklist).

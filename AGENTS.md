@@ -6,6 +6,8 @@ Use [docs/development.md](docs/development.md) for checkout and component guidan
 
 - Keep Core, Runtime, Harness and Sandbox Provider ownership separate through the
   shared protocols; see [decoupling](CONTRIBUTING.md#decoupling-principle).
+- To add a Harness or Sandbox Provider, start at
+  [Choose an extension boundary](docs/development.md#choose-an-extension-boundary).
 - Identify every API route's caller and credential in [the API index](docs/api/README.md).
 - Run `make sqlc-generate` after query changes and `make openapi` after handler
   changes; review and commit the generated contracts with their source changes.

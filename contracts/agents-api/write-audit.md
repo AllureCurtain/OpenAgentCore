@@ -68,6 +68,18 @@ secrets, model credentials, tokens, file paths or file contents in these tables.
 Explicit public OAuth Credential writes are covered. Automatic OAuth refresh is not
 a separate public write. Public resource IDs retain their existing formats.
 
+Public resource writes carry authenticated key provenance separately from the
+execution principal. Persist their operation record and genuine creation ownership
+in the same business transaction; no best-effort response middleware or async audit
+queue. A failed audit must roll back the write. Internal lifecycle/refresh work does
+not acquire public provenance. Retries never replace ownership. Environment uploads
+persist safe request origin before dispatch and record success with the confirmed
+receipt, not the native filesystem call. Never put payloads, paths or secrets in
+audit metadata. Read models are Core-key `/core/v1` routes; keep `/v1` wire
+contracts unchanged. See
+[write-audit.md](write-audit.md) for coverage, retention and
+console integration. Do not confuse key identity with Session creator identity.
+
 ## Console queries
 
 Both endpoints require the Core key under `/core/v1/projects/{project_id}`. The path identifies the Project, including an

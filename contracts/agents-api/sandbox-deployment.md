@@ -74,6 +74,19 @@ existed before Core recorded it reports null until its next phase change. A
 suspended microsandbox allocation's age, combined with the deployment's snapshot
 retention, tells roughly when Core reclaims it.
 
+### Hosted and application-managed placement
+
+The official `openai_hosted` discriminator means hosting by this independent Core
+service, using its configured hosted Provider. Keep the public value unchanged; a product-named hosted value is not
+a new API type. Public Environment Templates apply only to this hosted path.
+E2B onboarding follows the application-managed `self_hosted` resource workflow:
+the application owns sandbox provisioning and cleanup, and our daemon connects
+with the returned Environment ID, unchanged `remote_url` and scoped environment
+authorization. Reuse the same Runtime and thin provider components. No OpenAI
+executor process or additional execution architecture is required. Qualify
+principal/tenant ownership, credentials and connection lifecycle using the pinned
+client and actual execution; document our transport boundary explicitly.
+
 ## Selection request
 
 POST and PUT take the same complete selection and require `expected_generation`

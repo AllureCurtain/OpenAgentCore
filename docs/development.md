@@ -42,10 +42,10 @@ pnpm exec playwright install --with-deps chrome
 export OAC_TEST_OFFICIAL_SDK_PYTHON="$PWD/.venv/bin/python"
 ```
 
-Set `OAC_TEST_DATABASE_URL` privately to a dedicated `oac_*_tests` PostgreSQL
-database. Its role needs permission to create databases: managed-provider tests
-create and drop isolated test databases. Never point the test suite at an
-installation or product database. The full gate fails if this setting is missing.
+Set `OAC_TEST_DATABASE_URL` privately to a dedicated PostgreSQL test database.
+Never point the test suite at an installation or product database. The
+[test database rules](../CONTRIBUTING.md#test-database) list the required role
+permission.
 
 Third-party native packages are pinned build inputs; changing a pin requires the
 relevant native qualification as well as compilation.
@@ -87,7 +87,7 @@ site; `pnpm dev:docs` starts its development server.
 | `services/agents-api/internal/engine` | Pure qualification of harness operations and placements | [Harness onboarding](../contracts/agents-api/harness-onboarding.md) |
 | `internal/agentdaemon/proto` and `gateway` | Shared wire types, validators and authenticated Runtime connections | [Runtime protocol](runtime-protocol.md) |
 | `apps/parsar-daemon/internal/dispatch` | Runtime preparation, Executor reuse, Turn and cleanup ownership | [Harness lifecycle](../contracts/agents-api/harness-onboarding.md#required-adapter-interfaces) |
-| `apps/parsar-daemon/internal/agent` | Native harness adapters | [Native references](../contracts/agents-api/harness-onboarding.md#minimal-runnable-example-and-native-references) |
+| `apps/parsar-daemon/internal/agent` | Native harness adapters | [Native references](../contracts/agents-api/harness-onboarding.md#native-references) |
 | `services/agents-api/internal/sandbox` | Provider interfaces and managed compute lifecycle | [Provider onboarding](sandbox-provider.md) |
 | `services/core-console` | Console login and the server-side management proxy | [Web architecture](web/architecture.md) |
 | `apps/web` and `packages/agents-client` | Console UI and typed clients | [Web guide](../apps/web/README.md) |
@@ -102,65 +102,38 @@ apply to user-owned machines and Core-managed environments; read the
 
 ## Choose an extension boundary
 
+Each boundary has one canonical guide. Read it before changing code; this page
+only helps you pick the right one.
+
+| Boundary | You are adding or changing | Canonical guide |
+| --- | --- | --- |
+| Harness adapter | A native agent engine behind the Runtime | [Harness onboarding](../contracts/agents-api/harness-onboarding.md) |
+| Sandbox Provider | Outer compute that creates and reclaims Environments | [Sandbox Provider guide](sandbox-provider.md) |
+| Core–Runtime protocol | A message, receipt or lifecycle rule between Core and the daemon | [Core–Runtime protocol](runtime-protocol.md) |
+| Public API operation | A `/v1`, `/core/v1` or `/api/v1` route | [API index](api/README.md) and [contracts](../contracts/agents-api/README.md) |
+| Environment capability | Skills, Plugins, MCP or `packages.system` preparation | [Environments](../contracts/agents-api/environments.md#runtime-capability-preparation) |
+
 ### Add a Harness adapter
 
-Start with [Harness onboarding](../contracts/agents-api/harness-onboarding.md).
-Choose a native SDK or machine-readable protocol, declare the operations and
-placements you intend to support, and implement the shared
-[`Executor` and `Turn` interfaces](../apps/parsar-daemon/internal/agent/harness.go).
-The guide covers factory registration, service profiles, capability declarations,
-input receipts, event translation, cancellation, history and cleanup.
-
-Use the [synthetic onboarding fixture](../apps/parsar-daemon/testdata/onboarding/main.go)
-to see the full registration path. With the dedicated test database configured:
-
-```sh
-go test ./services/agents-api/internal/store -run '^TestThirdHarnessPublicOnboarding$' -count=1
-```
-
-This test reaches the actual gateway and Runtime router, but its synthetic engine
-cannot establish native acceptance. Qualify the real adapter through the official
-client, Core, Runtime and a real model. Verify two ordinary Turns, cancellation,
-continuation after restart, unknown outcomes and the advertised optional operations.
-Record exact native versions and limitations in the linked operation contracts.
-
-The [Claude bridge guide](../packages/claude-sdk-adapter/README.md) explains the
-separate TypeScript SDK process. Codex and MiniMax implementation references are
-linked from the onboarding guide. Reuse common process and workspace helpers;
-keep native event interpretation inside the adapter.
-
-### Extend the Core–Runtime protocol
-
-Read [the protocol guide](runtime-protocol.md) before adding a message or receipt.
-Change the shared types and validators in `internal/agentdaemon/proto`, both peers,
-and their contract tests together. Keep exact wire-version checks and update the
-message ordering, identity and failure ownership documentation. A transport write
-cannot be used as evidence of native application or completion.
-
-```sh
-make check-runtime-contract
-```
-
-The focused gate covers wire validation, gateway behavior, transport, dispatcher,
-real WebSocket contract fixtures and Core observation failures. Adapter-specific
-native acceptance remains a separate requirement.
+Implement the shared `ExecutorFactory`, `Executor` and `Turn` interfaces in
+[`agent/harness.go`](../apps/parsar-daemon/internal/agent/harness.go), register
+the adapter and add a service profile. Follow the numbered steps in
+[Harness onboarding](../contracts/agents-api/harness-onboarding.md); qualification
+evidence belongs in [Harness integration](../contracts/agents-api/harnesses.md).
 
 ### Add a Sandbox Provider
 
-Read [Provider onboarding](sandbox-provider.md). Implement
-[`SandboxProvider`](../services/agents-api/internal/sandbox/sandbox_provider.go)
-for the outer compute lifecycle. Register construction and vendor configuration at
-that boundary; use optional interfaces for observation and checkpoints. Runtime
-capability preparation and native execution keep their existing owners.
+Implement the five required `SandboxProvider` operations in
+[`sandbox_provider.go`](../services/agents-api/internal/sandbox/sandbox_provider.go),
+register the provider kind and pass `make check-sandbox-provider-contract`. Follow
+the numbered steps in the [Sandbox Provider guide](sandbox-provider.md).
 
-```sh
-make check-sandbox-provider-contract
-```
+### Extend the Core–Runtime protocol
 
-Run the [shared contract suite](../services/agents-api/internal/sandbox/contracttest/provider.go)
-through the adapter's native boundary, then qualify actual resource creation,
-bootstrap, observation, uncertain results and cleanup. Mocked compute cannot prove
-that resources were reclaimed or that the outer environment provides isolation.
+Change shared types and validators in `internal/agentdaemon/proto`, both peers
+and their contract tests together, keeping the exact wire-version check. The
+[protocol guide](runtime-protocol.md) owns message order, receipts and failure
+ownership; `make check-runtime-contract` is its focused gate.
 
 ## Validate a change
 
@@ -191,7 +164,7 @@ with `AGENTS_FIXTURE_PORT` and `AGENTS_WEB_PORT` when running parallel validatio
 Keep databases, ports and containers separate between validation workers.
 Compilation, fixture success and live model/provider acceptance establish different
 facts; report skipped or unavailable checks explicitly. Follow the
-[independent blind review workflow](../CONTRIBUTING.md#workflow-and-quality)
+[independent blind review workflow](../CONTRIBUTING.md#review)
 after validation.
 
 ## Change documentation

@@ -698,7 +698,7 @@ test and the complete Core `make check` passed. Optional Docker fault fixtures w
 not enabled; real public Docker runs cover the accepted paths. The first full-check
 invocation lacked the server's OpenSSL development paths; the corrected invocation
 passed with a fresh database. Evidence and failed attempts remain under
-`~/.parsar/remediation/20260921/template-network-native/` and the Feishu task record.
+`~/.parsar/remediation/20260921/template-network-native/`.
 Core SHA-256: `0dc40384192fc75c4be9896072dfe0089c30a02e44804faca7a14c7d8525efa3`.
 E2B probes remain mechanism evidence only; this batch does not qualify official
 E2B self-hosted onboarding or complete upstream network semantics.
@@ -795,7 +795,7 @@ historical qualification is recorded below. Unconfirmed reference overrides
 remained gaps in that evidence, and the retired native Codex hook's failure
 limitation was not resolved by this run.
 Private sanitized run/check/build evidence is retained under
-`~/.parsar/remediation/20260920/environment-template-setup/` and the linked board.
+`~/.parsar/remediation/20260920/environment-template-setup/`.
 These results do not establish complete Template or Agents API compatibility.
 
 
@@ -831,8 +831,7 @@ qualified base images after registry DNS failure; current daemon, adapter and
 initializer artifacts were copied using the repository packaging recipe. Raw
 receipts retain their inherited historical manifest fields; accompanying source,
 Core and image hashes identify the actual candidates. Evidence is retained under
-`~/.parsar/remediation/20260920/environment-template-skills` and the linked board
-record. This profile does not establish complete upstream Skill semantics.
+`~/.parsar/remediation/20260920/environment-template-skills`. This profile does not establish complete upstream Skill semantics.
 
 ### System-package qualification (2026-09-20)
 
@@ -900,7 +899,7 @@ and private-state checks. Interactive PTY behavior and packages needing addition
 Unix identities or privileged services are not qualified by these results.
 
 Sanitized results, image/source hashes, full checks and failed evidence are retained
-under `~/.parsar/remediation/20260920/environment-template-capabilities` and the board.
+under `~/.parsar/remediation/20260920/environment-template-capabilities`.
 Early Docker result manifests contain inherited installer archive fields; those
 fields do not qualify a new installer archive. Current binary and image hashes
 identify the tested deployment. These checks do not establish complete upstream
@@ -955,3 +954,44 @@ Core updates the default pointer and top-level name/description atomically, whil
 concrete version bytes and previously frozen Sessions remain immutable. Deleting the
 last version deletes the Skill; version numbers are intentionally never reused.
 Complete errors and visibility timing remain gaps.
+
+## Implementation rules
+
+Public Environment Templates belong to Core and its execution database, independently
+of provider image/build templates. Resolve a tenant-owned reference once at Session
+creation, freeze the effective ordinary hosted configuration and reuse inline
+initialization. Do not pass template IDs into Provider or Runtime. Omitted or null
+network inherits the complete template policy; overrides may only narrow policy.
+Preserve unresolved caller intent for creation retries and recover committed
+results before reading mutable templates.
+For template-reference Session initialization, omitted/null env, files, commands
+and packages inherit. Overlay non-null env keys; replace non-null files and command
+lists, including empty lists. Select each package manager independently: omitted/null
+inherits, while a supplied list replaces that manager. Revalidate the effective
+configuration through the existing validators and freeze it through the same
+transaction as inline initialization. Keep caller intent separate from resolved
+configuration; do not add a second installer or pass merge rules to adapters.
+Updates and deletion cannot rewrite existing Session snapshots. Initial files use
+one Core-owned installer for template and inline configurations. Keep confidential
+bytes encrypted under the execution-service key and resource-bound AEAD, separately
+from ordinary configuration and public metadata. Templates retain source references;
+Session creation freezes tenant-authorized source bytes in the same commit, independent
+of later source/template deletion. Public resource reads must not require decryption
+or load encrypted file bodies. Record original creation intent before resolution.
+
+Template parsing, persistence and resolution must not select a harness or Provider,
+or depend on native tool names and private harness paths. The shared initializer
+uses the packaged Runtime contract for trusted commands, workspace/staging paths,
+confidential input and completion receipts, following
+[Runtime capability preparation](environments.md#runtime-capability-preparation).
+Each adapter owns native tool configuration. A new harness or Provider must not require template
+business-logic changes. Reuse qualified shared helpers even when their executable
+names have historical engine prefixes; renaming is not a boundary fix. Select real
+regressions by the changed shared, Provider and adapter boundaries, rather than
+repeating every deployment combination for each configuration field.
+
+Name, initial files, inline/referenced Skills, Plugins, workspace capability directories and env/setup/npm/Python are
+implemented independently of remaining installation fields. Reject unsupported
+inputs rather than persisting them for silent
+omission; expand inline and template initialization together in separately qualified
+batches. Resource reads need only tenant authorization, not a live Runtime.

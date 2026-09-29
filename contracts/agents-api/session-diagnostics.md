@@ -79,3 +79,15 @@ The typed client exposes `retrieveSessionDiagnostics` and
 `retrieveTurnDiagnostics` on `AdminClient`, retaining request cancellation and
 validating scope, categories, nullability and safe parameter values. No browser
 credential or Core Web implementation is added by this contract.
+
+## Implementation rules
+
+Root Session/Turn diagnostics are Core-key reads from one committed database
+snapshot, reusing public status projection and precedence. Keep their finite
+failure catalog separate from private outcome text. Persist safe provisioning
+details in the existing failure transaction; never reconstruct historical details
+from reason strings. Item settlement belongs to the existing Session lock and
+terminal transaction: event/input receipt for normal terminal projections, one
+post-lock database wall-clock sample for forced incomplete Items. Preserve
+historical terminal nulls and public native completion times. See the
+[diagnostics contract](session-diagnostics.md).
