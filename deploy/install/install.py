@@ -30,6 +30,8 @@ import rename
 import native_service
 import oac_cli
 import sandbox_setup
+import install_output
+from install_output import choose_where, step
 from distribution import DistributionError, artifact, image_identities, ensure_docker_image
 
 SETTING_ARGUMENTS = {
@@ -80,7 +82,7 @@ def verify_bundle(bundle):
             raise InstallError("Distribution checksum mismatch: " + name)
     required = {"manifest.json", "install.sh", "install.py", "configuration.py", "config_model.py",
                 "config.schema.json", "oac_cli.py", "convert.py", "rename.py", "oac.pyz", "native_service.py",
-                "sandbox_setup.py", "standard-sizes.json", "node_spec.py", "node-install.pyz",
+                "sandbox_setup.py", "install_output.py", "standard-sizes.json", "node_spec.py", "node-install.pyz",
                 "distribution.py", "runtime/seccomp.json"}
     required.update(f"images/{name}.tar" for name in ("core", "web", "database"))
     required.update("native/bin/" + name for name in ("oac-core", "oac-core-migrate"))
@@ -322,8 +324,11 @@ def image_names(mode, native):
 
 def image_loader(manifest, bundle):
     def load(names):
-        return {name: ensure_docker_image(manifest, name, lambda name=name: bundle / f"images/{name}.tar")
-                for name in names}
+        images = {}
+        for name in names:
+            step("Preparing " + {"database": "PostgreSQL", "core": "Core", "web": "Web"}.get(name, name) + " image")
+            images[name] = ensure_docker_image(manifest, name, lambda name=name: bundle / f"images/{name}.tar")
+        return images
     return load
 
 
@@ -514,13 +519,16 @@ def create(root, args, config, manifest, images):
 def finish(root, bundle, manifest, fresh=False, selection=None):
     """Repair and start this release while the installer holds the installation lock."""
     state = oac_cli.load_state(root)
+    step("Preparing service files")
     prepare_node_payload(root, state, bundle)
     native_service.prepare(root, state, bundle)
     install_oac(root, bundle)
     retry = f"rerun ./install.sh --install-dir {root}"
     try:
         args = argparse.Namespace(dry_run=False, yes=False, confirm_public_url_change=None)
-        oac_cli._apply(root, args, False, True, sys.stdin.isatty(), print, retry=retry)
+        step("Applying settings and starting services as needed")
+        oac_cli._apply(root, args, False, True, sys.stdin.isatty(),
+                       lambda message: print(message, flush=True), retry=retry)
     except oac_cli.OacError as error:
         if not selection:
             raise
@@ -528,86 +536,42 @@ def finish(root, bundle, manifest, fresh=False, selection=None):
                               f"repair, choose it {choose_where(state['mode'])}") from None
     config = oac_cli.load_config(root)
     mode = config["mode"]
+    if mode == "web-only":
+        step("Checking Core connection and authentication")
     if mode == "web-only" and oac_cli.paired_core(root, config)[0] != 200:
         raise InstallError("Core key authentication failed. Inspect secrets/core.key and web.core_url; no model was called")
     deployment = failure = None
     if selection:
+        step("Configuring sandbox backend")
         try:
             deployment = sandbox_setup.initialize(root, config, state, selection)
         except sandbox_setup.SandboxSetupError as error:
             failure = error
-    summary(root, config, fresh, selection, deployment)
+    summary(root, config, fresh, selection, deployment, incomplete=failure is not None)
     if failure:
         raise InstallError(f"{str(failure).rstrip('.')}. Services are installed and running; "
                            f"choose the sandbox backend {choose_where(mode)}")
 
 
-def choose_where(mode):
-    """Where an operator chooses the sandbox backend when the installer did not."""
-    return ("on the Nodes page in Web" if mode == "all" else
-            "through the Core management API (POST /core/v1/sandbox/deployment)")
-
-
-def size(resources):
-    memory = resources["memory_mib"]
-    return f'{resources["cpus"]} CPUs, ' + (f"{memory // 1024} GiB" if memory % 1024 == 0 else f"{memory} MiB")
-
-
-def sandbox_lines(root, config, selection, deployment):
-    """What a new installation's sandboxes are and how nodes are added."""
-    web = config["mode"] == "all"
-    if selection is None:
-        return [f"Sandboxes: none chosen. Choose a sandbox backend {choose_where(config['mode'])}."]
-    if deployment is None:
-        return []  # The error that follows says what to do.
-    if selection["provider"] == "e2b":
-        resources = (deployment.get("specification") or {}).get("resources") or {}
-        built = f" ({size(resources)})" if {"cpus", "memory_mib"} <= set(resources) else ""
-        return [f'Sandboxes: E2B template {selection["e2b"]["template"]}{built}. E2B runs them; no nodes are needed.']
-    line = f'Sandboxes: {sandbox_setup.NAMES[selection["provider"]]}, Standard ({size(selection["resources"])}).'
-    if selection["provider"] == "microsandbox":
-        # The installer adds no node, so this host needs no KVM of its own.
-        line += " Its nodes need KVM (/dev/kvm); this host needs it only if you add it as a node."
-    add = "in Web, open Nodes and choose Add node" if web else "in a Web console paired with this Core, open Nodes and choose Add node"
-    lines = [line, f"Add nodes: {add}, then paste the command on each host, this one included."]
-    if not nodes_reach(config["public_url"]):
-        # Each sandbox calls Core at public_url; a loopback address is the sandbox itself.
-        lines.insert(1, "Nodes need an HTTPS public URL that other machines and their sandboxes can reach: set "
-                        f"public_url in {root / 'config.json'} and run {root / 'oac'} apply first.")
-    return lines
-
-
-def summary(root, config, fresh, selection=None, deployment=None):
+def summary(root, config, fresh, selection=None, deployment=None, incomplete=False):
     mode, public_url, ports = config["mode"], config["public_url"], config["ports"]
+    addresses = []
     if mode != "core-only":
-        # The console accepts only its configured origin, so a public URL has no loopback console.
+        # Web accepts only its configured origin.
         console = configuration.web_origin(config)
-        print("Console: " + console + (" (local only)" if loopback_origin(console) else ""))
+        addresses.append("Console: " + console + (" (local only)" if loopback_origin(console) else ""))
     if mode != "web-only":
         api = configuration.service_origin(config, "core") + "/v1"
         if public_url and not loopback_origin(public_url):
-            print("API base URL: " + public_url + "/v1")
-            print(("Local-only API on this host: " if configuration.loopback_listener(config["host"]) else "Direct API on this host: ") + api)
+            label = "Local-only API on this host: " if configuration.loopback_listener(config["host"]) else "Direct API on this host: "
+            addresses += ["API base URL: " + public_url + "/v1", label + api]
         elif public_url and origin_port(public_url) != ports.get("web"):
-            print("API base URL: " + public_url + "/v1 (local only)")
+            addresses.append("API base URL: " + public_url + "/v1 (local only)")
         else:
-            # Web answers 404 on /v1, so only Core's own port serves the API locally.
-            print("API base URL: " + api + " (local only)")
-    core_key = root / "secrets/core.key"
-    if mode == "core-only":
-        local = " (local only)" if configuration.loopback_listener(config["host"]) else ""
-        print(f'Next: create a Project and its API key through the Core management API at '
-              f'{configuration.service_origin(config, "core")}/core/v1{local} with the Core key in {core_key}.')
-    else:
-        print(f"Next: sign in to Web with the Core key in {core_key}, then create a Project and its API key on the Projects and keys page.")
-    print("Keep the Core key private; it also authorizes the Core management API.")
-    print(f"Settings: {root / 'config.json'}. Edit it, then run {root / 'oac'} apply.")
-    print(f"Manage the services with {root / 'oac'} status, start and stop.")
-    # Only a new installation reports its sandboxes; a repaired or converted one keeps its own.
-    if fresh and mode != "web-only":
-        for line in sandbox_lines(root, config, selection, deployment):
-            print(line)
-    print("Services installed. No model request was made. See docs/getting-started/quickstart.md.")
+            # The loopback Web port does not serve the public API.
+            addresses.append("API base URL: " + api + " (local only)")
+    install_output.summary(root, config, addresses, fresh, selection, deployment,
+                           nodes_reach(public_url), incomplete)
 
 
 def main(argv=None):
@@ -616,6 +580,7 @@ def main(argv=None):
     if root.is_symlink() or root.resolve() != root:
         raise InstallError("Installation directory must be canonical and not a symlink")
     bundle = Path(__file__).resolve().parent
+    step("Verifying installation files")
     manifest = verify_bundle(bundle)
     # Refuse foreign state before even creating a lock; repeat under the lock to
     # protect against another current installer finishing between these reads.
@@ -624,6 +589,7 @@ def main(argv=None):
         old, _ = rename.defaults()
         if (old / "state.json").exists() or (old / "installation.json").exists():
             raise InstallError(oac_cli.UNSUPPORTED_VERSION)
+    step("Checking installation settings")
     prepared = prepare_fresh(args) if layout(root) == "empty" else None
     if root.parent == Path.home() / ".oac":
         root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -671,6 +637,7 @@ def install_locked(args, root, bundle, manifest, prepared):
         if state["mode"] == "web-only" and oac_cli.paired_core(root, oac_cli.load_config(root))[0] == 404:
             raise InstallError("The paired Core version is not supported; preserve its data and reinstall "
                                "the current release separately. Nothing was changed.")
+        step("Checking host requirements for repair")
         check_host()
         if native_service.is_native(state):
             native_service.preflight(bundle, root)
@@ -689,6 +656,7 @@ def install_locked(args, root, bundle, manifest, prepared):
     if kind == "other":
         raise InstallError("Installation directory is not empty; refusing to overwrite existing state")
     config, choice, e2b = prepared
+    step("Checking host requirements")
     check_host()
     manifest = verify_bundle(bundle)
     if config.get("native_core"):
@@ -698,6 +666,7 @@ def install_locked(args, root, bundle, manifest, prepared):
             free_port(config["ports"][key], "127.0.0.1" if key == "database" else config["host"])
     selection = None if choice == "none" else sandbox_setup.selection(bundle, manifest, choice, e2b)
     images = image_loader(manifest, bundle)(image_names(config["mode"], config.get("native_core", False)))
+    step("Creating installation settings and credentials")
     create(root, args, config, manifest, images)
     finish(root, bundle, manifest, fresh=True, selection=selection)
 
@@ -707,9 +676,9 @@ if __name__ == "__main__":
         main()
     except (InstallError, oac_cli.OacError, config_model.ConfigError,
             sandbox_setup.SandboxSetupError, DistributionError, RuntimeError) as error:
-        print(str(error), file=sys.stderr)
+        install_output.error(str(error))
         sys.exit(1)
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError):
         # Errors never include generated configuration or external process output.
-        print("Installation failed; inspect prerequisites and private deployment files", file=sys.stderr)
+        install_output.error("inspect prerequisites and private deployment files")
         sys.exit(1)

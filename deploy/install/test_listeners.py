@@ -52,6 +52,11 @@ class ListenerTests(unittest.TestCase):
         self.assertTrue(all(request.startswith("http://127.0.0.2:") for request in self.host.requests))
         self.assertIn("Console: http://127.0.0.2:18080", self.output.getvalue())
 
+    def test_core_only_completion_reports_configured_address(self):
+        self.install("--core-only", "--host", "127.0.0.2", "--core-port", "18091")
+        self.assertIn("http://127.0.0.2:18091/core/v1 (local only)", self.output.getvalue())
+        self.assertNotIn("http://127.0.0.1:", self.output.getvalue())
+
     def test_ipv6_native_and_container_listeners(self):
         for native in (False, True):
             config = config_model.initial("all", native, host="::1", **{"ports.database": 15432 if native else None})
