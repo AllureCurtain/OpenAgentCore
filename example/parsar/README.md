@@ -1,4 +1,4 @@
-# OpenAgentCore Agent workbench
+# Parsar Agent workbench
 
 A small product application on OpenAgentCore, using Parsar UI. Manage models,
 Skills, HTTP MCP services and runtime configurations; compose reusable Agent
@@ -136,12 +136,10 @@ tool activity to distinguish a successful call from an attempted call.
 
 ## UI provenance
 
-The copied UI primitives, `src/lib/utils.ts` and `src/style.css`
-originate in [Parsar](https://github.com/MiniMax-AI-Dev/parsar)
+The copied UI primitives, `src/lib/utils.ts`, `src/style.css`
+and `public/*` originate in [Parsar](https://github.com/MiniMax-AI-Dev/parsar)
 revision `90fafede`, under [MIT](LICENSE). The responsive body minimum width and
-application pages are local adaptations. The SVG brand assets in `public/` use
-the OpenAgentCore mark from `../../docs/assets/openagentcore-logo.svg`.
-Navigation animation adapts
+application pages are local adaptations. Navigation animation adapts
 [Motion Primitives](https://github.com/ibelick/motion-primitives), with reduced-motion
 support and its [MIT notice](MOTION-PRIMITIVES-LICENSE). Multica's resource and
 Agent organization informs the product flow; no Multica code is copied.

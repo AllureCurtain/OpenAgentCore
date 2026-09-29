@@ -5,9 +5,9 @@ runs against a real Core installation with a Project API key.
 
 | Example | What it shows |
 | --- | --- |
-| [OpenAgentCore Agent workbench](#openagentcore-agent-workbench) | A product UI: models, Skills, MCP, reusable Agents, and Sessions on any runtime |
+| [Parsar Agent workbench](#parsar-agent-workbench) | A product UI: models, Skills, MCP, reusable Agents, and Sessions on any runtime |
 
-## OpenAgentCore Agent workbench
+## Parsar Agent workbench
 
 A small single-user product built on Core. You save model providers, Skills and MCP
 servers, combine them into Agents, then start Sessions in a managed sandbox, with

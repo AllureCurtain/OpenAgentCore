@@ -1,6 +1,6 @@
 <div align="center">
 
-![OpenAgentCore — One core. Many agents.](docs/assets/openagentcore-banner.jpg)
+![OpenAgentCore — One core. Many agents.](docs/assets/openagentcore-banner.jpeg)
 
 # OpenAgentCore
 

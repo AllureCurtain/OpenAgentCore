@@ -46,13 +46,12 @@ export function App() {
       <aside className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line bg-surface-subtle px-4 py-3 sm:w-52 sm:flex-col sm:flex-nowrap sm:items-stretch sm:gap-0 sm:border-b-0 sm:border-r sm:px-3 sm:py-5">
         <div className="flex items-center gap-2.5 px-2 sm:mb-8">
           <img
-            src="/oac-mark.svg"
-            style={{ filter: dark ? "invert(1)" : undefined }}
+            src={dark ? "/parsar-mark-dark.png" : "/parsar-mark-light.png"}
             alt=""
             width={26}
             height={26}
           />
-          <span className="text-lg font-semibold tracking-tight">OpenAgentCore</span>
+          <span className="text-lg font-semibold tracking-tight">Parsar</span>
         </div>
         <nav
           aria-label="主导航"
