@@ -145,7 +145,7 @@
     "reason": "Repository helper filenames are retained source entry points; they do not name installed commands."
   },
   {
-    "path": ".github/workflows/agents-api.yml",
+    "path": ".github/workflows/api-acceptance.yml",
     "regex": "\\.github/workflows/agents-api\\.yml",
     "reason": "The workflow source filename is an internal repository identity; its display name and artifacts use OpenAgentCore."
   },
@@ -403,16 +403,6 @@
     "path": "deploy/install/test_node_install.py",
     "regex": "parsar-node(?:-)?|\\.parsar(?:/nodes)?|PARSAR_NODE_ENROLLMENT_TOKEN",
     "reason": "Only the old node service/state paths and retired enrollment variable are recognized for scoped refusal and uninstall guidance."
-  },
-  {
-    "path": "deploy/install/self_hosted_install.py",
-    "regex": "\\.parsar(?:/self-hosted)?|parsar-selfhost-",
-    "reason": "The self-hosted installer refuses the old same-Environment installation and retains its existing resources."
-  },
-  {
-    "path": "deploy/install/test_self_hosted_install.py",
-    "regex": "\\.parsar(?:/self-hosted)?|parsar-selfhost-",
-    "reason": "The self-hosted installer refuses the old same-Environment installation and retains its existing resources."
   },
   {
     "path": "deploy/install/install.py",

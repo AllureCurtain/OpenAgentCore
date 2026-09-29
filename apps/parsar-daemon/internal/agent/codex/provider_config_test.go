@@ -132,38 +132,15 @@ func TestWriteCodexProviderConfig_AppendsAlongsideMCP(t *testing.T) {
 	}
 }
 
-func TestNormaliseProviderConfig_FullRoundTrip(t *testing.T) {
-	raw := map[string]any{
-		"name":         "mygw",
-		"base_url":     "https://x/v1",
-		"bearer_token": "sk-x",
-		"wire_api":     "responses",
-		"http_headers": map[string]any{
-			"X-Sub-Module": "codex-internal",
-		},
-		"query_params": map[string]any{
-			"api-version": "2025-04-01-preview",
-		},
-		"request_max_retries": float64(4), // JSON numbers arrive as float64
+func TestNormaliseProviderConfig_FixedBundle(t *testing.T) {
+	raw := map[string]any{"protocol": "responses", "base_url": "https://x/v1", "api_key": "sk-x"}
+	cfg, present, err := normaliseProviderConfig(raw)
+	if err != nil || !present || cfg.BaseURL != "https://x/v1" || cfg.BearerToken != "sk-x" || cfg.WireAPI != "responses" {
+		t.Fatal("provider not preserved", err)
 	}
-	cfg, hasProvider, err := normaliseProviderConfig(raw)
-	if err != nil {
-		t.Fatalf("normalise: %v", err)
-	}
-	if !hasProvider {
-		t.Fatal("hasProvider must be true for non-nil raw")
-	}
-	if cfg.Name != "mygw" || cfg.BaseURL != "https://x/v1" || cfg.BearerToken != "sk-x" {
-		t.Fatalf("scalar fields wrong: %+v", cfg)
-	}
-	if cfg.HTTPHeaders["X-Sub-Module"] != "codex-internal" {
-		t.Fatalf("headers lost: %+v", cfg.HTTPHeaders)
-	}
-	if cfg.QueryParams["api-version"] != "2025-04-01-preview" {
-		t.Fatalf("query_params lost: %+v", cfg.QueryParams)
-	}
-	if cfg.RequestMaxRetries != 4 {
-		t.Fatalf("request_max_retries = %d, want 4", cfg.RequestMaxRetries)
+	raw["http_headers"] = map[string]any{"Authorization": "other"}
+	if _, _, err := normaliseProviderConfig(raw); err == nil {
+		t.Fatal("undeclared configuration accepted")
 	}
 }
 
@@ -180,9 +157,10 @@ func TestNormaliseProviderConfig_Nil(t *testing.T) {
 
 func TestBuildSessionPlan_PinsModelProviderWhenProviderSet(t *testing.T) {
 	plan, err := BuildSessionPlan("run-x", "conv-1/agent-1/codex", "", map[string]any{
-		"codex_provider": map[string]any{
-			"base_url":     "https://x/v1",
-			"bearer_token": "sk-x",
+		"model": "fixture-model",
+		"model_provider": map[string]any{"protocol": "responses",
+			"base_url": "https://x/v1",
+			"api_key":  "sk-x",
 		},
 	})
 	if err != nil {

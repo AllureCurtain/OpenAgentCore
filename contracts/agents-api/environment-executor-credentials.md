@@ -112,96 +112,38 @@ can read it.
 
 ## Executor host
 
-The distribution's `self-hosted-install.pyz` downloads the matching
-`oac-selfhost` launcher, Runtime image and seccomp profile. The local launcher
-uses the same Docker isolation and workspace layout as Core-managed V1, then
-invokes the existing daemon `connect` with the unchanged returned Environment
-ID and `remote_url`. Docker onboarding requires an externally reachable `wss`
-URL; host loopback addresses are not rewritten inside the container. It creates
-no sandbox node or Core-managed allocation. Workspace, credential and native
-history volumes belong to the operator. Failed or uncertain launches retain
-their volumes and installation receipt for inspection instead of replacing
-history or retrying enrollment. Session deletion does not reclaim these volumes.
-Rerunning the installer inspects a previously started container only after its
-installation and Environment labels match. Both first launch and rerun wait up
-to 60 seconds for authenticated Core connection confirmation; a running container
-alone does not establish connection. A stopped container receives a command to
-start that same container before rerunning the installer.
-An uncertain launch without a success receipt gives label-filtered container
-and volume inspection commands and never creates a replacement. A cached image
-with the exact distribution digest and platform skips image download and import.
+The [native installer](../../docs/self-hosted-native.md) installs the same daemon
+and pinned Harness adapters on Linux, macOS and Windows. It neither identifies
+the machine's supplier nor creates a Docker container or Core allocation. The
+operator supplies a user-writable installation directory, an existing workspace,
+the unchanged Environment ID and remote URL, and a private executor credential file.
+Files, native history and machine lifecycle remain the operator's responsibility.
+Session deletion, cancellation and disconnect do not reclaim them.
 
-### Install command
+Interactive multi-selection and command-line-only installation share one flow.
+`install --non-interactive --harness codex,claude --install-dir ABS --remote URL
+--environment-id UUID --workspace ABS --credential-file ABS` requires all inputs
+without prompting. Readiness checks do not authenticate a model or prove a daemon
+connection. The installed `bin/oac-daemon start` connects; verify connection through
+the route below and send a Turn to verify the Session model configuration.
 
-Web builds a command that contains no secret, like Add node's. It downloads
-`/node-install/self-hosted-install.pyz` from the console, verifies it against
-`self_hosted_installer_sha256` from `GET /console/config`, and runs it with the
-installation's `public_url` (`GET /core/v1/installation`) as `--source-url` plus
-the Session's `environment.id` and unchanged `environment.remote_url`:
-
-```sh
-(umask 077; d=$(mktemp -d) || exit; trap 'rm -rf "$d"' EXIT
-curl -fsS --max-time 30 --max-filesize 1048576 'https://core.example/node-install/self-hosted-install.pyz' -o "$d/install.pyz" &&
-printf '%s  %s\n' 'SHA256' "$d/install.pyz" | sha256sum -c --status &&
-python3 "$d/install.pyz" --source-url 'https://core.example' --environment-id 'ENVIRONMENT_UUID' --remote 'wss://core.example/api/v1/agent-daemon/ws')
-```
-
-Without `--credential-file`, the installer asks for the credential at a hidden
-prompt on the controlling terminal. It turns echo off before showing the prompt
-and reads until one complete JSON object parses (at most 16 KiB), so the compact
-form and the pretty-printed credential file both work. Leftover typed-ahead input
-is discarded. The secret never enters process arguments, the environment, shell
-history or the screen; the installer stores it only in its private mode-0600
-state and the container's private home volume. Without a terminal, use
-`--credential-file` with an owned mode-0600 file. The same command reruns safely:
-with an accepted stored credential it only confirms the connection and asks for
-nothing.
+Web's **Connect a host** panel links the native distribution instructions and
+prepares a secret-free interactive command using the Session's remote URL,
+Environment ID and workspace. Save the one-time credential JSON as a private file
+and supply its absolute path. Credentials never belong in the command itself.
 
 ### Revoked or rotated credential
 
-When Core permanently rejects the executor (enrollment 401 or 409, a WebSocket
-upgrade 401/403/426, or a close for a retired Runtime), the daemon parks instead
-of exiting: it prints one message naming the fix (for 426, that the Runtime comes
-from a different Core distribution), makes no further requests, and exits 0 on
-SIGTERM or SIGINT. The container keeps its `unless-stopped` policy, so it has no
-restart loop yet still starts after a reboot, makes one enrollment request and
-parks again. Transport failures, 5xx and 404 still exit 1
-and are retried by the restart policy. The installer's launcher starts the daemon
-with `--self-hosted-install`, so its 401 message names the installer's rerun:
+When Core permanently rejects enrollment or the WebSocket, the daemon reports the
+reason and parks without retrying until stopped. A protocol mismatch requires the
+matching current distribution; it does not trigger a migration. Transient transport
+failures retain the existing reconnect behavior and never replay execution.
 
-```text
-oac-daemon: executor credential KEY_ID for Environment ENVIRONMENT_ID was rejected by Core (revoked, rotated, or its Session was deleted). This Runtime will not retry. To reconnect it, rotate this credential in Web (Session > Executor credentials > Rotate), then rerun the self-hosted install command on this host and paste it. To remove it instead, stop this container.
-```
-
-Without that flag (for example a caller-managed E2B Runtime) the message says to
-install the rotated credential for this Runtime and restart it, or to stop it.
-
-The fix is always to rotate the same `key_id`, then rerun the install command.
-Issuing a new key does not work for an Environment that has already enrolled:
-enrollment keeps the key the Environment first bound, and the connection check
-returns 409 for another key. Rotation restores a revoked key with a new secret.
-
-On rerun the installer checks the stored credential with the connection route.
-When Core rejects it, the installer asks for the replacement (or reads
-`--credential-file`):
-
-- 401 (revoked or rotated): only the same `key_id`, rotated, can replace it. A
-  different key is refused before any change, because the connection check alone
-  may accept a new key that enrollment would then reject with 409.
-- 409 (the Environment is bound to a different credential): the replacement must
-  be the credential first used for this Environment, rotated.
-
-The replacement is then checked the same way; 409 or 401, or no answer, stops
-without changes. The installer stops the container and writes the replacement
-into it with `oac-selfhost replace-credential --container NAME
---credential-file PATH`. That command refuses a running container, one without
-this installation's labels and name or its exact `-home` and `-environment`
-volumes, and a symlinked private credential directory. The installer then starts
-the same container, updates its stored copy last and waits for connection. The
-container, its volumes and native history are kept. Because the stored copy
-changes last, an interrupted replacement still sees a rejected credential and is
-completed by rerunning the same command. The host keeps two copies of the
-credential: the installer's state and the container's home volume.
+Rotate the same `key_id`, stop the daemon, replace the configured credential JSON
+file, and start it again. Issuing a new key for an enrolled Environment fails with
+409 because enrollment retains its original key binding. Revocation prevents the
+old token from reconnecting. Rotation does not reinstall Harnesses, change the
+workspace or replace native history.
 
 ## Private connection confirmation
 

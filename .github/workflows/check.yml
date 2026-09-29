@@ -1,6 +1,12 @@
 name: core-check
 
 on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Source commit to check
+        required: false
+        type: string
   push:
     branches: [main]
   pull_request:
@@ -9,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: core-check-${{ github.ref }}
+  group: core-check-${{ github.workflow }}-${{ inputs.ref && github.run_id || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,9 +38,26 @@ jobs:
           --health-retries 10
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Select shared Go caches
+        id: source
+        run: |
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "GOCACHE=$HOME/.oac/cache/go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$HOME/.oac/cache/go-mod" >> "$GITHUB_ENV"
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: false
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.oac/cache/go-build
+            ~/.oac/cache/go-mod
+          key: core-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-${{ steps.source.outputs.revision }}
+          restore-keys: |
+            core-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-
       - uses: actions/setup-node@v6
         with:
           node-version: '22'

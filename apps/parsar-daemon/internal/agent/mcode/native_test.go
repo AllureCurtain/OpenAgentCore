@@ -97,7 +97,7 @@ func TestNativeMCodeACP(t *testing.T) {
 	digest := sha256.Sum256(archive.Bytes())
 	skill := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(archive.Bytes()) }))
 	defer skill.Close()
-	req.AgentOptions["mcode_provider"] = map[string]any{"name": "OpenAgentCore", "kind": "custom", "enabled": true, "npm": "@ai-sdk/anthropic", "options": map[string]any{"apiKey": "fixture-only", "baseURL": model.URL}, "models": map[string]any{"fixture": map[string]any{"name": "Fixture", "tool_call": true, "limit": map[string]int{"context": 64000, "output": 4096}}}}
+	req.AgentOptions["model_provider"] = map[string]any{"protocol": "anthropic", "base_url": model.URL, "api_key": "fixture-only", "context_window": 64000, "max_output_tokens": 4096}
 	req.AgentOptions["skills"] = []any{map[string]any{"name": "qa-mcode-skill", "version": "1", "download_url": skill.URL, "sha256": hex.EncodeToString(digest[:])}}
 	req.AgentOptions["mcp_servers"] = map[string]any{"qa": map[string]any{"type": "http", "url": mcp.URL}}
 	req.AgentOptions["system_prompt"] = "SP-MCODE-672: use the available tools when requested."
@@ -151,10 +151,6 @@ func TestNativeMCodeACP(t *testing.T) {
 	req.AgentSessionID = done.Metadata[proto.DoneMetaAgentSessionID].(string)
 	req.AgentOptions["system_prompt"] = "SP-MCODE-NEW: reply concisely."
 	req.AgentOptions["skills"] = []any{}
-	provider := req.AgentOptions["mcode_provider"].(map[string]any)
-	models := provider["models"].(map[string]any)
-	models["fixture-new"] = models["fixture"]
-	delete(models, "fixture")
 	req.AgentOptions["model"] = "fixture-new"
 	req.Input = proto.TextInput("Now reply OAC-MCODE-OK.")
 	run()

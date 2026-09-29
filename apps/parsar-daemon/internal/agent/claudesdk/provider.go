@@ -1,32 +1,19 @@
 package claudesdk
 
 import (
-	"fmt"
-	"net/url"
 	"strings"
+
+	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 )
 
-// Provider options are transient operator input, never public Agent fields or
-// native process environment. Isolation is the outer environment's responsibility.
+// The factory prepares the native endpoint before producing launch variables.
+// Upstream credentials remain in Runtime when translation is required.
 func providerEnvironment(value any) ([]string, error) {
-	fail := func() ([]string, error) { return nil, fmt.Errorf("claudesdk: invalid provider configuration") }
-	options, ok := value.(map[string]any)
-	if !ok || len(options) != 2 {
-		return fail()
+	provider, err := modeltransport.ParseProvider(value)
+	if err != nil || provider.Protocol != modeltransport.Anthropic {
+		return nil, modeltransport.ErrConfiguration
 	}
-	base, ok := options["base_url"].(string)
-	if !ok {
-		return fail()
-	}
-	token, ok := options["bearer_token"].(string)
-	if !ok || strings.TrimSpace(token) == "" || strings.ContainsAny(token, "\x00\r\n") {
-		return fail()
-	}
-	u, err := url.Parse(base)
-	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
-		return fail()
-	}
-	return []string{"ANTHROPIC_BASE_URL=" + base, "ANTHROPIC_AUTH_TOKEN=" + token}, nil
+	return []string{"ANTHROPIC_BASE_URL=" + provider.BaseURL, "ANTHROPIC_AUTH_TOKEN=" + provider.APIKey}, nil
 }
 
 func withProvider(env, provider []string) []string {

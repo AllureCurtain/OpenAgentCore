@@ -55,7 +55,7 @@ func (b *Binding) listNativeDirectory(ctx context.Context, path string, limit in
 			}
 		}
 	}
-	dir, err := root.Open(local)
+	dir, err := openNativePath(root, local)
 	if errors.Is(err, fs.ErrPermission) {
 		return result, fs.ErrPermission
 	}
@@ -192,7 +192,7 @@ func (x *nativeExport) walk(path string, depth int) error {
 	if depth > 64 || len(path) > 4096 {
 		return errors.New("workspace export exceeds traversal bound")
 	}
-	dir, err := x.root.Open(path)
+	dir, err := openNativePath(x.root, path)
 	if err != nil {
 		return err
 	}
@@ -236,7 +236,7 @@ func (x *nativeExport) append(path string) error {
 	if err := x.ctx.Err(); err != nil {
 		return err
 	}
-	file, err := x.root.Open(path)
+	file, err := openNativePath(x.root, path)
 	if err != nil {
 		return err
 	}
@@ -304,7 +304,7 @@ func (b *Binding) ReadWorkspaceFile(ctx context.Context, path string, limit int)
 	if !info.Mode().IsRegular() {
 		return result, agent.ErrWorkspaceReadInvalid
 	}
-	file, err := root.Open(local)
+	file, err := openNativePath(root, local)
 	if err != nil {
 		return result, err
 	}

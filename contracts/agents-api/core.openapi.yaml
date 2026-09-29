@@ -1980,6 +1980,7 @@ definitions:
         enum:
           - anthropic
           - responses
+          - chat_completions
         type: string
     required:
       - api_key
@@ -2000,6 +2001,7 @@ definitions:
         enum:
           - anthropic
           - responses
+          - chat_completions
         type: string
     required:
       - api_key_configured
@@ -3491,7 +3493,7 @@ paths:
     put:
       consumes:
         - application/json
-      description: 'Core key only. The body is the complete x_agents_core.model_provider bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, the harness''s protocol (responses for codex, anthropic for claude_sdk and mcode) and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions that resolve no Session or Agent bundle freeze this default into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key and resets last_used_at, last_error_code and last_error_at to null, including identical writes.'
+      description: 'Core key only. The body is the complete x_agents_core.model_provider bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, an upstream protocol (responses, anthropic or chat_completions), automatically adapted by Runtime to the selected harness and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions that resolve no Session or Agent bundle freeze this default into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key and resets last_used_at, last_error_code and last_error_at to null, including identical writes.'
       parameters:
         - description: Harness
           enum:

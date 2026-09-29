@@ -1,8 +1,6 @@
 # OpenAgentCore documentation site
 
 A separate Next.js/Fumadocs documentation app. It starts no Core, database or Runtime.
-English is served at `/`; Chinese reading notes at `/zh`, with English fallback for
-API tag pages. The existing preview is not part of this checkout.
 
 The application reference reads the upstream-constrained public schema. Administration
 and machine references read their own local generated contracts. All three repository
@@ -12,9 +10,9 @@ and compositions). Normalization changes documentation servers and bearer presen
 prose, parameters, response schemas and credential boundaries. Examples use a reserved
 domain. The reference is read-only and must not collect keys or send execution requests.
 
-English guides are generated from the canonical repository docs, not maintained as a
-second installation manual. Edit those sources first, update the Chinese reading notes
-in [guides.json](scripts/guides.json), then regenerate. Source/output hashes fail when
+Guides are generated from the canonical repository docs, not maintained as a
+second manual. Edit those sources first, register pages in
+[guides.json](scripts/guides.json), then regenerate. Source/output hashes fail when
 copies drift; operation and route checks detect missing or mixed API surfaces.
 
 From the repository root:
@@ -36,13 +34,12 @@ to keep site packages out of the gate.
 
 `make check-docs` runs the focused gate and is included in `make check`. After starting
 the built site, run `pnpm --dir apps/docs check:site http://127.0.0.1:4275` and inspect
-both locales in a browser with `pnpm --dir apps/docs check:browser http://127.0.0.1:4275`.
+the guides in a browser with `pnpm --dir apps/docs check:browser http://127.0.0.1:4275`.
 The check uses installed Playwright Chromium (or `DOCS_BROWSER_EXECUTABLE`), checks
 for credential/request controls and external traffic, and accepts only a local origin.
 Set `DOCS_SITE_ORIGIN` only when preparing actual publication.
 Generation links to the recorded source revision; update that revision after rebasing
 onto later canonical guide changes. Never point samples at an actual deployment by default.
 
-[Documentation integration status](FOLLOW-UP.md) distinguishes implemented Runtime
-generation behavior from future requirements and release qualification. Regenerated
-source pages do not by themselves establish that a release is published or deployed.
+Current supported behavior and acceptance evidence live in the
+[contract index](../../contracts/agents-api/README.md).

@@ -96,10 +96,27 @@ func TestAgentExecutionDefaultsPublicSnapshotAndPrecedence(t *testing.T) {
 	replacement := `{"agent_id":"` + agentID + `","environment":{"type":"openai_hosted"},"x_agents_core":{"model_provider":{"protocol":"responses","base_url":"https://override.example/v1","api_key":"override-canary"}}}`
 	sid = id(call("POST", "/v1/agents/sessions", replacement, uuid.NewString(), 201))
 	assertSnapshot(sid, "model-original", "https://override.example/v1", "override-canary")
+	for _, protocol := range []string{"anthropic", "chat_completions"} {
+		crossProtocol := strings.Replace(replacement, `"protocol":"responses"`, `"protocol":"`+protocol+`"`, 1)
+		created := id(call("POST", "/v1/agents/sessions", crossProtocol, uuid.NewString(), 201))
+		assertSnapshot(created, "model-original", "https://override.example/v1", "override-canary")
+		provider, err := st.SessionModelExecution(t.Context(), tenant, created)
+		if err != nil || provider == nil || provider.Protocol != protocol {
+			t.Fatal("Session did not freeze the chosen upstream protocol", err)
+		}
+	}
+	crossHarness := strings.Replace(modelOnly, `"model":"model-override"`, `"model":"model-override","x_agents_core":{"harness":"claude_sdk"}`, 1)
+	created := id(call("POST", "/v1/agents/sessions", crossHarness, uuid.NewString(), 201))
+	assertSnapshot(created, "model-override", "https://saved.example/v1", "saved-canary")
+	resolved, err := st.GetSession(t.Context(), tenant, created)
+	frozen, providerErr := st.SessionModelExecution(t.Context(), tenant, created)
+	if err != nil || providerErr != nil || resolved.Engine != "claude_sdk" || frozen == nil || frozen.Protocol != "responses" {
+		t.Fatal("harness override changed the inherited upstream protocol", err, providerErr)
+	}
 	for _, raw := range []string{
 		strings.Replace(replacement, `,"api_key":"override-canary"`, "", 1),
-		strings.Replace(replacement, `"protocol":"responses"`, `"protocol":"anthropic"`, 1),
-		strings.Replace(modelOnly, `"model":"model-override"`, `"model":"model-override","x_agents_core":{"harness":"claude_sdk"}`, 1),
+		strings.Replace(replacement, `"protocol":"responses"`, `"protocol":"unknown"`, 1),
+		strings.Replace(modelOnly, `"model":"model-override"`, `"model":"model-override","x_agents_core":{"harness":"unknown"}`, 1),
 		strings.TrimSuffix(strings.Replace(body, `"type":"openai_hosted"`, `"type":"none"`, 1), "}") + `,"input":"test"}`,
 	} {
 		call("POST", "/v1/agents/sessions", raw, uuid.NewString(), 400)

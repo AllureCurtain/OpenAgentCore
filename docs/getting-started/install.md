@@ -13,7 +13,7 @@ add nodes. Applications call Core's API with those keys.
 6. [Add a node](nodes.md).
 
 These pages describe the current source. Every bundle carries the docs that match it
-under `docs/`. This private project supports fresh installation and repair of the
+under `docs/`. Core supports fresh installation and repair of the
 same release; historical-version upgrades and conversion are unsupported.
 
 ## Prerequisites
@@ -22,10 +22,12 @@ same release; historical-version upgrades and conversion are unsupported.
 
 - Linux amd64 with Python 3.9 or newer.
 - Docker Engine with Docker Compose 2.26.0 or newer (`docker compose version`).
-- A non-root user who can run `docker`. The installer refuses root.
+- An account that can run `docker` and write to the installation directory. Both
+  ordinary users and root are supported; the installer uses the current account
+  without invoking sudo, switching accounts or changing Docker permissions.
 - Free loopback ports 8091 (Core) and 8080 (Web), or
   [other ports](#ports-and-directory).
-- The GitHub CLI, `gh`, to download the bundle.
+- curl to fetch the installation script; no GitHub CLI or login is required.
 
 The Core host needs no KVM and no systemd user services, unless you choose
 [native Core](#native-core).
@@ -42,47 +44,42 @@ public URL and set it later.
 
 ## Download a release
 
-The repository is internal for now, so GitHub asks you to sign in first:
-
-```sh
-gh auth login
-```
-
-Pick a release, download its offline bundle and check it:
-
-```sh
-gh release list --repo MiniMax-AI/parsar-core
-mkdir -p "$HOME/.oac/releases" && cd "$HOME/.oac/releases"
-gh release download <tag> --repo MiniMax-AI/parsar-core --pattern '*-linux-amd64-offline.tar.gz*'
-sha256sum -c oac-<commit>-linux-amd64-offline.tar.gz.sha256
-tar -xzf oac-<commit>-linux-amd64-offline.tar.gz
-cd oac-<commit>-linux-amd64
-```
-
-`<tag>` is the release tag from the list, and `<commit>` is the source commit in the
-asset names. The installer also checks every file in the bundle against its
-`SHA256SUMS` before it changes anything.
-
-Each release has two bundles:
-
-| Bundle | Contains | Use it for |
-| --- | --- | --- |
-| `oac-<commit>-linux-amd64-offline.tar.gz` | Core, Web and PostgreSQL images, the installers and every node and Runtime file | Any installation. Web serves the node files to your nodes and self-hosted executors |
-| `oac-<commit>-linux-amd64.tar.gz` | The same without the node and Runtime files | Core-only hosts, and installations that use only E2B. Web can't add nodes or connect self-hosted executors until the files are present |
-
-To add the node files to the smaller bundle, create an `artifacts/` directory in the
-extracted bundle, download the release's other `oac-<commit>-linux-amd64-*`
-assets (not the two bundles) into it, then run `./install.sh`, or rerun it if the
-installation already exists. Nodes download these files only from your Web console,
-never from GitHub, so node hosts need no GitHub access.
+Every Release includes a standalone [install.sh](https://github.com/MiniMax-AI/parsar-core/releases/latest/download/install.sh).
+It selects the latest published stable release by default, downloads that release's
+offline bundle and checksum, verifies the archive, and runs its bundled installer.
+You do not need to find a tag, commit SHA or archive filename.
 
 ## Install
 
-From the extracted bundle:
+Install the latest stable release:
 
 ```sh
-./install.sh --public-url https://core.example
+curl -fsSL https://github.com/MiniMax-AI/parsar-core/releases/latest/download/install.sh | bash
 ```
+
+For an HTTPS deployment, pass the public address:
+
+```sh
+curl -fsSL https://github.com/MiniMax-AI/parsar-core/releases/latest/download/install.sh | bash -s -- --public-url https://core.example
+```
+
+To select a version, add `--version v1.2.3` after `bash -s --`. Explicit versions
+may include prereleases; the default never selects one. Other arguments go unchanged
+to the bundled installer. You can also download `install.sh` from the Release page
+and run `bash install.sh --version v1.2.3`. The examples below use this saved script
+or the bundle's existing `./install.sh`.
+
+The downloader resolves the release once, verifies SHA-256 before extraction, and
+retains the verified bundle under `~/.oac/releases/` for repair. It never replaces
+an existing installation or upgrades it. To repair an installed version, select
+that same version explicitly. The bundled installer also checks its own
+`SHA256SUMS` before changing installation state.
+
+For machines without GitHub access, transfer the Release's
+`*-linux-amd64-offline.tar.gz` and matching `.sha256` file, verify and extract
+them locally, then run the bundled `./install.sh`. The smaller non-offline archive
+omits node and Runtime files and is intended for advanced Core-only or E2B setups;
+use the offline bundle for the ordinary installation path.
 
 The installer:
 
@@ -502,7 +499,7 @@ The installation directory, `~/.oac/core` by default, mode `0700`:
 | `secrets/database.password` | PostgreSQL password |
 | `state.json` | Format 2, installation ID, Compose project name, image IDs and source commit. Written by the tools only |
 | `generated/` | Files derived from `config.json`: `compose.json`, `core.env`, `core-key-digests.json`, `settings.json`, `config.schema.json`, and `runtime-history.json` or the native Core unit when used. `oac apply` rewrites them; don't edit them |
-| `node-payload/` | The node and self-hosted installers, the manifest and the node files that Web serves at `/node-install/` |
+| `node-payload/` | The managed node installer, the manifest and the node files that Web serves at `/node-install/` |
 | `state/e2b/` | Private E2B receipts |
 | `native/` | Core binaries, with `--native-core` only |
 

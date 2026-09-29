@@ -74,7 +74,7 @@ test("connection reads govern host completion and bound-key guidance", async ({ 
   await openConsole(page, request, "sessions");
   await page.getByRole("row").filter({ hasText: "Self-hosted" }).first().getByRole("button", { name: /^Open Session / }).click();
   await expect(page.getByRole("region", { name: "Host connection", exact: true })).toContainText("Disconnected");
-  await expect(page.getByText("Run on host · Done", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Host connected", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Rotate bound credential", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: /^Rotate credential / })).toHaveCount(0);
   revoked = true;
@@ -84,9 +84,9 @@ test("connection reads govern host completion and bound-key guidance", async ({ 
   revoked = false;
   connected = true;
   await expect(page.getByRole("region", { name: "Host connection", exact: true })).toContainText("Connected", { timeout: 10_000 });
-  await expect(page.getByText("Run on host · Done", { exact: true })).toBeVisible();
+  await expect(page.getByText("Host connected", { exact: true })).toBeVisible();
   unavailable = true;
   await expect(page.getByRole("region", { name: "Host connection", exact: true })).toContainText("Unknown", { timeout: 10_000 });
-  await expect(page.getByText("Run on host · Done", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Host connected", { exact: true })).toHaveCount(0);
   expect(await writes(request)).toEqual([]);
 });

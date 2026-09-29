@@ -1,10 +1,13 @@
 # Add a native harness to OpenAgentCore
 
-Implement one adapter for a native SDK or machine-readable protocol. Core and
+Start with [`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go).
+It defines the required lifecycle, separate optional interfaces and existing
+registration methods in one place. Implement one adapter for a native SDK or machine-readable protocol. Core and
 Runtime use the common contract; adding a harness should not add engine-name
 branches to public handlers, storage, scheduling or environment providers.
 
-The [harness contract](harnesses.md) defines observable behavior. The
+The [harness contract](harnesses.md) defines observable behavior. Start with the
+[developer guide](../../docs/development.md) for a working checkout; the
 [contributor guide](../../CONTRIBUTING.md#harness-qualification-and-onboarding)
 owns architecture and required checks. The pinned public Agents API in
 [upstream.json](upstream.json) is separate from the internal adapter protocol.
@@ -35,9 +38,12 @@ Runtime: Executor preparation, reuse, idle expiry, recovery
 An Environment supplies execution resources. Managed Docker, E2B and user-managed
 machines differ in provisioning and connection; their connected Runtime uses this
 same contract. Operating-system support belongs in the implementation and its
-qualification. The current implementation is Linux; a platform-neutral interface
-alone does not qualify another platform. Resource management owns machine selection, allocation and Environment creation
-and reclamation. Executor close does not release that allocation or delete the
+qualification. The native daemon supports Linux, macOS and Windows; each adapter
+declares its qualified platform scope. Managed Providers remain Linux-only.
+A platform-neutral interface alone does not qualify a harness on another platform.
+See [native Runtime validation](../../docs/self-hosted-native.md) for the current
+acceptance limits. Resource management owns machine selection, allocation and
+Environment creation and reclamation. Executor close does not release that allocation or delete the
 workspace. Environment reclamation is an explicit resource-management action that
 coordinates with execution. Runtime connection, installed capability snapshot,
 Session Executor and Turn each have their own lifetime. Native factories receive
@@ -48,28 +54,11 @@ model communication configuration, not Turn scheduling or native process ownersh
 
 ## Required adapter interfaces
 
-The canonical signatures and ownership comments are in
-[`agent/executor.go`](../../apps/parsar-daemon/internal/agent/executor.go):
-
-```go
-type ExecutorFactory func(context.Context, proto.PromptRequestPayload) (Executor, error)
-
-type Executor interface {
-    StartTurn(context.Context, string, proto.MessageInput, chan<- proto.Envelope) (Turn, error)
-    Close(context.Context) error
-}
-
-type Turn interface {
-    Cancel(context.Context) error
-    CancellationOutcome() proto.DonePayload
-    AwaitSettlement(context.Context) (TurnSettlement, error)
-}
-
-type TurnSettlement struct {
-    Reusable bool
-    Reason   string
-}
-```
+[`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go) is the
+canonical interface entry point. Its required lifecycle is `ExecutorFactory`,
+`Executor`, `Turn` and `TurnSettlement`. Optional Turn and workspace interfaces
+remain separate; their result types and error values stay in the corresponding
+operation files in the same package. All use the existing neutral protocol types.
 
 The factory prepares a fixed configuration without sending model input. Executor
 owns the native process or connection, native Session, capability configuration and
@@ -118,7 +107,7 @@ ambiguous required history fails before new model input.
 | `agent.DurableSteerer` | Current public text execution | Distinguish write and application receipts; preserve retry identity |
 | `agent.FunctionResultSubmitter` | Public function tools | Match call/result identity and acknowledge native application |
 | `agent.PermissionResponder`, `agent.UserChoiceResponder` | When emitting these interactions | Route exact identities and settle receipts |
-| `agent.WorkspaceReader`, `agent.WorkspaceDirectoryLister` | Qualified workspace operations | Use the fixed authorized workspace and retain accepted operations through close |
+| `agent.WorkspaceReader`, `agent.WorkspaceDirectoryLister`, `agent.WorkspaceWriter` | Qualified workspace operations | Use the fixed authorized workspace and retain accepted operations through close |
 | Neutral message, image, MCP, structured-output and Subagent observations | Only when qualified and advertised | Preserve the operation-specific contract and reject unsupported combinations |
 
 Optional features need not match another harness. The service profile qualifies
@@ -129,6 +118,14 @@ read-only preparations; those do not start model work or provide another executi
 lifecycle.
 
 ## Register a supported operation set
+
+The registration methods are also defined in `agent/harness.go`. The existing
+`proto.SupportedAgentKind` descriptor supplies kind, availability, version and
+`AgentKindCapabilities`; its schema remains in `internal/agentdaemon/proto`.
+`RegisterKind` resets the Executor and preparation registrations, so call it
+first. `RegisterExecutor` and `RegisterPreparation` derive preparation flags;
+other capability declarations must match verified behavior. Core qualification
+still belongs to the service profile and is not granted by Runtime registration.
 
 1. Pin the upstream source/package version and document the native entry point.
 2. Implement the adapter using its SDK or native protocol. Reuse shared process,
@@ -204,9 +201,8 @@ it does not expand to match another harness's feature list.
 - Regression: existing qualified engines keep working. Run targeted tests during
   development, then `make check` and applicable real regressions. API changes
   require `make openapi`; query changes require `make sqlc-generate`.
-- Review: use a fresh independent Astra high reviewer for shared, lifecycle or
-  security changes. Supply requirements, criteria, boundaries, rules, repository
-  and baseline only. Resolve material findings; defer documented low-value work.
+- Review: follow the repository
+  [blind review workflow](../../CONTRIBUTING.md#workflow-and-quality).
 
 Record exact revisions, image/package versions, commands, results and limits.
 Keep keys in private operator files; never commit them or include them in logs or
@@ -226,7 +222,7 @@ not shipped and is not evidence for a real SDK or sandbox.
 Use the native adapters as implementation references after choosing a native API:
 
 - [Codex](../../apps/parsar-daemon/internal/agent/codex/executor.go): app-server transport.
-- [Claude](../../apps/parsar-daemon/internal/agent/claudesdk/executor.go): Go ownership and a [TypeScript SDK bridge](../../packages/claude-sdk-adapter).
+- [Claude](../../apps/parsar-daemon/internal/agent/claudesdk/executor.go): Go ownership and a [TypeScript SDK bridge](../../packages/claude-sdk-adapter/README.md).
 - [MiniMax](../../apps/parsar-daemon/internal/agent/mcode): ACP and native workspace companion.
 
 Start with the mandatory text lifecycle, then qualify optional operations using
@@ -242,3 +238,15 @@ the authenticated Run, then qualifies those facts with real execution. It does
 not add routes, storage branches or a harness-specific Core scheduler. Report
 unsupported native facts explicitly; completing a child task is not closing its
 Subagent. Native background work must remain owned through settlement and cancel.
+
+## Native installer participation
+
+An adapter may supply `agent.Installation` from `installation.go` in its own
+package: registered agent kind, pinned version, supported platforms, activation
+environment and a bounded
+readiness probe. Register it in `cli/native_harness.go` and add its pinned component
+to the native distribution builder. This optional contract does not change
+Executor/Turn semantics. Runtime owns checksums, copying, locks and additive
+installation; adapters own native layout and probes. Validate installation and
+actual execution on each advertised platform. Missing or incompatible native
+content must fail, never install itself during a Turn.

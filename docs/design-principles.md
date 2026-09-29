@@ -7,18 +7,14 @@ upstream resource shapes or execution semantics.
 
 ## Three namespaces, three credentials
 
-Core serves three namespaces, each with one kind of caller and credential:
+Applications use `/v1` with a Project API key. Administrators use `/core/v1`
+with the Core key. Nodes and Runtime daemons use `/api/v1` with their own scoped
+machine credentials. The [API index](api/README.md) owns the complete caller,
+credential and route matrix.
 
-- `/v1`: applications with a Project API key. Exactly the pinned official routes;
-  Core-only fields live only in `x_agents_core`.
-- `/core/v1`: Core Web's server and operator scripts with the Core key. Everything
-  about operating the deployment, including credential issuance.
-- `/api/v1`: nodes, Runtime daemons and self-hosted executors with machine
-  credentials issued through `/core/v1`; each works only on its own routes.
-
-Core enforces the separation: the Core key cannot call `/v1`, API keys cannot call
-`/core/v1`, and neither works on `/api/v1`. Web calls only `/core/v1` and keeps
-the Core key on its server; users sign in to Web with it.
+Web calls the management API through its server and keeps the Core key there.
+Signing in grants administrator access to that deployment; it does not create
+an application Session or give the browser a Project API key.
 
 This is a separation of API authority, not a claim that a deployment administrator
 cannot possess application credentials. An administrator can issue an API key and
@@ -40,10 +36,9 @@ that key and preserves assets, provenance and accepted execution. Explicit Proje
 archive revokes every key and blocks new issuance in that Project.
 Administrators can still inspect and delete resources in archived Projects.
 
-Store only API-key digests and necessary metadata. Return plaintext once, on
-issuance, and never replay it after an uncertain response. Project/key mutations
-and administrator audit commit together. Database authentication failures fail
-closed. The Core key is managed separately, in deployment configuration.
+The Core key is managed separately, in deployment configuration. Key storage,
+authentication and audit guarantees are defined by the
+[administrator contract](../contracts/agents-api/admin-api.md).
 
 Parsar product identities, workspaces, business permissions and collaboration
 remain outside Core. Parsar is an ordinary API-key holder in a Project.
@@ -95,8 +90,8 @@ copy operation keep their `admin_copy` ownership, distinct from historical unkno
 ownership. No request bodies, secrets or file contents enter audit records.
 
 Do not add product users, RBAC, cross-Project shared assets, administrator execution, or old
-private-protocol compatibility to this management model. Existing public
-execution and Runtime ownership rules remain in [CONTRIBUTING.md](../CONTRIBUTING.md).
+private-protocol compatibility to this management model. Developers should follow the [contributor rules](../CONTRIBUTING.md) and
+[Core–Runtime protocol](runtime-protocol.md) when implementing these boundaries.
 
 Native failure classification is adapter-owned and uses finite structured native
 values. Optional Runtime error metadata is normalized once and retained through

@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
+import { ConsoleSelect } from "../../components/console-select";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { EmptyState, HelpTip, revealInPageBody, Section } from "../../components/console-ui";
 import { ErrorState } from "../../components/ErrorState";
@@ -22,8 +23,9 @@ import { harnessesQuery } from "./harness-queries";
 const WRITE_TIMEOUT_MS = 30_000;
 
 type Protocol = ModelProviderInput["protocol"];
-/** The one protocol Core accepts for each harness; the form sends it and cannot change it. */
-const harnessProtocol: Record<CoreHarnessKind, Protocol> = { codex: "responses", claude_sdk: "anthropic", mcode: "anthropic" };
+/** New providers start with the harness native protocol; saved providers keep their upstream protocol. */
+const defaultHarnessProtocol: Record<CoreHarnessKind, Protocol> = { codex: "responses", claude_sdk: "anthropic", mcode: "anthropic" };
+const protocolOptions = (["anthropic", "responses", "chat_completions"] as const).map((value) => ({ value, label: protocolNames[value] }));
 /** Core stores both token limits as 32-bit integers. */
 const INT32_MAX = 2_147_483_647;
 
@@ -148,8 +150,8 @@ export function DefaultModelsSection() {
 
 /**
  * Sets or replaces one harness's provider. Non-secret fields start from the
- * current provider; the API key never does. The protocol is the one Core
- * accepts for the harness. The form checks the HTTPS provider URL and whole-number
+ * current provider; the API key never does. The protocol describes the upstream
+ * model provider. The form checks the HTTPS provider URL and whole-number
  * limits within Core's range, with max output no larger than the context window.
  * Core's typed rejection is shown beside its field, or beside the form
  * when no editable field applies. Enter saves; a save in flight blocks another.
@@ -165,6 +167,7 @@ function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
   const id = useId();
   const formId = `${id}-form`;
   const current = harness?.model_provider ?? null;
+  const [protocol, setProtocol] = useState<Protocol>(current?.protocol ?? (harness ? defaultHarnessProtocol[harness.id] : "responses"));
   const [baseUrl, setBaseUrl] = useState(current?.base_url ?? "");
   const [apiKey, setApiKey] = useState("");
   const [contextWindow, setContextWindow] = useState(current?.context_window === undefined ? "" : String(current.context_window));
@@ -176,7 +179,6 @@ function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
   const fieldError = (param: string) => coreFieldError(rejection, param, tCommon);
 
   const name = harness ? harnessNames[harness.id] : "";
-  const protocol = harness ? harnessProtocol[harness.id] : "responses";
   const limitsRequired = harness?.id === "mcode";
   const url = baseUrl.trim();
   const urlProblem = url && !isProviderUrl(url) ? t("models.form.baseUrlInvalid") : null;
@@ -263,7 +265,10 @@ function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
             <span>{t("models.protocol")}</span>
             <HelpTip>{t("models.form.protocolHelp")} {t("models.form.modelName")}</HelpTip>
           </span>
-          <p className="system-model-protocol">{protocolNames[protocol]}</p>
+          <ConsoleSelect label={t("models.protocol")} value={protocol} options={protocolOptions} disabled={busy} onChange={(value) => {
+            const option = protocolOptions.find((option) => option.value === value);
+            if (option) setProtocol(option.value);
+          }} />
           {fieldError("protocol") ? <span className="field-error" role="alert">{fieldError("protocol")}</span> : null}
         </div>
         <div className="field">
