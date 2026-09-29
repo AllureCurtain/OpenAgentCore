@@ -59,6 +59,9 @@ type SessionPlan struct {
 	// CollaborationMode selects Codex's default or plan tool surface.
 	CollaborationMode CollaborationModeKind
 
+	// ModelReasoningEffort is frozen for launch and every native Turn.
+	ModelReasoningEffort string
+
 	// ApprovalPolicy + Sandbox apply to both new and resumed threads.
 	ApprovalPolicy AskForApproval
 	Sandbox        SandboxMode
@@ -199,6 +202,7 @@ func BuildSessionPlan(runID, agentStateKey, workDir string, opts map[string]any)
 	plan.Cleanup = cleanup
 	plan.ExtraConfig = extraConfigFromOpts(opts)
 	if effort, ok := nativeConfig["model_reasoning_effort"].(string); ok {
+		plan.ModelReasoningEffort = effort
 		plan.ExtraConfig = append(plan.ExtraConfig, [2]string{"model_reasoning_effort", strconv(effort)})
 	}
 	if plan.ModelProvider != "" {

@@ -61,7 +61,7 @@ The shared wire object is `proto.HarnessConfig`. Adapter declarations in
 
 | Harness | Accepted native fields | Application |
 | --- | --- | --- |
-| Codex | `model_reasoning_effort`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` | Native app-server `-c model_reasoning_effort=...` |
+| Codex | `model_reasoning_effort`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` | Native app-server `-c model_reasoning_effort=...` and each Turn's `collaborationMode.settings.reasoning_effort` |
 | Claude SDK | `effort`: `low`, `medium`, `high`, `xhigh`, `max`; `thinking`: the SDK's `adaptive`, `enabled` or `disabled` object | SDK `Options.effort` and `Options.thinking` |
 | MiniMax Code | Empty object only | Existing provider token limits remain required; additional native generation parameters are not qualified |
 

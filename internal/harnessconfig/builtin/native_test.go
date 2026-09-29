@@ -35,7 +35,8 @@ func TestNativeModelParameters(t *testing.T) {
 		{"", `{"effort":"high"}`, true},
 		{"", `{"model_reasoning_effort":"high"}`, true},
 		{"", `{"secret":"private-value"}`, false},
-		{"unknown", `{}`, false},
+		{"unknown", `{}`, true},
+		{"unknown", `{"effort":"high"}`, false},
 	} {
 		err := Registry().ValidateHarnessConfig(tc.kind, json.RawMessage(tc.raw))
 		if (err == nil) != tc.valid {
