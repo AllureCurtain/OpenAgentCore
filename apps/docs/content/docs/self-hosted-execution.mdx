@@ -100,7 +100,7 @@ from tools running as the same user.
 
 Closing an executor, cancelling a Turn or losing its connection preserves the
 snapshot and workspace. The compute owner remains responsible for explicit
-cleanup. [Historical qualification](https://github.com/MiniMax-AI/parsar-core/blob/5dc7c587607cfa1ef02608cefb1bc9f54eda09fa/contracts/agents-api/user-managed-runtime-v1.md)
+cleanup. [Historical qualification](https://github.com/MiniMax-AI/parsar-core/blob/5b4ae7e966539321b4f77f830f80d454eeb2baa5/contracts/agents-api/user-managed-runtime-v1.md)
 records only its stated inputs and binaries; it does not qualify the current native
 platforms or local capability preparation.
 
@@ -140,7 +140,7 @@ key_id=$(python3 -c 'import uuid; print(uuid.uuid4())'); echo "credential ID: $k
 Rotate with `{"key_id":"…","rotate":true}` on the same route; revoke with
 `DELETE …/executor-credentials/<key_id>`. After an uncertain response, list the
 credentials with `GET` before trying again. The
-[credential contract](https://github.com/MiniMax-AI/parsar-core/blob/5dc7c587607cfa1ef02608cefb1bc9f54eda09fa/contracts/agents-api/environment-executor-credentials.md)
+[credential contract](https://github.com/MiniMax-AI/parsar-core/blob/5b4ae7e966539321b4f77f830f80d454eeb2baa5/contracts/agents-api/environment-executor-credentials.md)
 has every rule and error.
 
 ## Historical executor installations
@@ -151,4 +151,4 @@ and native history; use a fresh Runtime home and Session when moving versions.
 Historical container-installer instructions and qualification records describe
 those earlier artifacts, not acceptance of the current native daemon.
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/5dc7c587607cfa1ef02608cefb1bc9f54eda09fa/docs/getting-started/self-hosted.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/5b4ae7e966539321b4f77f830f80d454eeb2baa5/docs/getting-started/self-hosted.md)
