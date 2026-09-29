@@ -238,7 +238,7 @@ def metadata(source, bundle=None, prefix=""):
     distribution.image_identities(manifest, "runtime")
     for name in (COMMON[0], "images/runtime.tar.gz") + MICRO:
         distribution.artifact(manifest, name)
-    # Nodes download only from their console, never from a release URL the build recorded.
+    # Metadata stays on the console; artifact requests may redirect to its pinned release.
     manifest["artifact_base_url"] = source + "/node-install/releases/" + manifest["source_commit"] + "/artifacts" if source else ""
     return manifest, sums
 

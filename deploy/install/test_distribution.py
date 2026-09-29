@@ -6,6 +6,8 @@ import io
 import json
 from pathlib import Path
 import tempfile
+import ssl
+import subprocess
 import threading
 from types import SimpleNamespace
 import unittest
@@ -26,6 +28,7 @@ class ArtifactTests(unittest.TestCase):
         self.ranges = []
         self.if_ranges = []
         self.status = 200
+        self.redirect_target = 'https://elsewhere.example'
         self.resumable = False
         test = self
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -45,8 +48,8 @@ class ArtifactTests(unittest.TestCase):
                     self.wfile.write(test.data[start:] if start else test.data[:len(test.data) // 2])
                     return
                 self.send_response(test.status)
-                if test.status == 302:
-                    self.send_header('Location', 'https://elsewhere.example' + self.path)
+                if test.status in (302, 307):
+                    self.send_header('Location', test.redirect_target + self.path)
                 self.end_headers()
                 if test.status == 200:
                     self.wfile.write(test.data)
@@ -158,15 +161,75 @@ class ArtifactTests(unittest.TestCase):
             distribution.obtain_artifact(self.manifest, 'native/bin/node', self.root / 'link')
 
 
-    def test_redirects_are_refused(self):
-        # The console never redirects; following one could fetch verified names from another origin.
+    def test_artifact_downgrades_and_metadata_redirects_are_refused(self):
         self.status = 302
-        with self.assertRaisesRegex(distribution.DistributionError, 'do not follow redirects'):
+        self.redirect_target = 'http://127.0.0.1:1'
+        with self.assertRaisesRegex(distribution.DistributionError, 'HTTPS'):
             distribution.obtain_artifact(self.manifest, 'native/bin/node', self.root / 'node')
         with self.assertRaisesRegex(distribution.DistributionError, 'do not follow redirects'):
             distribution.load_manifest(source_url=f'http://127.0.0.1:{self.server.server_port}')
         self.assertEqual(len(self.requests), 2)
         self.assertEqual(list(self.root.iterdir()), [])
+
+
+    def test_https_redirect_resumes_and_verifies_on_the_node(self):
+        certificate, key = self.root / 'cert.pem', self.root / 'key.pem'
+        subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+                        '-keyout', str(key), '-out', str(certificate), '-days', '1',
+                        '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost'],
+                       check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        received = []
+        test = self
+        class Release(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                received.append(dict(self.headers))
+                start = int(self.headers.get('Range', 'bytes=0-')[6:-1])
+                self.send_response(206 if start else 200)
+                self.send_header('Content-Range', f'bytes {start}-{len(test.data)-1}/{len(test.data)}')
+                self.send_header('Content-Length', str(len(test.data)-start))
+                self.end_headers()
+                self.wfile.write(test.data[start:])
+            def log_message(self, *args):
+                pass
+        release = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Release)
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certificate, key)
+        release.socket = context.wrap_socket(release.socket, server_side=True)
+        thread = threading.Thread(target=release.serve_forever, daemon=True)
+        thread.start()
+        try:
+            self.status = 307
+            self.redirect_target = f'https://localhost:{release.server_port}'
+            target = self.root / 'node'
+            target.with_name('.node.partial').write_bytes(self.data[:7])
+            target.with_name('.node.partial.validator').write_text('resume-etag')
+            opener = distribution.urllib.request.build_opener
+            trusted = distribution.urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=str(certificate)))
+            with patch.object(distribution.urllib.request, 'build_opener', side_effect=lambda *handlers: opener(*handlers, trusted)):
+                distribution.obtain_artifact(self.manifest, 'native/bin/node', target)
+                distribution.obtain_artifact(self.manifest, 'native/bin/node', target)
+            self.assertEqual(target.read_bytes(), self.data)
+            self.assertEqual(len(received), 1)
+            self.assertEqual(received[0]['Range'], 'bytes=7-')
+            self.assertEqual(received[0]['If-Range'], 'resume-etag')
+        finally:
+            release.shutdown()
+            release.server_close()
+            thread.join()
+
+    def test_artifact_redirect_preserves_resume_without_credentials(self):
+        request = distribution.urllib.request.Request('https://console.example/artifact', headers={
+            'Range': 'bytes=123-', 'If-Range': 'etag', 'Authorization': 'Bearer secret',
+            'Cookie': 'session=secret', 'X-Core-Key': 'secret'})
+        redirect = distribution.ArtifactRedirect()
+        target = 'https://release-assets.example/file?signature=example'
+        forwarded = redirect.redirect_request(request, None, 307, '', {}, target)
+        self.assertEqual(forwarded.full_url, target)
+        self.assertEqual(dict((k.lower(), v) for k, v in forwarded.header_items()),
+                         {'range': 'bytes=123-', 'if-range': 'etag'})
+        for invalid in ('http://release.example/file', 'file:///tmp/file', 'https://user:secret@release.example/file'):
+            with self.subTest(invalid=invalid), self.assertRaises(distribution.ArtifactError):
+                redirect.redirect_request(request, None, 302, '', {}, invalid)
 
 
 class DockerIdentityTests(unittest.TestCase):

@@ -115,11 +115,23 @@ def safe_url(value):
     return value
 
 
+class ArtifactRedirect(urllib.request.HTTPRedirectHandler):
+    """Only artifact bytes may follow HTTPS redirects; metadata stays on Core."""
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        safe_url(newurl)
+        if urlsplit(newurl).scheme != 'https' or request.get_method() not in ('GET', 'HEAD'):
+            raise ArtifactError('Artifact redirects require HTTPS')
+        # Carry resume headers, never credentials or cookies, to a release/CDN host.
+        forwarded = {name: value for name, value in request.header_items()
+                     if name.lower() in ('range', 'if-range')}
+        return urllib.request.Request(newurl, headers=forwarded,
+                                      method=request.get_method(), unverifiable=True)
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Downloads come only from the console, which never redirects; a redirect
-    could hand verified names to another origin, so every one is refused."""
+    """Bootstrap metadata and credentials stay on the configured console origin."""
     def redirect_request(self, request, fp, code, message, headers, newurl):
-        raise ArtifactError('Artifact and metadata downloads do not follow redirects; check the console URL '
+        raise ArtifactError('Metadata downloads do not follow redirects; check the console URL '
                                 'and the reverse proxy in front of it')
 
 
@@ -242,7 +254,7 @@ def download_partial(url, partial, entry, logical_path):
         if validator:
             headers['If-Range'] = validator
     request = urllib.request.Request(url, headers=headers)
-    with urllib.request.build_opener(NoRedirect()).open(request, timeout=30) as stream:
+    with urllib.request.build_opener(ArtifactRedirect()).open(request, timeout=30) as stream:
         if offset and (stream.status != 206 or not stream.headers.get('Content-Range', '').startswith(f'bytes {offset}-')):
             offset = 0  # The server sent the whole file; start over.
         if not offset:
@@ -357,7 +369,7 @@ def load_manifest(source_url=None, offline_root=None):
         if (manifest.get('platform') != 'linux/amd64'
                 or not re.fullmatch(r'[0-9a-f]{40}', manifest.get('source_commit', ''))):
             raise DistributionError('Unsupported distribution platform or revision')
-        # Artifacts come only from the console, never from a release URL the build recorded.
+        # Resolve artifacts through the console, which selects local bytes or a pinned HTTPS release.
         manifest['artifact_base_url'] = source_url.rstrip('/') + '/node-install/artifacts' if source_url and offline_root is None else ''
         return manifest
     except (ValueError, TypeError, AttributeError):

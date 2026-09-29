@@ -69,21 +69,8 @@ func (h *console) resolveNodePayload(name string) (string, bool) {
 	if !nodePayloadFiles[name] && (!strings.HasPrefix(name, "artifacts/") || strings.Contains(strings.TrimPrefix(name, "artifacts/"), "/")) {
 		return "", false
 	}
-	f, err := h.nodePayload.Open(prefix + "manifest.json")
+	manifest, err := h.readNodeManifest(prefix)
 	if err != nil {
-		return "", false
-	}
-	defer f.Close()
-	var manifest struct {
-		SourceCommit string `json:"source_commit"`
-		Artifacts    map[string]struct {
-			Filename string `json:"filename"`
-		} `json:"artifacts"`
-	}
-	if json.NewDecoder(io.LimitReader(f, 1024*1024)).Decode(&manifest) != nil {
-		return "", false
-	}
-	if prefix != "" && prefix != "releases/"+manifest.SourceCommit+"/" {
 		return "", false
 	}
 	if nodePayloadFiles[name] {
@@ -134,6 +121,16 @@ func (h *console) serveNodePayload(w http.ResponseWriter, r *http.Request) {
 	}
 	f, err := h.nodePayload.Open(resolved)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if prefix, filename, ok := strings.Cut(resolved, "artifacts/"); ok {
+				if manifest, readErr := h.readNodeManifest(prefix); readErr == nil {
+					if target := manifest.artifactURL(filename); target != "" {
+						http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+						return
+					}
+				}
+			}
+		}
 		http.NotFound(w, r)
 		return
 	}
@@ -156,8 +153,8 @@ var providerArtifacts = map[string][]string{
 }
 
 // nodeArtifacts reports the providers whose node artifacts this console can serve:
-// each is declared in manifest.json and present at its declared size. A thin
-// distribution has none. Nodes verify every checksum themselves. It is read per
+// each is present locally or has a pinned release download. Nodes verify every
+// checksum themselves. It is read per
 // request, so artifacts added by rerunning the installer show without a restart.
 func (h *console) nodeArtifacts() []string {
 	available := []string{}
@@ -168,18 +165,8 @@ func (h *console) nodeArtifacts() []string {
 	if err != nil {
 		return available
 	}
-	f, err := h.nodePayload.Open(prefix + "manifest.json")
+	manifest, err := h.readNodeManifest(prefix)
 	if err != nil {
-		return available
-	}
-	defer f.Close()
-	var manifest struct {
-		Artifacts map[string]struct {
-			Filename string `json:"filename"`
-			Size     int64  `json:"size"`
-		} `json:"artifacts"`
-	}
-	if json.NewDecoder(io.LimitReader(f, 1024*1024)).Decode(&manifest) != nil {
 		return available
 	}
 	for _, provider := range []string{"docker", "microsandbox"} {
@@ -187,7 +174,9 @@ func (h *console) nodeArtifacts() []string {
 		for _, logical := range providerArtifacts[provider] {
 			entry, ok := manifest.Artifacts[logical]
 			info, err := h.nodePayload.Stat(prefix + "artifacts/" + entry.Filename)
-			if !ok || entry.Filename == "" || strings.Contains(entry.Filename, "/") || err != nil || !info.Mode().IsRegular() || info.Size() != entry.Size {
+			local := err == nil && info.Mode().IsRegular() && info.Size() == entry.Size
+			remote := errors.Is(err, os.ErrNotExist) && manifest.artifactURL(entry.Filename) != ""
+			if !ok || entry.Filename == "" || strings.Contains(entry.Filename, "/") || (!local && !remote) {
 				complete = false
 				break
 			}

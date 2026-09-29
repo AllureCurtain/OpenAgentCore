@@ -44,7 +44,9 @@ public URL and set it later.
 
 Every Release includes a standalone [install.sh](https://github.com/MiniMax-AI/parsar-core/releases/latest/download/install.sh).
 It selects the latest published stable release by default, downloads that release's
-offline bundle and checksum, verifies the archive, and runs its bundled installer.
+control-plane bundle and checksum, verifies the archive, and runs its bundled installer.
+This installs Core, Web and PostgreSQL without downloading Runtime images or node
+execution files. Nodes download those separately when they are added.
 You do not need to find a tag, commit SHA or archive filename.
 
 ## Install
@@ -75,9 +77,9 @@ that same version explicitly. The bundled installer also checks its own
 
 For machines without GitHub access, transfer the Release's
 `*-linux-amd64-offline.tar.gz` and matching `.sha256` file, verify and extract
-them locally, then run the bundled `./install.sh`. The smaller non-offline archive
-omits node and Runtime files and is intended for advanced Core-only or E2B setups;
-use the offline bundle for the ordinary installation path.
+them locally, then run the bundled `./install.sh`. This explicitly includes node and
+Runtime files so Web can serve them without release access. The default online
+installation uses the smaller archive and leaves those downloads to the nodes.
 
 The installer:
 
@@ -197,9 +199,10 @@ Browsers use `console.example`, and nodes download their installer from it.
 Applications, nodes and sandboxes call Core at `core.example`, and self-hosted
 executors download their installer from there too, which is why `core.example` sends
 `/node-install/*` to the Web host. Web serves those files only for its own name, so the
-proxy rewrites Host. The Web host serves every node and executor file, so install it
-from the offline bundle (or add `artifacts/`) when the deployment has nodes or
-self-hosted executors.
+proxy rewrites Host. Web serves bootstrap metadata and any locally available node
+artifacts. Missing artifacts redirect to the matching release and download directly
+on the node; the Web host does not fetch the Runtime image. For disconnected nodes,
+install Web from the offline bundle (or add its verified `artifacts/`).
 
 Caddy on the Core host, where `203.0.113.10` stands for the Web host's address:
 

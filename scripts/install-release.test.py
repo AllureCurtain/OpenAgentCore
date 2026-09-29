@@ -26,7 +26,7 @@ class BootstrapTests(unittest.TestCase):
         self.root = pathlib.Path(self.temp.name)
         self.sha = "a" * 40
         self.stem = "oac-" + self.sha + "-linux-amd64"
-        self.name = self.stem + "-offline.tar.gz"
+        self.name = self.stem + ".tar.gz"
         self.metadata = {"tag_name": "v1.2.3", "draft": False, "prerelease": False,
                          "assets": [{"id": 7, "name": self.name},
                                     {"id": 8, "name": self.name + ".sha256"}]}
@@ -71,6 +71,22 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(command[2:], ["--public-url", "https://core.example"])
         self.assertTrue(pathlib.Path(command[1]).is_file())
         self.assertFalse(list((self.root / ".oac/releases").glob(".download-*")))
+
+    def test_control_plane_bundle_selected_without_execution_assets(self):
+        for index, suffix in enumerate(("-offline.tar.gz", "-runtime.tar.gz", "-daemon", "-sandbox-node"), 20):
+            self.metadata["assets"].append({"id": index, "name": self.stem + suffix})
+        bootstrap.main([])
+        urls = [call.args[0] for call in self.http.call_args_list]
+        self.assertEqual(len(urls), 3)
+        self.assertTrue(urls[-1].endswith("/assets/7"))
+        self.assertFalse((pathlib.Path(self.invoke.call_args.args[0][1]).parent / "artifacts").exists())
+
+    def test_offline_only_release_is_not_silently_downloaded(self):
+        self.metadata["assets"][0]["name"] = self.stem + "-offline.tar.gz"
+        with self.assertRaisesRegex(bootstrap.ReleaseError, "control-plane bundle"):
+            bootstrap.main([])
+        self.assertEqual(len(self.http.call_args_list), 1)
+        self.invoke.assert_not_called()
 
     def test_selected_prerelease_is_allowed(self):
         self.metadata.update(tag_name="v2.0.0-rc.1", prerelease=True)

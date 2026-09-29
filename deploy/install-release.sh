@@ -22,7 +22,7 @@ import urllib.request
 
 REPOSITORY = "MiniMax-AI/parsar-core"
 API = "https://api.github.com/repos/" + REPOSITORY
-ARCHIVE = re.compile(r"oac-([0-9a-f]{40})-linux-amd64-offline\.tar\.gz")
+ARCHIVE = re.compile(r"oac-([0-9a-f]{40})-linux-amd64\.tar\.gz")
 
 
 class ReleaseError(Exception):
@@ -60,7 +60,7 @@ def select_release(version):
     assets = release.get("assets", [])
     bundles = [asset for asset in assets if ARCHIVE.fullmatch(asset["name"])]
     if len(bundles) != 1:
-        raise ReleaseError("This release must contain exactly one Linux amd64 offline bundle")
+        raise ReleaseError("This release must contain exactly one Linux amd64 control-plane bundle")
     bundle = bundles[0]
     sums = [asset for asset in assets if asset["name"] == bundle["name"] + ".sha256"]
     if len(sums) != 1:
@@ -134,7 +134,7 @@ def install(version, arguments):
                     digest.update(chunk)
             if digest.hexdigest() != match[1]:
                 raise ReleaseError("Release checksum mismatch; installation was not started")
-            stem = bundle["name"].removesuffix("-offline.tar.gz")
+            stem = bundle["name"].removesuffix(".tar.gz")
             root = extract(archive, extracted, stem)
             manifest = json.loads((root / "manifest.json").read_text())
             if manifest.get("source_commit") != ARCHIVE.fullmatch(bundle["name"])[1]:
