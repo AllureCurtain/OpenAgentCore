@@ -52,6 +52,31 @@ import (
 // addresses or short-lived credentials. Configuration defaults and inheritance
 // belong to the public API contract.
 
+// Configuration support is declared once by each adapter in internal/harnessconfig:
+// accepted upstream protocols, native protocols, token-limit requirements and its
+// native model-parameter validator. Core admission, Runtime and modeltransport
+// consume that declaration; adding a Harness must not introduce another public
+// configuration shape or a Harness-name branch in orchestration.
+//
+// modeltransport owns route selection and preservation requirements. JSON parsing,
+// adapter acceptance, conversion qualification and upstream model support are
+// separate facts. A registered translator alone does not prove preservation.
+// Native routes keep the original protocol; conversion routes must reject an
+// unqualified requirement before forwarding model input. Nonempty native parameters,
+// structured output, tool search, native web search and nondefault verbosity are
+// currently native-route-only. Existing text, ordinary tools and streaming retain
+// their qualified conversion paths; no model-name heuristic establishes support.
+// Direct transport does not prove that the selected remote model accepts a native
+// parameter: the native Harness/provider remains responsible for that response.
+//
+// Input capability uses the existing MessageImages/MessageImagePlacements and
+// proto.MessageInput contracts, not another image type in model configuration.
+// Configuration preparation checks known requirements. Each Turn, steer and tool
+// result must also check newly introduced input requirements against the fixed
+// route before native submission or proxy forwarding. Unqualified image forms
+// must fail explicitly, never be dropped or reduced to text. The proxy performs
+// the final request check before forwarding; it cannot silently weaken semantics.
+
 // Required execution lifecycle.
 
 // ExecutorFactory prepares without model input. A failed factory retains any
