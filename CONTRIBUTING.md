@@ -2174,6 +2174,12 @@ not widen sandbox network policies or change credential admission.
 The distribution build sets umask 022 for non-root-readable payloads; installation
 credentials and state retain their explicit private permissions.
 
+Installer progress describes the operation about to run. Do not imply fresh
+health checks on a no-change repair. Keep terminal styling optional, honor
+`NO_COLOR`, and preserve plain redirected logs. Summaries show credential file
+locations, never their values. The bundled `install_output.py` owns presentation
+and is shipped and checksum-verified with the installer.
+
 The Core/Web installer uses the launching account, including root, and a writable
 installation directory. It never invokes sudo, switches accounts or changes host
 Docker permissions. Check actual platform, Docker and directory prerequisites;
