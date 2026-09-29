@@ -2,7 +2,7 @@ import type { InitializeSandboxDeployment, SandboxE2BReadyBuild, SandboxE2BTempl
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { ArrowLeft, ArrowRight, Box, Cloud, Cpu, Server, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, Box, Cloud, Cpu, ExternalLink, Server, SlidersHorizontal, type LucideIcon } from "lucide-react";
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -27,6 +27,10 @@ type E2BService = "sandbase" | "official" | "custom";
 const E2B_PRESETS = {
   sandbase: { apiURL: "https://sandbox.sandbase.ai", domain: "sandbox.sandbase.ai" },
   official: { apiURL: "https://api.e2b.app", domain: "e2b.app" },
+} as const;
+const E2B_KEY_CONSOLES = {
+  sandbase: "https://www.sandbase.ai/console/keys",
+  official: "https://e2b.dev/dashboard?tab=api-keys",
 } as const;
 function e2bService(apiURL?: string): E2BService {
   if (!apiURL) return "sandbase";
@@ -123,6 +127,8 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
   const [service, setService] = useState<E2BService>(e2bService(current?.e2bAPIURL));
   const [apiURL, setAPIURL] = useState(current?.e2bAPIURL ?? E2B_PRESETS[e2bService(current?.e2bAPIURL) as keyof typeof E2B_PRESETS]?.apiURL ?? "");
   const [domain, setDomain] = useState(current?.e2bDomain ?? E2B_PRESETS[e2bService(current?.e2bAPIURL) as keyof typeof E2B_PRESETS]?.domain ?? "");
+  const keyConsoleURL = service !== "custom" && apiURL === E2B_PRESETS[service].apiURL && domain === E2B_PRESETS[service].domain
+    ? E2B_KEY_CONSOLES[service] : null;
   const [templates, setTemplates] = useState<SandboxE2BTemplate[]>([]);
   const [builds, setBuilds] = useState<SandboxE2BReadyBuild[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState(current?.e2bTemplate?.split(":")[0] ?? "");
@@ -270,6 +276,9 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
           </Field>
           <Field id={`${id}-key`} label={t("E2B API key")} help={t("The key is write-only: Core encrypts it and never shows it again.")}>
             <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={(event) => changeConnection(event.target.value, apiURL, domain)} />
+            {keyConsoleURL ? <a className="wizard-key-console" href={keyConsoleURL} target="_blank" rel="noopener noreferrer">
+              {t("Get an API key: Console → API Keys")} <ExternalLink size={14} aria-hidden="true" />
+            </a> : null}
           </Field>
           {discovery === "loading" ? <p role="status">{t("Loading templates…")}</p> : null}
           {discovery === "error" ? <p role="alert">{t("Could not load templates. Check the key and provider connection.")} <button type="button" className="wizard-link" onClick={() => setDiscoveryRetry((value) => value + 1)}>{t("Try again")}</button></p> : null}

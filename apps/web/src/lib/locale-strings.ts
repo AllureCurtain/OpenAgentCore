@@ -255,6 +255,7 @@ export const chinese = {
   "Own machines": "自有机器",
   "Core creates E2B sandboxes directly. No node enrollment is needed.": "Core 直接创建 E2B 沙箱，无需注册节点。",
   "E2B API key": "E2B API key",
+  "Get an API key: Console → API Keys": "获取 API Key：控制台 → API Keys",
   "Sandbox API URL": "沙箱 API 地址",
   "Sandbox data-plane domain": "沙箱数据面域名",
   "Leave both endpoint fields blank for official E2B. A compatible service needs its HTTPS API origin and data-plane domain.": "留空使用官方 E2B。兼容服务需同时填写 HTTPS API 地址和数据面域名。",
