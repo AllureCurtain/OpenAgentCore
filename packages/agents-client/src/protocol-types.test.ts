@@ -20,6 +20,9 @@ import type {
   AgentSnapshot,
   ModelProviderInput,
   ModelProviderView,
+  ModelConfigurationInput,
+  ModelConfigurationView,
+  HarnessConfig,
   AgentCore,
   AgentSession,
   AgentEnvironmentResource,
@@ -211,6 +214,10 @@ describe("Core harness selection extension", () => {
     expectTypeOf<AgentSnapshot["x_agents_core"]>().toEqualTypeOf<AgentsCoreSelection | null | undefined>();
     expectTypeOf<ModelProviderView>().not.toExtend<ModelProviderInput>();
     expectTypeOf<ModelProviderInput>().not.toExtend<ModelProviderView>();
+    expectTypeOf<ModelConfigurationInput>().not.toExtend<ModelConfigurationView>();
+    expectTypeOf<ModelConfigurationView>().not.toExtend<ModelConfigurationInput>();
+    expectTypeOf<SavedAgentCoreInput["harness_config"]>().toEqualTypeOf<HarnessConfig | undefined>();
+    expectTypeOf<AgentsCoreSelection["harness_config"]>().toEqualTypeOf<HarnessConfig | undefined>();
     expectTypeOf<SavedAgentCore>().not.toExtend<SavedAgentCoreInput>();
     expectTypeOf<InlineAgentInput["x_agents_core"]>().toEqualTypeOf<AgentsCoreSelection | null | undefined>();
   });

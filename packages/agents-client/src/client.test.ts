@@ -677,17 +677,17 @@ describe("OpenAIAgentsClient", () => {
     });
   });
 
-  it("accepts only a harness in a Session Agent's x_agents_core", async () => {
+  it("accepts harness and native model parameters in a Session Agent's x_agents_core", async () => {
     const retrieve = (core: unknown) => new OpenAIAgentsClient({ fetch: recordingFetch(jsonResponse({
       ...sessionResource(),
       agent: core === undefined ? agentSnapshot() : { ...agentSnapshot(), x_agents_core: core },
     }), []) }).retrieveSession("session");
-    for (const core of [undefined, null, { harness: "codex" }]) {
+    for (const core of [undefined, null, {}, { harness: "codex" }, { harness_config: {} }]) {
       expect((await retrieve(core)).agent.x_agents_core).toEqual(core);
     }
     // Session reads never carry saved provider defaults; they live in execution_configuration.
     const provider = { protocol: "responses", base_url: "https://provider.test", api_key_configured: true };
-    for (const core of [{}, { model_provider: provider }, { harness: "codex", model_provider: provider }, { harness: "codex", api_key: "leak" }]) {
+    for (const core of [{ model_provider: provider }, { harness: "codex", model_provider: provider }, { harness: "codex", api_key: "leak" }]) {
       await expect(retrieve(core)).rejects.toMatchObject({ status: 502, code: "invalid_session_resource" });
     }
   });

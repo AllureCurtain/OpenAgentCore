@@ -713,7 +713,7 @@ export interface TolerantSessionList {
 }
 
 export interface CreateSessionInput {
-  x_agents_core?: { model_provider?: ModelProviderInput | null };
+  x_agents_core?: { model_provider?: ModelProviderInput | null; harness_config?: HarnessConfig };
   agent_id?: string;
   agent?: InlineAgentInput;
   environment: AgentEnvironmentInput;
@@ -1206,40 +1206,58 @@ export interface ModelProviderView {
 /** A harness's deployment default model provider in Core. The key is never returned. */
 export type ProviderObservationErrorCode = "authentication_error" | "connection_failed" | "rate_limit_exceeded" | "usage_limit_exceeded" | "server_overloaded" | "server_error" | "resource_not_found" | "request_timeout" | "invalid_request";
 
-export interface HarnessModelProvider extends ModelProviderView {
+/** Native model parameters validated by the selected harness. An empty object clears them. */
+export type HarnessConfig = Record<string, unknown>;
+
+export interface ModelConfigurationInput {
+  model_provider: ModelProviderInput;
+  model: string;
+  harness_config?: HarnessConfig;
+}
+
+export interface ModelConfigurationView {
+  model_provider: ModelProviderView;
+  model: string;
+  harness_config: HarnessConfig;
+}
+
+export interface HarnessModelConfiguration extends ModelConfigurationView {
   last_used_at: string | null;
   last_error_code: ProviderObservationErrorCode | null;
   last_error_at: string | null;
-  object: "core.model_provider";
+  object: "core.model_configuration";
   harness: CoreHarnessKind;
   updated_at: string;
 }
 
 /**
  * A harness this Core build supports. `enabled` and `default` are read-only views of
- * the process configuration; `model_provider` is the deployment default, or null.
+ * the process configuration; `model_configuration` is the deployment default, or null.
  */
 export interface CoreHarness {
   object: "core.harness";
   id: CoreHarnessKind;
   enabled: boolean;
   default: boolean;
-  model_provider: HarnessModelProvider | null;
+  model_configuration: HarnessModelConfiguration | null;
 }
 
-/** Omitted members preserve saved defaults on update; null provider clears it. */
+/** Native parameter inheritance follows the extension contract; null provider clears it. */
 export interface SavedAgentCoreInput {
   harness?: CoreHarnessKind;
   model_provider?: ModelProviderInput | null;
+  harness_config?: HarnessConfig;
 }
 
 export interface SavedAgentCore {
   harness?: CoreHarnessKind;
   model_provider?: ModelProviderView;
+  harness_config?: HarnessConfig;
 }
 
 export interface AgentsCoreSelection {
-  harness: CoreHarnessKind;
+  harness?: CoreHarnessKind;
+  harness_config?: HarnessConfig;
 }
 
 export type ExecutionConfigurationSource = "session" | "agent" | "deployment" | "unknown";
@@ -1251,6 +1269,7 @@ export interface SessionExecutionConfiguration {
   session_id: string;
   model: { value: string | null; source: ExecutionConfigurationSource };
   harness: { value: string | null; source: ExecutionConfigurationSource };
+  harness_config: { value: HarnessConfig; source: ExecutionConfigurationSource };
   model_provider: {
     source: ExecutionConfigurationSource;
     status: "available" | "redacted" | "unavailable";
