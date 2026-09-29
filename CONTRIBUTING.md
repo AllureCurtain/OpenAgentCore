@@ -3603,8 +3603,15 @@ in [Harness onboarding](contracts/agents-api/harness-onboarding.md#native-model-
 The standalone Core build includes the shared `internal/modeltransport` route
 qualification code alongside the adapter declarations; Runtime still owns proxy
 startup and request forwarding.
-Public configuration sources and inheritance belong to
+Implemented public configuration sources and inheritance belong to
 [model execution](contracts/agents-api/model-execution.md).
+[Unified model configuration design](contracts/agents-api/model-configuration-design.md)
+is the canonical planned field/ownership contract. Extend Web defaults and the
+public API through the same types, resolver, validators and adapter planner;
+source and authority may differ. Implement planned fields and qualify their
+native/proxy application before exposing them as accepted HTTP input. This design
+does not change current native configuration or require speculative Runtime
+scaffolding. The planned adapter obligations are indexed in `agent/harness.go`.
 
 ### Harness selection and Agent defaults
 

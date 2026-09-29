@@ -1,5 +1,10 @@
 # Agent defaults and Session model execution
 
+This page describes the implemented API. The
+[unified model configuration design](model-configuration-design.md) owns the planned
+common parameter vocabulary and replacement rules; its planned fields are not yet
+accepted by these endpoints.
+
 Core accepts optional `x_agents_core.model_provider` on saved Agent creation and
 update, and the same top-level bundle as an explicit Session creation override.
 This is a Core extension, not part of the pinned upstream protocol. It supplies

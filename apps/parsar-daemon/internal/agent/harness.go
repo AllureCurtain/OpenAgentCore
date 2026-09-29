@@ -43,8 +43,9 @@ import (
 // validates the same declaration at admission and again before native application.
 // Unknown fields and conflicts with model, provider/authentication, workspace,
 // tools/MCP, permissions or lifecycle controls fail with a value-free error.
-// Apply accepted fields directly to native config or SDK options, without a
-// cross-Harness parameter translation layer. Never merge arbitrary host config.
+// Current native fields apply directly to native config or SDK options. The
+// planned common-field contract below supersedes this restriction when implemented.
+// Never merge arbitrary host config.
 // Preparation failure cleans up owned configuration files, processes/SDK resources
 // and proxies. Unconfirmed cleanup returns a non-nil Executor with the error under
 // the factory ownership contract. The logical configuration snapshot remains fixed
@@ -76,6 +77,34 @@ import (
 // route before native submission or proxy forwarding. Unqualified image forms
 // must fail explicitly, never be dropped or reduced to text. The proxy performs
 // the final request check before forwarding; it cannot silently weaken semantics.
+
+// Planned unified model contract (design only; no registration/API change yet).
+//
+// contracts/agents-api/model-configuration-design.md owns the planned field types,
+// sources, replacement semantics and application rules. Current HTTP support and
+// native fields remain documented in model-execution.md and harness-onboarding.md.
+// Implement the following obligations together before advertising common fields:
+//
+// Register an adapter-owned support description and pure model-planning function.
+// Core admission and Runtime use that same function over resolved configuration,
+// selected route and execution context. Web consumes its support description.
+// Different configuration sources do not select different validators or adapters.
+// Model declarations, Harness expression and route preservation are distinct;
+// unknown model support may be tried only with a qualified local execution plan.
+//
+// Every explicit generation field has exactly one application owner: native
+// configuration or the proxy's final upstream request mapper. Missing native CLI
+// switches alone do not rule out safe proxy application. Model limits and identity
+// are typed metadata, not arbitrary request fields. Use tested pure mappings and
+// existing wire/adapter versions, without a mapping registry or rules DSL.
+//
+// Plan before creating native resources or submitting input. Use the frozen
+// Session configuration on every inference, including subsequent Turns, native
+// retries, tool continuations and recovery. Proxy-owned values cannot be replaced
+// by later native defaults; native-owned values require route preservation.
+// Newly introduced input requirements are checked before submission. Unsupported
+// behavior rejects explicitly; no silent drop, weaker retry or prompt emulation.
+// Preserve the Executor/Turn lifecycle and cleanup ownership defined below.
 
 // Required execution lifecycle.
 
