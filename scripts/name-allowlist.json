@@ -145,7 +145,7 @@
     "reason": "Repository helper filenames are retained source entry points; they do not name installed commands."
   },
   {
-    "path": ".github/workflows/agents-api.yml",
+    "path": ".github/workflows/api-acceptance.yml",
     "regex": "\\.github/workflows/agents-api\\.yml",
     "reason": "The workflow source filename is an internal repository identity; its display name and artifacts use OpenAgentCore."
   },

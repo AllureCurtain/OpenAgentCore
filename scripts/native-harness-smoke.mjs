@@ -9,8 +9,8 @@ import { createInterface } from 'node:readline';
 const options = {};
 for (let i = 2; i < process.argv.length; i += 2) {
   const key = process.argv[i];
-  if (!['--codex-package', '--codex-binary', '--claude-runtime', '--only'].includes(key) || !process.argv[i + 1]) {
-    throw new Error('Expected --codex-package PATH, --codex-binary PATH, --claude-runtime PATH or --only codex|claude');
+  if (!['--codex-binary', '--claude-runtime', '--only'].includes(key) || !process.argv[i + 1]) {
+    throw new Error('Expected --codex-binary PATH, --claude-runtime PATH or --only codex|claude');
   }
   options[key] = process.argv[i + 1];
 }
@@ -20,23 +20,15 @@ const failure = code => Object.assign(new Error(code), { safeCode: code });
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function codexSmoke(root) {
-  let binary = options['--codex-binary'] ?? 'codex';
-  let prefix = [];
-  if (options['--codex-package']) {
-    const directory = resolve(options['--codex-package']);
-    const manifest = JSON.parse(await readFile(join(directory, 'package.json'), 'utf8'));
-    if (manifest.version !== '0.153.4') throw failure('codex_package_version');
-    binary = process.execPath;
-    prefix = [join(directory, 'bin', 'codex.js')];
-  }
+  const binary = options['--codex-binary'] ?? 'codex';
   const home = join(root, 'codex-home');
   const workspace = join(root, 'workspace');
   await mkdir(home); await mkdir(workspace);
   const env = { ...process.env, CODEX_HOME: home };
   delete env.OPENAI_API_KEY; delete env.CODEX_API_KEY;
-  const version = spawnSync(binary, [...prefix, '--version'], { env, encoding: 'utf8', timeout: 15000, maxBuffer: limit });
+  const version = spawnSync(binary, ['--version'], { env, encoding: 'utf8', timeout: 15000, maxBuffer: limit });
   if (version.error || version.status !== 0 || version.stdout.trim() !== 'codex-cli 0.153.4') throw failure('codex_native_version');
-  const child = spawn(binary, [...prefix, 'app-server', '--listen', 'stdio://'], { env, cwd: workspace, stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(binary, ['app-server', '--listen', 'stdio://'], { env, cwd: workspace, stdio: ['pipe', 'pipe', 'pipe'] });
   const closed = new Promise(resolve => child.once('close', resolve));
   let pending;
   let bytes = 0;
