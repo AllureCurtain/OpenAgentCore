@@ -23,7 +23,7 @@ Harness 都通过明确的协议和薄适配层接入，新增或替换组件无
 curl -fsSL https://github.com/MiniMax-AI/parsar-core/releases/latest/download/install.sh | bash
 ```
 
-[可选安装配置](docs/getting-started/install-options.md)：监听地址、端口和部署方式。
+你可以通过[安装配置选项](docs/getting-started/install-options.md)自定义监听地址、端口和部署方式。
 
 1. 在 Linux 主机上[安装 Core 和 Web](docs/getting-started/install.md)。安装指南包含环境要求、
    发行包下载、本地试用和 HTTPS 配置。
