@@ -3521,8 +3521,8 @@ components:
             - claude_sdk
             - mcode
           type: string
-      required:
-        - harness
+        harness_config:
+          type: object
       type: object
     v1.CreateAgentRequest:
       properties:
@@ -4650,6 +4650,8 @@ components:
             - claude_sdk
             - mcode
           type: string
+        harness_config:
+          type: object
         model_provider:
           $ref: '#/components/schemas/v1.ModelProviderView'
       type: object
@@ -4661,6 +4663,8 @@ components:
             - claude_sdk
             - mcode
           type: string
+        harness_config:
+          type: object
         model_provider:
           anyOf:
             - allOf:
@@ -4985,6 +4989,8 @@ components:
       type: object
     v1.SessionExecutionInput:
       properties:
+        harness_config:
+          type: object
         model_provider:
           $ref: '#/components/schemas/v1.ModelProviderInput'
       type: object
