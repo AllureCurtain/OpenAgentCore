@@ -61,6 +61,7 @@ and native harness differences.
 | Start here | Purpose |
 | --- | --- |
 | [Documentation index](docs/getting-started/README.md) | Installation, usage and administration reading paths |
+| [Architecture](docs/architecture.md) | Components, the three API namespaces and a Session end to end |
 | [User guide](docs/user-guide.md) | Sessions, Skills/Plugins/MCP, files, cancellation and recovery |
 | [Configuration](docs/configuration.md) | Operator settings and model configuration |
 | [API reference](docs/api/README.md) | Application, administration and machine APIs |
