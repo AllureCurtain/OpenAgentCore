@@ -109,8 +109,6 @@ def install(version, arguments):
         raise ReleaseError("Python 3.9+ is required")
     if platform.system() != "Linux" or platform.machine() not in ("x86_64", "amd64"):
         raise ReleaseError("Core installation currently requires Linux amd64")
-    if os.geteuid() == 0:
-        raise ReleaseError("Run the installer as a non-root user with Docker access")
     tag, bundle, sums = select_release(version)
     print("Installing OpenAgentCore " + tag, flush=True)
     home = pathlib.Path.home() / ".oac"

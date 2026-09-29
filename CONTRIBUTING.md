@@ -10,6 +10,7 @@ one canonical owner, listed below; update that owner when changing its contract.
 | Subject | Canonical source |
 | --- | --- |
 | User concepts and authority | [Design principles](docs/design-principles.md) |
+| Architecture overview and diagrams (a map that links to the owners below) | [Architecture](docs/architecture.md) |
 | API callers, credentials and route inventory | [API index](docs/api/README.md) |
 | Public wire types and qualified behavior | [Agents API contracts](contracts/agents-api/README.md), [pinned upstream](contracts/agents-api/upstream.json), and linked operation contracts |
 | Runtime messages, receipts and failure ownership | [Core–Runtime protocol](docs/runtime-protocol.md) and `internal/agentdaemon/proto` |
@@ -2172,6 +2173,12 @@ not widen sandbox network policies or change credential admission.
 
 The distribution build sets umask 022 for non-root-readable payloads; installation
 credentials and state retain their explicit private permissions.
+
+The Core/Web installer uses the launching account, including root, and a writable
+installation directory. It never invokes sudo, switches accounts or changes host
+Docker permissions. Check actual platform, Docker and directory prerequisites;
+root alone is not a reason to refuse installation. Native Core retains its
+systemd user-manager and lingering prerequisites for that same account.
 
 The first installer targets a trusted Linux amd64 Docker host. It installs a
 private dedicated PostgreSQL service and separate Core and console services in

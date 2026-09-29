@@ -56,6 +56,30 @@ class InstallerTests(unittest.TestCase):
         path.chmod(mode)
         return path
 
+    def test_host_check_accepts_current_account_including_root(self):
+        for uid in (0, 1000):
+            with self.subTest(uid=uid), mock.patch.object(install.os, "getuid", return_value=uid), \
+                    mock.patch.object(install.platform, "system", return_value="Linux"), \
+                    mock.patch.object(install.platform, "machine", return_value="x86_64"):
+                self.host.commands.clear()
+                install.check_host()
+                self.assertEqual(self.host.commands, [
+                    ["docker", "compose", "version", "--short"],
+                    ["docker", "info", "--format", "{{.ServerVersion}}"],
+                ])
+
+    def test_root_identity_is_preserved_in_service_configuration(self):
+        with mock.patch.object(install.os, "getuid", return_value=0), \
+                mock.patch.object(install.os, "getgid", return_value=0):
+            self.install("--sandbox", "none")
+        state = self.document("state.json")
+        self.assertEqual((state["uid"], state["gid"]), (0, 0))
+        services = self.document("generated/compose.json")["services"]
+        for name in ("core", "migrate", "web"):
+            self.assertEqual(services[name]["user"], "0:0")
+        self.assertNotIn("user", services["database"])
+        self.assertEqual(self.host.running(), {"database", "core", "web"})
+
     def test_install_and_repair_hold_same_lock_before_all_writes(self):
         original_create = install.create
         original_finish = install.finish

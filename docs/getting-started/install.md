@@ -22,7 +22,9 @@ same release; historical-version upgrades and conversion are unsupported.
 
 - Linux amd64 with Python 3.9 or newer.
 - Docker Engine with Docker Compose 2.26.0 or newer (`docker compose version`).
-- A non-root user who can run `docker`. The installer refuses root.
+- An account that can run `docker` and write to the installation directory. Both
+  ordinary users and root are supported; the installer uses the current account
+  without invoking sudo, switching accounts or changing Docker permissions.
 - Free loopback ports 8091 (Core) and 8080 (Web), or
   [other ports](#ports-and-directory).
 - curl to fetch the installation script; no GitHub CLI or login is required.
