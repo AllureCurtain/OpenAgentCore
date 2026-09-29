@@ -18,6 +18,7 @@ export function ConsoleSelect({
   label,
   className,
   disabled,
+  placeholder,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -26,6 +27,7 @@ export function ConsoleSelect({
   label: string;
   className?: string;
   disabled?: boolean;
+  placeholder?: string;
 }) {
   return (
     <Select
@@ -44,7 +46,7 @@ export function ConsoleSelect({
           className,
         )}
       >
-        <SelectValue />
+        <SelectValue>{value === "" ? placeholder : undefined}</SelectValue>
       </SelectTrigger>
       <SelectPopup className="text-[13px]" alignItemWithTrigger={false} sideOffset={6}>
         {options.map((option) => (

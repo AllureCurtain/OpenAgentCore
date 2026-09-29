@@ -1,8 +1,9 @@
 # Add a native harness to OpenAgentCore
 
-Start with [`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go).
-It defines the required lifecycle, separate optional interfaces and existing
-registration methods in one place. Implement one adapter for a native SDK or machine-readable protocol. Core and
+Start with the shared [model configuration contract](../../internal/harnessconfig/harness.go)
+and the [execution lifecycle](../../apps/parsar-daemon/internal/agent/harness.go).
+The first owns configuration declarations and preparation; the second defines
+the required lifecycle, separate optional interfaces and registration methods. Implement one adapter for a native SDK or machine-readable protocol. Core and
 Runtime use the common contract; adding a harness should not add engine-name
 branches to public handlers, storage, scheduling or environment providers.
 
@@ -54,9 +55,21 @@ model communication configuration, not Turn scheduling or native process ownersh
 
 ## Native model configuration
 
-[`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go) owns the
-preparation, validation, reserved-field, effective-connection and cleanup contract.
-The shared wire object is `proto.HarnessConfig`. Adapter declarations in
+[`internal/harnessconfig/harness.go`](../../internal/harnessconfig/harness.go) owns
+the shared configuration declaration and pure preparation contract. Each adapter
+supplies one `Configuration` to Core's composition and Runtime's `RegisterKind`.
+All three Runtime entry paths validate through that declaration before native
+side effects: direct factory, preparation and Executor. Registry wrappers retain
+the declaration alongside the factory. Lifecycle and cleanup ownership remain in
+[`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go).
+The shared wire object is `proto.HarnessConfig`.
+
+A supplied `model` must be a nonempty string, and an explicit `model_provider`
+requires it. The native-owned connection path may omit both; explicit null is
+invalid. An explicitly empty adapter declaration accepts no provider or nonempty
+native parameters. It does not advertise provider support. Unknown protocol
+formats and duplicate protocol declarations fail at registration.
+ Adapter declarations in
 `internal/harnessconfig/<kind>` own these native fields:
 
 | Harness | Accepted native fields | Application |
@@ -72,12 +85,15 @@ These are native settings, not a shared reasoning vocabulary; model availability
 and provider support remain the selected harness's responsibility.
 
 Native protocol and parameter declarations also feed Core administration's small
-configuration-support descriptor. `modeltransport` selects and validates routes
-from those declarations. Its conversion qualification is distinct from adapter
-acceptance and remote-model support. Follow the route and per-input requirements
-in `agent/harness.go`; do not add a second model capability registry or infer
-capabilities from model names. Nonempty `harness_config` currently requires a native
-protocol route because the translator has no loss report for those parameters.
+configuration-support descriptor. Its ordered `protocols` list is the sole source
+for accepted protocols and the default (the first entry). Core and Runtime reject
+unsupported combinations through the same declaration. The current protocol
+matrix belongs to [model execution](model-execution.md#saved-defaults-and-precedence).
+Adapters connect directly through native configuration; they must not introduce
+a model API proxy or protocol converter. Follow the per-input capability
+requirements in the execution lifecycle contract; do not add a second model capability registry
+or infer capabilities from model names. Native protocol acceptance and remote
+model support remain separate facts.
 
 ## Required adapter interfaces
 
@@ -157,7 +173,8 @@ still belongs to the service profile and is not granted by Runtime registration.
 1. Pin the upstream source/package version and document the native entry point.
 2. Implement the adapter using its SDK or native protocol. Reuse shared process,
    credential/configuration and local workspace helpers where applicable.
-3. Register its `SupportedAgentKind` and direct-call factory with `RegisterKind`,
+3. Register its `SupportedAgentKind`, shared `Configuration` and direct-call
+   factory with `RegisterKind`,
    then register the shared `ExecutorFactory` with `RegisterExecutor`. A direct-call
    factory should delegate to the same Executor implementation. Register separate
    read-only preparations only when required by qualified workspace operations. Runtime

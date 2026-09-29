@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
-	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -92,9 +91,6 @@ func validateAgentModelExecution(configuration []byte, provider *v1.ModelProvide
 		return nil
 	}
 	if err := config.Core.ModelProvider.ValidateHarness(config.Core.Harness); err != nil {
-		return fmt.Errorf("%w: %s", ErrInvalidInput, err)
-	}
-	if err := v1.ValidateModelConfigurationRoute(config.Core.Harness, config.Core.ModelProvider.Protocol, config.Core.HarnessConfig, modeltransport.Requirements{}); err != nil {
 		return fmt.Errorf("%w: %s", ErrInvalidInput, err)
 	}
 	return nil

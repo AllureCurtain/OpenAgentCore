@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
+	"github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
 )
 
 // ErrUnknownPermission is returned by PermissionResponder.SubmitPermission when
@@ -24,19 +25,21 @@ var ErrUnsupportedKind = errors.New("agent: unsupported agent_kind")
 // Registry maps agent_kind → Factory and keeps the daemon-advertised
 // capability descriptor for each kind. Safe for concurrent use.
 type Registry struct {
-	mu        sync.RWMutex
-	factories map[string]Factory
-	preparers map[string]PreparationFactory
-	executors map[string]ExecutorFactory
-	kinds     map[string]proto.SupportedAgentKind
+	mu             sync.RWMutex
+	factories      map[string]Factory
+	preparers      map[string]PreparationFactory
+	executors      map[string]ExecutorFactory
+	kinds          map[string]proto.SupportedAgentKind
+	configurations map[string]harnessconfig.Configuration
 }
 
 func NewRegistry() *Registry {
 	return &Registry{
-		factories: make(map[string]Factory),
-		preparers: make(map[string]PreparationFactory),
-		executors: make(map[string]ExecutorFactory),
-		kinds:     make(map[string]proto.SupportedAgentKind),
+		factories:      make(map[string]Factory),
+		preparers:      make(map[string]PreparationFactory),
+		executors:      make(map[string]ExecutorFactory),
+		kinds:          make(map[string]proto.SupportedAgentKind),
+		configurations: make(map[string]harnessconfig.Configuration),
 	}
 }
 
@@ -106,4 +109,16 @@ func (r *Registry) ResolvePreparation(kind string) (PreparationFactory, error) {
 		return nil, fmt.Errorf("agent: preparation unavailable for %q", kind)
 	}
 	return f, nil
+}
+
+// Configuration returns an owned declaration for registry wrappers. Wrappers
+// transfer it with the factory; they must not infer configuration from kind names.
+func (r *Registry) Configuration(kind string) (harnessconfig.Configuration, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	configuration, ok := r.configurations[kind]
+	if !ok {
+		return harnessconfig.Configuration{}, ErrUnsupportedKind
+	}
+	return configuration.Clone(), nil
 }

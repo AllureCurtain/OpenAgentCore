@@ -1241,9 +1241,8 @@ export interface HarnessModelConfiguration extends ModelConfigurationView {
 
 /** Adapter build support, independent of runtime readiness or model availability. */
 export interface ModelConfigurationSupport {
+  /** Ordered supported native protocols; the first is the default. */
   protocols: ModelProviderInput["protocol"][];
-  /** Ordered native protocols; the first is the default. */
-  native_protocols: ModelProviderInput["protocol"][];
   accepts_harness_config: boolean;
   token_limits_required: boolean;
 }

@@ -123,7 +123,7 @@ refuses. `rotate-core-key` refuses to run on a Web-only installation.
 ## Projects and API keys
 
 Create Projects and issue keys in Web, on **Projects and keys**, or through the
-[Core API](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/admin-api.md) under `/core/v1/projects`. How
+[Core API](https://github.com/MiniMax-AI/parsar-core/blob/f6d258735fc601c521dd990e6f9e1ed261f4ef2d/contracts/agents-api/admin-api.md) under `/core/v1/projects`. How
 Projects and keys behave is in [Projects own assets](/concepts#projects-own-assets).
 
 To rotate an application key:
@@ -246,9 +246,9 @@ Core records which key made each public resource write, for the console. Set
 `core.write_audit_retention` in `config.json` (Go duration, at least `1h`, default
 `2160h`) to control how long non-creation history is kept; creation ownership is kept
 for good. Removing keys or resources does not delete these records. See the
-[query contract](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/write-audit.md); administrator mutations
+[query contract](https://github.com/MiniMax-AI/parsar-core/blob/f6d258735fc601c521dd990e6f9e1ed261f4ef2d/contracts/agents-api/write-audit.md); administrator mutations
 have a separate
-[audit log](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/admin-api.md#monitoring-and-audit). Neither
+[audit log](https://github.com/MiniMax-AI/parsar-core/blob/f6d258735fc601c521dd990e6f9e1ed261f4ef2d/contracts/agents-api/admin-api.md#monitoring-and-audit). Neither
 logs bodies or secrets.
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/docs/getting-started/operations.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f6d258735fc601c521dd990e6f9e1ed261f4ef2d/docs/getting-started/operations.md)

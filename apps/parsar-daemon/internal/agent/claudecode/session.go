@@ -60,7 +60,7 @@ func defaultConfig() sessionConfig {
 // Factory implements agent.Factory for agent_kind="claude_code".
 // Register during daemon startup:
 //
-//	registry.Register("claude_code", claudecode.Factory)
+//	registry.Register("claude_code", harnessconfig.Configuration{}, claudecode.Factory)
 func Factory(ctx context.Context, req proto.PromptRequestPayload, out chan<- proto.Envelope) (agent.Session, error) {
 	return newSession(ctx, req, out, defaultConfig())
 }

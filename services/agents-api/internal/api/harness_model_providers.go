@@ -95,13 +95,10 @@ func (h *Handler) listHarnesses(w http.ResponseWriter, r *http.Request, s Deploy
 	list := CoreHarnessList{Object: "list", Data: []CoreHarness{}}
 	for _, kind := range (engine.Catalog{}).Kinds() {
 		declaration, _ := builtin.Registry().Lookup(kind)
-		support := v1.ModelConfigurationSupport{Protocols: []string{}, NativeProtocols: []string{}, AcceptsHarnessConfig: declaration.AcceptsHarnessConfig()}
+		support := v1.ModelConfigurationSupport{Protocols: []string{}, AcceptsHarnessConfig: declaration.AcceptsHarnessConfig()}
 		for _, provider := range declaration.Providers {
 			support.Protocols = append(support.Protocols, provider.Protocol)
 			support.TokenLimitsRequired = support.TokenLimitsRequired || provider.RequiresTokenLimits
-		}
-		for _, protocol := range declaration.NativeProtocols() {
-			support.NativeProtocols = append(support.NativeProtocols, string(protocol))
 		}
 		harness := CoreHarness{ModelConfigurationSupport: support, Object: "core.harness", ID: kind, Enabled: kind == h.engine || h.harnesses[kind], Default: kind == h.engine}
 		for _, provider := range providers {

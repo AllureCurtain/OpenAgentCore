@@ -10,7 +10,6 @@ export const coreErrors = {
   "invalid_node_capacity": "Enter a valid whole-number capacity; retained capacity must be at least active capacity.",
   "capacityRange": "Enter a whole number from {{min}} to {{max}}; retained capacity must be at least active capacity.",
   "model_configuration_model_invalid": "Enter a model ID of at most 1024 UTF-8 bytes without control characters.",
-  "model_configuration_route_unsupported": "The selected protocol cannot preserve these model settings. Use a native protocol for this harness, or remove the advanced settings.",
   "harness_config_invalid": "Check the supported native fields and their values. The JSON object must be at most 16 KiB and cannot redefine Core-managed settings.",
   "invalid_model_provider": "Enter the complete model provider configuration.",
   "model_provider_base_url_invalid": "Use an HTTPS URL without credentials, query parameters or a fragment.",

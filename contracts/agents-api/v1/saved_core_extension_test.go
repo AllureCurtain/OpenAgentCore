@@ -34,11 +34,12 @@ func TestSavedProviderExplicitHarnessCompatibility(t *testing.T) {
 				x := &SavedAgentCoreInput{Harness: harness, ModelProvider: &ModelProviderInput{
 					Protocol: protocol, BaseURL: "https://example.test", APIKey: "fixture", ContextWindow: 100, MaxOutputTokens: 20,
 				}}
-				if err := x.Validate(); err != nil {
-					t.Fatalf("Runtime-translatable saved provider rejected: %v", err)
+				native := harness == "" || harness == "mcode" || (harness == "codex" && protocol == "responses") || (harness == "claude_sdk" && protocol == "anthropic")
+				if err := x.Validate(); (err == nil) != native {
+					t.Fatalf("wrong saved native admission: %v", err)
 				}
 				if harness != "" {
-					if err := x.SafeView().ModelProvider.ValidateHarness(harness); err != nil {
+					if err := x.SafeView().ModelProvider.ValidateHarness(harness); (err == nil) != native {
 						t.Fatalf("safe saved provider rejected: %v", err)
 					}
 				}

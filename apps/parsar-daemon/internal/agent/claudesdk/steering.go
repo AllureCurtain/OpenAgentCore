@@ -34,9 +34,6 @@ func (s *session) Steer(ctx context.Context, input proto.PromptSteerPayload) err
 
 // SteerWithReceipt separates a complete bridge write from native consumption.
 func (s *session) SteerWithReceipt(ctx context.Context, input proto.PromptSteerPayload, written func()) error {
-	if err := s.modelRoute.ValidateInput(input.Input); err != nil {
-		return err
-	}
 	select {
 	case <-s.cancelOutput:
 		return agent.ErrSteeringInactive

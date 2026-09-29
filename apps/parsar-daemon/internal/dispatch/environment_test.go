@@ -1,5 +1,7 @@
 package dispatch_test
 
+import "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
+
 import (
 	"context"
 	"errors"
@@ -13,7 +15,7 @@ func TestNoEnvironmentRejectsOtherEngineBeforeFactory(t *testing.T) {
 	h := newHarness(t)
 	defer h.router.Shutdown(context.Background())
 	called := false
-	h.reg.Register("claude_code", func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
+	h.reg.Register("claude_code", harnessconfig.Configuration{}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
 		called = true
 		return nil, nil
 	})
@@ -32,7 +34,7 @@ func TestNoEnvironmentUsesAvailableCapability(t *testing.T) {
 		h := newHarness(t)
 		defer h.router.Shutdown(context.Background())
 		called := false
-		h.reg.RegisterKind(proto.SupportedAgentKind{Kind: "claude_sdk", Available: available, Capabilities: proto.AgentKindCapabilities{EnvironmentNone: true}}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
+		h.reg.RegisterKind(proto.SupportedAgentKind{Kind: "claude_sdk", Available: available, Capabilities: proto.AgentKindCapabilities{EnvironmentNone: true}}, harnessconfig.Configuration{}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
 			called = true
 			return nil, errors.New("controlled factory stop")
 		})
@@ -51,7 +53,7 @@ func TestLocalEnvironmentRequiresAvailableCapability(t *testing.T) {
 			called := false
 			h.reg.RegisterKind(proto.SupportedAgentKind{Kind: "codex", Available: mode != "unavailable",
 				Capabilities: proto.AgentKindCapabilities{LocalEnvironment: mode != "unsupported"}},
-				func(_ context.Context, req proto.PromptRequestPayload, _ chan<- proto.Envelope) (agent.Session, error) {
+				harnessconfig.Configuration{}, func(_ context.Context, req proto.PromptRequestPayload, _ chan<- proto.Envelope) (agent.Session, error) {
 					called = true
 					if req.LocalEnvironment == nil || req.LocalEnvironment.ID != preparationEnvironmentID {
 						t.Error("local descriptor lost before factory")

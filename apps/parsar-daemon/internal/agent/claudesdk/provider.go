@@ -3,15 +3,14 @@ package claudesdk
 import (
 	"strings"
 
-	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
+	harnessconfiguration "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/claudesdk"
 )
 
-// The factory prepares the native endpoint before producing launch variables.
-// Upstream credentials remain in Runtime when translation is required.
+// Validate the frozen native provider before producing launch variables.
 func providerEnvironment(value any) ([]string, error) {
-	provider, err := modeltransport.ParseProvider(value)
-	if err != nil || provider.Protocol != modeltransport.Anthropic {
-		return nil, modeltransport.ErrConfiguration
+	provider, err := harnessconfiguration.Configuration().ParseProvider(value)
+	if err != nil {
+		return nil, err
 	}
 	return []string{"ANTHROPIC_BASE_URL=" + provider.BaseURL, "ANTHROPIC_AUTH_TOKEN=" + provider.APIKey}, nil
 }

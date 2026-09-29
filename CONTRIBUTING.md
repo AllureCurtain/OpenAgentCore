@@ -14,7 +14,7 @@ one canonical owner, listed below; update that owner when changing its contract.
 | API callers, credentials and route inventory | [API index](docs/api/README.md) |
 | Public wire types and qualified behavior | [Agents API contracts](contracts/agents-api/README.md), [pinned upstream](contracts/agents-api/upstream.json), and linked operation contracts |
 | Runtime messages, receipts and failure ownership | [Core–Runtime protocol](docs/runtime-protocol.md) and `internal/agentdaemon/proto` |
-| Harness interfaces and onboarding | [Harness onboarding](contracts/agents-api/harness-onboarding.md) and `agent/harness.go` |
+| Harness interfaces and onboarding | [Harness onboarding](contracts/agents-api/harness-onboarding.md) and `apps/parsar-daemon/internal/agent/harness.go` |
 | Provider interfaces and onboarding | [Sandbox Provider guide](docs/sandbox-provider.md) and `sandbox/sandbox_provider.go` |
 | Claude private bridge and Runtime artifact | [Claude SDK adapter](packages/claude-sdk-adapter/README.md) |
 | Operator installation and configuration | [Installation](docs/getting-started/install.md), [configuration](docs/configuration.md), [operations](docs/getting-started/operations.md) |
@@ -2787,25 +2787,18 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   identity; retries cannot replace it. Keep this administrator query separate from
   runtime observations and do not touch activity or wake sandboxes. The versioned
   contract is `contracts/agents-api/execution-configuration.md`.
-- Model communication uses `internal/modeltransport` in the Runtime. Core sends one
-  frozen confidential `model_provider` bundle, independent of engine and placement;
-  it must not manufacture native provider options or retain a historical-options
-  dispatch path. The adapter declares native protocols. Native matches connect
-  directly; mismatches use one private loopback endpoint owned by the existing
-  Session execution resource. Its credential is distinct from the upstream key.
-  Keep endpoint cleanup on final native teardown, including preparation failure,
-  rather than on individual Turn completion. No second Session manager is added.
-  CLIProxyAPI's pinned translator is an embedded conversion dependency, not a
-  gateway service. Requests, JSON responses and incremental SSE events share the
-  same conversion implementation for hosted and self-hosted execution. The
-  dependency owns protocol fields, tools, reasoning and usage conversion. Do not
-  add local field maps, parameter restoration or parallel compatibility rules.
-  Keep SDK format selection, HTTP/SSE framing, limits, cancellation and resource
-  cleanup here. Pin dependency versions and qualify upgrades with contract and
-  native engine tests; document upstream limitations instead of silently promising
-  lossless conversion. Preserve model identity, reject incomplete streams and
-  never redirect upstream credentials. See `contracts/agents-api/model-protocol-conversion.md` for coverage,
-  limits and dependency qualification. Go 1.26.8 is the pinned build toolchain.
+- Model communication uses native direct connections only. Core sends one frozen
+  confidential `model_provider` bundle, independent of engine and placement;
+  adapters apply it through their native provider configuration. The shared
+  `internal/harnessconfig` descriptor declares one ordered `protocols` list,
+  with the first entry as the default. Core admission and Runtime enforce it.
+  There is no built-in model API proxy, passthrough gateway or cross-protocol
+  conversion, including inside individual Harnesses. Unsupported combinations
+  fail explicitly; saved configurations and immutable Session snapshots are
+  never rewritten, aliased or migrated to another protocol. Provider validation,
+  credential encryption, capability checks and native lifecycle ownership remain
+  mandatory. See `contracts/agents-api/model-execution.md` for the current
+  protocol matrix. Go 1.26.8 is the pinned build toolchain.
 - Provider input validation uses the adapter-owned rules in `internal/harnessconfig`.
   Keep one internal registry for protocol and token-limit validation; Core owns
   credential environment and endpoint admission policy. These rules are not a
@@ -3387,9 +3380,11 @@ or containment of descendants that deliberately leave the group.
 
 ### Harness qualification and onboarding
 
-`apps/parsar-daemon/internal/agent/harness.go` is the single source entry point
+`apps/parsar-daemon/internal/agent/harness.go` owns the lifecycle entry point
 for Harness authors. Keep required lifecycle declarations, separate optional
-interfaces and the existing registration methods there. Operation result types,
+interfaces and the existing registration methods there. Model configuration has
+one shared contract in `internal/harnessconfig/harness.go`, referenced by that
+lifecycle entry point and consumed by Core without importing daemon internals. Operation result types,
 errors and Registry lookup/storage implementation may remain in focused files.
 Use the existing `proto.SupportedAgentKind` and `AgentKindCapabilities` schema;
 do not introduce a second capability descriptor or a combined optional interface.
@@ -3604,15 +3599,29 @@ Keep the adapter artifact independent of the Core binary and product sources.
 
 ### Harness model configuration
 
-The configuration preparation contract in `apps/parsar-daemon/internal/agent/harness.go`
-is mandatory for every Executor factory. Shared wire types live in
-`internal/agentdaemon/proto`; native model fields and their application are documented
-in [Harness onboarding](contracts/agents-api/harness-onboarding.md#native-model-configuration).
-The standalone Core build includes the shared `internal/modeltransport` route
-qualification code alongside the adapter declarations; Runtime still owns proxy
-startup and request forwarding.
-Public configuration sources and inheritance belong to
+`internal/harnessconfig/harness.go` is the sole authoring entry point for the
+model configuration contract: its declaration and pure preparation cover the
+current model, provider and native parameters. `RegisterKind` requires an explicit
+adapter-owned declaration; direct, preparation and Executor registrations all run
+that declaration's preparation before calling native code. Registry wrappers
+transfer the same declaration, never reconstruct it from a second support table.
+Core admission and support descriptions consume it too. JSON decoding, persistence
+and native rendering may remain in focused implementation files.
+Shared wire types remain in `internal/agentdaemon/proto`; current fields and
+application are documented in
+[Harness onboarding](contracts/agents-api/harness-onboarding.md#native-model-configuration).
+Adapters configure direct native connections. Claude's private bridge receives
+compiled native options and performs structural checks, not a second copy of
+the Go declaration's enum, budget or combination rules.
+Implemented public configuration sources and inheritance belong to
 [model execution](contracts/agents-api/model-execution.md).
+[Unified model configuration design](contracts/agents-api/model-configuration-design.md)
+is the canonical planned field/ownership contract. Extend Web defaults and the
+public API by extending the existing shared contract, types and resolver;
+source and authority may differ. Implement planned fields and qualify their
+native application before exposing them as accepted HTTP input. This design
+does not change current native configuration or require speculative Runtime
+scaffolding or a second configuration registration interface.
 
 ### Harness selection and Agent defaults
 
@@ -3804,6 +3813,8 @@ bootstrap routes use this grant, not an Environment ID as authentication. Public
 artifact routes contain no credentials. Native bundles must match the Core source
 revision and Runtime wire version. Core release qualification consumes the same
 three-platform native CI artifacts and includes them in its distribution.
+`make check-distribution` exercises catalog assembly with manifests larger than
+Node's default subprocess output buffer; catalog reads allow up to 64 MiB.
 Bootstrap scripts own platform download/extraction only; installation, startup,
 connection verification and Runtime execution remain common. Serialize background
 PID inspection and publication so concurrent starts cannot create duplicate daemons.

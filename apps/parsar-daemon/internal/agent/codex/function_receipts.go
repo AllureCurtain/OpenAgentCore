@@ -26,9 +26,6 @@ type pendingFunction struct {
 }
 
 func (s *Session) SubmitFunctionResult(ctx context.Context, result proto.FunctionResultPayload) error {
-	if err := s.modelRoute.ValidateFunctionResult(result); err != nil {
-		return err
-	}
 	if !s.beginOperation() {
 		return agent.ErrSteeringInactive
 	}

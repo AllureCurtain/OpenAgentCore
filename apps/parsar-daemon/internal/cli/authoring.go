@@ -61,7 +61,11 @@ func authoringRegistry(registry *agent.Registry, bridge *authoring.Bridge) *agen
 		if info.Capabilities.WorkspaceAuthoring {
 			factory = withAuthoringBridge(factory, bridge)
 		}
-		wrapped.RegisterKind(info, factory)
+		configuration, err := registry.Configuration(info.Kind)
+		if err != nil {
+			panic(err)
+		}
+		wrapped.RegisterKind(info, configuration, factory)
 		if executor, err := registry.ResolveExecutor(info.Kind); err == nil {
 			wrapped.RegisterExecutor(info.Kind, executor)
 		}

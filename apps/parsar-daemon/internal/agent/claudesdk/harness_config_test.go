@@ -27,7 +27,10 @@ func TestHarnessConfigReachesBridgeAndOwnsSnapshot(t *testing.T) {
 	if json.Unmarshal(raw, &bridge) != nil {
 		t.Fatal("invalid bridge request")
 	}
-	applied := bridge["harness_config"].(map[string]any)
+	if _, exists := bridge["harness_config"]; exists {
+		t.Fatal("public configuration crossed the private bridge")
+	}
+	applied := bridge["native_model_options"].(map[string]any)
 	if applied["effort"] != "high" || applied["thinking"].(map[string]any)["budgetTokens"] != float64(1024) {
 		t.Fatal("bridge lost immutable native configuration")
 	}

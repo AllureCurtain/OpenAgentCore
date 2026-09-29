@@ -241,16 +241,14 @@ export function projectHarnessModelConfiguration(value: unknown, harness?: CoreH
   return { object, harness: kind as CoreHarnessKind, model_provider: provider, model, harness_config: { ...harness_config }, updated_at, last_used_at, last_error_at, last_error_code: last_error_code as ProviderObservationErrorCode | null };
 }
 function projectModelConfigurationSupport(value: unknown): CoreHarness["model_configuration_support"] {
-  const support = record(value, ["protocols", "native_protocols", "accepts_harness_config", "token_limits_required"]);
+  const support = record(value, ["protocols", "accepts_harness_config", "token_limits_required"]);
   const known = new Set(["anthropic", "responses", "chat_completions"]);
   const protocols = support.protocols;
-  const native = support.native_protocols;
   if (!Array.isArray(protocols) || protocols.length === 0 || protocols.some((protocol) => !known.has(protocol)) ||
-    new Set(protocols).size !== protocols.length || !Array.isArray(native) || native.length === 0 ||
-    native.some((protocol) => !protocols.includes(protocol)) || new Set(native).size !== native.length ||
+    new Set(protocols).size !== protocols.length ||
     typeof support.accepts_harness_config !== "boolean" || typeof support.token_limits_required !== "boolean") return invalidAdminResponse();
   return {
-    protocols: [...protocols], native_protocols: [...native],
+    protocols: [...protocols],
     accepts_harness_config: support.accepts_harness_config, token_limits_required: support.token_limits_required,
   };
 }

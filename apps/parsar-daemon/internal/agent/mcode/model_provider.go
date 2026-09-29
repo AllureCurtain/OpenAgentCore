@@ -3,24 +3,22 @@ package mcode
 import (
 	"fmt"
 
-	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
+	harnessconfiguration "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/mcode"
+	"github.com/MiniMax-AI-Dev/parsar/internal/modelprovider"
 )
 
 func modelProviderConfig(raw any, model string) (map[string]any, error) {
-	provider, err := modeltransport.ParseProvider(raw)
+	provider, err := harnessconfiguration.Configuration().ParseProvider(raw)
 	if err != nil {
 		return nil, fmt.Errorf("mcode: %w", err)
 	}
-	if provider.ContextWindow <= 0 || provider.MaxOutputTokens <= 0 {
-		return nil, fmt.Errorf("mcode: positive model context_window and max_output_tokens are required")
-	}
 	var api string
 	switch provider.Protocol {
-	case modeltransport.Anthropic:
+	case modelprovider.Anthropic:
 		api = "anthropic-messages"
-	case modeltransport.ChatCompletions:
+	case modelprovider.ChatCompletions:
 		api = "openai-completions"
-	case modeltransport.Responses:
+	case modelprovider.Responses:
 		api = "openai-responses"
 	}
 	return map[string]any{

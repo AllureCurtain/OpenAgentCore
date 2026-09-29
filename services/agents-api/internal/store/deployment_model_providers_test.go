@@ -26,7 +26,7 @@ func TestDeploymentModelProviderEncryptedAuditedAndReplaced(t *testing.T) {
 	}
 	started := time.Now()
 	ctx := adminaudit.WithSource(t.Context(), adminaudit.Source{CredentialID: "abcd1234", ActorLabel: "console", RequestID: "request-set", TraceID: "trace-set"})
-	provider := v1.ModelProviderInput{Protocol: "anthropic", BaseURL: "https://deployment.example/v1", APIKey: "deployment-key-canary"}
+	provider := v1.ModelProviderInput{Protocol: "responses", BaseURL: "https://deployment.example/v1", APIKey: "deployment-key-canary"}
 	if _, err := s.SetDeploymentModelProvider(ctx, "codex", v1.ModelConfigurationInput{ModelProvider: v1.ModelProviderInput{Protocol: "unknown", BaseURL: provider.BaseURL, APIKey: "k"}, Model: "fixture"}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatal("unknown upstream protocol accepted", err)
 	}
@@ -55,7 +55,7 @@ func TestDeploymentModelProviderEncryptedAuditedAndReplaced(t *testing.T) {
 	if _, err := NewWithCredentialCipher(pool, other).DeploymentModelProvider(ctx, "codex"); !errors.Is(err, ErrCredentialStorageUnavailable) {
 		t.Fatal("wrong encryption key did not fail closed", err)
 	}
-	replacement := v1.ModelProviderInput{Protocol: "chat_completions", BaseURL: "https://replacement.example/v1", APIKey: "replacement-key"}
+	replacement := v1.ModelProviderInput{Protocol: "responses", BaseURL: "https://replacement.example/v1", APIKey: "replacement-key"}
 	if _, err := s.SetDeploymentModelProvider(ctx, "codex", v1.ModelConfigurationInput{ModelProvider: replacement, Model: "fixture"}); err != nil {
 		t.Fatal(err)
 	}

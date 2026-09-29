@@ -36,6 +36,12 @@ owned process runner and emits the existing daemon delta/error/Done frames.
 The SDK owns the model loop. Its narrow stdio protocol carries Executor preparation and identified Turn starts,
 text deltas, function calls/results/receipts, active input/receipts, usage snapshots
 and terminal result/error plus settlement; native translation stays inside the adapter.
+The private `native_model_options` input contains only the native options compiled
+by Go after shared Harness validation. The bridge checks object/field structure
+and maps those fields explicitly to SDK options; enum membership, budget ranges
+and thinking combinations belong solely to the Go adapter declaration. The
+public `harness_config` object does not cross this private boundary.
+
 With `observe_messages`, it also emits the existing neutral `output_message`
 start/completion snapshots and tags deltas with the native Messages API message
 ID, not the SDK event UUID. Text blocks in one native message share that identity.

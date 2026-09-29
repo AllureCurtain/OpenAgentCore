@@ -15,7 +15,7 @@ await mkdir(output, { recursive: true });
 const artifacts = {};
 for (const [ci, platform] of Object.entries({ 'Linux-X64': 'linux-amd64', 'macOS-ARM64': 'darwin-arm64', 'Windows-X64': 'windows-amd64' })) {
   const archive = resolve(input, `oac-native-installer-${ci}.tar.gz`);
-  const bundle = JSON.parse(execFileSync('tar', ['-xOzf', archive, './bundle.json'], { encoding: 'utf8' }));
+  const bundle = JSON.parse(execFileSync('tar', ['-xOzf', archive, './bundle.json'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }));
   if (bundle.daemon_version !== version || `${bundle.os}-${bundle.arch}` !== platform) throw new Error(`Mismatched native artifact: ${platform}`);
   const hash = createHash('sha256');
   for await (const chunk of createReadStream(archive)) hash.update(chunk);

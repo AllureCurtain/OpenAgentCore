@@ -1,5 +1,5 @@
-// Package modeltransport adapts model API protocols inside Runtime execution.
-package modeltransport
+// Package modelprovider validates the frozen upstream connection supplied to a native Harness.
+package modelprovider
 
 import (
 	"bytes"
@@ -29,7 +29,6 @@ type Provider struct {
 }
 
 var ErrConfiguration = errors.New("invalid model provider configuration")
-var ErrUnsupported = errors.New("model protocol capability is unsupported")
 
 func ParseProvider(raw any) (Provider, error) {
 	var provider Provider
@@ -48,10 +47,18 @@ func ParseProvider(raw any) (Provider, error) {
 	return provider, nil
 }
 
-func (p Provider) Validate() error {
-	switch p.Protocol {
+// Valid is the single vocabulary of supported upstream protocol formats.
+func (p Protocol) Valid() bool {
+	switch p {
 	case Anthropic, Responses, ChatCompletions:
+		return true
 	default:
+		return false
+	}
+}
+
+func (p Provider) Validate() error {
+	if !p.Protocol.Valid() {
 		return ErrConfiguration
 	}
 	u, err := url.Parse(p.BaseURL)
@@ -70,16 +77,4 @@ func (p Provider) Validate() error {
 		return ErrConfiguration
 	}
 	return nil
-}
-
-func (p Protocol) Path() string {
-	switch p {
-	case Anthropic:
-		return "/messages"
-	case Responses:
-		return "/responses"
-	case ChatCompletions:
-		return "/chat/completions"
-	}
-	return ""
 }
