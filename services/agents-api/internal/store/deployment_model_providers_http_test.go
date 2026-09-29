@@ -93,7 +93,7 @@ func TestDeploymentModelProvidersHTTP(t *testing.T) {
 	call("PUT", "/core/v1/harnesses/other/model-provider", coreKey, codexDefault, 404)
 	for _, invalid := range []string{
 		`{"protocol":"responses","base_url":"http://deployment.example/v1","api_key":"invalid-canary"}`,
-		`{"protocol":"anthropic","base_url":"https://deployment.example/v1","api_key":"invalid-canary"}`,
+		`{"protocol":"unknown","base_url":"https://deployment.example/v1","api_key":"invalid-canary"}`,
 		`{"protocol":"responses","base_url":"https://deployment.example/v1"}`,
 		`{"protocol":"responses","base_url":"https://deployment.example/v1","api_key":"invalid-canary","api_key_configured":true}`,
 		`{"protocol":"responses","base_url":"https://deployment.example/v1","api_key":"invalid-canary","context_window":-1}`,
@@ -129,6 +129,19 @@ func TestDeploymentModelProvidersHTTP(t *testing.T) {
 	if retrieved := call("GET", path, coreKey, "", 200); text(retrieved["base_url"]) != "https://deployment.example/v1" {
 		t.Fatal("retrieved view differs")
 	}
+
+	for _, protocol := range []string{"anthropic", "chat_completions"} {
+		bundle := strings.Replace(codexDefault, `"protocol":"responses"`, `"protocol":"`+protocol+`"`, 1)
+		safe := call("PUT", path, coreKey, bundle, 200)
+		if text(safe["protocol"]) != protocol || text(safe["harness"]) != "codex" || string(safe["api_key_configured"]) != "true" {
+			t.Fatal("safe deployment view changed the selected upstream protocol")
+		}
+		provider, err := st.DeploymentModelProvider(t.Context(), "codex")
+		if err != nil || provider == nil || provider.Protocol != protocol || provider.BaseURL != "https://deployment.example/v1" || provider.APIKey != "deployment-canary" {
+			t.Fatal("cross-protocol deployment bundle did not round trip", err)
+		}
+	}
+	call("PUT", path, coreKey, codexDefault, 200)
 
 	// Hosted Sessions freeze the default; later edits never reach them.
 	hostedID := text(call("POST", "/v1/agents/sessions", projectKey, hosted, 201)["id"])

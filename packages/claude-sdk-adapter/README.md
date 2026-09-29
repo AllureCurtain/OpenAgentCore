@@ -270,7 +270,7 @@ Do not bypass them by dropping fields, changing model identity or fabricating us
 Operators may configure the daemon provider environment or the deployment default
 model provider for `claude_sdk` (HTTPS `base_url` and a write-only key), which Core
 freezes in the Session's encrypted snapshot and delivers as the adapter-owned
-`claude_provider`; it never enters public Session configuration. The adapter exclusively selects the
+`model_provider`; it never enters public Session configuration. The adapter exclusively selects the
 provider environment and removes credentials from native tool environments. Product `claude_code` and product execution are unchanged.
 The `none` public profile accepts only
 text, explicit model/system instructions, managed state, exact native resume and

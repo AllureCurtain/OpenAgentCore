@@ -69,7 +69,7 @@ func TestOptionsRejectDroppedContext(t *testing.T) {
 			r.Input = proto.MessageInput{{Content: []proto.InputContent{{Type: "input_image"}}}}
 		}},
 		{"missing model", func(r *proto.PromptRequestPayload) { delete(r.AgentOptions, "model") }},
-		{"missing provider", func(r *proto.PromptRequestPayload) { delete(r.AgentOptions, "mcode_provider") }},
+		{"missing provider", func(r *proto.PromptRequestPayload) { delete(r.AgentOptions, "model_provider") }},
 		{"invalid permission mode", func(r *proto.PromptRequestPayload) { r.AgentOptions["mode"] = "plan" }},
 	}
 	for _, tt := range tests {

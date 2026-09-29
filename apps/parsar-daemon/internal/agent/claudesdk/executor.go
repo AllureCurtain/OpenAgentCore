@@ -12,17 +12,19 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
+	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 )
 
 type executor struct {
-	mu       sync.Mutex
-	base     *session
-	start    startRequest
-	active   *session
-	ready    chan error
-	done     chan struct{}
-	invalid  bool
-	nativeID string
+	modelEndpoint *modeltransport.Endpoint
+	mu            sync.Mutex
+	base          *session
+	start         startRequest
+	active        *session
+	ready         chan error
+	done          chan struct{}
+	invalid       bool
+	nativeID      string
 }
 
 func NewExecutorFactory(config Config) agent.ExecutorFactory {
@@ -39,6 +41,17 @@ func NewExecutorFactory(config Config) agent.ExecutorFactory {
 		if req.RunID != "" || len(req.Input) != 0 || req.ConversationID != "" {
 			return nil, errors.New("claudesdk: Executor preparation cannot submit input")
 		}
+		options, endpoint, err := modeltransport.PrepareOptions(req.AgentOptions, modeltransport.Anthropic)
+		if err != nil {
+			return nil, err
+		}
+		transferred := false
+		defer func() {
+			if !transferred && endpoint != nil {
+				_ = endpoint.Close()
+			}
+		}()
+		req.AgentOptions = options
 		start, env, err := prepareConfiguration(config, req)
 		if err != nil {
 			return nil, err
@@ -57,7 +70,8 @@ func NewExecutorFactory(config Config) agent.ExecutorFactory {
 		}
 		base.reads.supported = slices.Contains(info.Features, "workspace_read")
 		base.directories.supported = slices.Contains(info.Features, "workspace_directory")
-		e := &executor{base: base, start: start, ready: make(chan error, 1), done: make(chan struct{}), nativeID: start.Resume}
+		e := &executor{modelEndpoint: endpoint, base: base, start: start, ready: make(chan error, 1), done: make(chan struct{}), nativeID: start.Resume}
+		transferred = true
 		go e.read()
 		if err = e.write(start); err == nil {
 			select {
@@ -175,6 +189,9 @@ func (e *executor) read() {
 	e.mu.Unlock()
 	if !ready {
 		e.ready <- readyFailure
+	}
+	if e.modelEndpoint != nil {
+		_ = e.modelEndpoint.Close()
 	}
 	close(e.done)
 }

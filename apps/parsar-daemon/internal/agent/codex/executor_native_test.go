@@ -52,7 +52,7 @@ func TestExecutorNativeReuse(t *testing.T) {
 	req := proto.PromptRequestPayload{
 		AgentKind: "codex", AgentStateKey: "executor-native", WorkDir: filepath.Join(isolated, "workspace"),
 		StrictResume: true, DisableExecutionEnvironment: true, DisableSubagents: true, ObserveMessages: true,
-		AgentOptions:  map[string]any{"model": model, "codex_provider": map[string]any{"base_url": endpoint, "wire_api": "responses", "bearer_token": strings.TrimSpace(string(key))}},
+		AgentOptions:  map[string]any{"model": model, "model_provider": map[string]any{"base_url": endpoint, "protocol": "responses", "api_key": strings.TrimSpace(string(key))}},
 		FunctionTools: []proto.FunctionTool{{Name: "hold", Description: "Wait until the host supplies a result.", Parameters: json.RawMessage("{\"type\":\"object\",\"properties\":{},\"additionalProperties\":false}")}},
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 4*time.Minute)

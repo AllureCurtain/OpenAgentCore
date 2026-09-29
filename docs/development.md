@@ -105,7 +105,7 @@ apply to user-owned machines and Core-managed environments; read the
 Start with [Harness onboarding](../contracts/agents-api/harness-onboarding.md).
 Choose a native SDK or machine-readable protocol, declare the operations and
 placements you intend to support, and implement the shared
-[`Executor` and `Turn` interfaces](../apps/parsar-daemon/internal/agent/executor.go).
+[`Executor` and `Turn` interfaces](../apps/parsar-daemon/internal/agent/harness.go).
 The guide covers factory registration, service profiles, capability declarations,
 input receipts, event translation, cancellation, history and cleanup.
 

@@ -51,7 +51,7 @@ All documentation is in English; both README editions use the same sources.
 | [Configuration](docs/configuration.md) | Operator settings and model configuration |
 | [API reference](docs/api/README.md) | Application, administration and machine APIs |
 | [Developer guide](docs/development.md) | Repository map, local setup, builds and validation |
-| [Add a Harness](contracts/agents-api/harness-onboarding.md) | Adapter implementation and acceptance |
+| [Add a Harness](contracts/agents-api/harness-onboarding.md) | Start with [agent/harness.go](apps/parsar-daemon/internal/agent/harness.go), then adapter implementation and acceptance |
 | [Core–Runtime protocol](docs/runtime-protocol.md) | Lifecycle, capability preparation and execution |
 | [Add a Sandbox Provider](docs/sandbox-provider.md) | Environment creation and resource ownership |
 

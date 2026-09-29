@@ -13,7 +13,7 @@ one canonical owner, listed below; update that owner when changing its contract.
 | API callers, credentials and route inventory | [API index](docs/api/README.md) |
 | Public wire types and qualified behavior | [Agents API contracts](contracts/agents-api/README.md), [pinned upstream](contracts/agents-api/upstream.json), and linked operation contracts |
 | Runtime messages, receipts and failure ownership | [Core–Runtime protocol](docs/runtime-protocol.md) and `internal/agentdaemon/proto` |
-| Harness interfaces and onboarding | [Harness onboarding](contracts/agents-api/harness-onboarding.md) and `agent/executor.go` |
+| Harness interfaces and onboarding | [Harness onboarding](contracts/agents-api/harness-onboarding.md) and `agent/harness.go` |
 | Provider interfaces and onboarding | [Sandbox Provider guide](docs/sandbox-provider.md) and `sandbox/sandbox_provider.go` |
 | Claude private bridge and Runtime artifact | [Claude SDK adapter](packages/claude-sdk-adapter/README.md) |
 | Operator installation and configuration | [Installation](docs/getting-started/install.md), [configuration](docs/configuration.md), [operations](docs/getting-started/operations.md) |
@@ -2617,8 +2617,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   creation with `model_provider_required`; legacy rows without a snapshot are
   rejected at message admission and dispatch, never sent to a harness that would
   fall back to a built-in endpoint. There is no operator options file: its
-  retirement fails startup, and historical snapshots keep their frozen native
-  options. Keep runtime dispatch on the common adapter path and fail closed for
+  retirement fails startup. Sessions retain only the common frozen provider
+  bundle; historical native-option snapshots are unsupported. Keep runtime dispatch on the common adapter path and fail closed for
   missing/decryption-failed snapshots. Agent edits/deletion, default changes,
   restart and idle suspend/resume never resolve defaults again. Record caller
   intent for every new hosted Session before resolving defaults; other inline
@@ -2657,6 +2657,25 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   identity; retries cannot replace it. Keep this administrator query separate from
   runtime observations and do not touch activity or wake sandboxes. The versioned
   contract is `contracts/agents-api/execution-configuration.md`.
+- Model communication uses `internal/modeltransport` in the Runtime. Core sends one
+  frozen confidential `model_provider` bundle, independent of engine and placement;
+  it must not manufacture native provider options or retain a historical-options
+  dispatch path. The adapter declares native protocols. Native matches connect
+  directly; mismatches use one private loopback endpoint owned by the existing
+  Session execution resource. Its credential is distinct from the upstream key.
+  Keep endpoint cleanup on final native teardown, including preparation failure,
+  rather than on individual Turn completion. No second Session manager is added.
+  CLIProxyAPI's pinned translator is an embedded conversion dependency, not a
+  gateway service. Requests, JSON responses and incremental SSE events share the
+  same conversion implementation for hosted and self-hosted execution. The
+  dependency owns protocol fields, tools, reasoning and usage conversion. Do not
+  add local field maps, parameter restoration or parallel compatibility rules.
+  Keep SDK format selection, HTTP/SSE framing, limits, cancellation and resource
+  cleanup here. Pin dependency versions and qualify upgrades with contract and
+  native engine tests; document upstream limitations instead of silently promising
+  lossless conversion. Preserve model identity, reject incomplete streams and
+  never redirect upstream credentials. See `contracts/agents-api/model-protocol-conversion.md` for coverage,
+  limits and dependency qualification. Go 1.26.8 is the pinned build toolchain.
 - Provider input validation uses the adapter-owned rules in `internal/harnessconfig`.
   Keep one internal registry for protocol and token-limit validation; Core owns
   credential environment and endpoint admission policy. These rules are not a
@@ -3237,6 +3256,15 @@ Executor close additionally closes the query and awaits the native child. Proces
 or containment of descendants that deliberately leave the group.
 
 ### Harness qualification and onboarding
+
+`apps/parsar-daemon/internal/agent/harness.go` is the single source entry point
+for Harness authors. Keep required lifecycle declarations, separate optional
+interfaces and the existing registration methods there. Operation result types,
+errors and Registry lookup/storage implementation may remain in focused files.
+Use the existing `proto.SupportedAgentKind` and `AgentKindCapabilities` schema;
+do not introduce a second capability descriptor or a combined optional interface.
+Core service qualification remains separate from Runtime registration. Keep the
+README and onboarding guide linked to this entry point.
 
 Codex, Claude and future harnesses have equal architectural status. The common
 Runtime wire protocol and Executor/Turn interfaces own lifecycle,

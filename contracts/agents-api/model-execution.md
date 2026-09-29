@@ -24,8 +24,9 @@ requires a model for an inline Agent and when creating a saved Agent. There is n
 model-name inference. Provider precedence is: complete Session bundle, complete
 saved bundle, then the deployment default for the resolved harness. Never merge a
 replacement endpoint with an inherited key. A model-only override reuses the entire
-inherited bundle. Codex requires `responses`; Claude SDK and MiniMax Code require
-`anthropic`, with positive context/output limits for MiniMax Code. Validate the
+inherited bundle. All three engines accept `responses`, `anthropic` and `chat_completions` as
+upstream protocols. Runtime automatically uses native support or converts to the
+engine protocol. MiniMax Code requires positive context/output limits. Validate the
 resolved combination before writing a Session.
 
 Where each source applies depends on who owns the compute that receives the key:
@@ -102,7 +103,9 @@ See the [TypeScript client example](../../packages/agents-client/saved-agent-def
 }
 ```
 
-`protocol` is `anthropic` for Claude Code/MiniMax Code or `responses` for Codex.
+`protocol` names the upstream API: `anthropic`, `responses` or `chat_completions`.
+It does not select an engine. [Protocol conversion](model-protocol-conversion.md)
+is automatic when the selected engine cannot use that upstream protocol natively.
 The endpoint must use HTTPS without embedded credentials, a query or a fragment.
 Keys must be nonempty, at most 16 KiB, and contain no NUL/CR/LF. Unknown fields and
 unsupported protocol/Harness/environment combinations are rejected before creating
@@ -122,8 +125,8 @@ Session before mutable Agent/template resolution. No public Session, Agent,
 Environment, event or ordinary configuration contains the key. The top-level
 extension is write-only and has no update endpoint.
 
-At dispatch, Core resolves its encrypted snapshot into the existing native adapter
-options. It does not fall back to other credentials when a snapshot is missing or
+At dispatch, Core delivers its encrypted snapshot as one common confidential
+provider bundle. Runtime adapters own native options and protocol conversion. It does not fall back to other credentials when a snapshot is missing or
 cannot decrypt. The same snapshot path serves every environment: Core sends the
 options only over the daemon connection bound to the Session. For `self_hosted`,
 that is the executor enrolled for the Session's own Environment with a current
@@ -161,19 +164,10 @@ default never reaches existing Sessions, so a Session's first and later Turns al
 use the same provider. The execution-configuration read shows the frozen safe view
 with source `deployment`.
 
-The former `AGENTS_API_EXECUTION_OPTIONS_FILE` is rejected at startup. Configure
-a fresh installation through Web (System) or
-`PUT /core/v1/harnesses/{harness}/model-provider`; deployment defaults contain only
-provider identity (endpoint, key, protocol and MiniMax Code limits). They do not
-accept native headers, query parameters, environment, MCP servers, feature or
-permission settings.
-
-Historical installations and Session snapshots have no supported conversion or
-cross-version continuation procedure. Preserve their database, credentials and
-history, and install the current release separately. Do not run a historical
-pre-upgrade utility to make old Sessions eligible for the current release. Current
-hosted and self-hosted Sessions require a provider bundle at creation, and credential
-key replacement is unsupported.
+Configure deployment defaults through `PUT /core/v1/harnesses/{harness}/model-provider`.
+The operator options file and historical native-option snapshots are unsupported.
+A missing or invalid provider snapshot fails closed; no upgrade reader, automatic
+migration or fallback to another model/provider is provided.
 
 Parsar manages its own workspace catalog and encrypted keys, sends this extension
 only on the first Core Session request, and retains a private encrypted snapshot

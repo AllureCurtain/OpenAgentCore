@@ -25,7 +25,7 @@ func TestNativePublicFunctionStreamHelper(t *testing.T) {
 	})
 	defer model.Close()
 	h.d.Options = func(context.Context, store.Session) (map[string]any, error) {
-		return map[string]any{"codex_provider": map[string]any{"base_url": model.URL + "/v1", "bearer_token": "synthetic-test-token"}}, nil
+		return map[string]any{"model_provider": map[string]any{"protocol": "responses", "base_url": model.URL + "/v1", "api_key": "synthetic-test-token"}}, nil
 	}
 	serverURL, token := nativePublicFunctionServer(t, h, ctx)
 	proofPath := filepath.Join(home, "public-function-stream.json")
