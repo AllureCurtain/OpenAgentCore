@@ -274,11 +274,12 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
               <option value="custom">{t("Other E2B-compatible provider")}</option>
             </select>
           </Field>
-          <Field id={`${id}-key`} label={t("E2B API key")} help={t("The key is write-only: Core encrypts it and never shows it again.")}>
+          <Field id={`${id}-key`} label={t("E2B API key")} help={t("The key is write-only: Core encrypts it and never shows it again.")} afterHelp={keyConsoleURL ? (
+            <a className="wizard-key-console" href={keyConsoleURL} target="_blank" rel="noopener noreferrer">
+              {t("Console → API Keys")} <ExternalLink size={11} aria-hidden="true" />
+            </a>
+          ) : null}>
             <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={(event) => changeConnection(event.target.value, apiURL, domain)} />
-            {keyConsoleURL ? <a className="wizard-key-console" href={keyConsoleURL} target="_blank" rel="noopener noreferrer">
-              {t("Get an API key: Console → API Keys")} <ExternalLink size={14} aria-hidden="true" />
-            </a> : null}
           </Field>
           {discovery === "loading" ? <p role="status">{t("Loading templates…")}</p> : null}
           {discovery === "error" ? <p role="alert">{t("Could not load templates. Check the key and provider connection.")} <button type="button" className="wizard-link" onClick={() => setDiscoveryRetry((value) => value + 1)}>{t("Try again")}</button></p> : null}
@@ -492,10 +493,10 @@ function Choice({ icon: Icon, title, badge, value, detail, selected, onClick }: 
   );
 }
 
-function Field({ id, label, help, error, children }: { id: string; label: string; help?: string; error?: string | null; children: ReactNode }) {
+function Field({ id, label, help, afterHelp, error, children }: { id: string; label: string; help?: string; afterHelp?: ReactNode; error?: string | null; children: ReactNode }) {
   return (
     <div className="field wizard-field">
-      <span className="field-label-row"><label htmlFor={id}>{label}</label>{help ? <HelpTip>{help}</HelpTip> : null}</span>
+      <span className="field-label-row"><label htmlFor={id}>{label}</label>{help ? <HelpTip>{help}</HelpTip> : null}{afterHelp}</span>
       {children}
       {error ? <span className="field-error" role="alert">{error}</span> : null}
     </div>
