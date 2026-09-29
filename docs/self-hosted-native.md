@@ -5,13 +5,10 @@ Physical machines, VMs and user-owned sandboxes use the same installer. Core doe
 not create or reclaim these machines. Core-managed Docker, E2B and microsandbox
 Providers remain Linux-only and receive prebuilt Runtime images or templates.
 
-The daemon runs with its starting account's permissions, without an inner sandbox
-or privilege elevation. Tools can access whatever that account can access. Use an
-outer container or VM when isolation is required. Connection authentication,
-Project/Environment authorization, credential permissions, Files path validation,
-process cleanup and snapshot consistency still apply; they do not isolate tools
-from their own account. `disabled` and `restricted` network modes require an outer
-implementation that enforces them.
+**The daemon is not a sandbox.** Tools can access whatever its account can. Use an
+outer container or VM when you need isolation; see
+[Runtime and outer isolation](design-principles.md#runtime-and-outer-isolation).
+`disabled` and `restricted` network modes need an outer layer that enforces them.
 
 ## Platforms and prerequisites
 
@@ -128,11 +125,9 @@ Harness while the daemon is running, restart it to refresh Harness discovery.
 `status` reports local profile/PID-file information only. Check **Host connection**
 in Core or the Environment connection API for authenticated connection state.
 
-A connected Environment proves machine authentication, not model availability.
-Configure the model provider through the existing Session/Agent mechanism and
-send a Turn to verify execution. Rotate a credential by stopping the daemon,
-replacing the JSON at the configured path with the rotated credential for the
-same `key_id`, and starting again. Revocation blocks the old credential.
+A connected Environment proves machine authentication, not model availability:
+send a Turn to verify execution. To rotate or revoke the credential, see
+[Rotate or revoke](getting-started/self-hosted.md#rotate-or-revoke).
 
 An incompatible daemon version, component version or modified installation is
 an explicit error. Use a separate installation directory; there is no old-version

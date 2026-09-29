@@ -20,7 +20,7 @@ node protocol, manual registration, placement and failure handling.
   With the default online installation, nodes follow HTTPS redirects to download
   their matching Runtime and provider files directly from the release, verifying
   sizes and SHA-256 checksums before use. Core and Web do not download these files.
-  For nodes without release access, use the [offline bundle](install.md#download-a-release)
+  For nodes without release access, use the [offline bundle](install.md#installer-options)
   on the Web host so it serves the files locally. Verified local files are reused.
 - **A sandbox backend is chosen.** The installer selects microsandbox unless you chose
   otherwise. After `--sandbox none`, the **Nodes** page first asks you to choose
@@ -238,12 +238,10 @@ WebSocket doesn't pass the reverse proxy.
 
 ## Change the sandbox backend or size
 
-Changing backend type requires an explicit reset. Same-provider Docker and
-microsandbox size or Runtime edits advance the target generation without retiring
-nodes or moving existing Sessions. Version 2 nodes prepare the target independently;
-existing allocations and suspended VMs keep their original generation. A qualified
-older serving generation can still accept new Sessions when it has capacity,
-including while a newer target is preparing or has failed.
+Change the backend or sandbox size in Web under **System** → **Sandbox backend**.
+What each change does, and when it needs a reset, is in
+[Sandbox deployment](../configuration.md#sandbox-deployment). This section covers
+only what happens on the nodes.
 
 Node program version updates are not supported. `--update` refuses without changing
 node state. Preserve an older installation and its Runtime data; provision a fresh

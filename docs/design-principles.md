@@ -1,100 +1,92 @@
 # Core design principles
 
-OpenAgentCore is an open-source implementation of the OpenAI Agents API. Its public
-contract follows the repository's pinned upstream baseline; documented native
-harness differences remain explicit. Core extensions must not silently change
-upstream resource shapes or execution semantics.
+OpenAgentCore implements the OpenAI Agents API. Its public contract follows the
+repository's pinned upstream baseline. Documented native harness differences stay
+explicit; Core extensions never silently change upstream resource shapes or
+execution semantics.
 
 ## Three namespaces, three credentials
 
-Applications use `/v1` with a Project API key. Administrators use `/core/v1`
-with the Core key. Nodes and Runtime daemons use `/api/v1` with their own scoped
-machine credentials. The [API index](api/README.md) owns the complete caller,
-credential and route matrix.
+Applications, administrators and machines each use their own namespace and
+credential. The [API index](api/README.md) owns the complete matrix.
 
-Web calls the management API through its server and keeps the Core key there.
-Signing in grants administrator access to that deployment; it does not create
-an application Session or give the browser a Project API key.
-
-This is a separation of API authority, not a claim that a deployment administrator
-cannot possess application credentials. An administrator can issue an API key and
-use it separately. The console itself has no impersonation or execution operation.
-API-key plaintext is returned once on issuance, never on reads.
+Separating API authority does not stop an administrator from holding application
+credentials: they can issue a Project API key and use it like any application.
 
 ## Projects own assets
 
-A Project owns one execution tenant and its assets. Multiple named API keys belong
-to the Project and share its principal, permissions and resources. Each write keeps
-its actual key identity for provenance. There are no Core users, roles, memberships
-or read-only keys. Names are labels; stable IDs identify Projects and keys.
+A Project owns one execution tenant and its assets.
 
-Projects and application API keys live only in PostgreSQL. The console and
-management API use the same records. Configuration contains deployment settings,
-not application credentials or Project definitions. Issue a new key in the same
-Project and revoke the previous one to rotate credentials. Revocation affects only
-that key and preserves assets, provenance and accepted execution. Explicit Project
-archive revokes every key and blocks new issuance in that Project.
-Administrators can still inspect and delete resources in archived Projects.
+- **Keys.** A Project has one or more named API keys. They share its principal,
+  permissions and resources. Each write records the key that made it.
+- **No users or roles.** Core has no users, roles, memberships or read-only keys.
+  Names are labels; stable IDs identify Projects and keys.
+- **Storage.** Projects and keys live only in PostgreSQL, never in deployment
+  configuration. A key's plaintext is returned once, at issuance.
+- **Rotation.** Issue a new key in the same Project, then revoke the old one.
+  Revoking a key keeps assets, provenance and accepted work.
+- **Archive.** Archiving a Project revokes every key and blocks new ones.
+  Administrators can still inspect and delete its resources.
 
-The Core key is managed separately, in deployment configuration. Key storage,
-authentication and audit guarantees are defined by the
-[administrator contract](../contracts/agents-api/admin-api.md).
+The Core key is a deployment credential, managed separately; see
+[Core key](getting-started/operations.md#core-key). Product concepts such as users,
+workspaces and business permissions stay outside Core:
+a product like Parsar is an ordinary API-key holder in a Project.
 
-Parsar product identities, workspaces, business permissions and collaboration
-remain outside Core. Parsar is an ordinary API-key holder in a Project.
+## Resource isolation
 
-## Resource isolation and administrator authority
+Agents API reads, writes and references are scoped to the key's Project. A resource
+in another Project is indistinguishable from an absent one. Nothing is shared or
+copied across Projects. Nodes, configured model endpoints and startup settings are
+deployment infrastructure, not business assets.
 
-Agent API reads, writes and references are scoped to the authenticated key's Project.
-A foreign resource remains indistinguishable from an absent resource under the
-existing public operation's rules. Deployment nodes, configured model endpoints
-and startup settings are deployment infrastructure, not shared business assets.
+## What administrators can and cannot do
 
-Administrators can inspect resources and execution history, delete resources under
-the same rules as their public deletion operations, manage Projects and API keys,
-issue node enrollment tokens and self-hosted executor credentials, and query
-operational counts and usage. They cannot use management endpoints to
-create, copy or edit arbitrary assets, start a Session, send an event, cancel
-work, or read stored credentials. Project keys share all assets within their
-Project; nothing is shared or copied across Projects.
+| Administrators can | Administrators cannot |
+| --- | --- |
+| Inspect resources and execution history | Create, copy or edit arbitrary assets |
+| Delete resources, under the public deletion rules | Start a Session, send input or cancel work |
+| Manage Projects and API keys | Read stored credentials |
+| Issue node enrollment tokens and executor credentials | Impersonate an application |
+| Query operational counts and usage | |
+
+Web signs in with the Core key and keeps it on its server; signing in never creates
+a Session or gives the browser a Project API key.
 
 ## Runtime and outer isolation
 
-The same daemon and Core protocol serve self-hosted Linux, macOS and Windows.
-OS differences belong to Runtime implementations; harness differences belong to
-adapters. Managed Providers remain Linux-only. Runtime prepares capabilities and
-executes work; Providers create, bootstrap and reclaim outer Environments.
+The same daemon and protocol serve self-hosted Linux, macOS and Windows. OS
+differences belong to Runtime implementations; harness differences belong to
+adapters. Managed Providers are Linux-only.
 
-The daemon runs tools with its launching user's permissions. It does not add a
-filesystem, permission or network sandbox, including on Linux. Outer Docker/E2B/
-microsandbox Environments provide managed isolation. Credential authentication,
-ordinary private storage, atomic writes, locks and process cleanup remain required,
-but do not protect Runtime data from tools running as the same user. Local
-capability snapshots share the managed parser and do not create a second security
-boundary. See the [native Runtime guide](self-hosted-native.md) for current platform
-validation limits.
+**The daemon is not a sandbox.** It runs tools with its launching user's
+permissions and adds no filesystem, permission or network isolation, on any OS.
+Isolation comes from the outer Environment: Docker, E2B or microsandbox for managed
+Sessions, or whatever container or VM you choose for a self-hosted machine.
+Authentication, private storage, locks and process cleanup still apply, but they do
+not protect Runtime data from tools running as the same user.
 
-## Secrets and evidence
+## Secrets and audit
 
-Credential values, model credentials and confidential template initialization are
-write-only through resource APIs, including administrator reads. Public metadata
-projections are reused by the management API. This does not redact arbitrary
-user-authored conversation text, Skill source or Artifact content: administrators
-who inspect those records see their recorded contents.
+- **Write-only secrets.** Credential values, model keys and confidential template
+  data are never returned by any read, including administrator reads. Conversation
+  text, Skill source and Artifact content are not secrets: administrators see them.
+- **Provenance.** Public writes record their API key. Administrator writes record a
+  separate audit identity and the target Project. Web's actor label is display-only;
+  Core trusts the Core key, not the label.
+- **Audit is transactional.** An audit failure rolls back the write. Reads are not
+  audited. Audit records never contain request bodies, secrets or file contents.
+- **History.** Resources from the removed copy operation keep their `admin_copy`
+  ownership, distinct from historical unknown ownership.
 
-Public writes retain their actual API-key provenance. Administrator writes retain
-a separate audit identity and target Project. The console's fixed actor label is
-display-only; Core trusts the Core key, not that forwarded label. Audit failure rolls
-back the business transaction. Reads are not audited. Resources from the removed
-copy operation keep their `admin_copy` ownership, distinct from historical unknown
-ownership. No request bodies, secrets or file contents enter audit records.
+## Out of scope
 
-Do not add product users, RBAC, cross-Project shared assets, administrator execution, or old
-private-protocol compatibility to this management model. Developers should follow the [contributor rules](../CONTRIBUTING.md) and
-[Core–Runtime protocol](runtime-protocol.md) when implementing these boundaries.
+Do not add product users, RBAC, cross-Project shared assets, administrator
+execution or compatibility with old private protocols. Implementers follow the
+[contributor rules](../CONTRIBUTING.md) and the
+[Core–Runtime protocol](runtime-protocol.md).
 
-Native failure classification is adapter-owned and uses finite structured native
-values. Optional Runtime error metadata is normalized once and retained through
-normal delivery and journal draining; it never replaces Core terminal authority,
-cancellation receipts, Usage or native identity. See
+Native failure classification is adapter-owned and uses finite, structured native
+values. Optional Runtime error metadata is normalized once; it never replaces Core's
+terminal authority, cancellation receipts, Usage or native identity. See
 [native failure classification](../contracts/agents-api/native-error-classification.md).

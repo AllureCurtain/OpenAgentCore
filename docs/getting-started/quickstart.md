@@ -1,32 +1,38 @@
 # Run your first Session
 
-Before starting, [install Core and Web](install.md), issue a Project API key, and
-prepare a ready managed node or E2B backend. You also need Python 3.9+ and model
-provider access. This walkthrough uses Codex with a Responses-compatible provider.
+This walkthrough takes you from a Project API key to an agent that has created a file
+and reported back. You need:
 
-Core serves the OpenAI Agents API. Applications use the official OpenAI SDK with two
-environment variables, which the SDK reads by default:
+- a Project API key and the API base URL, from your administrator
+  ([Sign in to Web](install.md#sign-in-to-web));
+- a ready node or E2B backend, so Core has somewhere to run the agent
+  ([Nodes](nodes.md));
+- Python 3.9 or newer;
+- a model: either the installation's default model, set by your administrator, or
+  your own provider's model ID, base URL and API key.
 
-| Variable | Value | From |
-| --- | --- | --- |
-| `OPENAI_BASE_URL` | The installation's API base URL: its public URL followed by `/v1`, such as `https://core.example/v1` | The administrator; Web's **System** page shows it as **API base URL** |
-| `OPENAI_API_KEY` | A Project API key | The administrator issues it on **Projects and keys**; see [Sign in to Web](install.md#sign-in-to-web) |
+The example uses Codex. Other harnesses are covered in the
+[user guide](../user-guide.md#choose-a-harness-and-a-model).
 
-The Project API key authenticates your application to this Core. It is separate from
-the model provider's key that a harness uses, and neither belongs in source control.
-The API base URL reaches Core directly; Web does not serve `/v1`.
+## 1. Connect
 
-## First request
+Core serves the OpenAI Agents API, so the official OpenAI SDK works unchanged. It
+reads two environment variables:
 
-Use the pinned client version:
+| Variable | Value |
+| --- | --- |
+| `OPENAI_BASE_URL` | The API base URL: the public URL plus `/v1`, such as `https://core.example/v1`. Web's **System** page shows it |
+| `OPENAI_API_KEY` | Your Project API key |
 
 ```sh
 python3 -m venv .venv
 . .venv/bin/activate
 pip install openai==3.13.0
 export OPENAI_BASE_URL=https://core.example/v1
-read -rs OPENAI_API_KEY && export OPENAI_API_KEY   # paste the Project API key; it isn't echoed
+read -rs OPENAI_API_KEY && export OPENAI_API_KEY   # paste the key; it is not echoed
 ```
+
+Check access. This runs no model and creates no sandbox:
 
 ```python
 from openai import OpenAI
@@ -35,23 +41,20 @@ client = OpenAI()  # reads OPENAI_BASE_URL and OPENAI_API_KEY
 print(client.beta.agents.list().data)
 ```
 
-`read -rs` keeps the key out of your shell history. This read checks access; it runs no
-model and creates no sandbox. The same request with curl, which keeps the key off its
-command line:
+An empty list means you are connected. The same check with curl:
 
 ```sh
 curl "$OPENAI_BASE_URL/agents" -H "OpenAI-Beta: agents=v1" \
   -H @<(printf 'Authorization: Bearer %s\n' "$OPENAI_API_KEY")
 ```
 
-All keys of a Project share its assets and execution principal; other Projects are
-isolated. When the administrator rotates your key, they issue a new one in the same
-Project and revoke the old one; your assets stay.
+## 2. Start a Session
 
-## Run a Session
+A Session is one agent conversation with its own workspace. With
+`openai_hosted`, Core creates a sandbox for it on a node or E2B and starts the harness
+inside.
 
-Set the provider's exact model ID and Responses API base URL. Use a test account
-that is authorized to make a model request:
+With the installation's default model, skip this. To use your own provider:
 
 ```sh
 export MODEL_NAME='your-model-id'
@@ -59,89 +62,37 @@ export MODEL_BASE_URL='https://your-provider.example/v1'
 read -rs MODEL_API_KEY && export MODEL_API_KEY
 ```
 
-
-A Core-hosted Session (`openai_hosted`) runs in a sandbox that Core creates: on a node
-with free capacity, or on E2B. Core prepares the daemon, native harness and workspace
-inside it. The installation needs a ready node or an E2B backend; see
-[Nodes](nodes.md).
-
 ```python
 import os
+
+extra = {"agent": {"x_agents_core": {"harness": "codex"}}}
+if os.environ.get("MODEL_API_KEY"):
+    extra["agent"]["model"] = os.environ["MODEL_NAME"]
+    extra["x_agents_core"] = {"model_provider": {
+        "protocol": "responses",
+        "base_url": os.environ["MODEL_BASE_URL"],
+        "api_key": os.environ["MODEL_API_KEY"],
+    }}
 
 session = client.beta.agents.sessions.create(
     environment={"type": "openai_hosted"},
     input="Create /workspace/hello.txt with a short greeting, then describe it.",
-    extra_body={
-        "agent": {
-            "model": os.environ["MODEL_NAME"],
-            "x_agents_core": {"harness": "codex"},
-        },
-        "x_agents_core": {
-            "model_provider": {
-                "protocol": "responses",
-                "base_url": os.environ["MODEL_BASE_URL"],
-                "api_key": os.environ["MODEL_API_KEY"],
-            }
-        },
-    },
+    extra_body=extra,
 )
 print(session.id)
 ```
 
-This makes a real model request and may incur charges. If the administrator set a
-default model for the harness, omit `x_agents_core.model_provider`; `agent.model` is
-still required, so ask the administrator which model ID the default provider serves.
-SDK 3.13.0 replaces an ordinary body field with the matching `extra_body` field
-instead of merging nested fields, so keep the whole `agent` object in `extra_body`.
+This makes a real model request and may incur charges.
 
-## Core extensions: x_agents_core
+- `x_agents_core` holds Core's additions to the OpenAI API; see
+  [Core extensions](../api/public-agent-api.md#core-extensions-x_agents_core).
+- Keep the whole `agent` object in `extra_body`. SDK 3.13.0 replaces a body field with
+  the matching `extra_body` field instead of merging them.
 
-`/v1` has exactly the official routes. Core's additions are fields inside
-`x_agents_core`, passed through `extra_body`; any other member is rejected with 400.
+## 3. Wait for the result
 
-| Field | Where | Meaning |
-| --- | --- | --- |
-| `x_agents_core.harness` | A saved Agent, or the Session's inline `agent` | Which native harness runs the Agent: `codex` (Codex), `claude_sdk` (Claude Code) or `mcode` (MiniMax Code). Omitted: the installation's default harness (`core.default_harness`, Codex unless changed) |
-| `x_agents_core.model_provider` | A saved Agent, or Session creation | The model provider bundle: `protocol`, HTTPS `base_url`, write-only `api_key`, and for `mcode` also `context_window` and `max_output_tokens`. Reads return `api_key_configured` instead of the key |
-
-The provider's protocol must match the harness:
-
-| Harness | `protocol` | Also required |
-| --- | --- | --- |
-| Codex (`codex`) | `responses` | The provider's exact model ID in `agent.model` |
-| Claude Code (`claude_sdk`) | `anthropic` | The provider's exact model ID |
-| MiniMax Code (`mcode`) | `anthropic` | `context_window` and `max_output_tokens` |
-
-See [harness selection](../../contracts/agents-api/harness-selection.md) and
-[model execution](../../contracts/agents-api/model-execution.md) for the full contract.
-Selecting a harness doesn't make an unsupported model or operation work.
-
-## Model providers
-
-A Session takes its model provider from the first of these that has one; bundles are
-never merged:
-
-1. `x_agents_core.model_provider` in the Session creation request;
-2. the saved Agent's `x_agents_core.model_provider`;
-3. the installation's default model for the harness, set in Web on **System**,
-   **Default model**.
-
-| Environment | Request or saved Agent | Default model | None of them |
-| --- | --- | --- | --- |
-| `openai_hosted` | Used | Used | 400 `model_provider_required` |
-| `self_hosted` | Used | Never | 400 `model_provider_required` |
-| `none` | Rejected with 400 `unsupported_or_invalid_configuration` | Used | Allowed: the device's own environment supplies the model |
-
-A Session freezes its provider when it is created; later changes to the Agent or the
-default affect only new Sessions. Core encrypts the key with the Session and never
-returns it. Self-hosted Sessions always bring their own provider, because the default
-holds the operator's key and the executor host belongs to the application; see
-[Self-hosted executors](self-hosted.md).
-
-## Wait for the result
-
-Continue in the same Python process. A Session ID confirms creation, not success.
-This bounded loop reads durable state instead of resubmitting work:
+A Session ID confirms creation, not success. Poll durable state; never resubmit to
+"retry":
 
 ```python
 import time
@@ -152,23 +103,22 @@ for _ in range(120):
         turn = turns[0]
         print("Turn:", turn.id, turn.status)
         print(client.beta.agents.sessions.items.list(session.id).data)
-        if turn.status != "completed":
-            raise RuntimeError("Inspect the recorded Turn and Items before retrying")
         break
-    current = client.beta.agents.sessions.retrieve(session.id)
-    if current.status == "failed":
+    if client.beta.agents.sessions.retrieve(session.id).status == "failed":
         raise RuntimeError("Session preparation failed; inspect its Environment")
     time.sleep(1)
 else:
-    raise TimeoutError(f"Session {session.id} is still pending; inspect it before retrying")
+    raise TimeoutError(f"Session {session.id} is still running; inspect it before retrying")
 ```
 
-Success means the Turn is `completed` and its recorded output describes the created
-file. A timeout does not cancel the task or prove failure. The
-[user guide](../user-guide.md) explains how to inspect files, send another message,
-add Skills/Plugins/MCP, cancel work and recover after disconnection.
+Success is a `completed` Turn whose Items describe the new file. A timeout neither
+cancels the work nor proves it failed.
 
-Files, Artifacts, cancellation and their current limits are in the
-[coverage ledger](../../contracts/agents-api/README.md). MCP credentials use the
-separate Vault API; they are neither Project API keys nor model provider keys. The
-[API index](../api/README.md) lists every route.
+## Next steps
+
+| To | Read |
+| --- | --- |
+| Stream output, send follow-up messages, upload files, add Skills or MCP, cancel | [User guide](../user-guide.md) |
+| See every resource with request and response examples | [Agents API guide](../api/public-agent-api.md) |
+| Run the agent on your own machine | [Self-hosted execution](self-hosted.md) |
+| See a complete application | [Examples](../examples.md) |
