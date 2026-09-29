@@ -26,8 +26,8 @@ func TestSubagentProfileOverridesUnsafeNativeFeatures(t *testing.T) {
 
 func TestSubagentProfileDoesNotDisableRequiredToolEnvironment(t *testing.T) {
 	request := proto.PromptRequestPayload{ObserveSubagentIdentities: true, LocalEnvironment: &proto.LocalEnvironment{ToolEnvironment: true}}
-	if err := configureSubagentObservations(&SessionPlan{}, request); err == nil {
-		t.Fatal("incompatible hook profile accepted")
+	if err := configureSubagentObservations(&SessionPlan{}, request); err != nil {
+		t.Fatal("ordinary environment must not require hooks", err)
 	}
 	request.DisableSubagents = true
 	if err := configureSubagentObservations(&SessionPlan{}, request); err != nil {

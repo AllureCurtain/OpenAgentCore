@@ -30,12 +30,14 @@ func TestSandboxDeploymentSetupRequiresAdministratorAndStrictBody(t *testing.T) 
 		token, body   string
 		status, calls int
 	}{
-		{"caller", `{"provider":"docker"}`, 401, 0},
-		{"node-credential", `{"provider":"docker"}`, 401, 0},
-		{"enrollment-token", `{"provider":"docker"}`, 401, 0},
+		{"caller", `{"provider":"docker","expected_generation":0}`, 401, 0},
+		{"node-credential", `{"provider":"docker","expected_generation":0}`, 401, 0},
+		{"enrollment-token", `{"provider":"docker","expected_generation":0}`, 401, 0},
 		{"administrator", `{"provider":"docker","unexpected":true}`, 400, 0},
-		{"administrator", `{"provider":"docker"}`, 200, 1},
-		{"administrator", `{"provider":"microsandbox"}`, 409, 2},
+		{"administrator", `{"provider":"docker"}`, 400, 0},
+		{"administrator", `{"provider":"docker","expected_generation":null}`, 400, 0},
+		{"administrator", `{"provider":"docker","expected_generation":0}`, 200, 1},
+		{"administrator", `{"provider":"microsandbox","expected_generation":0}`, 409, 2},
 	} {
 		request := httptest.NewRequest(http.MethodPost, "/core/v1/sandbox/deployment", strings.NewReader(test.body))
 		request.Header.Set("Authorization", "Bearer "+test.token)
@@ -49,7 +51,7 @@ func TestSandboxDeploymentSetupRequiresAdministratorAndStrictBody(t *testing.T) 
 
 func TestSandboxDeploymentSetupFileModeReturnsConflict(t *testing.T) {
 	h := &Handler{}
-	request := httptest.NewRequest(http.MethodPost, "/core/v1/sandbox/deployment", strings.NewReader(`{"provider":"docker"}`))
+	request := httptest.NewRequest(http.MethodPost, "/core/v1/sandbox/deployment", strings.NewReader(`{"provider":"docker","expected_generation":0}`))
 	result := httptest.NewRecorder()
 	h.initializeSandboxDeployment(result, request)
 	if result.Code != http.StatusConflict || !strings.Contains(result.Body.String(), "sandbox_deployment_conflict") {

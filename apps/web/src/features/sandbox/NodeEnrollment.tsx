@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { HelpTip, StatusDot, type Tone } from "../../components/console-ui";
 import { Modal } from "../../components/Modal";
+import { coreFieldError } from "../../lib/core-error";
 import { formatBytes } from "../../lib/format";
 import { useConsoleNavigation } from "../../lib/console-navigation";
 import { installationQuery } from "../../lib/installation";
@@ -64,11 +65,12 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   open: boolean;
   fresh: boolean;
   onClose: () => void;
-  /** Reads the page's node list again; settles when the read has. */
-  onRefresh: () => Promise<unknown>;
+  /** Returns the confirmed node list, or null when the read failed. */
+  onRefresh: () => Promise<SandboxNode[] | null>;
 }) {
   const { t, i18n } = useTranslation("sandbox");
   const locale = i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en";
+  const { t: tCommon } = useTranslation("common");
   const id = useId();
   const [active, setActive] = useState(DEFAULT_ACTIVE);
   const [retained, setRetained] = useState(DEFAULT_RETAINED);
@@ -83,8 +85,8 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   const [copiedMode, setCopiedMode] = useState<NodeInstallMode>("sudo");
   const queryClient = useQueryClient();
   const installation = useQuery(installationQuery);
-  // When the latest node-list read this dialog asked for began (Date.now()), once it has finished.
-  const [checkedAt, setCheckedAt] = useState(0);
+  // Keep the completed read's start time paired with its data: query notifications can render later.
+  const [checked, setChecked] = useState<{ startedAt: number; nodes: SandboxNode[] } | null>(null);
   const reading = useRef(false);
   const generation = useRef(0);
   const request = useRef<AbortController | null>(null);
@@ -97,7 +99,11 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   // Nodes and their sandboxes reach Core at its public URL, so a loopback one serves no other machine;
   // and without the provider's node files the installer would fail on the host. Either way no command
   // is issued, nor before the installation is read: a failed read (an older Core, say) proves nothing.
-  const blocker: { text: string; failed?: boolean } | null = installation.data === undefined
+  const blocker: { text: string; failed?: boolean } | null = deployment.reset
+    ? { text: t("Node enrollment is paused while reset is in progress.") }
+    : !fresh
+      ? { text: t("Sandbox state is unconfirmed. Refresh before issuing a node command.") }
+    : installation.data === undefined
     ? installation.isError ? { text: t("The installation couldn't be read, so no command can be issued."), failed: true } : { text: t("Checking this installation's public URL…") }
     : !publicUrl
       ? { text: t("Nodes need an HTTPS public URL that other machines and their sandboxes can reach: set public_url in config.json and run oac apply") }
@@ -114,6 +120,8 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   const retainedProblem = !suspends ? null
     : !inRange(retainedLimit) ? t("Enter a whole number from 1 to 1,000,000.")
     : inRange(activeLimit) && retainedLimit < activeLimit ? t("Enter at least the number of sandboxes at once.") : null;
+  const activeError = coreFieldError(error, "max_active", tCommon) ?? activeProblem;
+  const retainedError = coreFieldError(error, "max_retained", tCommon) ?? retainedProblem;
   const limitsReady = !activeProblem && !retainedProblem;
   const node = enrollment ? enrolledNode(nodes, enrollment) : null;
   const progress = enrollmentProgress(node, node && appeared?.id === node.id ? appeared.at : undefined, now);
@@ -129,7 +137,7 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   const expiresAt = enrollment ? Date.parse(enrollment.expires_at) : 0;
   const lapsed = Boolean(enrollment && expiresAt <= now);
   // Expired only once a read begun after the expiry found no node for the command.
-  const expired = lapsed && checkedAt >= expiresAt;
+  const expired = lapsed && fresh && checked !== null && checked.startedAt >= expiresAt && checked.nodes === nodes;
   const commandFor = (mode: NodeInstallMode) => enrollment && provider && available && publicUrl && (registered || !expired) && !ready
     ? nodeInstallCommand({ token: enrollment.token, coreUrl: publicUrl, sourceUrl: publicUrl, provider, installationId: deployment.installation_id, scriptDigest: consoleConfig.node_installer_sha256, mode }) : "";
   const command = commandFor("sudo");
@@ -139,8 +147,10 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
     if (reading.current) return;
     reading.current = true;
     const started = Date.now();
-    try { await onRefresh(); } finally { reading.current = false; }
-    setCheckedAt((current) => Math.max(current, started));
+    try {
+      const confirmedNodes = await onRefresh();
+      if (confirmedNodes) setChecked({ startedAt: started, nodes: confirmedNodes });
+    } finally { reading.current = false; }
   }, [onRefresh]);
   useEffect(() => () => { generation.current++; request.current?.abort(); }, []);
   useEffect(() => { if (open) rememberRequirementsSeen(); }, [open]);
@@ -159,8 +169,8 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
   useEffect(() => { if (open && enrollment) void check(); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   // At expiry, one more read decides between the command's node and "Command expired".
   useEffect(() => {
-    if (open && lapsed && !registered && checkedAt < expiresAt) void check();
-  }, [open, lapsed, registered, checkedAt, expiresAt, check]);
+    if (open && lapsed && !registered && !expired) void check();
+  }, [open, lapsed, registered, expired, check]);
   // The installer's wait for readiness counts from when the node appears.
   useEffect(() => {
     if (nodeId) setAppeared((current) => (current?.id === nodeId ? current : { id: nodeId, at: Date.now() }));
@@ -200,7 +210,7 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
     setCopiedMode("sudo"); setNoSudoOpen(false);
   }
   async function generate() {
-    if (request.current || !available || blocker || !limitsReady || activeLimit === null || retainedLimit === null) return;
+    if (request.current || !fresh || !available || blocker || !limitsReady || activeLimit === null || retainedLimit === null) return;
     const capacity = { max_active: activeLimit, max_retained: retainedLimit };
     generation.current++;
     const controller = new AbortController(); request.current = controller;
@@ -273,14 +283,14 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
           <p>{t("Set the sandbox limits for the host you want to add.")}</p>
           <div className="field">
             <span className="field-label-row"><label htmlFor={`${id}-active`}>{t("Sandboxes at once")}</label><HelpTip>{t("The most sandboxes Core places on this node at the same time.")}</HelpTip></span>
-            <input id={`${id}-active`} inputMode="numeric" autoComplete="off" autoFocus={open} value={active} onChange={(event) => setActive(event.target.value)} aria-invalid={Boolean(activeProblem)} />
-            {activeProblem ? <span className="field-error">{activeProblem}</span> : null}
+            <input id={`${id}-active`} inputMode="numeric" autoComplete="off" autoFocus={open} value={active} onChange={(event) => { setActive(event.target.value); setError(null); }} aria-invalid={Boolean(activeError)} aria-errormessage={activeError ? `${id}-active-error` : undefined} />
+            {activeError ? <span id={`${id}-active-error`} className="field-error">{activeError}</span> : null}
           </div>
           {suspends ? (
             <div className="field">
               <span className="field-label-row"><label htmlFor={`${id}-retained`}>{t("Retained sandboxes")}</label><HelpTip>{t("Sandboxes kept on this node for resuming, the running ones included. At least the number at once.")}</HelpTip></span>
-              <input id={`${id}-retained`} inputMode="numeric" autoComplete="off" value={retained} onChange={(event) => setRetained(event.target.value)} aria-invalid={Boolean(retainedProblem)} />
-              {retainedProblem ? <span className="field-error">{retainedProblem}</span> : null}
+              <input id={`${id}-retained`} inputMode="numeric" autoComplete="off" value={retained} onChange={(event) => { setRetained(event.target.value); setError(null); }} aria-invalid={Boolean(retainedError)} aria-errormessage={retainedError ? `${id}-retained-error` : undefined} />
+              {retainedError ? <span id={`${id}-retained-error`} className="field-error">{retainedError}</span> : null}
             </div>
           ) : null}
           {error !== null ? <p role="alert" className="sandbox-error">{sandboxRequestError(error, locale)}</p> : null}
@@ -315,10 +325,9 @@ export function NodeEnrollment({ client, consoleConfig, deployment, nodes, open,
             {copiedMode === "user" ? <><span>{t("If root ran it, it is a system service:")}</span><CopyCommand value={nodeLogCommand(deployment.installation_id, "sudo")} /></> : null}
           </div>
         </div> : null}
-        {!fresh ? <p>{t("Connection status unavailable. Refresh to check your node.")}</p> : null}
+        {deployment.reset ? <p role="status">{t("Node enrollment is paused while reset is in progress.")}</p> : !fresh ? <p>{t("Connection status unavailable. Refresh to check your node.")}</p> : null}
         {!ready ? requirements : null}
       </>}
     </div>
   </Modal>, document.body);
 }
-

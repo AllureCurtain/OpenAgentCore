@@ -1,3 +1,4 @@
+import { projectSessionDiagnostics, projectTurnDiagnostics } from "./session-diagnostics";
 import {
   addVaultPageOptions, projectAgentSession, projectRuntimeObservation,
   projectEnvironmentTemplate, projectEnvironmentTemplateList, projectVault, projectVaultList,
@@ -20,7 +21,7 @@ import type {
 import type {
   AdminClientOptions, AdminAuditOptions, AdminContent, ArchiveAdminSessionInput, CreateAdminProjectInput, RenameAdminProjectInput,
   IssueAdminAPIKeyInput, AdminSummaryOptions, AdminResourceType, AdminResourceOwner, AdminWriteOperationOptions, AdminWriteOperationPage,
-  ExecutorCredential, IssueExecutorCredentialInput, IssuedExecutorCredential, CoreInstallation,
+  ExecutorCredentialList, IssueExecutorCredentialInput, IssuedExecutorCredential, CoreInstallation,
 } from "./admin-types";
 
 function segment(value: string): string {
@@ -225,6 +226,12 @@ export class AdminClient {
   downloadArtifact(projectId: string, sessionId: string, artifactId: string, options?: ReadOptions) {
     return this.#content(`${scope(projectId)}/sessions/${segment(sessionId)}/artifacts/${segment(artifactId)}/content`, options);
   }
+  async retrieveSessionDiagnostics(projectId: string, sessionId: string, options?: ReadOptions) {
+    return projectSessionDiagnostics(await this.#json(`${scope(projectId)}/sessions/${segment(sessionId)}/diagnostics`, options), sessionId);
+  }
+  async retrieveTurnDiagnostics(projectId: string, sessionId: string, turnId: string, options?: ReadOptions) {
+    return projectTurnDiagnostics(await this.#json(`${scope(projectId)}/sessions/${segment(sessionId)}/turns/${segment(turnId)}/diagnostics`, options), sessionId, turnId);
+  }
   async retrieveSessionExecutionConfiguration(projectId: string, sessionId: string, options?: ReadOptions) {
     return projectExecutionConfiguration(await this.#json(`${scope(projectId)}/sessions/${segment(sessionId)}/execution-configuration`, options), sessionId, invalidAdminResponse);
   }
@@ -260,7 +267,7 @@ export class AdminClient {
   }
 
   /** Credential metadata for one self_hosted Environment; the credentials themselves are never listed. */
-  async listExecutorCredentials(projectId: string, environmentId: string, options?: ReadOptions): Promise<{ data: ExecutorCredential[] }> {
+  async listExecutorCredentials(projectId: string, environmentId: string, options?: ReadOptions): Promise<ExecutorCredentialList> {
     return projectExecutorCredentials(await this.#json(`${scope(projectId)}/environments/${segment(environmentId)}/executor-credentials`, options));
   }
   /**

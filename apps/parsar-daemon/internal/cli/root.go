@@ -19,23 +19,26 @@ type command struct {
 	run     func(ctx *runContext, args []string) error
 }
 
-// runContext bundles the streams a command writes to. Tests inject
-// buffers; production uses the OS streams.
+// runContext carries command I/O and an optional installed Harness selection.
+// Tests inject streams; production uses the OS streams.
 type runContext struct {
-	stdout io.Writer
-	stderr io.Writer
+	installedKinds map[string]bool
+	stdin          io.Reader
+	stdout         io.Writer
+	stderr         io.Writer
 }
 
 func defaultRunContext() *runContext {
-	return &runContext{stdout: os.Stdout, stderr: os.Stderr}
+	return &runContext{stdin: os.Stdin, stdout: os.Stdout, stderr: os.Stderr}
 }
 
 // commands lists subcommands in --help render order: the user's
 // likely flow connect → status → stop / logs → logout.
 var commands = []command{
+	{name: "install", summary: "Install a native daemon and selected Harnesses", run: runInstall},
+	{name: "start", summary: "Start the installed native daemon", run: runStart},
 	{name: "resume", summary: "Wake one planned hosted suspension", run: runResume},
-	{name: "runtime-capabilities", summary: "Install frozen capabilities in the packaged Runtime", run: runRuntimeCapabilities},
-	{name: "runtime-mcp-exec", summary: "Execute installed MCP inside the packaged Runtime sandbox", run: runRuntimeMCP},
+	{name: "runtime-mcp-exec", summary: "Execute an installed MCP server", run: runRuntimeMCP},
 	{name: "placement", summary: "Enroll or retire an explicitly managed local execution placement", run: runPlacement},
 	{name: "connect", summary: "Pair, open the reverse WebSocket, and start serving prompts", run: runConnect},
 	{name: "status", summary: "Print the paired profile and daemon state", run: runStatus},
@@ -51,6 +54,7 @@ func Execute(argv []string) error {
 }
 
 func execute(ctx *runContext, argv []string) error {
+	useInstalledNativeHome()
 	if err := validateRuntimeConfiguration(); err != nil {
 		return err
 	}

@@ -36,7 +36,6 @@ const LOCAL_URL = "http://127.0.0.1:8091";
 const OLD_URL = "https://core-old.example.com";
 const publicUrl = () => (state.installation === "local" ? LOCAL_URL : PUBLIC_URL);
 /** The digest the console reports for its self-hosted executor installer; the same value as in monitoring.spec.ts. */
-const SELF_HOSTED_INSTALLER_SHA256 = "5e1f".repeat(16);
 /** Core reports one installation ID, a canonical UUID, in the installation and the deployment. */
 const INSTALLATION_ID = "7f3c2a90-5b1e-4c2d-9e3f-0a1b2c3d4e5f";
 
@@ -71,15 +70,26 @@ function installation() {
   };
 }
 
+const noNodeRollout = () => ({ state: "settled", previous_generation_sandboxes: 0, nodes: null });
+function nodeRollout(previous = 0) {
+  const nodes = { ready: 0, preparing: 0, failed: 0, update_required: 0, unknown: 0 };
+  for (const node of state.nodes) nodes[node.rollout.state]++;
+  return { state: nodes.preparing > 0 ? "preparing" : "settled", previous_generation_sandboxes: previous, nodes };
+}
+
+function unconfiguredDeployment(generation = 0, ownerEpoch = 3) {
+  return { installation_id: INSTALLATION_ID, provider: "", core_url: publicUrl(), reset: null, rollout: noNodeRollout(), owner_epoch: ownerEpoch, generation, mode: "", resources: { allocations: 0, pending: 0 }, suspension: null };
+}
+
 function configuredDeployment() {
-  return { installation_id: INSTALLATION_ID, provider: "docker", core_url: publicUrl(), maintenance: false, owner_epoch: 3, generation: 1, mode: "nodes", resources: { allocations: 0, pending: 0 }, specification: { resources: { cpus: 2, memory_mib: 4096 }, runtime: release }, specification_digest: "fixture", suspension: null };
+  return { installation_id: INSTALLATION_ID, provider: "docker", core_url: publicUrl(), reset: null, rollout: nodeRollout(), owner_epoch: 3, generation: 1, mode: "nodes", resources: { allocations: 0, pending: 0 }, specification: { resources: { cpus: 2, memory_mib: 4096 }, runtime: release }, specification_digest: "fixture", suspension: null };
 }
 /** The E2B template build as Core read it when the selection was saved. */
 const templateBuild = { status: "ready", resources: { cpus: 2, memory_mib: 2048, root_disk_mib: 10240 } };
 
 // E2B runs sandboxes in its cloud: no nodes, only what Core holds there.
 function e2bDeployment() {
-  return { ...configuredDeployment(), provider: "e2b", mode: "direct", resources: { allocations: 3, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 } }, e2b: { template: "oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b", credential_configured: true, template_build: templateBuild } };
+  return { ...configuredDeployment(), provider: "e2b", mode: "direct", rollout: noNodeRollout(), resources: { allocations: 3, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 } }, e2b: { template: "oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b", credential_configured: true, template_build: templateBuild } };
 }
 
 function reset(mode = "login", fresh = false, sandbox = "configured", nodes = "demo", address = "public", credentials = "configured", installers = true, artifacts = "docker,microsandbox") {
@@ -107,7 +117,7 @@ function reset(mode = "login", fresh = false, sandbox = "configured", nodes = "d
     // The demo deployment's default harness has a default model; a fresh install has none.
     harnesses: {
       claude_sdk: { enabled: true, default: false, provider: null },
-      codex: { enabled: true, default: true, provider: fresh ? null : { object: "core.model_provider", harness: "codex", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, updated_at: new Date((now - 86400) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") } },
+      codex: { enabled: true, default: true, provider: fresh ? null : { object: "core.model_provider", harness: "codex", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, last_used_at: null, last_error_code: null, last_error_at: null, updated_at: new Date((now - 86400) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") } },
       mcode: { enabled: false, default: false, provider: null },
     },
     // "none": the deployment is not configured yet, so the Nodes page offers setup.
@@ -117,7 +127,7 @@ function reset(mode = "login", fresh = false, sandbox = "configured", nodes = "d
     // The providers whose node files the console serves (/console/config node_artifacts).
     nodeArtifacts: artifacts.split(",").filter(Boolean),
   };
-  state.deployment = sandbox === "none" ? null : sandbox === "e2b" ? e2bDeployment() : configuredDeployment();
+  state.deployment = sandbox === "none" ? unconfiguredDeployment() : sandbox === "e2b" ? e2bDeployment() : configuredDeployment();
   // Each node reports the address it enrolled with; in "stale" mode the first one enrolled before public_url changed.
   // The seeded nodes enrolled before Core recorded enrollment IDs.
   state.nodes.forEach((node, index) => { node.core_url = address === "stale" && index === 0 ? OLD_URL : publicUrl(); node.enrollment_id = null; });
@@ -190,14 +200,11 @@ async function consoleRoute(request, response, url) {
     return send(response, 200, { mode: "login" }, { "set-cookie": `${SESSION_COOKIE.split("=")[0]}=; Path=/; Max-Age=0` });
   }
   if (url.pathname === "/console/config") {
-    // As Core's console: signing in grants administration, so it reports only its installers,
-    // both served from the node installation payload, and without that payload neither, and the
-    // providers whose node files that payload holds (always a list, empty without it).
+    // Console assets cover node enrollment only; native self-hosted installation is independent.
     const served = state.installers;
     return send(response, 200, {
       node_installer: served, node_installer_sha256: served ? "a".repeat(64) : "",
       node_artifacts: served ? state.nodeArtifacts : [],
-      self_hosted_installer: served, self_hosted_installer_sha256: served ? SELF_HOSTED_INSTALLER_SHA256 : "",
     });
   }
   return error(response, 404, "Not found.");
@@ -274,6 +281,20 @@ function adminRead(response, path, url) {
     const session = own.sessions.find((entry) => entry.id === m[1]);
     if (!session) return error(response, 404, "No such Session.");
     if (!m[2]) return send(response, 200, session);
+    if (m[2] === "diagnostics") {
+      const failedTurn = (state.turns.get(session.id) ?? []).findLast((turn) => turn.status === "failed");
+      return send(response, 200, { object: "core.session_diagnostics", session_id: session.id, status: session.status,
+        failure: session.status === "failed" ? { source: failedTurn ? "turn" : "environment_input", ...(failedTurn ? { turn_id: failedTurn.id } : {}), code: "internal_error", params: {}, failed_at: null } : null });
+    }
+    const diagnostics = m[2].match(/^turns\/([^/]+)\/diagnostics$/);
+    if (diagnostics) {
+      const turn = (state.turns.get(session.id) ?? []).find((entry) => entry.id === diagnostics[1]);
+      if (!turn) return error(response, 404, "No such Turn.");
+      return send(response, 200, { object: "core.turn_diagnostics", session_id: session.id, turn_id: turn.id, status: turn.status,
+        failure: turn.status === "failed" ? { code: "internal_error", params: {}, failed_at: null } : null,
+        items: (state.items.get(session.id) ?? []).filter((item) => item.turn_id === turn.id).slice(0, 1000).map((item) => ({ item_id: item.id, started_at: new Date((turn.started_at ?? turn.created_at) * 1000).toISOString(), completed_at: null, observed_duration_ms: null })),
+        items_truncated: false });
+    }
     if (m[2] === "turns") return send(response, 200, list([...(state.turns.get(session.id) ?? [])].reverse(), url));
     if (m[2] === "items") return send(response, 200, list([...(state.items.get(session.id) ?? [])].reverse(), url));
     if (m[2] === "runtime-observation") {
@@ -302,7 +323,7 @@ function nodeDetail(node) {
   };
 }
 
-async function sandboxRoute(request, response, path) {
+async function sandboxRoute(request, response, path, url) {
   const e2bTemplates = ["/e2b/templates", "/e2b/templates/template/builds"];
   if (e2bTemplates.includes(path)) {
     if (request.method !== "POST") return error(response, 405, "Method not allowed.");
@@ -315,6 +336,33 @@ async function sandboxRoute(request, response, path) {
     if (path === "/e2b/templates") return send(response, 200, { templates: [{ id: "template", names: ["fixture-runtime"] }] });
     return send(response, 200, { builds: [{ id: "94be54a1-138c-4f30-bc87-b13686272dbe", cpus: 2, memory_mib: 2048 }] });
   }
+  // Retired even for authenticated callers; never reinterpret maintenance as reset.
+  if (path === "/deployment/maintenance") return error(response, 404, "Not found.");
+  if (path === "/deployment/reset" && (request.method === "POST" || request.method === "DELETE")) {
+    const input = request.method === "POST" ? await body(request) : { expected_generation: Number(url.searchParams.get("expected_generation")) };
+    if (!Number.isInteger(input.expected_generation) || input.expected_generation < 0 || (request.method === "DELETE" && !url.searchParams.has("expected_generation"))) return error(response, 400, "expected_generation is required.", "invalid_request_error");
+    if (input.expected_generation !== state.deployment.generation) return error(response, 409, "The sandbox configuration changed. Refresh before submitting again.", "sandbox_generation_stale");
+    if (request.method === "DELETE") {
+      state.deployment.reset = null;
+      return send(response, 200, state.deployment);
+    }
+    if (input.clear !== "auto" && input.clear !== "force") return error(response, 400, "clear must be auto or force.", "invalid_request_error");
+    const seconds = input.deadline_seconds ?? 3600;
+    if (!Number.isInteger(seconds) || seconds < 300 || seconds > 86400 || (input.clear === "force" && input.deadline_seconds !== undefined)) return error(response, 400, "Invalid reset deadline.", "invalid_request_error");
+    if (state.deployment.reset?.clear === "force" && input.clear === "auto") return error(response, 409, "A force reset cannot return to auto clear.", "sandbox_reset_in_progress");
+    if (!state.deployment.provider || state.deployment.reset?.clear === input.clear) return send(response, 200, state.deployment);
+    const now = new Date().toISOString();
+    const previous = state.deployment.reset;
+    state.deployment.reset = {
+      clear: input.clear, requested_at: previous?.requested_at ?? now,
+      deadline_at: previous?.deadline_at ?? (input.clear === "auto" ? new Date(Date.now() + seconds * 1000).toISOString() : null),
+      forced_at: input.clear === "force" ? now : null,
+      remaining: previous?.remaining ?? { busy: state.deployment.resources.allocations, idle: state.deployment.resources.pending, cleanup: 0, on_offline_nodes: 0, offline_nodes: [] },
+    };
+    // The fixture has no cleanup worker or deadline timer. Tests explicitly supply
+    // subsequent Core projections; a browser clock never completes a reset.
+    return send(response, 200, state.deployment);
+  }
   if (path === "/runtime-observations" && request.method === "GET") {
     // Only E2B reports a sandbox's disk.
     const e2b = state.deployment?.provider === "e2b";
@@ -326,28 +374,52 @@ async function sandboxRoute(request, response, path) {
     const initialize = request.method === "POST";
     // As Core, before any state check: the address is config.json's public_url and read-only.
     if ("core_url" in input) return error(response, 400, "core_url is derived from the installation public URL (public_url in config.json, OAC_PUBLIC_URL for Core) and cannot be set here. Remove it.", "invalid_request_error", "core_url");
-    if (initialize && state.deployment) return error(response, 409, "The sandbox deployment is already configured.", "sandbox_deployment_conflict");
-    if (!initialize && !state.deployment) return error(response, 409, "The sandbox deployment is not configured.", "sandbox_deployment_conflict");
+    if (!Number.isInteger(input.expected_generation) || input.expected_generation < 0) return error(response, 400, "expected_generation is required.", "invalid_request_error");
+    if (input.expected_generation !== state.deployment.generation) return error(response, 409, "The sandbox configuration changed. Refresh before submitting again.", "sandbox_generation_stale");
+    if (state.deployment.reset) return error(response, 409, "A sandbox reset is in progress.", "sandbox_reset_in_progress");
+    if (!initialize && input.provider !== state.deployment.provider) return error(response, 409, "Reset before changing the sandbox backend.", "sandbox_reset_required");
+    if (initialize && state.deployment.provider) return error(response, 409, "The sandbox deployment is already configured.", "sandbox_deployment_conflict");
+    if (!initialize && !state.deployment.provider) return error(response, 409, "The sandbox deployment is not configured.", "sandbox_deployment_conflict");
     const e2b = input.provider === "e2b";
     if (!e2b && (!input.resources || !input.runtime)) return error(response, 400, "resources and runtime are required.", "invalid_sandbox_configuration");
     // As Core (ErrSandboxPublicURLUnreachable): E2B sandboxes reach Core over the internet, which a loopback public_url cannot serve.
     if (e2b && state.installation === "local") return error(response, 409, "E2B sandboxes reach Core over the internet. Set an HTTPS public URL that is not loopback (public_url in config.json, OAC_PUBLIC_URL for Core).", "sandbox_configuration_error");
+    // Synthetic classifier outcomes only; never persist or echo submitted keys.
+    if (e2b) {
+      if (!input.e2b?.template || (initialize && !input.e2b.api_key) || (Object.hasOwn(input.e2b ?? {}, "api_key") && !input.e2b.api_key)) return error(response, 400, "The E2B API key was rejected.", "e2b_api_key_invalid");
+      if (input.e2b.api_key === "fixture-other-team-key") return error(response, 409, "This E2B key cannot manage the retained deployment. Reset before changing teams.", "e2b_team_mismatch");
+      if (input.e2b.api_key === "fixture-invalid-key") return error(response, 400, "The E2B API key was rejected.", "e2b_api_key_invalid");
+    }
     // As Core: E2B may omit resources and adopt its template build's CPU and memory; only microsandbox suspends.
     const resources = input.resources ?? { cpus: templateBuild.resources.cpus, memory_mib: templateBuild.resources.memory_mib };
+    const previous = state.deployment;
+    const specification = { resources, ...(input.runtime ? { runtime: input.runtime } : {}) };
+    const explicitKey = e2b && Object.hasOwn(input.e2b, "api_key");
+    const sameSelection = !initialize && JSON.stringify(specification) === JSON.stringify(previous.specification) && (!e2b || input.e2b.template === previous.e2b?.template);
+    // Omission can be a no-op; every explicit key, including identical bytes,
+    // takes the verified replacement path and advances the target generation.
+    if (sameSelection && !explicitKey) return send(response, 200, previous);
+    if (!initialize && !e2b) {
+      for (const node of state.nodes) node.rollout = { state: node.online ? "preparing" : "unknown", ready_generation: node.rollout.ready_generation };
+    }
+    const held = initialize ? { allocations: 0, pending: 0 } : previous.resources;
     state.deployment = {
       ...configuredDeployment(), provider: input.provider, mode: e2b ? "direct" : "nodes",
-      ...(initialize ? {} : { maintenance: true, generation: state.deployment.generation + 1 }),
-      specification: { resources, ...(input.runtime ? { runtime: input.runtime } : {}) },
+      generation: previous.generation + 1, owner_epoch: previous.owner_epoch,
+      resources: held,
+      rollout: e2b ? { ...noNodeRollout(), previous_generation_sandboxes: held.allocations + held.pending } : nodeRollout(held.allocations + held.pending),
+      specification,
       ...(e2b ? { e2b: { template: input.e2b?.template ?? "", credential_configured: true, template_build: templateBuild } } : {}),
       suspension: input.provider === "microsandbox" ? { idle_seconds: 300, retention_seconds: 86400 } : null,
     };
     return send(response, 200, state.deployment);
   }
   if (path === "/deployment") {
-    return send(response, 200, state.deployment ?? { installation_id: INSTALLATION_ID, provider: "", core_url: publicUrl(), maintenance: false, owner_epoch: 3, generation: 0, mode: "", resources: { allocations: 0, pending: 0 }, suspension: null });
+    return send(response, 200, state.deployment);
   }
   if (path === "/nodes") return send(response, 200, { data: state.nodes });
   if (path === "/enrollment-tokens" && request.method === "POST") {
+    if (state.deployment.reset) return error(response, 409, "A sandbox reset is in progress.", "sandbox_reset_in_progress");
     // As Core: a one-time token valid for ten minutes, whose limits and enrollment ID the node it enrolls takes;
     // only microsandbox keeps a retained limit above the active one.
     const input = await body(request);
@@ -376,6 +448,7 @@ async function sandboxRoute(request, response, path) {
     const index = state.nodes.findIndex((node) => node.id === m[1]);
     if (index < 0) return error(response, 404, "No such node.");
     state.nodes.splice(index, 1);
+    if (state.deployment.mode === "nodes") state.deployment.rollout = nodeRollout(state.deployment.rollout.previous_generation_sandboxes);
     return send(response, 200, { id: m[1], deleted: true });
   }
   return error(response, 404, "Not found.");
@@ -398,7 +471,10 @@ async function executorCredentialRoute(request, response, projectId, environment
   if (!session) return error(response, 404, "No such self-hosted environment.", "not_found_error");
   if (!state.executorCredentials.has(environmentId)) state.executorCredentials.set(environmentId, []);
   const credentials = state.executorCredentials.get(environmentId);
-  if (!keyId && request.method === "GET") return send(response, 200, { data: credentials.map((entry) => ({ ...entry })) });
+  if (!keyId && request.method === "GET") return send(response, 200, {
+    data: credentials.map((entry) => ({ ...entry })),
+    connection: { status: "never_enrolled", bound_key_id: null, enrolled_at: null, last_seen_at: null },
+  });
   if (!keyId && request.method === "POST") {
     // As Core, a body that is not JSON is invalid input like any other: 400 with one message.
     const input = await body(request).catch(() => null);
@@ -429,13 +505,11 @@ async function executorCredentialRoute(request, response, projectId, environment
  */
 function registeredNode(nodeId) {
   const { enrollment_id = null, ...limits } = state.enrollment ?? { max_active: 1, max_retained: 1 };
-  return { id: nodeId, name: nodeId, provider: state.deployment?.provider ?? "docker", core_url: publicUrl(), enrollment_id, online: false, provider_ready: false, cpu_count: null, available_memory_bytes: null, available_disk_bytes: null, running: 0, snapshots: 0, last_seen_at: null, ...limits, active: 0, reserved: 0, retained: 0, cleanup_pending: 0, created_at: new Date().toISOString() };
+  return { rollout: { state: "unknown", ready_generation: null }, id: nodeId, name: nodeId, provider: state.deployment?.provider ?? "docker", core_url: publicUrl(), enrollment_id, online: false, provider_ready: false, cpu_count: null, available_memory_bytes: null, available_disk_bytes: null, running: 0, snapshots: 0, last_seen_at: null, ...limits, active: 0, reserved: 0, retained: 0, cleanup_pending: 0, created_at: new Date().toISOString() };
 }
 
 const HARNESS_PROVIDER = /^\/harnesses\/([^/]+)\/model-provider$/;
 const PROVIDER_FIELDS = new Set(["protocol", "base_url", "api_key", "context_window", "max_output_tokens"]);
-/** Each harness's protocol, as Core's registry declares it; only mcode requires token limits. */
-const HARNESS_PROTOCOL = { claude_sdk: "anthropic", codex: "responses", mcode: "anthropic" };
 /** Core's one message for a body that is not a complete provider; it never echoes a value. */
 const PROVIDER_SHAPE = "The body must be a complete model provider: protocol, base_url, api_key and optional nonnegative context_window and max_output_tokens.";
 const httpsBase = (value) => { try { const url = new URL(value); return url.protocol === "https:" && Boolean(url.hostname) && !url.username && !url.password && !url.search && !url.hash; } catch { return false; } };
@@ -448,10 +522,9 @@ function providerProblem(harness, input) {
   if (Object.keys(input).some((key) => !PROVIDER_FIELDS.has(key)) || ["protocol", "base_url", "api_key"].some((key) => typeof input[key] !== "string") ||
     !tokenLimit(input.context_window) || !tokenLimit(input.max_output_tokens)) return PROVIDER_SHAPE;
   if (!httpsBase(input.base_url)) return "model provider requires an HTTPS base_url without credentials, query or fragment";
-  if (input.protocol !== "anthropic" && input.protocol !== "responses") return "unsupported model provider protocol";
+  if (!["anthropic", "responses", "chat_completions"].includes(input.protocol)) return "unsupported model provider protocol";
   if (!input.api_key.trim() || Buffer.byteLength(input.api_key) > 16384 || /[\0\r\n]/.test(input.api_key)) return "invalid model provider API key";
   if ((input.max_output_tokens ?? 0) > (input.context_window ?? 0)) return "invalid model token limits";
-  if (input.protocol !== HARNESS_PROTOCOL[harness]) return "selected harness does not support this model provider protocol";
   if (harness === "mcode" && !(input.context_window > 0 && input.max_output_tokens > 0)) return "selected harness requires positive model context_window and max_output_tokens";
   return null;
 }
@@ -498,6 +571,7 @@ async function harnessRoute(request, response, path) {
     object: "core.model_provider", harness, protocol: input.protocol, base_url: input.base_url, api_key_configured: true,
     ...(input.context_window ? { context_window: input.context_window } : {}),
     ...(input.max_output_tokens ? { max_output_tokens: input.max_output_tokens } : {}),
+    last_used_at: null, last_error_code: null, last_error_at: null,
     updated_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
   };
   return send(response, 200, entry.provider);
@@ -510,6 +584,17 @@ async function fixtureRoute(request, response, url) {
     reset(url.searchParams.get("auth") ?? "login", url.searchParams.get("projects") === "none", url.searchParams.get("sandbox") ?? "configured", url.searchParams.get("nodes") ?? "demo", url.searchParams.get("installation") ?? "public", url.searchParams.get("credentials") ?? "configured", url.searchParams.get("installers") !== "none", url.searchParams.get("artifacts") ?? undefined);
     return send(response, 200, { ok: true });
   }
+  if (url.pathname === "/__fixture/deployment" && request.method === "POST") {
+    // Explicit backend observations, never a simulation driven by browser time.
+    const input = await body(request);
+    if (input.complete_reset) {
+      state.deployment = unconfiguredDeployment(state.deployment.generation + 1, state.deployment.owner_epoch + 1);
+      state.nodes = [];
+      state.allocations = [];
+      state.enrollment = null;
+    } else Object.assign(state.deployment, input);
+    return send(response, 200, state.deployment);
+  }
   if (url.pathname === "/__fixture/fail-next" && request.method === "POST") {
     state.failNext = await body(request); // { method, path, status, code?, message? }
     return send(response, 200, { ok: true });
@@ -521,6 +606,14 @@ async function fixtureRoute(request, response, url) {
     let node = state.nodes.find((entry) => entry.id === nodeId);
     if (!node) state.nodes.push(node = registeredNode(nodeId));
     Object.assign(node, fields);
+    // A control may supply an explicit target observation. Existing enrollment
+    // cases only supply connection facts, so give that newly joined target a pin.
+    if (!fields.rollout && ("online" in fields || "provider_ready" in fields || "diagnostic" in fields)) {
+      node.rollout = !node.online ? { state: "unknown", ready_generation: node.rollout.ready_generation }
+        : node.provider_ready ? { state: "ready", ready_generation: state.deployment.generation }
+        : { state: "failed", ready_generation: node.rollout.ready_generation, diagnostic: node.diagnostic || "provider_unavailable" };
+    }
+    if (state.deployment.mode === "nodes") state.deployment.rollout = nodeRollout(state.deployment.rollout.previous_generation_sandboxes);
     if (!node.diagnostic) delete node.diagnostic;
     return send(response, 200, node);
   }
@@ -549,7 +642,7 @@ http.createServer(async (request, response) => {
       state.failNext = null;
       return error(response, fail.status, fail.message ?? "Injected failure.", fail.code ?? null);
     }
-    if (url.pathname.startsWith("/core/v1/sandbox/")) return await sandboxRoute(request, response, url.pathname.slice("/core/v1/sandbox".length));
+    if (url.pathname.startsWith("/core/v1/sandbox/")) return await sandboxRoute(request, response, url.pathname.slice("/core/v1/sandbox".length), url);
     if (url.pathname.startsWith("/core/v1/")) {
       const path = url.pathname.slice("/core/v1".length);
       if (path === "/harnesses" || path.startsWith("/harnesses/")) return await harnessRoute(request, response, path);

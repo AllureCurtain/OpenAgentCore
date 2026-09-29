@@ -1,3 +1,4 @@
+import type { SandboxDeployment, SandboxNodeRollout } from "@agents-core-web/agents-client";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
 const fixture = `http://127.0.0.1:${process.env.AGENTS_FIXTURE_PORT ?? 18092}`;
@@ -45,8 +46,15 @@ export async function failNext(request: APIRequestContext, failure: { method: st
 }
 
 /** Registers a node, or changes one, as a host running the last enrollment command (or, with its `enrollment_id`, another one) would. */
-export async function setNode(request: APIRequestContext, node: { id: string; name?: string; online?: boolean; provider_ready?: boolean; diagnostic?: string; enrollment_id?: string }) {
+export async function setNode(request: APIRequestContext, node: { id: string; name?: string; online?: boolean; provider_ready?: boolean; diagnostic?: string; enrollment_id?: string; rollout?: SandboxNodeRollout }) {
   await request.post(`${fixture}/__fixture/node`, { data: node });
+}
+
+/** Supplies a later Core observation; only an explicit completion retires nodes and advances generation. */
+export async function setDeployment(request: APIRequestContext, deployment: Partial<SandboxDeployment> | { complete_reset: true }): Promise<SandboxDeployment> {
+  const response = await request.post(`${fixture}/__fixture/deployment`, { data: deployment });
+  expect(response.ok()).toBe(true);
+  return response.json() as Promise<SandboxDeployment>;
 }
 
 /** Archives a project behind the console's back, as another administrator would. */

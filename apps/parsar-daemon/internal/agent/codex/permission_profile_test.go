@@ -1,92 +1,65 @@
 package codex
 
 import (
-	"context"
-	"github.com/MiniMax-AI-Dev/parsar/internal/agentnetwork"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
-
-	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 )
 
-func TestPermissionProfileRejectsIncompatiblePreparationBeforeState(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		profile string
-		req     proto.PromptRequestPayload
-	}{
-		{"builtin", ":danger-full-access", proto.PromptRequestPayload{}},
-		{"whitespace", " ", proto.PromptRequestPayload{}},
-		{"none", "managed-workspace", proto.PromptRequestPayload{DisableExecutionEnvironment: true}},
-		{"read-owner", "managed-workspace", proto.PromptRequestPayload{WorkspaceReadOnly: true}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "uncreated")
-			t.Setenv("OAC_RUNTIME_HOME", root)
-			if _, _, err := prepareSessionPlan(context.Background(), tc.req, sessionConfig{permissionProfile: tc.profile}); err == nil {
-				t.Fatal("incompatible profile accepted")
+func TestRuntimeUsesHostPermissions(t *testing.T) {
+	t.Setenv("OAC_RUNTIME_HOME", t.TempDir())
+	{
+		req := proto.PromptRequestPayload{AgentStateKey: "session", DisableSubagents: true, LocalEnvironment: &proto.LocalEnvironment{NetworkAccess: "enabled"}}
+		plan, _, err := prepareSessionPlan(t.Context(), req, sessionConfig{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if plan.Sandbox != "danger-full-access" || plan.Permissions != "" || plan.ApprovalPolicy.String != "never" {
+			t.Fatal("Runtime must bypass inner sandbox", plan)
+		}
+		for _, kv := range plan.ExtraConfig {
+			if kv[0] == "default_permissions" {
+				t.Fatal("obsolete permission wrapper", kv)
 			}
-			if _, err := os.Stat(root); !os.IsNotExist(err) {
-				t.Fatal("rejection created state", err)
+		}
+		plan.Cleanup()
+		for _, network := range []string{"disabled", "restricted"} {
+			req.LocalEnvironment.NetworkAccess = network
+			if _, _, err := prepareSessionPlan(t.Context(), req, sessionConfig{}); err == nil {
+				t.Fatal("unsupported network admitted")
 			}
-		})
+		}
 	}
 }
 
-func TestPermissionProfileSelectsNativeStartupConfig(t *testing.T) {
-	t.Setenv("OAC_RUNTIME_HOME", t.TempDir())
-	t.Setenv("OAC_RUNTIME_CODEX_PERMISSION_PROFILE", "managed-workspace")
-	plan, _, err := prepareSessionPlan(context.Background(), proto.PromptRequestPayload{AgentStateKey: "session", DisableSubagents: true}, defaultSessionConfig())
+func TestSelfHostedToolEnvironmentCannotRedirectNativeHistory(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("OAC_RUNTIME_HOME", root)
+	workspace := filepath.Join(root, "workspace")
+	if err := os.Mkdir(workspace, 0700); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(root, "tool-env.json")
+	if err := os.WriteFile(config, []byte(`{"CODEX_HOME":"wrong","HOME":"wrong","USERPROFILE":"wrong","USER_VALUE":"ready"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for key, value := range map[string]string{"OAC_RUNTIME_ENVIRONMENT_ID": "b3d154b8-543b-4248-97b1-665f9f418d52", "OAC_RUNTIME_SESSION_ID": "33e02e0d-6fc8-4904-9d7a-4b61b9094ae0", "OAC_RUNTIME_WORKSPACE": workspace, "OAC_RUNTIME_CAPABILITY_DIRECTORY": filepath.Join(root, "capabilities"), "OAC_RUNTIME_NETWORK_ACCESS": "enabled", "OAC_RUNTIME_TOOL_ENV_FILE": config} {
+		t.Setenv(key, value)
+	}
+	req := proto.PromptRequestPayload{AgentStateKey: "session", DisableSubagents: true, LocalEnvironment: &proto.LocalEnvironment{NetworkAccess: "enabled"}}
+	plan, _, err := prepareSessionPlan(t.Context(), req, sessionConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer plan.Cleanup()
-	config := map[string]string{}
-	for _, kv := range plan.ExtraConfig {
-		config[kv[0]] = kv[1]
+	values := map[string]string{}
+	for _, entry := range plan.Env {
+		key, value, _ := strings.Cut(entry, "=")
+		values[key] = value
 	}
-	if config["default_permissions"] != `"managed-workspace"` || plan.Sandbox != "" || plan.Permissions != "managed-workspace" {
-		t.Fatal("native managed selection missing")
-	}
-	if config["shell_environment_policy.inherit"] != `"core"` || config["shell_environment_policy.ignore_default_excludes"] != "false" {
-		t.Fatal("shell can inherit model credentials")
-	}
-	if config["features.shell_snapshot"] != "false" {
-		t.Fatal("managed shell depends on inaccessible private snapshots")
-	}
-}
-
-func TestManagedNetworkPolicySelectsNativeProfileAndRejectsMismatchBeforeState(t *testing.T) {
-	for _, mode := range []string{"enabled", "disabled"} {
-		t.Run(mode, func(t *testing.T) {
-			root := filepath.Join(t.TempDir(), "uncreated")
-			t.Setenv("OAC_RUNTIME_HOME", root)
-			req := proto.PromptRequestPayload{AgentStateKey: "session", LocalEnvironment: &proto.LocalEnvironment{ID: "environment", NetworkAccess: mode}}
-			cfg := sessionConfig{permissionProfile: "managed-workspace", runtimeNetwork: agentnetwork.Policy{Access: mode}}
-			wrong := req
-			wrong.LocalEnvironment = &proto.LocalEnvironment{ID: "environment", NetworkAccess: "restricted"}
-			if _, _, err := prepareSessionPlan(t.Context(), wrong, cfg); err == nil {
-				t.Fatal("policy mismatch accepted")
-			}
-			if _, err := os.Stat(root); !os.IsNotExist(err) {
-				t.Fatal("policy rejection created native state")
-			}
-			plan, _, err := prepareSessionPlan(t.Context(), req, cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer plan.Cleanup()
-			expected := "managed-workspace"
-			if mode == "enabled" {
-				expected += "-enabled"
-			}
-			if plan.Permissions != expected || plan.Sandbox != "" {
-				t.Fatal("wrong native profile", plan.Permissions)
-			}
-			if _, _, err := prepareSessionPlan(t.Context(), req, sessionConfig{permissionProfile: "managed-workspace"}); err == nil {
-				t.Fatal("unbound Runtime accepted explicit policy")
-			}
-		})
+	if values["CODEX_HOME"] == "" || values["CODEX_HOME"] == "wrong" || values["HOME"] == "wrong" || values["USERPROFILE"] == "wrong" || values["USER_VALUE"] != "ready" {
+		t.Fatal("initialization changed native state identity")
 	}
 }

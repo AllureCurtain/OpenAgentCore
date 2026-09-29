@@ -13,15 +13,15 @@ For implementation steps and interface obligations, see
 
 ## Integration surface
 
-1. Implement the existing daemon `agent.Factory`/`Session` and, for prepared
-   environments, `PreparationFactory`/`Prepared` interfaces. `Session` requires
-   cancellation; adapters that emit permission or user-choice requests additionally
-   implement `PermissionResponder` or `UserChoiceResponder`. Other optional
-   interfaces, such as function results, follow their declared operations. Reuse
-   `internal/agentdaemon/proto` requests, neutral events, input receipts and errors.
-2. Register the factory, preparation factory and verified Runtime capabilities in
-   the daemon registry. Keep native translation inside the adapter. Dedicated local
-   environments reuse shared Files/write/export helpers and binding checks.
+1. Implement `agent.ExecutorFactory`, `Executor` and `Turn`. Prepare fixed native
+   resources once, start fresh Turns on that owner, cancel an exact Turn, confirm
+   settlement and close the Executor. Implement optional interfaces only for
+   declared operations. Reuse `internal/agentdaemon/proto` requests, neutral events,
+   input receipts and errors.
+2. Register the Executor factory and verified Runtime capabilities in the daemon
+   registry. Keep native translation in the adapter. Managed and user-managed
+   environments use the same execution lifecycle after connection; dedicated local
+   environments retain shared Files/write/export helpers and binding checks.
 3. Add a pure qualified profile to `services/agents-api/internal/engine` and its
    static catalog (or supply an immutable catalog at service composition). Declare
    supported placements, public configuration/result limits
@@ -49,16 +49,19 @@ not a different contract or authority level. The documented extension remains se
 
 ## Shared behavioral obligations
 
-- Preparation holds resources without consuming input; start transfers ownership
-  once. Unused preparation releases through `Close`; cancellation remains valid
-  across the transfer and reports settlement only after native effects stop.
+- Preparation holds resources without consuming input. Normal Turn completion
+  retains a settled healthy Executor. Cancellation targets one Turn; idle expiry,
+  environment shutdown and invalidation close the Executor. Failed cleanup retains
+  ownership and capacity, and never authorizes replay of uncertain input.
 - Confirm accepted/applied inputs separately. Preserve ordered public Items and
   events, stable call identity and one terminal outcome. Never replay uncertain
   work merely because a connection closed.
 - Resume only the bound Session's native history. Missing, ambiguous or foreign
   history fails closed. Device identity is not native Session ownership.
-- Native tools and public Files operate on the same authorized workspace.
-  Generated code cannot access daemon/model credentials or foreign history.
+- Native tools and public Files use the same bound workspace. Public Files retains
+  tenant and path authorization. Native tools run with the starting account's
+  permissions; daemon/model credentials are not isolated from that same user.
+  Managed outer Environments must exclude other tenants' resources.
 - Emit verified measurements; absence of native usage detail is not a zero value.
   Explicit unsupported operations remain implementation gaps in protocol coverage.
 

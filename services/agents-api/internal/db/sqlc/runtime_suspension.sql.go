@@ -139,7 +139,7 @@ WHERE id = $4 AND compute_revision = $5
     AND state = 'running' AND initialization = 'complete'
     AND ((compute_phase IN ('disabled','running') AND (node_id IS NOT NULL OR (SELECT mode FROM runtime_deployment) = 'direct' OR kept_at > clock_timestamp() - interval '1 hour'))
       OR (compute_phase NOT IN ('disabled','running') AND compute_retained_until > clock_timestamp()))
-RETURNING id, environment_id, device_id, provider_key, state, create_settled, created_at, kept_at, released_at, initialization, compute_phase, compute_revision, compute_state, compute_activity_at, compute_wake_requested, compute_retained_until, node_id, observation_error, compute_phase_changed_at
+RETURNING id, environment_id, device_id, provider_key, state, create_settled, created_at, kept_at, released_at, initialization, compute_phase, compute_revision, compute_state, compute_activity_at, compute_wake_requested, compute_retained_until, node_id, observation_error, compute_phase_changed_at, deployment_generation
 `
 
 type SetRuntimeComputeParams struct {
@@ -179,6 +179,7 @@ func (q *Queries) SetRuntimeCompute(ctx context.Context, arg SetRuntimeComputePa
 		&i.NodeID,
 		&i.ObservationError,
 		&i.ComputePhaseChangedAt,
+		&i.DeploymentGeneration,
 	)
 	return i, err
 }

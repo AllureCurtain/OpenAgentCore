@@ -92,8 +92,8 @@ reject HEAD with 405, so HEAD never samples a provider or queries telemetry.
 `POST /projects/{project_id}/sessions/{session_id}/archive` takes
 `{"expected_generation": N}`, where N is a positive uint64 from the current
 sandbox deployment. It requires the Core key, a
-Web-managed deployment in maintenance and the current generation. Missing
-maintenance or a stale generation returns 409. Only Core-managed
+Web-managed configured deployment and the current generation. A stale generation
+returns 409 `sandbox_generation_stale`; reset is not a precondition. Only Core-managed
 `openai_hosted` Sessions are eligible; other environment types return 400. A
 Session outside the selected Project returns the same 404 as a missing Session.
 
@@ -107,7 +107,7 @@ unpersisted workspace contents are lost and the original Session cannot resume.
 
 Both POST and `GET /projects/{project_id}/sessions/{session_id}/archive` return
 `{session_id, environment_id, state}`. GET is read-only and does not require
-maintenance or an expected generation. `state` describes current resource
+an active reset or an expected generation. `state` describes current resource
 disposition: `active`, `cleanup_pending`, or `released`. It is not archive
 provenance: resources may already have expired through their normal lifecycle.
 `released` does not prove that an active Turn has finished cancellation or
@@ -192,3 +192,15 @@ The typed `AdminClient`, `SandboxAdminClient` and `CoreMetricsClient` in
 `packages/agents-client` use `/core/v1`.
 Public SDK applications continue to use the existing Agents API client and their
 own API key. See [design principles](../../docs/design-principles.md).
+
+Sandbox deployment reset records `reset_start`, explicit `reset_force`, automatic
+`reset_deadline`, `reset_cancel` and `reset_complete` in administrator audit.
+Background archives retain the reset requester's credential/actor/request/trace
+provenance and recover each Session's real Project scope. Audit failure rolls back
+the corresponding state transition. Cancel does not undo an archive already committed.
+
+Online E2B deployment updates audit `change`, or `replace_credential` when an API
+key is explicitly supplied (including the existing key), under resource type
+`sandbox_deployment` and the installation ID. The audit and generation/credential
+write commit together; verification failures and omitted-key no-ops produce no
+mutation audit. No credential, request body or provider response text is recorded.

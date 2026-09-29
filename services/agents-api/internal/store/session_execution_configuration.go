@@ -10,14 +10,16 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // The projection is creation metadata, excluded from retry identity. Only the
 // transaction that inserts the Session writes it; retries cannot repair or alter it.
-func saveSessionExecutionConfiguration(ctx context.Context, q *sqlc.Queries, session sqlc.Session, projection *v1.SessionExecutionConfiguration, provider *v1.ModelProviderInput) error {
+func saveSessionExecutionConfiguration(ctx context.Context, q *sqlc.Queries, session sqlc.Session, projection *v1.SessionExecutionConfiguration, provider *v1.ModelProviderInput, providerSource string, revision uuid.UUID) error {
 	if projection == nil {
 		return nil
 	}
+	var frozenRevision pgtype.UUID
 	frozen := *projection
 	model, err := sessionExecutionModel(session.Configuration)
 	if err != nil {
@@ -37,6 +39,9 @@ func saveSessionExecutionConfiguration(ctx context.Context, q *sqlc.Queries, ses
 		// are never part of it.
 		frozen.ModelProvider.Status = "available"
 		frozen.ModelProvider.Configuration = provider.SafeView()
+		if providerSource == v1.ModelProviderSourceDeployment && revision != uuid.Nil {
+			frozenRevision = pgtype.UUID{Bytes: revision, Valid: true}
+		}
 	case "session", "agent":
 		if provider == nil || frozen.ModelProvider.Status != "available" || frozen.ModelProvider.Configuration == nil || *frozen.ModelProvider.Configuration != *provider.SafeView() {
 			return fmt.Errorf("%w: execution projection does not match model provider", ErrInvalidInput)
@@ -52,7 +57,7 @@ func saveSessionExecutionConfiguration(ctx context.Context, q *sqlc.Queries, ses
 	if err != nil {
 		return err
 	}
-	return q.SaveSessionExecutionConfiguration(ctx, sqlc.SaveSessionExecutionConfigurationParams{SessionID: session.ID, Configuration: raw})
+	return q.SaveSessionExecutionConfiguration(ctx, sqlc.SaveSessionExecutionConfigurationParams{SessionID: session.ID, Configuration: raw, DeploymentProviderRevision: frozenRevision})
 }
 
 // GetSessionExecutionConfiguration reads only safe committed configuration. It

@@ -57,7 +57,7 @@ func TestClaudeSDKDiscoveryAndRegistration(t *testing.T) {
 				checks.Pi = func(context.Context, string) (string, error) { return "test-pi", nil }
 			}
 			stdout, stderr := &strings.Builder{}, &strings.Builder{}
-			discovery, err := discoverAgentCLIs(&runContext{stdout: stdout, stderr: stderr}, "test", checks)
+			discovery, err := discoverAgentCLIs(t.Context(), &runContext{stdout: stdout, stderr: stderr}, "test", checks)
 			if (err == nil) != (tc.ready || tc.legacy) {
 				t.Fatalf("startup readiness: %v", err)
 			}
@@ -78,6 +78,9 @@ func TestClaudeSDKDiscoveryAndRegistration(t *testing.T) {
 				t.Fatal(err)
 			}
 			info := discovery.ClaudeSDK.Info
+			if info.Available {
+				info.Capabilities.Preparation = true
+			}
 			if info.Available != tc.ready {
 				t.Fatal(info)
 			}
@@ -113,7 +116,7 @@ func TestClaudeSDKInvalidPathsFailBeforeProbe(t *testing.T) {
 			} else {
 				t.Setenv("OAC_RUNTIME_HOME", "relative-home")
 			}
-			out := discoverClaudeSDK(&runContext{stdout: &strings.Builder{}, stderr: &strings.Builder{}}, "default", func(context.Context, claudesdk.Config) (claudesdk.RuntimeInfo, error) {
+			out := discoverClaudeSDK(t.Context(), &runContext{stdout: &strings.Builder{}, stderr: &strings.Builder{}}, "default", func(context.Context, claudesdk.Config) (claudesdk.RuntimeInfo, error) {
 				t.Fatal("invalid paths reached runtime probe")
 				return claudesdk.RuntimeInfo{}, nil
 			})
@@ -134,7 +137,7 @@ func TestClaudeSDKFeatureDiscovery(t *testing.T) {
 	}
 	t.Setenv(claudeSDKNodeEnv, node)
 	for _, features := range [][]string{nil, {"mcp_http_tools"}, {"mcp_http_bearer_auth"}, {"mcp_http_tools", "mcp_http_bearer_auth"}, {"mcp_http_required"}, {"mcp_http_tools", "mcp_http_required"}, {"subagent_resources"}, {"structured_output"}} {
-		out := discoverClaudeSDK(&runContext{stdout: &strings.Builder{}, stderr: &strings.Builder{}}, "default", func(context.Context, claudesdk.Config) (claudesdk.RuntimeInfo, error) {
+		out := discoverClaudeSDK(t.Context(), &runContext{stdout: &strings.Builder{}, stderr: &strings.Builder{}}, "default", func(context.Context, claudesdk.Config) (claudesdk.RuntimeInfo, error) {
 			info := claudesdk.RuntimeInfo{SDK: "0.3.269", Native: "2.1.269 (Claude Code)", Features: features}
 			return info, nil
 		})

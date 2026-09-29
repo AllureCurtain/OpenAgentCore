@@ -20,11 +20,11 @@ type RuntimeDeployment struct {
 	LocalMaxActive, LocalMaxRetained int
 	InstallationID                   string
 	BackendFingerprint               string
-	Maintenance                      bool
+	AdmissionPaused                  bool
 }
 
 // ConfigureRuntimeDeployment runs before Worker startup under its execution lease.
-// Maintenance must be committed for the old installation before any switch.
+// AdmissionPaused must be committed for the old installation before any switch.
 // A nil selection never forgets the previous identity or unresolved resources.
 func (s *Store) ConfigureRuntimeDeployment(ctx context.Context, selected *RuntimeDeployment, verify RuntimeOwnershipVerifier) error {
 	if s.executionLease == nil {
@@ -44,7 +44,7 @@ func (s *Store) ConfigureRuntimeDeployment(ctx context.Context, selected *Runtim
 		if err != nil || len(digest) != 32 || strings.ToLower(selected.BackendFingerprint) != selected.BackendFingerprint {
 			return fmt.Errorf("%w: invalid backend identity fingerprint", ErrInvalidInput)
 		}
-		update = sqlc.SetRuntimeDeploymentParams{InstallationID: id, BackendFingerprint: selected.BackendFingerprint, Maintenance: selected.Maintenance}
+		update = sqlc.SetRuntimeDeploymentParams{InstallationID: id, BackendFingerprint: selected.BackendFingerprint, AdmissionPaused: selected.AdmissionPaused}
 	}
 	plan, err := s.verifyLegacyRuntimeAdoption(ctx, selected, verify)
 	if err != nil {
@@ -82,7 +82,7 @@ func (s *Store) ConfigureRuntimeDeployment(ctx context.Context, selected *Runtim
 				return fmt.Errorf("cannot adopt sandbox installation: %d existing unreleased allocations (including retained snapshots and pending cleanup) have no verified backend identity", resources.Allocations)
 			}
 		} else {
-			if !previous.Maintenance || !selected.Maintenance {
+			if !previous.AdmissionPaused || !selected.AdmissionPaused {
 				return fmt.Errorf("cannot switch sandbox installation: persist maintenance on the previous installation and keep the new installation in maintenance")
 			}
 			if resources.Allocations != 0 || resources.Pending != 0 {
@@ -106,7 +106,10 @@ func checkRuntimeDeploymentAdmission(ctx context.Context, q *sqlc.Queries, insta
 	if !current.InstallationID.Valid {
 		return nil
 	}
-	if current.Maintenance {
+	if current.ResetClear.Valid {
+		return ErrSandboxResetAdmission
+	}
+	if current.AdmissionPaused {
 		return fmt.Errorf("%w: sandbox creation is paused for provider maintenance", ErrEnvironmentUnavailable)
 	}
 	if unspecifiedNodeDeployment(current) {

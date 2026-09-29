@@ -11,7 +11,7 @@ on:
         type: string
       offline:
         description: Also create the full offline archive
-        default: false
+        default: true
         type: boolean
       draft_release:
         description: Upload files to a new draft release; never publish
@@ -22,10 +22,15 @@ permissions:
   contents: read
 
 concurrency:
-  group: core-release-${{ inputs.ref || github.sha }}
+  group: core-release-${{ github.event_name == 'push' && github.ref || inputs.ref }}
   cancel-in-progress: false
 
 jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+    with:
+      ref: ${{ inputs.ref || github.sha }}
+
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 120
@@ -59,9 +64,22 @@ jobs:
           df -h /
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup
           df -h /
+      - name: Select shared Go caches
+        run: |
+          echo "GOCACHE=$HOME/.oac/cache/go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$HOME/.oac/cache/go-mod" >> "$GITHUB_ENV"
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: false
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.oac/cache/go-build
+            ~/.oac/cache/go-mod
+          key: core-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-${{ steps.source.outputs.revision }}
+          restore-keys: |
+            core-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -70,15 +88,6 @@ jobs:
           npm install --global pnpm@10.30.3
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libssl-dev
-          rustup toolchain install 1.95.0 --profile minimal
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.oac/cache/go-build
-            ~/.oac/cache/go-mod
-            ~/.oac/cache/executor-cargo
-            ~/.oac/cache/executor-target
-          key: core-release-${{ runner.os }}-${{ hashFiles('go.sum', 'packages/codex-executor/Cargo.lock') }}
       - name: Check release metadata and prepare pinned harnesses
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/core-distribution-manifest.test.py
@@ -88,7 +97,7 @@ jobs:
           RELEASE_REVISION: ${{ steps.source.outputs.revision }}
           RELEASE_TAG: ${{ steps.source.outputs.release_tag }}
           RELEASE_REPOSITORY: ${{ github.repository }}
-          CORE_DISTRIBUTION_OFFLINE: ${{ inputs.offline && '1' || '0' }}
+          CORE_DISTRIBUTION_OFFLINE: ${{ (github.event_name == 'push' || inputs.offline) && '1' || '0' }}
         run: |
           inputs="$HOME/.oac/build/release-inputs/inputs.json"
           AGENTS_RUNTIME_CODEX_PACKAGE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["codex"])' "$inputs")"
@@ -100,6 +109,8 @@ jobs:
           for asset in "$HOME/.oac/build/core-distribution/"*; do
             if [[ -f "$asset" ]]; then ln "$asset" "$HOME/.oac/build/release-upload/"; fi
           done
+          cp deploy/install-release.sh "$HOME/.oac/build/release-upload/install.sh"
+          (cd "$HOME/.oac/build/release-upload" && sha256sum install.sh > install.sh.sha256)
       - uses: actions/upload-artifact@v6
         with:
           name: core-release-${{ steps.source.outputs.revision }}
@@ -107,24 +118,26 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
-  draft:
-    if: github.event_name == 'workflow_dispatch' && inputs.draft_release
-    needs: build
+  release:
+    if: github.event_name == 'push' || inputs.draft_release
+    needs: [check, build]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build.outputs.revision }}
+          persist-credentials: false
       - uses: actions/download-artifact@v6
         with:
           name: core-release-${{ needs.build.outputs.revision }}
           path: release-upload
-      - name: Create an unpublished draft
+      - name: Publish the version tag or create a manual draft
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_REVISION: ${{ needs.build.outputs.revision }}
           RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
-        run: |
-          printf 'Matched Linux amd64 artifacts from commit %s. Build output is not live execution qualification.\n' "$RELEASE_REVISION" > release-notes.md
-          gh release create "$RELEASE_TAG" --draft --target "$RELEASE_REVISION" \
-            --title "OpenAgentCore $RELEASE_REVISION" --notes-file release-notes.md release-upload/*
+          RELEASE_MODE: ${{ github.event_name == 'push' && 'publish' || 'draft' }}
+        run: python3 scripts/publish-core-release.py --assets release-upload

@@ -1,0 +1,183 @@
+# Add a Sandbox Provider
+
+Start at [`sandbox_provider.go`](../services/agents-api/internal/sandbox/sandbox_provider.go).
+It defines the required `SandboxProvider` and optional `CheckpointProvider`
+interfaces. Use the existing types; do not introduce another lifecycle protocol or
+an execution path for a particular vendor.
+
+Core owns durable Environment, allocation, placement and cleanup state. A Sandbox
+Provider supplies compute and the bootstrap needed to start its Runtime (daemon).
+Runtime prepares capabilities and workspaces through the common daemon protocol;
+Harness adapters translate execution into native operations. The same Runtime
+preparation and execution contract applies to a user-owned machine. That machine
+has no Core-owned compute allocation to create or destroy.
+
+Sandbox isolation belongs to the outer infrastructure. A daemon running directly
+on a user's machine runs with that user's authority; installing the daemon does
+not establish a filesystem, tool or network sandbox. Provider isolation and
+network enforcement must be qualified independently of daemon connectivity.
+
+## What to implement
+
+| Contract | Requirement | Responsibility |
+| --- | --- | --- |
+| `sandbox.SandboxProvider` | Required | `Create`, `GetInfo`, `Renew`, `Kill`, and bounded bootstrap/diagnostic `RunCommand` |
+| `sandbox.CheckpointProvider` | Optional, separate interface | Exact compute incarnations, snapshot capture/restore, retained-source resume and cleanup |
+| `runtimeobs.Source` | Optional, separate interface | Read-only, ownership-checked resource observations |
+| `runtimeobs.BatchSource` | Optional, separate interface | Bounded observations in input order, with per-target errors; `ok=false` means no batch read occurred |
+
+Do not implement an optional interface with successful no-op methods. Core uses
+interface assertions to select optional operations. Advertised support requires
+contract and native acceptance evidence; a healthy node or an available CLI does
+not establish it. Observation never renews a lease, starts compute or prepares a
+Harness. See the [observation contract](../contracts/agents-api/runtime-observability.md).
+
+`RunCommand` is an existing administrative bootstrap/diagnostic facility, not an
+alternate route for Skills, Plugins, MCP setup, initial files, Session execution or
+Files. Those use Runtime. Confidential command input travels in `Command.Stdin`,
+not argv or logs. Preserve its byte order, bounded output and actual exit status.
+
+## Register an adapter
+
+Registration is explicit construction, not an init-time plugin registry:
+
+1. Put native SDK calls, ownership checks, identity translation and private
+   configuration in an adapter package under `services/agents-api/internal/sandbox`.
+   Assert `var _ sandbox.SandboxProvider = (*YourAdapter)(nil)` at compile time.
+2. For a node-local adapter, add its typed construction and readiness probe in
+   [`sandbox/config`](../services/agents-api/internal/sandbox/config/config.go).
+   The existing `Built` result returns the provider, probe, installation identity,
+   backend fingerprint and specification digest; the factory also returns its
+   close function. Construction must not create an Environment.
+3. For a direct adapter, register its construction in
+   [`managedSetup.provider`](../services/agents-api/cmd/server/managed_setup.go).
+   Node-local adapters are selected there through the existing node proxy. Keep
+   vendor-specific deployment validation and SDK setup at this boundary.
+4. Preserve the existing `execution.RuntimeProvider` deployment binding:
+   `ProviderKind`, installation ID, backend fingerprint, generation, mode and
+   node ownership identify the selected backend. The database owns the selection;
+   the in-memory selection is not an alternate authority. Register optional
+   interfaces on direct adapters and their transport wrappers consistently.
+5. Qualify the provider's operator configuration and resource limits in the
+   existing deployment specification/enrollment path. The shipped deployment
+   parser and persistence constraints explicitly enumerate supported backends;
+   update that registration surface when adding one. Do not bypass it with an
+   arbitrary provider string. This is deployment admission, not a new execution
+   workflow. Adding a new public capability requires its own protocol change.
+
+Today Docker and microsandbox use nodes; E2B is constructed directly. The node
+proxy exposes checkpoint operations only for its registered checkpoint-capable
+backend. A new node backend must register both construction and the corresponding
+proxy capability; otherwise that capability is unavailable. Provider names belong
+in this adapter/configuration wiring, not Session scheduling, capability
+preparation or Turn execution. Common lifecycle code uses `CheckpointProvider`
+to admit suspension, independently of a provider name.
+
+The backend fingerprint identifies a native resource namespace, not mutable
+capacity. Core retains deployment generations so old owned allocations continue
+to resolve to their original backend. This is resource ownership, not historical
+binary compatibility. Do not repoint retained allocations at a replacement backend.
+
+## Identity and resource responsibility
+
+`Reference` is the exact `(TenantID, EnvironmentID, AllocationID)` tuple. Core
+persists a fresh allocation ID **before** `Create`; it is not the Environment ID.
+The adapter also binds resources to its installation. Do not locate or authorize
+resources by a bare native ID, display name, guessed path or an unverified label.
+All mutations, reads and cleanup must verify the same ownership.
+
+Core serializes lifecycle operations and retains the allocation after any
+uncertain mutation. An adapter must preserve enough native identity/receipts for
+observation and cleanup. A failed call may return both `Info` and an error:
+preserve reference-bound settlement evidence without converting failure to success.
+Adapters must not silently create replacement resources, overwrite credentials or
+switch to a new allocation after a conflict.
+
+`Info.ProviderID` and `Info.State` describe compute. Core recognizes `running`
+only with the matching Reference and a native identity. Other native states can
+be observed without claiming readiness. `BootstrapComplete` says the bootstrap
+reached its final mutating step. `CreateSettled` proves the original attempt can
+no longer mutate resources; it does not mean success. In particular:
+
+- `State="absent"` plus matching Reference and `CreateSettled=true` is an explicit
+  creation-absence receipt, with no native ID or completed bootstrap.
+- `ErrNotFound`, an empty listing, a timeout or a successful `Kill` alone is not
+  proof that an in-flight create cannot appear later.
+- Core can also settle creation from a matching running resource with completed
+  bootstrap. It must retain unknown creation until it has such evidence or an
+  explicit receipt, even if a cleanup attempt currently sees no resources.
+
+`Kill` owns cleanup of the allocation's compute and retained resources, including
+partial bootstrap storage. It must not remove another tenant's resource on a
+name collision. Core releases durable ownership only after confirmed cleanup
+**and** settled creation. Executor release or Harness cancellation does not delete
+an Environment, its workspace or its Sandbox Provider allocation.
+
+## Operation outcomes and retries
+
+All calls receive bounded contexts. Expiry or cancellation ends the caller's
+wait; it does not prove rollback, native stop, cleanup or absence. An adapter or
+transport must not detach untracked mutations or replay a timed-out command.
+
+| Operation | Confirmed result | Failure or unknown result | Recovery |
+| --- | --- | --- | --- |
+| `Create` | Matching compute and bootstrap evidence; execution still needs Runtime preparation | Invalid/foreign configuration rejects; duplicate returns `ErrExists`; transport failure may hide created resources | Observe the original Reference. Never replay `Create`, even with a new credential. Preserve partial resources for owned cleanup. |
+| `GetInfo` | Current compute observation without mutation | `ErrNotFound` is only a missing observation; an error is not absence proof | Repeat a bounded read; never turn it into create/start/renew. |
+| `Renew` | Existing native lease extended, or an observation for a provider without leases | Timeout may hide a lease extension; stopped/missing compute stays stopped/missing | Observe then let the normal reconciler renew the same allocation. Never revive it or fabricate a lease expiry. |
+| `Kill` | Owned compute and retained storage removed; repeated confirmed absence succeeds | Error retains ownership and cleanup intent; ownership mismatch must not delete foreign resources | Retry cleanup of the same Reference after outstanding creation/mutation is fenced. Do not release the durable owner early. |
+| `RunCommand` | Collected output and actual exit code; nonzero exit is a settled command failure | Missing native completion is `ErrCommandUnconfirmed`; partial output is not success | Do not replay. Preserve the owner and reclaim before reuse when completion cannot be proved. |
+
+Use `ErrInvalid`, `ErrOwnership`, `ErrExists`, `ErrNotFound`,
+`ErrComputeUnconfirmed` and `ErrCommandUnconfirmed` for their existing meanings.
+An unclassified native/transport error is conservatively unknown, not permission
+to retry a mutation. Core must not interpret provider diagnostics as lifecycle
+truth or expose native error text/credentials. The node boundary maps errors to
+fixed codes; direct SDK details stay private.
+
+Checkpoint support adds `Compute` generation/name/ID and `SnapshotIdentity`.
+Persist operation IDs and provider-returned snapshot provenance unchanged.
+`ObserveOnly` on suspend/resume observes the previous attempt and must not start
+another capture or restore. `ResumeCompute` only thaws the retained source; it
+must not cold-start a stopped one. Cleanup targets the exact compute incarnation
+and snapshot, not whichever instance currently has the same display name. See
+[the lifecycle implementation](../services/agents-api/internal/execution/runtime_compute.go)
+and its failure tests before advertising this capability.
+
+## Four distinct readiness facts
+
+| Fact | Evidence | Does not establish |
+| --- | --- | --- |
+| Compute available | Provider observation for the owned allocation | Authenticated Runtime connection or prepared capabilities |
+| Runtime connected | Gateway authentication and exact Environment/device binding | Completed Runtime preparation or a usable Harness |
+| Capabilities prepared | Successful common Runtime preparation with the fixed configuration/snapshot | Acceptance or completion of a Turn |
+| Execution admitted | Qualified Harness capabilities and the existing executor/Turn acceptance path | A completed input, cancellation or reclaimed compute |
+
+For both hosted and self-hosted environments, Core uses the daemon preparation
+and execution protocol. Core resolves configuration and supplies resources;
+Runtime installs/reads local capabilities and freezes the result for the Session.
+Reconnection can reuse that prepared content; a new Session takes a new snapshot.
+A provider must not implement a competing preparation path.
+
+## Validate the integration
+
+Run `make check-sandbox-provider-contract` while developing. It runs the shared
+[`contracttest`](../services/agents-api/internal/sandbox/contracttest) suite through
+real adapter boundaries using controlled native failures, plus existing adapter
+and node transport tests. The same packages are included in `make check`.
+New adapters should call the public failure runner with native-side fixtures,
+not substitute a fake implementation of `SandboxProvider` for the adapter under
+test. Preserve tests for foreign ownership, unknown mutation results, cancellation,
+no automatic replay, failed cleanup and reference-bound settlement.
+
+Node tests separately exercise disconnect/reconnect fencing and cleanup after a
+lost create response. Provider helper protocols and the node protocol require an
+exact version match and reject mismatches; do not add fallback decoders or old
+binary migration. Direct in-process interfaces have no independent wire version.
+
+Run `make check` with its dedicated database before completion. Retain native
+acceptance for SDK behavior that fixtures cannot prove: creation, lease behavior,
+owned partial cleanup, declared isolation/limits, and snapshots where supported.
+The opt-in Docker lifecycle/recovery tests use `AGENTS_RUNTIME_DOCKER_TEST_IMAGE`;
+SDK helper tests use `make check-e2b-provider` and
+`make check-microsandbox-provider`. Passing controlled contract tests is not a
+claim of live cloud or model acceptance.

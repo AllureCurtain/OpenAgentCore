@@ -17,12 +17,10 @@ import (
 )
 
 func TestLocalDirectoryPreparationNeedsNoHarnessAndRejectsOtherOwners(t *testing.T) {
-	workspace, helper := t.TempDir(), filepath.Join(t.TempDir(), "directory")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nprintf '%s' '{\"version\":1,\"directory\":{\"entries\":[],\"truncated\":false}}'\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	workspace := t.TempDir()
+
 	environment, session := uuid.NewString(), uuid.NewString()
-	binding, err := localworkspace.New(environment, session, workspace, helper)
+	binding, err := localworkspace.New(environment, session, workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,12 +50,20 @@ func TestLocalDirectoryPreparationNeedsNoHarnessAndRejectsOtherOwners(t *testing
 	if got := waitWorkspaceRead(t, sender, "list"); got.Outcome != "completed" || got.Directory == nil {
 		t.Fatal("idle directory unavailable", got)
 	}
+	if err := os.WriteFile(filepath.Join(workspace, "bytes"), []byte{0, 255, 17}, 0600); err != nil {
+		t.Fatal(err)
+	}
+	content := proto.WorkspaceReadPayload{EnvironmentID: environment, Handle: ready.Handle, Path: "bytes", MaxBytes: 2}
+	_ = r.Handle(t.Context(), mustEnv(t, proto.TypeWorkspaceRead, "content", content))
+	if got := waitWorkspaceRead(t, sender, "content"); got.Outcome != "completed" || !got.Truncated || !got.CloseAcknowledged || len(got.Data) != 2 || got.Data[1] != 255 {
+		t.Fatal("file prefix unavailable", got)
+	}
 	read.EnvironmentID = uuid.NewString()
 	_ = r.Handle(t.Context(), mustEnv(t, proto.TypeWorkspaceRead, "foreign", read))
 	if got := waitWorkspaceRead(t, sender, "foreign"); got.Outcome != "rejected" {
 		t.Fatal("foreign directory accepted", got)
 	}
-	if err := r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionStart, "idle", proto.ExecutionStartPayload{Handle: ready.Handle, RunID: "forbidden", Input: proto.TextInput("work")})); err == nil {
+	if err := r.Handle(t.Context(), mustEnv(t, proto.TypeExecutionStart, "idle", proto.ExecutionStartPayload{Handle: ready.Handle, ExecutorID: ready.ExecutorID, RunID: "forbidden", Input: proto.TextInput("work")})); err == nil {
 		t.Fatal("read preparation admitted execution")
 	}
 	bad := request
@@ -92,21 +98,12 @@ func waitWorkspaceRead(t *testing.T, sender *recSender, id string) proto.Workspa
 }
 
 func TestLocalDirectoryKeepsNotDirectorySeparateFromFailures(t *testing.T) {
-	workspace, helper := t.TempDir(), filepath.Join(t.TempDir(), "directory")
-	script := `#!/bin/sh
-case "$2" in
-  missing) printf '%s' '{"version":1,"error":"not_directory"}' ;;
-  invalid) printf '%s' '{"version":1,"error":"invalid_path"}' ;;
-  gone) printf '%s' '{"version":1,"error":"not_found"}' ;;
-  denied) printf '%s' '{"version":1,"error":"permission_denied"}' ;;
-  broken) printf '%s' '{"version":1,"error":"native_error"}' ;;
-esac
-`
-	if err := os.WriteFile(helper, []byte(script), 0o700); err != nil {
+	workspace := t.TempDir()
+	if err := os.WriteFile(filepath.Join(workspace, "file"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
 	environment, session := uuid.NewString(), uuid.NewString()
-	binding, err := localworkspace.New(environment, session, workspace, helper)
+	binding, err := localworkspace.New(environment, session, workspace)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,11 +126,9 @@ esac
 	}
 	ready := waitPreparationStatus(t, sender, "idle", "ready", "")
 	for path, want := range map[string]proto.WorkspaceReadResultPayload{
-		"missing": {Outcome: "rejected", ErrorCode: proto.WorkspaceReadNotDirectory},
-		"invalid": {Outcome: "rejected", ErrorCode: "invalid_request"},
-		"gone":    {Outcome: "rejected", ErrorCode: "not_found"},
-		"denied":  {Outcome: "rejected", ErrorCode: "permission_denied"},
-		"broken":  {Outcome: "unknown", ErrorCode: "read_unconfirmed"},
+		"missing":    {Outcome: "rejected", ErrorCode: proto.WorkspaceReadNotDirectory},
+		"file":       {Outcome: "rejected", ErrorCode: proto.WorkspaceReadNotDirectory},
+		"../invalid": {Outcome: "rejected", ErrorCode: "invalid_request"},
 	} {
 		read := proto.WorkspaceReadPayload{EnvironmentID: environment, Handle: ready.Handle, Operation: "directory", Path: path, MaxEntries: 10}
 		_ = r.Handle(t.Context(), mustEnv(t, proto.TypeWorkspaceRead, path, read))

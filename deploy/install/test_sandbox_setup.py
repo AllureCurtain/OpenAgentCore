@@ -6,6 +6,7 @@ import unittest
 from unittest import mock
 
 import sandbox_setup
+import config_model
 
 INSTALLATION = "94be54a1-138c-4f30-bc87-b13686272dbe"
 
@@ -31,7 +32,7 @@ class SandboxSetupTests(unittest.TestCase):
         self.root = Path(temporary.name)
         (self.root / "secrets").mkdir()
         (self.root / "secrets/core.key").write_text("fixture-core-key\n")
-        self.config, self.state = {"ports": {"core": 8091}}, {"installation_id": INSTALLATION}
+        self.config, self.state = config_model.initial("all"), {"installation_id": INSTALLATION}
 
     def initialize(self, current, selection):
         requests = []
@@ -52,6 +53,22 @@ class SandboxSetupTests(unittest.TestCase):
             self.initialize(dict(current, provider="microsandbox"), docker)
         with self.assertRaisesRegex(sandbox_setup.SandboxSetupError, "different installation"):
             self.initialize(dict(current, installation_id="other", provider=""), docker)
+
+    def test_initialization_uses_observed_generation_once(self):
+        for generation in (0, 8):
+            with self.subTest(generation=generation):
+                current = {"installation_id": INSTALLATION, "provider": "", "generation": generation, "reset": None}
+                selection = {"provider": "docker", "resources": {"cpus": 2, "memory_mib": 2048}, "runtime": {}}
+                writes = []
+                def send(req):
+                    if req.get_method() == "POST":
+                        writes.append(json.loads(req.data))
+                        return 409, b'{"error":{"code":"generation_stale","message":"Deployment generation changed"}}'
+                    return 200, json.dumps(current).encode()
+                with mock.patch.object(sandbox_setup, "send", side_effect=send), self.assertRaises(sandbox_setup.SandboxSetupError):
+                    sandbox_setup.initialize(self.root, self.config, self.state, selection)
+                self.assertEqual(writes, [dict(selection, expected_generation=generation)])
+                self.assertNotIn("expected_generation", selection)
 
     def test_e2b_template_is_an_exact_build(self):
         build = "0f6c1e8e-7d3a-4b8e-9a51-2b7f7f0c9d11"

@@ -11,13 +11,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/auth"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/daemonize"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/transport"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 	"github.com/google/uuid"
 )
 
@@ -113,7 +112,7 @@ func enrollEnvironment(ctx context.Context, client *http.Client, base, environme
 		return out, fmt.Errorf("connect: Environment enrollment rejected (HTTP %d)", resp.StatusCode)
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 16*1024+1))
-	if err != nil || len(raw) > 16*1024 || decodeEnvironmentJSON(raw, &out) != nil || !environmentUUID(out.DeviceID) || !environmentUUID(out.SessionID) || out.EnvironmentID != environment || out.WorkspaceDirectory != "/workspace" {
+	if err != nil || len(raw) > 16*1024 || decodeEnvironmentJSON(raw, &out) != nil || !environmentUUID(out.DeviceID) || !environmentUUID(out.SessionID) || out.EnvironmentID != environment || out.WorkspaceDirectory == "/" || agentcapabilities.ValidateLocalDirectories([]string{out.WorkspaceDirectory}) != nil {
 		return environmentEnrollment{}, errors.New("connect: invalid Environment enrollment response")
 	}
 	return out, nil
@@ -130,7 +129,7 @@ func environmentBootstrap(ctx context.Context, prof auth.Profile, remote string)
 	return boot, nil
 }
 
-func runEnvironmentConnect(rc *runContext, profile string, background bool, remote, environment, credentialFile string, selfHosted bool) error {
+func runEnvironmentConnect(parent context.Context, rc *runContext, profile string, background bool, remote, environment, credentialFile string) error {
 	base, err := environmentBase(remote)
 	if err != nil {
 		return err
@@ -149,30 +148,33 @@ func runEnvironmentConnect(rc *runContext, profile string, background bool, remo
 	// the connection parks instead.
 	parks := !background || daemonize.IsBackgroundChild()
 	rejected := func(err error) error {
-		if message := environmentRejection(err, keyID, environment, selfHosted); parks && message != "" {
-			return parkEnvironment(rc.stderr, message)
+		if message := environmentRejection(err, keyID, environment); parks && message != "" {
+			return parkEnvironment(parent, rc.stderr, message)
 		}
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), bootstrapTimeout)
+	ctx, cancel := context.WithTimeout(parent, bootstrapTimeout)
 	defer cancel()
 	bound, err := enrollEnvironment(ctx, environmentClient(), base, environment, credential)
 	if err != nil {
 		return rejected(err)
 	}
+	if err = parent.Err(); err != nil {
+		return err
+	}
 	if err = bindEnvironmentRuntime(remote, bound, credentialFile); err != nil {
 		return err
 	}
 	if background && !daemonize.IsBackgroundChild() {
-		return spawnBackground(rc, profile, os.Args, nil)
+		return spawnBackground(parent, rc, profile, os.Args, nil)
 	}
 	// Discovery consumes the immutable Runtime binding; it must follow enrollment.
-	discovery, err := preflightAgentCLIs(rc, profile)
+	discovery, err := preflightAgentCLIs(parent, rc, profile)
 	if err != nil {
 		return err
 	}
 	prof := auth.Profile{ServerURL: base, RuntimeID: bound.DeviceID, RunnerCredential: credential}
-	return rejected(mainLoopRemote(rc, profile, prof, discovery, remote))
+	return rejected(mainLoopRemote(parent, rc, profile, prof, discovery, remote))
 }
 
 var (
@@ -183,13 +185,9 @@ var (
 // environmentRejection names the fix for a permanent Environment rejection:
 // enrollment 401 or 409, or a permanent WebSocket rejection or close. It returns
 // "" for anything else (transport failures, 5xx, 404), which keeps the ordinary
-// failure exit so the Runtime's restart policy retries it. Only a Runtime the
-// self-hosted installer started names that installer's rerun and container.
-func environmentRejection(err error, keyID, environment string, selfHosted bool) string {
+// failure exit so the Runtime's restart policy retries it.
+func environmentRejection(err error, keyID, environment string) string {
 	reconnect, remove := "install it for this Runtime and restart it", "stop this Runtime"
-	if selfHosted {
-		reconnect, remove = "rerun the self-hosted install command on this host and paste it", "stop this container"
-	}
 	switch {
 	case errors.Is(err, errEnvironmentBindingConflict):
 		return fmt.Sprintf("executor credential %s cannot connect: Environment %s is bound to a different executor credential. This Runtime will not retry. Rotate the credential first used for this Environment instead of issuing a new one, then %s. To remove this Runtime instead, %s.", keyID, environment, reconnect, remove)
@@ -205,8 +203,8 @@ func environmentRejection(err error, keyID, environment string, selfHosted bool)
 // until SIGINT or SIGTERM and exits successfully. Docker's unless-stopped policy
 // restarts every exit, so an exit would loop; a parked Runtime still restarts
 // after a reboot, makes one enrollment request and parks again.
-func parkEnvironment(stderr io.Writer, message string) error {
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+func parkEnvironment(parent context.Context, stderr io.Writer, message string) error {
+	ctx, stop := daemonize.NotifyContext(parent)
 	defer stop()
 	fmt.Fprintln(stderr, "oac-daemon: "+message)
 	<-ctx.Done()

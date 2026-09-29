@@ -160,6 +160,15 @@ export interface AdminAuditPage extends AdminPage<AdminAuditEntry> { next_cursor
 
 /** Executor credential metadata for one self_hosted environment; the credential itself is never listed. */
 export interface ExecutorCredential { key_id: string; created_at: string; revoked_at: string | null }
+/** Core authority plus a matching live gateway peer; timestamps alone are not readiness. */
+export interface ExecutorConnection {
+  status: "never_enrolled" | "connected" | "disconnected";
+  bound_key_id: string | null;
+  enrolled_at: string | null;
+  last_seen_at: string | null;
+}
+export interface ExecutorCredentialList { data: ExecutorCredential[]; connection: ExecutorConnection }
+
 /** `key_id` is chosen by the caller, so an uncertain issuance can be reissued with the same ID and `rotate: true`. */
 export interface IssueExecutorCredentialInput { key_id: string; rotate?: boolean }
 /** Returned once, on issuance or rotation. */

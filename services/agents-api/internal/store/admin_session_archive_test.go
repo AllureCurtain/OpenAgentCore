@@ -48,13 +48,6 @@ func managedArchiveSession(t *testing.T, s *Store, input CreateSessionInput) (st
 	return tenant, session
 }
 
-func archiveMaintenance(t *testing.T, w *Store, installation string, enabled bool) {
-	t.Helper()
-	if _, err := w.SetSandboxMaintenance(t.Context(), installation, SandboxMaintenanceRequest{Maintenance: enabled, ExpectedGeneration: 1}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func archiveAllocation(t *testing.T, w *Store, tenant string, session Session, installation string) RuntimeAllocation {
 	t.Helper()
 	owner, err := w.ReserveRuntimeAllocation(t.Context(), tenant, session.Environment.ID, installation, device.HashCredential(uuid.NewString()))
@@ -74,10 +67,6 @@ func TestManagedSessionArchiveUnallocatedAndGuards(t *testing.T) {
 	if err != nil || active.State != "active" || active.SessionID != session.ID || active.EnvironmentID != session.Environment.ID {
 		t.Fatal("unallocated Session status", active, err)
 	}
-	if _, err := w.ArchiveManagedSession(ctx, tenant, session.ID, 1); !errors.Is(err, ErrSandboxDeploymentConflict) {
-		t.Fatal("archive bypassed maintenance", err)
-	}
-	archiveMaintenance(t, w, installation, true)
 	for _, generation := range []uint64{0, 2, ^uint64(0)} {
 		if _, err := w.ArchiveManagedSession(ctx, tenant, session.ID, generation); !errors.Is(err, ErrSandboxDeploymentConflict) {
 			t.Fatal("archive accepted wrong generation", generation, err)
@@ -120,9 +109,8 @@ func TestManagedSessionArchiveUnallocatedAndGuards(t *testing.T) {
 	if status, err := s.GetManagedSessionArchive(ctx, tenant, session.ID); err != nil || status != result {
 		t.Fatal("status differs from committed archive", status, err)
 	}
-	archiveMaintenance(t, w, installation, false)
 	if _, err := w.ReserveRuntimeAllocation(t.Context(), tenant, session.Environment.ID, installation, device.HashCredential(uuid.NewString())); !errors.Is(err, ErrInvalidInput) {
-		t.Fatal("archived Environment allocated after maintenance", err)
+		t.Fatal("archived Environment allocated after archive", err)
 	}
 	if _, err := s.ReserveEnvironmentInput(t.Context(), tenant, session.ID, "later", []Input{{Kind: "message", Payload: json.RawMessage(`{"text":"later"}`)}}); !errors.Is(err, ErrEnvironmentUnavailable) {
 		t.Fatal("archived Environment accepted new input", err)
@@ -152,7 +140,6 @@ func TestManagedSessionArchiveRetainsHistoryAndSettledResources(t *testing.T) {
 	}
 	transition(t, w, tenant, session.ID, input.TurnID, TurnInProgress, TurnCompleted)
 	history := adminMutationSnapshot(t, s, "sessions", "turns", "session_items", "session_artifacts", "source_files", "pg_largeobject", "pg_largeobject_metadata")
-	archiveMaintenance(t, w, installation, true)
 	request := uuid.NewString()
 	result, err := w.ArchiveManagedSession(adminDeleteContext(t.Context(), tenant, request), tenant, session.ID, 1)
 	if err != nil || result.State != "cleanup_pending" {
@@ -218,7 +205,6 @@ func TestManagedSessionArchiveAuditFailureRollsBack(t *testing.T) {
 	archiveAllocation(t, w, tenant, session, installation)
 	input := submitMessage(t, s, tenant, session.ID, "running")
 	transition(t, w, tenant, session.ID, input.TurnID, TurnQueued, TurnInProgress)
-	archiveMaintenance(t, w, installation, true)
 	rejectAdminAuditInsert(t, s)
 	tables := []string{"sessions", "environments", "turns", "session_events", "devices", "runtime_allocations", "runtime_placements", "environment_input_reservations", "admin_audit_log"}
 	before := adminMutationSnapshot(t, s, tables...)
@@ -249,7 +235,6 @@ func TestManagedSessionArchivePreservesFailuresAndRejectsSelfHosted(t *testing.T
 		t.Fatal("failure fixture", err)
 	}
 	otherTenant, selfHosted := managedArchiveSession(t, s, environmentInput(uuid.NewString(), "self_hosted", "/workspace"))
-	archiveMaintenance(t, w, installation, true)
 	if _, err := w.ArchiveManagedSession(adminDeleteContext(t.Context(), tenant, uuid.NewString()), tenant, session.ID, 1); err != nil {
 		t.Fatal(err)
 	}

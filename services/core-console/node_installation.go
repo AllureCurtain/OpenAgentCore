@@ -8,56 +8,90 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 )
 
 // These are distribution artifacts, never installation configuration or secrets.
 // Serving the fixed list avoids a package registry or an arbitrary file endpoint.
 var nodePayloadFiles = map[string]bool{
-	"node-install.pyz": true, "self-hosted-install.pyz": true,
-	"manifest.json": true, "SHA256SUMS": true, "runtime/seccomp.json": true,
+	"node-install.pyz": true,
+	"manifest.json":    true, "SHA256SUMS": true, "runtime/seccomp.json": true,
 }
 
 // An offline distribution exposes only artifacts declared for these payloads.
 var optionalPayloadFiles = map[string]bool{
 	"native/bin/oac-node": true, "native/bin/oac-daemon": true,
-	"native/bin/oac-selfhost": true, "native/bin/oac-microsandbox-provider": true,
-	"native/microsandbox/msb": true, "native/microsandbox/libkrunfw.so.5.6.1": true,
+	"native/bin/oac-microsandbox-provider": true,
+	"native/microsandbox/msb":              true, "native/microsandbox/libkrunfw.so.5.6.1": true,
 	"images/runtime.tar.gz": true, "runtime/seccomp.json": true,
 }
 
-func (h *console) allowedNodePayload(name string) bool {
-	if nodePayloadFiles[name] {
-		return true
+var payloadRevision = regexp.MustCompile(`^[0-9a-f]{40}$`)
+
+// activePayloadPrefix reads one atomic pointer per request. Legacy flat payloads
+// remain readable until the installer publishes its first versioned release.
+func activePayloadPrefix(root *os.Root) (string, error) {
+	raw, err := root.ReadFile("active.json")
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
 	}
-	if !strings.HasPrefix(name, "artifacts/") || strings.Contains(strings.TrimPrefix(name, "artifacts/"), "/") {
-		return false
+	if err != nil || len(raw) > 256 {
+		return "", errors.New("invalid active node payload")
 	}
-	f, err := h.nodePayload.Open("manifest.json")
+	var pointer struct {
+		SourceCommit string `json:"source_commit"`
+	}
+	if json.Unmarshal(raw, &pointer) != nil || !payloadRevision.MatchString(pointer.SourceCommit) {
+		return "", errors.New("invalid active node payload")
+	}
+	return "releases/" + pointer.SourceCommit + "/", nil
+}
+
+func (h *console) resolveNodePayload(name string) (string, bool) {
+	prefix := ""
+	if strings.HasPrefix(name, "releases/") {
+		parts := strings.SplitN(name, "/", 3)
+		if len(parts) != 3 || !payloadRevision.MatchString(parts[1]) {
+			return "", false
+		}
+		prefix, name = "releases/"+parts[1]+"/", parts[2]
+	} else {
+		var err error
+		prefix, err = activePayloadPrefix(h.nodePayload)
+		if err != nil {
+			return "", false
+		}
+	}
+	if prefix == "" && nodePayloadFiles[name] {
+		return name, true
+	}
+	if !nodePayloadFiles[name] && (!strings.HasPrefix(name, "artifacts/") || strings.Contains(strings.TrimPrefix(name, "artifacts/"), "/")) {
+		return "", false
+	}
+	manifest, err := h.readNodeManifest(prefix)
 	if err != nil {
-		return false
+		return "", false
 	}
-	defer f.Close()
-	var manifest struct {
-		Artifacts map[string]struct {
-			Filename string `json:"filename"`
-		} `json:"artifacts"`
-	}
-	if json.NewDecoder(io.LimitReader(f, 1024*1024)).Decode(&manifest) != nil {
-		return false
+	if nodePayloadFiles[name] {
+		return prefix + name, true
 	}
 	for logical, entry := range manifest.Artifacts {
 		if optionalPayloadFiles[logical] && entry.Filename != "" && "artifacts/"+entry.Filename == name {
-			return true
+			return prefix + name, true
 		}
 	}
-	return false
+	return "", false
 }
 
 // installerDigest returns the SHA-256 that Web's install commands verify
 // before running the named installer from the payload.
 func installerDigest(root *os.Root, name string) (string, error) {
-	f, err := root.Open(name)
+	prefix, err := activePayloadPrefix(root)
+	if err != nil {
+		return "", err
+	}
+	f, err := root.Open(prefix + name)
 	if err != nil {
 		return "", errors.New("installer " + name + " is missing from the node installation payload")
 	}
@@ -80,12 +114,23 @@ func (h *console) serveNodePayload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/node-install/")
-	if !h.allowedNodePayload(name) {
+	resolved, allowed := h.resolveNodePayload(name)
+	if !allowed {
 		http.NotFound(w, r)
 		return
 	}
-	f, err := h.nodePayload.Open(name)
+	f, err := h.nodePayload.Open(resolved)
 	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			if prefix, filename, ok := strings.Cut(resolved, "artifacts/"); ok {
+				if manifest, readErr := h.readNodeManifest(prefix); readErr == nil {
+					if target := manifest.artifactURL(filename); target != "" {
+						http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+						return
+					}
+				}
+			}
+		}
 		http.NotFound(w, r)
 		return
 	}
@@ -108,34 +153,30 @@ var providerArtifacts = map[string][]string{
 }
 
 // nodeArtifacts reports the providers whose node artifacts this console can serve:
-// each is declared in manifest.json and present at its declared size. A thin
-// distribution has none. Nodes verify every checksum themselves. It is read per
+// each is present locally or has a pinned release download. Nodes verify every
+// checksum themselves. It is read per
 // request, so artifacts added by rerunning the installer show without a restart.
 func (h *console) nodeArtifacts() []string {
 	available := []string{}
 	if h.nodePayload == nil {
 		return available
 	}
-	f, err := h.nodePayload.Open("manifest.json")
+	prefix, err := activePayloadPrefix(h.nodePayload)
 	if err != nil {
 		return available
 	}
-	defer f.Close()
-	var manifest struct {
-		Artifacts map[string]struct {
-			Filename string `json:"filename"`
-			Size     int64  `json:"size"`
-		} `json:"artifacts"`
-	}
-	if json.NewDecoder(io.LimitReader(f, 1024*1024)).Decode(&manifest) != nil {
+	manifest, err := h.readNodeManifest(prefix)
+	if err != nil {
 		return available
 	}
 	for _, provider := range []string{"docker", "microsandbox"} {
 		complete := true
 		for _, logical := range providerArtifacts[provider] {
 			entry, ok := manifest.Artifacts[logical]
-			info, err := h.nodePayload.Stat("artifacts/" + entry.Filename)
-			if !ok || entry.Filename == "" || strings.Contains(entry.Filename, "/") || err != nil || !info.Mode().IsRegular() || info.Size() != entry.Size {
+			info, err := h.nodePayload.Stat(prefix + "artifacts/" + entry.Filename)
+			local := err == nil && info.Mode().IsRegular() && info.Size() == entry.Size
+			remote := errors.Is(err, os.ErrNotExist) && manifest.artifactURL(entry.Filename) != ""
+			if !ok || entry.Filename == "" || strings.Contains(entry.Filename, "/") || (!local && !remote) {
 				complete = false
 				break
 			}
@@ -150,10 +191,8 @@ func (h *console) nodeArtifacts() []string {
 func (h *console) serveConsoleConfiguration(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(struct {
-		NodeInstaller             bool     `json:"node_installer"`
-		NodeInstallerSHA256       string   `json:"node_installer_sha256"`
-		NodeArtifacts             []string `json:"node_artifacts"`
-		SelfHostedInstaller       bool     `json:"self_hosted_installer"`
-		SelfHostedInstallerSHA256 string   `json:"self_hosted_installer_sha256"`
-	}{h.nodePayload != nil, h.nodeInstallerDigest, h.nodeArtifacts(), h.nodePayload != nil, h.selfHostedInstallerDigest})
+		NodeInstaller       bool     `json:"node_installer"`
+		NodeInstallerSHA256 string   `json:"node_installer_sha256"`
+		NodeArtifacts       []string `json:"node_artifacts"`
+	}{h.nodePayload != nil, h.nodeInstallerDigest, h.nodeArtifacts()})
 }

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -36,7 +37,7 @@ type SetupCommand struct {
 var environmentName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func (s EnvironmentSetup) Empty() bool {
-	return len(s.Env)+len(s.Commands)+len(s.Packages.NPM)+len(s.Packages.Python)+len(s.Packages.System)+len(s.Skills)+len(s.Plugins)+len(s.CapabilityDirectories) == 0
+	return len(s.Env)+len(s.Commands)+len(s.Packages.NPM)+len(s.Packages.Python)+len(s.Skills)+len(s.Plugins)+len(s.CapabilityDirectories) == 0
 }
 
 func (s EnvironmentSetup) Validate() error {
@@ -66,7 +67,7 @@ func (s EnvironmentSetup) validate(installed bool) error {
 			return ErrInvalidInput
 		}
 	}
-	for _, packages := range [][]string{s.Packages.NPM, s.Packages.Python, s.Packages.System} {
+	for _, packages := range [][]string{s.Packages.NPM, s.Packages.Python} {
 		for _, item := range packages {
 			if item == "" || strings.HasPrefix(item, "-") || strings.ContainsRune(item, 0) {
 				return ErrInvalidInput
@@ -95,7 +96,7 @@ func (s *Store) openEnvironmentSetup(tenant, resource, id, field string, ciphert
 	if err != nil {
 		return err
 	}
-	if json.Unmarshal(plaintext, output) != nil {
+	if decodeSetupJSON(plaintext, output) != nil {
 		return ErrInvalidInput
 	}
 	return nil
@@ -146,9 +147,6 @@ func (s EnvironmentSetup) PackageMetadata() v1.EnvironmentPackages {
 	if result.Python == nil {
 		result.Python = []string{}
 	}
-	if result.System == nil {
-		result.System = []string{}
-	}
 	return result
 }
 
@@ -163,4 +161,14 @@ func (s *Store) sealTemplateSetup(tenant, id string, setup EnvironmentSetup) ([]
 	}
 	commands, err := s.sealEnvironmentSetup(tenant, "environment_template", id, "setup_commands", setup.Commands, len(setup.Commands) == 0)
 	return packages, env, commands, err
+}
+
+// decodeSetupJSON rejects removed configuration fields instead of silently dropping them.
+func decodeSetupJSON(data []byte, output any) error {
+	if !json.Valid(data) {
+		return ErrInvalidInput
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(output)
 }

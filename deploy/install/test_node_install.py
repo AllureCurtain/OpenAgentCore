@@ -1,5 +1,6 @@
 """Exercise node installation without running providers or changing user services."""
 import argparse
+import copy
 import fcntl
 import hashlib
 import gzip
@@ -72,7 +73,7 @@ class NodeInstallTests(unittest.TestCase):
                       mock.patch.object(installer, "open_request", side_effect=self.configuration_response),
                       mock.patch.object(installer.distribution.urllib.request, "build_opener", return_value=mock.Mock(open=self.artifact_response)),
                       mock.patch.object(installer, "micro_home", return_value=self.home / "m"),
-                      mock.patch.object(installer, "fetch", side_effect=lambda source, name: io.BytesIO(self.payloads[name])),
+                      mock.patch.object(installer, "fetch", side_effect=lambda source, name: io.BytesIO(self.payloads[name.split("/", 2)[2] if name.startswith("releases/") else name])),
                       mock.patch.object(installer, "checked", side_effect=self.checked),
                       mock.patch.object(installer.distribution, "docker_command", side_effect=self.docker_command),
                       mock.patch.object(installer.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, b"statically linked", b""))):
@@ -92,7 +93,7 @@ class NodeInstallTests(unittest.TestCase):
     def artifact_response(self, request, **kwargs):
         url = getattr(request, "full_url", request)
         # The fixture manifest records a release URL; nodes still download from their console.
-        self.assertTrue(url.startswith(self.args.source_url + "/node-install/artifacts/"), url)
+        self.assertTrue(url.startswith(self.args.source_url + "/node-install/releases/" + self.manifest["source_commit"] + "/artifacts/"), url)
         for name, item in self.manifest["artifacts"].items():
             if url.endswith("/" + item["filename"]):
                 return Response(self.payloads[name])
@@ -103,6 +104,8 @@ class NodeInstallTests(unittest.TestCase):
         self.manifest["artifacts"] = {name: {"filename": name.replace("/", "-") + "-" + self.manifest["source_commit"],
                                              "size": len(raw), "sha256": hashlib.sha256(raw).hexdigest()}
                                       for name, raw in self.payloads.items() if name.startswith("native/") or name == "images/runtime.tar.gz"}
+        self.manifest["microsandbox"] = {"runtime_sha256": hashlib.sha256(self.payloads[installer.MICRO[1]]).hexdigest(),
+                                         "firmware_sha256": hashlib.sha256(self.payloads[installer.MICRO[2]]).hexdigest()}
         self.manifest["artifacts"]["images/runtime.tar.gz"].update(unpacked_sha256=hashlib.sha256(b"runtime archive").hexdigest(), unpacked_size=len(b"runtime archive"))
         self.payloads["manifest.json"] = json.dumps(self.manifest).encode()
         self.payloads["SHA256SUMS"] = "".join(hashlib.sha256(raw).hexdigest() + "  " + name + "\n"
@@ -160,6 +163,275 @@ class NodeInstallTests(unittest.TestCase):
 
     def install(self):
         installer.install(self.args, "synthetic-once-token")
+
+    def install_current_program_with_retained_runtime(self, provider):
+        self.args.provider = provider
+        old_source, new_source = self.manifest["source_commit"], "f" * 40
+        program = copy.deepcopy(self.manifest)
+        program["source_commit"] = new_source
+        payloads = dict(self.payloads)
+        payloads[installer.COMMON[0]] = b"new protocol program from current release"
+        for name, artifact in program["artifacts"].items():
+            artifact["filename"] = artifact["filename"].replace(old_source, new_source)
+            artifact["size"] = len(payloads[name])
+            artifact["sha256"] = hashlib.sha256(payloads[name]).hexdigest()
+        payloads["manifest.json"] = json.dumps(program).encode()
+        payloads["SHA256SUMS"] = "".join(hashlib.sha256(raw).hexdigest() + "  " + name + "\n"
+                                               for name, raw in payloads.items() if name != "SHA256SUMS").encode()
+        fetched = []
+        def fetch(_source, name):
+            fetched.append(name)
+            if name.startswith("releases/" + old_source + "/"):
+                return io.BytesIO(self.payloads[name.split("/", 2)[2]])
+            self.assertIn(name, ("manifest.json", "SHA256SUMS"))
+            return io.BytesIO(payloads[name])
+        def artifact_response(request, **_kwargs):
+            url = getattr(request, "full_url", request)
+            for manifest, files in ((program, payloads), (self.manifest, self.payloads)):
+                prefix = self.args.source_url + "/node-install/releases/" + manifest["source_commit"] + "/artifacts/"
+                for name, item in manifest["artifacts"].items():
+                    if url == prefix + item["filename"]:
+                        # Only the node executable comes from the host release.
+                        self.assertEqual(manifest["source_commit"], new_source if name == installer.COMMON[0] else old_source)
+                        return Response(files[name])
+            raise AssertionError("Unexpected immutable artifact URL " + url)
+        with mock.patch.object(installer, "fetch", side_effect=fetch), mock.patch.object(installer.distribution.urllib.request, "build_opener", return_value=mock.Mock(open=artifact_response)):
+            self.install()
+        self.assertEqual((self.root / installer.COMMON[0]).read_bytes(), payloads[installer.COMMON[0]])
+        config = json.loads((self.root / "provider.json").read_text())
+        self.assertEqual(config["specification"]["runtime"], node_spec.release(self.manifest))
+        self.assertEqual(json.loads((self.root / "registered.json").read_text())["source_commit"], old_source)
+        self.assertIn("releases/" + old_source + "/runtime/seccomp.json", fetched)
+        if provider == "microsandbox":
+            for name in installer.MICRO:
+                self.assertEqual((self.root / name).read_bytes(), self.payloads[name])
+
+    def test_current_program_pairs_with_core_selected_retained_docker_runtime(self):
+        self.install_current_program_with_retained_runtime("docker")
+
+    def test_current_program_pairs_with_core_selected_retained_micro_runtime(self):
+        self.install_current_program_with_retained_runtime("microsandbox")
+
+    def test_bundle_without_selected_runtime_refuses_before_payload_or_registration(self):
+        program = copy.deepcopy(self.manifest)
+        program["source_commit"] = "f" * 40
+        self.args.bundle = self.home / "bundle"
+        self.args.bundle.mkdir()
+        with mock.patch.object(installer, "metadata", return_value=(program, {})):
+            with self.assertRaisesRegex(installer.InstallError, "does not contain Core's selected Runtime"):
+                self.install()
+        self.assertFalse((self.root / "installation.json").exists())
+        self.assertFalse((self.root / installer.COMMON[0]).exists())
+        self.assertFalse(any("register" in command or "load" in command or "enable" in command for command, _ in self.calls))
+
+    def test_missing_retained_runtime_never_falls_back_to_current_runtime(self):
+        program = copy.deepcopy(self.manifest)
+        program["source_commit"] = "f" * 40
+        with mock.patch.object(installer, "metadata", side_effect=[(program, {}), installer.InstallError("Retained release unavailable")]) as metadata:
+            with self.assertRaisesRegex(installer.InstallError, "Retained release unavailable"):
+                self.install()
+        self.assertEqual(metadata.call_args_list[1].kwargs, {"prefix": "releases/" + self.manifest["source_commit"] + "/"})
+        self.assertFalse((self.root / "installation.json").exists())
+        self.assertFalse(any("register" in command or "load" in command or "enable" in command for command, _ in self.calls))
+
+    def recovery_args(self):
+        self.args.generation = 1
+        self.args.specification_digest = json.loads((self.root / "state/node/identity.json").read_text())["identity"]["specification_digest"]
+        return self.args
+
+    def prepare_successor_runtime(self):
+        self.manifest["source_commit"] = "f" * 40
+        self.refresh_manifest()
+        config = json.loads(self.configuration_response(None).read())
+        config["generation"] = 2
+        self.args.generation = 2
+        self.args.specification_digest = config["specification_digest"]
+        with mock.patch.object(installer.node_spec, "fetch", return_value=config):
+            installer.node_generations.prepare(self.args, installer)
+        return installer.private_json(self.root / "state/node/generations/2.json")
+
+    def test_original_runtime_gc_interruption_preserves_restart_identity_and_successor(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        successor = self.prepare_successor_runtime()
+        keep = (installer.COMMON[0], "generation-preparer.pyz", "provider.json", "registered.json",
+                "installation.json", "preparation.json", "runtime-artifacts.json", "state/node/identity.json")
+        before = {name: (self.root / name).read_bytes() for name in keep}
+        original = installer.private_json(self.root / "provider.json")
+        self.args.generation = 1
+        self.args.specification_digest = node_spec.digest("microsandbox", original["specification"])
+        real_unlink = Path.unlink
+        def interrupted(path, *args, **kwargs):
+            if path == self.root / installer.MICRO[1]:
+                raise OSError("interrupted original Runtime cleanup")
+            return real_unlink(path, *args, **kwargs)
+        with mock.patch.object(Path, "unlink", new=interrupted):
+            with self.assertRaises(OSError): installer.node_generations.collect(self.args, installer)
+        self.assertFalse((self.root / installer.MICRO[0]).exists())
+        self.assertTrue((self.root / installer.MICRO[1]).exists())
+        self.assertTrue(installer.private_json(self.root / "state/node/generations/1.collecting")["native_complete"])
+        self.assertEqual(installer.private_json(self.root / "provider.json"), original)
+        self.assertEqual(installer.node_generations.retained_configs(self.root, installer)[2], successor)
+        count = len(self.calls)
+        installer.node_generations.collect(self.args, installer)
+        self.assertEqual(len(self.calls), count)
+        for name in ("runtime/seccomp.json", "images/runtime.tar.gz", "images/runtime.tar") + installer.MICRO:
+            self.assertFalse((self.root / name).exists(), name)
+        for name, raw in before.items(): self.assertEqual((self.root / name).read_bytes(), raw, name)
+        self.assertEqual(installer.node_generations.retained_configs(self.root, installer), {2: successor})
+        self.assertTrue(installer.node_generations.image_available(successor, installer))
+
+    def test_original_runtime_gc_refuses_changed_sibling_before_deleting_any_file(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        self.prepare_successor_runtime()
+        original = installer.private_json(self.root / "provider.json")
+        self.args.generation = 1
+        self.args.specification_digest = node_spec.digest("microsandbox", original["specification"])
+        firmware = self.root / installer.MICRO[2]
+        firmware.write_bytes(b"changed private file")
+        before = {name: (self.root / name).read_bytes() for name in ("runtime/seccomp.json",) + installer.MICRO}
+        count = len(self.calls)
+        with self.assertRaisesRegex(installer.InstallError, "refusing deletion"):
+            installer.node_generations.collect(self.args, installer)
+        self.assertEqual(len(self.calls), count)
+        for name, raw in before.items(): self.assertEqual((self.root / name).read_bytes(), raw, name)
+
+    def test_original_runtime_gc_missing_ownership_refuses_and_preserves_unknown_files(self):
+        self.install()
+        self.prepare_successor_runtime()
+        (self.root / "runtime-artifacts.json").unlink()
+        unknown = self.root / "native/bin/operator-owned-file"
+        unknown.write_bytes(b"unowned")
+        self.args.generation = 1
+        original = installer.private_json(self.root / "provider.json")
+        self.args.specification_digest = node_spec.digest("docker", original["specification"])
+        seccomp = (self.root / "runtime/seccomp.json").read_bytes()
+        with self.assertRaisesRegex(installer.InstallError, "ownership is missing"):
+            installer.node_generations.collect(self.args, installer)
+        self.assertEqual((self.root / "runtime/seccomp.json").read_bytes(), seccomp)
+        self.assertEqual(unknown.read_bytes(), b"unowned")
+
+    def test_shared_original_firmware_survives_until_its_last_generation(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        successor = self.prepare_successor_runtime()
+        successor["microsandbox"]["firmware_path"] = str(self.root / installer.MICRO[2])
+        installer.node_generations.atomic_json(self.root / "state/node/generations/2.json", successor)
+        original = installer.private_json(self.root / "provider.json")
+        self.args.generation = 1
+        self.args.specification_digest = node_spec.digest("microsandbox", original["specification"])
+        installer.node_generations.collect(self.args, installer)
+        self.assertFalse((self.root / installer.MICRO[0]).exists())
+        self.assertFalse((self.root / installer.MICRO[1]).exists())
+        self.assertTrue((self.root / installer.MICRO[2]).exists())
+        self.assertTrue(installer.node_generations.image_available(successor, installer))
+        self.args.generation = 2
+        self.args.specification_digest = node_spec.digest("microsandbox", successor["specification"])
+        with installer.node_generations.collection_lease(self.root, 2, installer, installer.node_generations.marker_identity(self.args), initialize=True):
+            pass
+        def inventory(command, *_args, **_kwargs):
+            if command[1:3] == ["image", "list"]: return ""
+            if command[1:3] == ["sandbox", "list"]: return "[]"
+            raise AssertionError(command)
+        with mock.patch.object(installer, "checked", side_effect=inventory):
+            installer.node_generations.collect(self.args, installer)
+        self.assertFalse((self.root / installer.MICRO[2]).exists())
+        self.assertTrue((self.root / "provider.json").exists())
+        self.assertTrue((self.root / installer.COMMON[0]).exists())
+
+    def test_original_runtime_gc_preserves_exact_shared_native_file_references(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        original = installer.private_json(self.root / "provider.json")
+        other = json.loads(json.dumps(original))
+        other["generation"] = 2
+        directory = self.root / "state/node/generations"
+        directory.mkdir(mode=0o700, exist_ok=True)
+        installer.node_generations.atomic_json(directory / "2.json", other)
+        before = {name: (self.root / name).read_bytes() for name in ("runtime/seccomp.json",) + installer.MICRO}
+        installer.node_generations.collect(self.recovery_args(), installer)
+        for name, raw in before.items(): self.assertEqual((self.root / name).read_bytes(), raw, name)
+        self.assertEqual(installer.node_generations.retained_configs(self.root, installer), {2: other})
+
+    def test_interrupted_new_generation_recovers_partial_download_at_same_identity(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        original = (self.root / "provider.json").read_bytes()
+        self.manifest["source_commit"] = "f" * 40
+        self.refresh_manifest()
+        config = json.loads(self.configuration_response(None).read())
+        config["generation"] = 2
+        self.args.generation = 2
+        self.args.specification_digest = config["specification_digest"]
+        real_obtain = installer.distribution.obtain_artifact
+        def interrupted(manifest, name, path):
+            if name == installer.MICRO[1]:
+                raise OSError("interrupted partial download")
+            return real_obtain(manifest, name, path)
+        with mock.patch.object(installer.node_spec, "fetch", return_value=config):
+            with mock.patch.object(installer.distribution, "obtain_artifact", side_effect=interrupted):
+                with self.assertRaises(OSError):
+                    installer.node_generations.prepare(self.args, installer)
+            directory = self.root / "state/node/generations"
+            saved = json.loads((directory / "2.preparing").read_text())["configuration"]
+            self.assertFalse((directory / "2.json").exists())
+            self.assertEqual(saved["specification"], config["specification"])
+            self.assertFalse(json.loads((directory / "2.preparing").read_text())["import_started"])
+            helper = Path(saved["microsandbox"]["helper_path"])
+            inode = helper.stat().st_ino
+            self.assertFalse(Path(saved["microsandbox"]["runtime_path"]).exists())
+            installer.node_generations.prepare(self.args, installer)
+            self.assertEqual(helper.stat().st_ino, inode)
+            self.assertEqual(json.loads((directory / "2.json").read_text()), saved)
+            self.assertFalse((directory / "2.preparing").exists())
+        self.assertEqual((self.root / "provider.json").read_bytes(), original)
+
+    def test_restart_repairs_only_missing_micro_bytes_at_original_paths(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        before = (self.root / "provider.json").read_bytes()
+        helper = self.root / installer.MICRO[0]
+        runtime = self.root / installer.MICRO[1]
+        old_inode = runtime.stat().st_ino
+        helper.unlink()
+        installer.node_generations.prepare(self.recovery_args(), installer)
+        self.assertEqual(helper.read_bytes(), self.payloads[installer.MICRO[0]])
+        self.assertEqual(runtime.stat().st_ino, old_inode)
+        self.assertEqual((self.root / "provider.json").read_bytes(), before)
+        self.assertEqual(json.loads((self.root / "state/node/generations/1.json").read_text()), json.loads(before))
+
+    def test_restart_refuses_conflicting_sibling_before_repairing_missing_file(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        helper = self.root / installer.MICRO[0]
+        runtime = self.root / installer.MICRO[1]
+        helper.unlink()
+        runtime.write_bytes(b"conflicting retained runtime")
+        with self.assertRaisesRegex(installer.InstallError, "artifact checksum differs"):
+            installer.node_generations.prepare(self.recovery_args(), installer)
+        self.assertFalse(helper.exists())
+        self.assertEqual(runtime.read_bytes(), b"conflicting retained runtime")
+
+    def test_live_helper_or_collection_excludes_restart_repair(self):
+        self.args.provider = "microsandbox"
+        self.install()
+        helper = self.root / installer.MICRO[0]
+        helper.unlink()
+        directory = self.root / "state/node/generations"
+        directory.mkdir(mode=0o700, exist_ok=True)
+        descriptor = os.open(directory / "1.lease", os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            for mode in (fcntl.LOCK_SH, fcntl.LOCK_EX):
+                fcntl.flock(descriptor, mode | fcntl.LOCK_NB)
+                with self.assertRaisesRegex(installer.InstallError, "helper is still active"):
+                    installer.node_generations.prepare(self.recovery_args(), installer)
+                self.assertFalse(helper.exists())
+                fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+        installer.node_generations.prepare(self.args, installer)
+        self.assertEqual(helper.read_bytes(), self.payloads[installer.MICRO[0]])
 
     def test_docker_installs_matched_payload_registers_and_starts_persistent_service(self):
         self.install()
@@ -411,6 +683,23 @@ class NodeInstallTests(unittest.TestCase):
             installer.install_system(self.args, "")
         self.assertFalse([call for call, _ in self.calls if call[:1] in (["useradd"], ["usermod"], ["systemctl"])])
         self.assertEqual({path: path.read_bytes() for path in (system / "etc").iterdir()}, before)
+
+    def test_system_install_captures_helper_before_entering_service_user(self):
+        self.sudo_host()
+        source = self.home / "private-download" / "node-install.pyz"
+        source.parent.mkdir(mode=0o700)
+        source.write_bytes(b"trusted executed installer snapshot")
+        source.chmod(0o600)
+        original_run_as = installer.run_as
+        def run_as(account, function, *arguments):
+            if function is installer.prepare_service_node:
+                source.unlink()  # The child must not need the original path at all.
+            return original_run_as(account, function, *arguments)
+        with mock.patch.object(installer.sys, "argv", [str(source)]), \
+                mock.patch.object(installer, "run_as", side_effect=run_as):
+            installer.install_system(self.args, "synthetic-once-token")
+        self.assertEqual((self.root / "generation-preparer.pyz").read_bytes(), b"trusted executed installer snapshot")
+        self.assertTrue((self.root / "registered.json").is_file())
 
     def test_no_sudo_installs_can_share_the_host_lock_root_created(self):
         locks = self.home / "run"
@@ -729,6 +1018,12 @@ class NodePrerequisiteTests(unittest.TestCase):
         with mock.patch.object(installer.Path, "home", return_value=Path("/home/" + "long" * 20)):
             with self.assertRaisesRegex(installer.InstallError, "HOME is too long"):
                 installer.micro_home("94be54a1-138c-4f30-bc87-b13686272dbe")
+
+
+class UnsupportedNodeUpdateTests(unittest.TestCase):
+    def test_update_refuses_without_host_operations(self):
+        with self.assertRaisesRegex(installer.InstallError, "not supported;.*reinstall"):
+            installer.main(["--installation-id", "00000000-0000-0000-0000-000000000001", "--update"])
 
 
 if __name__ == "__main__":

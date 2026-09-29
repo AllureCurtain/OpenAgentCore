@@ -14,6 +14,7 @@ import urllib.parse
 import urllib.request
 import uuid
 
+import configuration
 import node_spec
 
 CHOICES = ("docker", "microsandbox", "e2b", "none")
@@ -135,7 +136,7 @@ def selection(bundle, manifest, choice, e2b=None):
 
 def initialize(root, config, state, request_body):
     """Save the selection unless Core already has one; returns Core's deployment."""
-    core = f'http://127.0.0.1:{config["ports"]["core"]}'
+    core = configuration.service_origin(config, "core")
     key = (root / "secrets/core.key").read_text().strip()
     current = request(core, key, "GET", "deployment")
     if current.get("installation_id") != state["installation_id"]:
@@ -145,4 +146,9 @@ def initialize(root, config, state, request_body):
         return current
     if provider:
         raise SandboxSetupError(f"Core already uses {NAMES.get(provider, provider)} sandboxes")
-    return request(core, key, "POST", "deployment", request_body)
+    generation = current.get("generation")
+    if type(generation) is not int or generation < 0:
+        raise SandboxSetupError("Core returned an invalid deployment generation")
+    if current.get("reset") is not None:
+        raise SandboxSetupError("Core is resetting its sandbox deployment")
+    return request(core, key, "POST", "deployment", dict(request_body, expected_generation=generation))

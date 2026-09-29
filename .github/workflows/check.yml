@@ -1,6 +1,12 @@
 name: core-check
 
 on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Source commit to check
+        required: false
+        type: string
   push:
     branches: [main]
   pull_request:
@@ -9,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: core-check-${{ github.ref }}
+  group: core-check-${{ github.workflow }}-${{ inputs.ref && github.run_id || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -30,15 +36,28 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-    env:
-      CARGO_HOME: /home/runner/.oac/cache/executor-cargo
-      CARGO_TARGET_DIR: /home/runner/.oac/cache/executor-target
-      CARGO_BUILD_JOBS: 4
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Select shared Go caches
+        id: source
+        run: |
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "GOCACHE=$HOME/.oac/cache/go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$HOME/.oac/cache/go-mod" >> "$GITHUB_ENV"
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: false
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.oac/cache/go-build
+            ~/.oac/cache/go-mod
+          key: core-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-${{ steps.source.outputs.revision }}
+          restore-keys: |
+            core-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -47,13 +66,6 @@ jobs:
           npm install --global pnpm@10.30.3
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libssl-dev
-          rustup toolchain install 1.95.0 --profile minimal --component rustfmt --component clippy
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.oac/cache/executor-cargo
-            ~/.oac/cache/executor-target
-          key: core-executor-${{ runner.os }}-${{ hashFiles('packages/codex-executor/Cargo.lock') }}
       - name: Install Web acceptance browser
         run: |
           pnpm install --frozen-lockfile

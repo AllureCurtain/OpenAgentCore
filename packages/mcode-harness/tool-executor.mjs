@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 const limit = 16 * 1024 * 1024;
 const launcher = fileURLToPath(new URL('./launch.mjs', import.meta.url));
 
-// One bridge owns every launcher until its stdio and sandbox have settled.
+// One bridge owns every launcher until its stdio and native tools have settled.
 export class ToolExecutor {
   #calls = new Set();
   #closed = false;
@@ -19,8 +19,8 @@ export class ToolExecutor {
     signal?.throwIfAborted();
     const request = JSON.stringify({ tool, input });
     if (Buffer.byteLength(request) > limit) throw new Error('Workspace tool input exceeds limit');
-    const child = spawn(process.execPath, [this.entrypoint, this.profile, '/workspace'], {
-      env: { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: '/tmp', LANG: 'C.UTF-8' },
+    const child = spawn(process.execPath, [this.entrypoint, this.profile], {
+      env: process.env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     const call = { stop: () => child.kill('SIGTERM') };

@@ -8,6 +8,7 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/api"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/execution"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox/node"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 	"github.com/google/uuid"
@@ -52,6 +53,18 @@ func configureManagedNodes(s *store.Store, publicURL string, owner func(context.
 		return nil, errors.New("Web sandbox setup requires OAC_CORE_KEY_DIGESTS_FILE with the Core key digest")
 	}
 	result.hub = node.NewHub(node.HubOptions{
+		Generations: func(ctx context.Context, n node.Identity, connection string, epoch uint64, health node.Health) error {
+			if err := owner(ctx); err != nil {
+				return err
+			}
+			return s.HeartbeatRuntimeNodeGenerations(ctx, n.NodeID, connection, epoch, nodeHealthRecord(health), health.Generations)
+		},
+		Retention: func(ctx context.Context, n node.Identity, connection string, epoch uint64, refs []sandbox.GenerationReference) (sandbox.NodeDeployment, []sandbox.GenerationRetention, error) {
+			if err := owner(ctx); err != nil {
+				return sandbox.NodeDeployment{}, nil, err
+			}
+			return s.RuntimeNodeRetention(ctx, n.NodeID, connection, epoch, refs)
+		},
 		Authenticate: func(ctx context.Context, id, credential string) (node.Identity, error) {
 			n, err := s.AuthenticateRuntimeNode(ctx, id, credential)
 			if errors.Is(err, store.ErrRuntimeNodeCredential) {
@@ -78,11 +91,12 @@ func configureManagedNodes(s *store.Store, publicURL string, owner func(context.
 			if err := owner(ctx); err != nil {
 				return err
 			}
-			return s.HeartbeatRuntimeNode(ctx, n.NodeID, connection, epoch, store.RuntimeNodeHealth{Host: &store.RuntimeNodeHost{EffectiveCPUCores: health.EffectiveCPUCores, CPUUtilization: health.CPUUtilization, TotalMemoryBytes: health.TotalMemoryBytes, AvailableMemoryBytes: health.AvailableMemoryBytes, AvailableDiskBytes: health.AvailableDiskBytes, ObservedAt: &health.ObservedAt}, ProviderReady: health.ProviderReady, Diagnostic: health.Diagnostic, CPUCount: health.CPUCount, AvailableMemoryBytes: health.AvailableMemoryBytes, AvailableDiskBytes: health.AvailableDiskBytes})
+			return s.HeartbeatRuntimeNode(ctx, n.NodeID, connection, epoch, nodeHealthRecord(health))
 		},
 	})
 	result.setup = &managedSetup{store: s, hub: result.hub, installationID: setupID, publicURL: publicURL}
 	result.runtime = execution.NewDeferredRuntimeProvider(setupID, result.setup.load, result.setup.prepare)
+	result.runtime.PublishUnconfigured = result.setup.publishUnconfigured
 	success = true
 	return result, nil
 }
@@ -115,4 +129,8 @@ func serverAddress() string {
 		return value
 	}
 	return "127.0.0.1:8091"
+}
+
+func nodeHealthRecord(health node.Health) store.RuntimeNodeHealth {
+	return store.RuntimeNodeHealth{Host: &store.RuntimeNodeHost{EffectiveCPUCores: health.EffectiveCPUCores, CPUUtilization: health.CPUUtilization, TotalMemoryBytes: health.TotalMemoryBytes, AvailableMemoryBytes: health.AvailableMemoryBytes, AvailableDiskBytes: health.AvailableDiskBytes, ObservedAt: &health.ObservedAt}, ProviderReady: health.ProviderReady, Diagnostic: health.Diagnostic, CPUCount: health.CPUCount, AvailableMemoryBytes: health.AvailableMemoryBytes, AvailableDiskBytes: health.AvailableDiskBytes}
 }

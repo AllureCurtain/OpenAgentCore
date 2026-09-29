@@ -29,6 +29,11 @@ import configuration
 import native_service
 
 
+SOURCE_COMMIT = None  # Set by the packaged entrypoint from its build revision.
+UNSUPPORTED_VERSION = ("This installation version or historical conversion is not supported; "
+                       "preserve its data and reinstall into a new empty directory. Nothing was changed.")
+
+
 class OacError(Exception):
     pass
 
@@ -111,8 +116,9 @@ def load_config(root):
 
 def load_state(root):
     state = json.loads(read_private(root / "state.json", "state.json"))
-    if state.get("format") != 2:
-        raise OacError("state.json has an unknown format; use the oac command of this installation's release")
+    if (state.get("format") != 2 or state.get("converted_from") or state.get("renamed_from")
+            or SOURCE_COMMIT is not None and state.get("source_commit") != SOURCE_COMMIT):
+        raise OacError(UNSUPPORTED_VERSION)
     return state
 
 
@@ -122,12 +128,16 @@ def save_state(root, state):
 
 @contextlib.contextmanager
 def locked(root):
+    if (root / "state.json").exists():
+        load_state(root)
     descriptor = os.open(root / ".oac.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise OacError("Another oac command is running for this installation") from None
+        if (root / "state.json").exists():
+            load_state(root)
         yield
     finally:
         os.close(descriptor)
@@ -268,7 +278,7 @@ def bearer(key):
 
 
 def core_base(config):
-    return f'http://127.0.0.1:{config["ports"]["core"]}'
+    return configuration.service_origin(config, "core")
 
 
 def health(root, config, expected):
@@ -280,7 +290,7 @@ def health(root, config, expected):
         if wait_status(base + "/core/v1/installation", bearer(configuration.read_core_key(root)), attempts=10) is None:
             raise OacError("Core did not accept the Core key at /core/v1/installation")
     if "web" in expected:
-        url = f'http://127.0.0.1:{config["ports"]["web"]}'
+        url = configuration.service_origin(config, "web")
         if wait_status(url + "/console/auth", {"Host": urlsplit(config["public_url"] or url).netloc}) is None:
             raise OacError("Web sign-in is unavailable")
 
@@ -391,19 +401,20 @@ def render_now(root, config, state):
 
 def old_public_url(root, config, previous, disk, actual):
     """The public URL things are bound to: Core's own answer, else the written core.env."""
-    port = (previous or {}).get("ports.core") or config["ports"]["core"]
+    old_config = {"host": previous["host"], "ports": {"core": previous["ports.core"]}} if previous else config
+    base = core_base(old_config)
     if actual.get("core", {}).get("running"):
-        status, body = http(f"http://127.0.0.1:{port}/core/v1/installation", bearer(configuration.read_core_key(root)))
+        status, body = http(base + "/core/v1/installation", bearer(configuration.read_core_key(root)))
         if status == 200:
-            return json.loads(body).get("public_url"), port, True
+            return json.loads(body).get("public_url"), base, True
     try:
         written = configuration.read_environment((disk.get("core.env") or b"").decode())
     except RuntimeError:
         written = {}
-    return written.get("OAC_PUBLIC_URL"), port, False
+    return written.get("OAC_PUBLIC_URL"), base, False
 
 
-def confirm_public_url(root, config, old, port, core_answered, args, interactive, out):
+def confirm_public_url(root, config, old, base, core_answered, args, interactive, out):
     """Changing the public URL strands what is bound to the old one; list it and confirm.
 
     old is None when it can't be read; then the change always needs confirmation.
@@ -413,7 +424,7 @@ def confirm_public_url(root, config, old, port, core_answered, args, interactive
         return
     counts, nodes = None, []
     if core_answered:
-        base, key = f"http://127.0.0.1:{port}", configuration.read_core_key(root)
+        key = configuration.read_core_key(root)
         status, body = http(base + "/core/v1/installation", bearer(key))
         if status == 200:
             counts = json.loads(body).get("address_bindings") or {}
@@ -452,7 +463,12 @@ def confirm_public_url(root, config, old, port, core_answered, args, interactive
 
 def paired_core(root, config):
     """(HTTP status, installation ID) of the Core that web.core_url reaches."""
-    status, body = http(config["web"]["core_url"] + "/core/v1/installation", bearer(configuration.read_core_key(root)))
+    return core_installation(config["web"]["core_url"], configuration.read_core_key(root))
+
+
+def core_installation(origin, key):
+    """Read Core identity with an already validated private key, before or after install."""
+    status, body = http(origin + "/core/v1/installation", bearer(key))
     return status, (json.loads(body).get("installation_id") if status == 200 else None)
 
 
@@ -467,8 +483,8 @@ def check_paired_core(root, config, state, previous, args, interactive, out):
         out("Warning: Core rejects this Web host's Core key; the key is out of date. "
             "Copy secrets/core.key from the Core host, then run oac apply.")
     elif status == 404:
-        out("Note: the paired Core runs an earlier release without /core/v1/installation. Convert or upgrade the "
-            "Core host, then run oac apply here to record which Core Web is paired with.")
+        raise OacError("The paired Core version is not supported; preserve its data and reinstall "
+                       "the current release separately. Nothing was applied.")
     if status != 200:
         return state.get("core_installation_id")
     recorded = state.get("core_installation_id")
@@ -497,9 +513,6 @@ def _apply(root, args, discard_edits, start, interactive, out, rollback=True, re
     state = load_state(root)
     check_fixed(config, state)
     check_secrets(root, config, state)
-    if not args.dry_run:
-        # A rotation that stopped before using its new key leaves only this file.
-        (root / "secrets/core.key.new").unlink(missing_ok=True)
     rendered, disk, previous = render_now(root, config, state)
     edited = edited_files(state, disk, rendered)
     if edited and not discard_edits:
@@ -526,8 +539,8 @@ def _apply(root, args, discard_edits, start, interactive, out, rollback=True, re
     if config["mode"] == "web-only":
         core_installation_id = check_paired_core(root, config, state, previous, args, interactive, out)
     elif state.get("generated"):
-        old, port, answered = old_public_url(root, config, previous, disk, actual)
-        confirm_public_url(root, config, old, port, answered, args, interactive, out)
+        old, base, answered = old_public_url(root, config, previous, disk, actual)
+        confirm_public_url(root, config, old, base, answered, args, interactive, out)
 
     if previous is not None:
         keys = [key for key, value in config_model.values(config).items() if key not in previous or previous[key] != value]
@@ -546,6 +559,9 @@ def _apply(root, args, discard_edits, start, interactive, out, rollback=True, re
     if args.dry_run:
         out("Dry run: nothing was changed.")
         return
+    if not args.dry_run:
+        # A rotation that stopped before using its new key leaves only this file.
+        (root / "secrets/core.key.new").unlink(missing_ok=True)
     if not (changed or removed or restarts or edited):
         state = dict(state, core_installation_id=core_installation_id)
         if record_digests(state, rendered.files) != load_state(root):
@@ -598,13 +614,13 @@ def _apply(root, args, discard_edits, start, interactive, out, rollback=True, re
 # Commands --------------------------------------------------------------------
 
 def written_view(root, state, config):
-    """public_url, ports and web.core_url as last written, which the services were started with."""
+    """Addresses as last written, which the services were started with."""
     values, _ = disk_view(read_generated(root, {"settings.json"}))
     if values is None:
         if config is None:
             raise OacError("Neither config.json nor generated/settings.json can be read")
         return config
-    return {"mode": state["mode"], "public_url": values.get("public_url"),
+    return {"mode": state["mode"], "public_url": values.get("public_url"), "host": values["host"],
             "ports": {name: values[f"ports.{name}"] for name in ("core", "web", "database") if f"ports.{name}" in values},
             "web": {"core_url": values.get("web.core_url")}}
 
@@ -647,14 +663,14 @@ def status(root, out=print):
             out("Core rejects secrets/core.key because it started with another key; run oac apply")
             healthy = False
     if mode != "core-only":
-        web_ok = http(f'http://127.0.0.1:{config["ports"]["web"]}/healthz')[0] == 200
+        web_ok = http(configuration.service_origin(config, "web") + "/healthz")[0] == 200
         healthy = healthy and web_ok
         out("Web: " + ("healthy" if web_ok else "unavailable"))
     out("Public URL: " + (config["public_url"] or "none (local access only)"))
     if mode != "web-only":
         out("API base URL: " + configuration.local_public_url(config) + "/v1")
     if mode != "core-only":
-        out("Console: " + (config["public_url"] or f'http://127.0.0.1:{config["ports"]["web"]}'))
+        out("Console: " + (config["public_url"] or configuration.service_origin(config, "web")))
     out("Source commit: " + state["source_commit"])
     if loaded is not None:
         for key in ("mode", "native_core"):
@@ -667,15 +683,15 @@ def status(root, out=print):
         for name in edited_files(state, disk, rendered):
             out(f"generated/{name} was edited by hand; put the change in config.json and run oac apply --discard-edits")
     if mode == "web-only":
-        out("Reverse proxy: /v1 and /api/v1 go to Core; everything else goes to "
-            f'127.0.0.1:{config["ports"]["web"]}')
+        out("Reverse proxy: /v1 and /api/v1 go to Core; everything else goes to " +
+            configuration.service_address(config, "web", connect=True))
         code, installation = paired_core(root, config)
         if code == 401:
             out("Paired Core: rejects this Web host's Core key; the key is out of date. Copy secrets/core.key "
                 "from the Core host, then run oac apply.")
             healthy = False
         elif code == 404:
-            out("Paired Core: runs an earlier release without /core/v1/installation; upgrade or convert the Core host")
+            out("Paired Core: runs an earlier release without /core/v1/installation; historical versions are unsupported; reinstall the Core separately")
         elif code != 200:
             out("Paired Core: unreachable at " + config["web"]["core_url"])
             healthy = False
@@ -685,10 +701,10 @@ def status(root, out=print):
         else:
             out(f"Paired Core: installation {installation}")
     elif mode == "core-only":
-        out(f'Reverse proxy: /v1 and /api/v1 go to 127.0.0.1:{config["ports"]["core"]}; Web runs elsewhere')
+        out(f'Reverse proxy: /v1 and /api/v1 go to {configuration.service_address(config, "core", connect=True)}; Web runs elsewhere')
     else:
-        out(f'Reverse proxy: /v1 and /api/v1 go to 127.0.0.1:{config["ports"]["core"]}; '
-            f'everything else goes to 127.0.0.1:{config["ports"]["web"]}')
+        out(f'Reverse proxy: /v1 and /api/v1 go to {configuration.service_address(config, "core", connect=True)}; '
+            f'everything else goes to {configuration.service_address(config, "web", connect=True)}')
     out("Service health does not prove model execution. This check makes no model requests.")
     if not healthy:
         raise OacError("One or more installed services are unavailable")
@@ -706,6 +722,10 @@ def start(root, out=print):
                 out("Warning: config.json has changes that are not applied; starting with the files last written.")
             for name in edited_files(state, disk, rendered):
                 out(f"Warning: generated/{name} was edited by hand.")
+        written = written_view(root, state, config)
+        if state["mode"] == "web-only" and paired_core(root, written)[0] == 404:
+            raise OacError("The paired Core version is not supported; preserve its data and reinstall "
+                           "the current release separately. Nothing was started.")
         for name, image in state["images"].items():
             if run(["docker", "image", "inspect", image], check=False, stdin=subprocess.DEVNULL,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
@@ -715,7 +735,7 @@ def start(root, out=print):
         desired = configuration.rendered_inputs(read_generated(root, {"compose.json"} | ({unit} if unit else set())), unit)
         will_run = set(desired) - {"migrate"}
         converge(root, state, desired, will_run)
-        health(root, written_view(root, state, config), will_run)
+        health(root, written, will_run)
     out("Services started.")
 
 
@@ -792,8 +812,6 @@ def main(argv=None, root=None, out=print):
     if not (root / "state.json").exists():
         raise OacError(f"{root} is not an installation directory; run the oac command inside it")
     state = load_state(root)
-    if state.get("renamed_from") and not state["renamed_from"].get("finished"):
-        raise OacError(f"Conversion is unfinished; rerun ./install.sh --convert --install-dir {root}")
     if args.command == "apply":
         apply(root, dry_run=args.dry_run, yes=args.yes, discard_edits=args.discard_edits,
               confirm_public_url_change=args.confirm_public_url_change, out=out)

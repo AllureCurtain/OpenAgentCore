@@ -3,16 +3,15 @@
 package claudesdk
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"reflect"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -171,12 +170,16 @@ func cancellationRequest() proto.PromptRequestPayload {
 	return proto.PromptRequestPayload{RunID: "run", Input: proto.TextInput("hello"), AgentSessionID: "native-session", AgentOptions: map[string]any{"model": "fake-model", "system_prompt": "instructions"}}
 }
 
-func runCancellationHelper(request startRequest, mode string, emit func(bridgeEvent)) {
+func runCancellationHelper(request startRequest, mode string, scanner *bufio.Scanner, emit func(bridgeEvent)) {
 	if mode == "cancellation-wait" {
-		stopped := make(chan os.Signal, 1)
-		signal.Notify(stopped, syscall.SIGTERM)
 		emit(bridgeEvent{Type: "delta", Delta: "partial"})
-		<-stopped
+		if !scanner.Scan() {
+			return
+		}
+		var cancel map[string]any
+		if json.Unmarshal(scanner.Bytes(), &cancel) != nil || cancel["type"] != "turn_cancel" {
+			os.Exit(9)
+		}
 		// These valid observations were in flight when cancellation started.
 		emit(bridgeEvent{Type: "input_ready", SessionID: request.Resume})
 		emit(bridgeEvent{Type: "usage", ResultID: "native-result", SessionID: request.Resume, Usage: json.RawMessage(usageFixture)})
@@ -189,6 +192,8 @@ func runCancellationHelper(request startRequest, mode string, emit func(bridgeEv
 		}
 		_, _ = os.Stderr.WriteString(strings.Repeat("x", 2*1024*1024))
 		emit(bridgeEvent{Type: "delta", Delta: "drained"})
+		emit(bridgeEvent{Type: "input_closed", SessionID: request.Resume})
+		emit(bridgeEvent{Type: "error", Code: "cancelled"})
 		return
 	}
 	if mode != "cancellation-before-identity" {

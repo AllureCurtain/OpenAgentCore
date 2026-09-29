@@ -43,6 +43,9 @@ func (r *Router) Shutdown(ctx context.Context) error {
 	}
 	if first {
 		r.closed = true
+		if r.runtimePreparation != nil {
+			r.runtimePreparation.cancel()
+		}
 		for _, states := range r.idle {
 			for state := range states {
 				state.retain = false
@@ -57,12 +60,14 @@ func (r *Router) Shutdown(ctx context.Context) error {
 		close(r.shutdownCh)
 	}
 	preparations := r.closePendingPreparationsLocked()
+	executors := r.closeIdleExecutorsLocked()
 	attempt := &shutdownAttempt{done: make(chan struct{})}
 	r.shutdownAttempt = attempt
 	// Keep the WaitGroup non-zero until all cancellation dispatch is complete.
 	r.shutdownWG.Add(1)
 	r.mu.Unlock()
 
+	r.closeIdleExecutors(executors)
 	for _, p := range preparations {
 		go func() { defer r.shutdownWG.Done(); r.closePreparationResource(p) }()
 	}
@@ -98,6 +103,9 @@ func (r *Router) runShutdownAttempt(attempt *shutdownAttempt, victims []sessionC
 
 	r.shutdownWG.Wait()
 	r.mu.Lock()
+	if r.runtimePreparation != nil && r.runtimePreparation.uncertain {
+		attempt.err = errors.Join(attempt.err, errors.New("dispatch: capability preparation remains uncertain"))
+	}
 	if r.workspaceWrite != nil && r.workspaceWrite.uncertain {
 		attempt.err = errors.Join(attempt.err, errors.New("dispatch: local workspace write remains uncertain"))
 	}
@@ -109,6 +117,9 @@ func (r *Router) runShutdownAttempt(attempt *shutdownAttempt, victims []sessionC
 			}
 			attempt.err = errors.Join(attempt.err, fmt.Errorf("dispatch: preparation %s: %w", p.status.Handle, cause))
 		}
+	}
+	for _, owner := range r.executors {
+		attempt.err = errors.Join(attempt.err, fmt.Errorf("dispatch: executor %s cleanup unconfirmed: %w", owner.id, owner.closeErr))
 	}
 	close(attempt.done)
 	r.mu.Unlock()
@@ -139,6 +150,9 @@ func (r *Router) handleDeviceShutdown(ctx context.Context, env proto.Envelope) e
 		r.mu.Unlock()
 		return ErrRouterClosed
 	}
+	if r.runtimePreparation != nil {
+		r.runtimePreparation.cancel()
+	}
 	victims := make([]sessionCancellation, 0, len(r.sessions))
 	for _, state := range r.sessions {
 		state.retain = false
@@ -155,7 +169,9 @@ func (r *Router) handleDeviceShutdown(ctx context.Context, env proto.Envelope) e
 	}
 	r.idle = make(map[string]map[*sessionState]struct{})
 	preparations := r.closePendingPreparationsLocked()
+	executors := r.closeIdleExecutorsLocked()
 	r.mu.Unlock()
+	r.closeIdleExecutors(executors)
 	for _, p := range preparations {
 		go func() { defer r.shutdownWG.Done(); r.closePreparationResource(p) }()
 	}

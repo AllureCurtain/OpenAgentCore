@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/db/sqlc"
@@ -24,7 +25,16 @@ type RuntimeNodeConfiguration struct {
 // The deployment lock keeps authentication and the returned generation consistent.
 // The credential is authenticated before any deployment state is reported.
 func (s *Store) RuntimeNodeConfiguration(ctx context.Context, nodeID, token string) (RuntimeNodeConfiguration, error) {
+	return s.RuntimeNodeGenerationConfiguration(ctx, nodeID, token, 0)
+}
+
+// Exact generation recovery is restricted to this node's current target, serving
+// pin and unreleased ownership. It is never a general history read.
+func (s *Store) RuntimeNodeGenerationConfiguration(ctx context.Context, nodeID, token string, generation uint64) (RuntimeNodeConfiguration, error) {
 	var result RuntimeNodeConfiguration
+	if generation > math.MaxInt64 {
+		return result, ErrInvalidInput
+	}
 	err := s.runtimeDeploymentTransaction(ctx, func(q *sqlc.Queries, d sqlc.RuntimeDeployment) error {
 		var node *sqlc.RuntimeNode
 		var installation pgtype.UUID
@@ -54,20 +64,39 @@ func (s *Store) RuntimeNodeConfiguration(ctx context.Context, nodeID, token stri
 		if !runtimeDeploymentInitialized(d) {
 			return ErrRuntimeNodeUnavailable
 		}
+		if node == nil && d.ResetClear.Valid {
+			return ErrSandboxResetInProgress
+		}
 		if d.Mode != "nodes" {
 			return ErrSandboxDeploymentConflict
 		}
-		spec, err := deploymentSpecification(d)
+		if node != nil {
+			if err := validateNodeEnrollmentIdentity(ctx, q, d, *node); err != nil {
+				return err
+			}
+		}
+		selected := uint64(d.Generation)
+		if generation != 0 {
+			if node == nil {
+				return ErrRuntimeNodeCredential
+			}
+			selected = generation
+			kept, err := q.NodeGenerationKept(ctx, sqlc.NodeGenerationKeptParams{NodeID: node.ID, Generation: int64(generation)})
+			if err != nil {
+				return err
+			}
+			if !kept {
+				return ErrRuntimeSpecificationMismatch
+			}
+		}
+		spec, err := nodeGenerationSpec(ctx, q, d, selected)
 		if err != nil {
 			return err
 		}
-		if node == nil && d.Maintenance {
+		if node == nil && d.AdmissionPaused {
 			return ErrSandboxDeploymentConflict
 		}
-		if node != nil && (node.DeploymentGeneration != d.Generation || node.SpecificationDigest != spec.Digest(d.ProviderKind)) {
-			return ErrRuntimeSpecificationMismatch
-		}
-		result = RuntimeNodeConfiguration{MaxActive: int(active), MaxRetained: retainedLimit(d.ProviderKind, int(active), int(retained)), InstallationID: runtimeUUID(d.InstallationID), Provider: d.ProviderKind, CoreURL: s.publicURL, Generation: uint64(d.Generation), Specification: spec, SpecificationDigest: spec.Digest(d.ProviderKind)}
+		result = RuntimeNodeConfiguration{MaxActive: int(active), MaxRetained: retainedLimit(d.ProviderKind, int(active), int(retained)), InstallationID: runtimeUUID(d.InstallationID), Provider: d.ProviderKind, CoreURL: s.publicURL, Generation: selected, Specification: spec, SpecificationDigest: spec.Digest(d.ProviderKind)}
 		return nil
 	})
 	return result, err

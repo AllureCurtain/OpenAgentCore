@@ -2,10 +2,9 @@ package api
 
 import (
 	"encoding/json"
-	"path"
-	"strings"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 )
 
@@ -14,6 +13,13 @@ func decodeSessionEnvironment(raw json.RawMessage) (*v1.Environment, error) {
 	if json.Unmarshal(raw, &environment) != nil {
 		return nil, store.ErrInvalidInput
 	}
+	var input map[string]json.RawMessage
+	if json.Unmarshal(raw, &input) != nil {
+		return nil, store.ErrInvalidInput
+	}
+	if err := rejectSystemPackages(input["packages"]); err != nil {
+		return nil, err
+	}
 	fields := []string{"type"}
 	switch environment.Type {
 	case "none":
@@ -21,7 +27,7 @@ func decodeSessionEnvironment(raw json.RawMessage) (*v1.Environment, error) {
 		return decodeHostedEnvironment(raw)
 	case "self_hosted":
 		fields = append(fields, "workspace_directory", "capability_directories")
-		if !path.IsAbs(environment.WorkspaceDirectory) || strings.ContainsRune(environment.WorkspaceDirectory, 0) {
+		if agentcapabilities.ValidateSourceDirectories([]string{environment.WorkspaceDirectory}) != nil || agentcapabilities.ValidateSourceDirectories(environment.CapabilityDirectories) != nil {
 			return nil, store.ErrInvalidInput
 		}
 	default:

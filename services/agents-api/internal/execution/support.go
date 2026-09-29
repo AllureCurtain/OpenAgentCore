@@ -26,7 +26,7 @@ func (p Policy) ValidateSessionConfiguration(engine string, configuration json.R
 		return err
 	}
 	if snapshot.Environment != nil && snapshot.Environment.Type == "self_hosted" {
-		if snapshot.Daemon != nil || strings.TrimSpace(snapshot.Agent.Model) == "" || snapshot.Environment.WorkspaceDirectory != "/workspace" || len(snapshot.Environment.CapabilityDirectories) != 0 {
+		if snapshot.Daemon != nil || strings.TrimSpace(snapshot.Agent.Model) == "" || !validSelfHostedPlacement(environmentPlacement{WorkspaceDirectory: snapshot.Environment.WorkspaceDirectory, CapabilityDirectories: snapshot.Environment.CapabilityDirectories}) {
 			return store.ErrInvalidInput
 		}
 	}
@@ -86,6 +86,9 @@ func (p Policy) engineCapabilities(peer *gateway.Session, engine string, snapsho
 	if !known || !found || !info.Available || !caps.Streaming || !caps.Steering || !caps.DurableTurns || !caps.DurableInputReceipts {
 		return fail("device must advertise streaming, steering and durable turns for this engine")
 	}
+	if !caps.Preparation {
+		return fail("device must advertise executor preparation")
+	}
 	if !caps.ExecutionControls {
 		return fail("device must advertise execution_controls")
 	}
@@ -126,9 +129,6 @@ func (p Policy) engineCapabilities(peer *gateway.Session, engine string, snapsho
 	if snapshot.Environment != nil && (snapshot.Environment.Type == "openai_hosted" || snapshot.Environment.Type == "self_hosted") {
 		if !caps.Preparation || !caps.LocalEnvironment || !caps.WorkspaceReadPreparation || !caps.WorkspaceOutputExport {
 			return fail("device must advertise local preparation, workspace reads and output export")
-		}
-		if !caps.LocalEnvironmentNetworkPolicy {
-			return fail("device must advertise local_environment_network_policy")
 		}
 	}
 	if snapshot.Environment != nil && snapshot.Environment.Type == "none" && !caps.EnvironmentNone {

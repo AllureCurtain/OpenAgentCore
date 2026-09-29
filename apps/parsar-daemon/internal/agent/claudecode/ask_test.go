@@ -112,51 +112,28 @@ func TestTranslateAskUserQuestionMultiQuestionIntercepted(t *testing.T) {
 	}
 }
 
-// TestTranslateAskUserQuestionWithoutAskHookFallsThrough covers the
-// legacy translator path (no askPending wired): even AskUserQuestion
-// produces a regular TypeToolCall so older callers that don't care
-// about the ask flow keep working.
-func TestTranslateAskUserQuestionWithoutAskHookFallsThrough(t *testing.T) {
-	pending := claudecode.NewPendingTableForTest()
-	tr := claudecode.NewTranslatorForTest("run_a", pending, counterMinter())
-
-	line := []byte(`{"type":"assistant","message":{"content":[
-		{"type":"tool_use","id":"toolu_y","name":"AskUserQuestion","input":{
-			"questions":[{"header":"h","question":"?","options":[{"label":"a"}]}]
-		}}
-	]}}`)
-
-	out, err := tr.Translate(line)
-	if err != nil {
-		t.Fatalf("Translate: %v", err)
-	}
-	if len(out.Envelopes) != 1 || out.Envelopes[0].Type != proto.TypeToolCall {
-		t.Fatalf("expected TypeToolCall fall-through, got %#v", out.Envelopes)
-	}
-}
-
 // TestPendingAskTableTakeIsAtomic locks in the Take contract:
 // concurrent Take(askID) callers must see exactly one ok=true. This is
 // the contract SubmitPromptForUserChoice relies on to make sure a
 // timer-fired cancel and a server-delivered answer can't both write a
-// tool_result back into claude's stdin.
+// control_response back into claude's stdin.
 func TestPendingAskTableTakeIsAtomic(t *testing.T) {
 	tbl := claudecode.NewPendingAskTableForTest()
 	headerQs := []proto.PromptForUserChoiceQuestion{{Header: "header text", Question: "?", Options: []proto.PromptForUserChoiceOption{{Label: "a"}}}}
 	emptyQs := []proto.PromptForUserChoiceQuestion{{Question: "?", Options: []proto.PromptForUserChoiceOption{{Label: "a"}}}}
-	tbl.Record("ask_1", "toolu_aaa", headerQs)
-	tbl.Record("ask_2", "toolu_bbb", emptyQs)
+	tbl.RecordControl("ask_1", "cc_aaa", headerQs)
+	tbl.RecordControl("ask_2", "cc_bbb", emptyQs)
 
 	if tbl.Len() != 2 {
 		t.Fatalf("Len = %d, want 2", tbl.Len())
 	}
 
-	// First Take consumes the entry and reverse mapping.
+	// First Take consumes the entry.
 	e, ok := tbl.Take("ask_1")
 	if !ok {
 		t.Fatalf("Take(ask_1) ok=false")
 	}
-	if e.ToolUseID != "toolu_aaa" || len(e.Questions) != 1 || e.Questions[0].Header != "header text" {
+	if e.CCRequestID != "cc_aaa" || len(e.Questions) != 1 || e.Questions[0].Header != "header text" {
 		t.Errorf("entry mismatch: %+v", e)
 	}
 	if _, ok := tbl.Take("ask_1"); ok {
@@ -168,10 +145,6 @@ func TestPendingAskTableTakeIsAtomic(t *testing.T) {
 	if tbl.Len() != 1 {
 		t.Errorf("Len = %d, want 1", tbl.Len())
 	}
-
-	// Empty / unknown is a no-op, not a panic.
-	tbl.Record("", "x", emptyQs)
-	tbl.Delete("nope")
 }
 
 // TestPendingAskTableTakeRace ensures two goroutines calling Take on
@@ -182,7 +155,7 @@ func TestPendingAskTableTakeRace(t *testing.T) {
 	qs := []proto.PromptForUserChoiceQuestion{{Header: "h", Question: "?", Options: []proto.PromptForUserChoiceOption{{Label: "a"}}}}
 	for i := range 200 {
 		tbl := claudecode.NewPendingAskTableForTest()
-		tbl.Record("ask_x", "toolu_x", qs)
+		tbl.RecordControl("ask_x", "cc_x", qs)
 
 		var wg sync.WaitGroup
 		var winners int32
@@ -205,107 +178,33 @@ func TestPendingAskTableTakeRace(t *testing.T) {
 	}
 }
 
-// TestPendingAskTableRejectsEmptyKeys verifies the defence against
-// half-built calls polluting the table.
-func TestPendingAskTableRejectsEmptyKeys(t *testing.T) {
-	qs := []proto.PromptForUserChoiceQuestion{{Header: "h", Question: "?", Options: []proto.PromptForUserChoiceOption{{Label: "a"}}}}
-	tbl := claudecode.NewPendingAskTableForTest()
-	tbl.Record("", "toolu", qs)
-	tbl.Record("ask_1", "", qs)
-	if tbl.Len() != 0 {
-		t.Errorf("Len = %d, want 0 (both records must be rejected)", tbl.Len())
-	}
-}
-
-// askUserResult is the JSON shape we expect SubmitPromptForUserChoice
-// to write back into claude's stdin.
-type askUserResult struct {
-	Type    string `json:"type"`
-	Message struct {
-		Content []struct {
-			Type      string `json:"type"`
-			ToolUseID string `json:"tool_use_id"`
-			Content   []struct {
-				Type string `json:"type"`
-				Text string `json:"text"`
-			} `json:"content"`
-			IsError bool `json:"is_error"`
-		} `json:"content"`
-	} `json:"message"`
-}
-
-func decodeAskResult(t *testing.T, raw []byte) askUserResult {
-	t.Helper()
-	raw = []byte(strings.TrimSpace(string(raw)))
-	var v askUserResult
-	if err := json.Unmarshal(raw, &v); err != nil {
-		t.Fatalf("decode ask result: %v\nraw=%s", err, raw)
-	}
-	if v.Type != "user" {
-		t.Errorf("Type = %q, want user", v.Type)
-	}
-	if len(v.Message.Content) != 1 {
-		t.Fatalf("Content len = %d, want 1", len(v.Message.Content))
-	}
-	if v.Message.Content[0].Type != "tool_result" {
-		t.Errorf("Content[0].Type = %q, want tool_result", v.Message.Content[0].Type)
-	}
-	return v
-}
-
-// TestBuildAskUserToolResultSingleSelect locks in the single-answer
-// wire shape — what we send to claude's stdin must be a valid
-// tool_result with the JSON {"questions":[{header, answer}]} body.
-func TestBuildAskUserToolResultSingleSelect(t *testing.T) {
-	body, err := claudecode.BuildAskUserToolResultForTest(
-		claudecode.PendingAskEntry{ToolUseID: "toolu_abc", Questions: []proto.PromptForUserChoiceQuestion{{Header: "Confirm delete"}}},
-		proto.PromptForUserChoiceDecisionPayload{Answers: []string{"Confirm delete"}},
-	)
-	if err != nil {
-		t.Fatalf("buildAskUserToolResult: %v", err)
-	}
-	v := decodeAskResult(t, body)
-	if v.Message.Content[0].ToolUseID != "toolu_abc" {
-		t.Errorf("ToolUseID = %q, want toolu_abc", v.Message.Content[0].ToolUseID)
-	}
-	if v.Message.Content[0].IsError {
-		t.Errorf("IsError = true; success answer must use is_error=false")
-	}
-	if !strings.Contains(v.Message.Content[0].Content[0].Text, `"answer":"Confirm delete"`) {
-		t.Errorf("answer not encoded: %s", v.Message.Content[0].Content[0].Text)
-	}
-	if !strings.Contains(v.Message.Content[0].Content[0].Text, `"header":"Confirm delete"`) {
-		t.Errorf("header not echoed: %s", v.Message.Content[0].Content[0].Text)
-	}
-}
-
-// TestBuildAskUserToolResultMultiSelect ensures multiple answers join
+// TestBuildAskUserControlResponseMultiSelect ensures multiple answers join
 // into a single human-friendly answer string.
-func TestBuildAskUserToolResultMultiSelect(t *testing.T) {
-	body, err := claudecode.BuildAskUserToolResultForTest(
-		claudecode.PendingAskEntry{ToolUseID: "toolu_m", Questions: []proto.PromptForUserChoiceQuestion{{Header: "Pick lens"}}},
+func TestBuildAskUserControlResponseMultiSelect(t *testing.T) {
+	body, err := claudecode.BuildAskUserControlResponseForTest(
+		claudecode.PendingAskEntry{CCRequestID: "cc_m", Questions: []proto.PromptForUserChoiceQuestion{{Header: "Pick lens"}}},
 		proto.PromptForUserChoiceDecisionPayload{Answers: []string{"Safety", "Performance"}},
 	)
 	if err != nil {
-		t.Fatalf("buildAskUserToolResult: %v", err)
+		t.Fatalf("buildAskUserControlResponse: %v", err)
 	}
-	v := decodeAskResult(t, body)
-	if !strings.Contains(v.Message.Content[0].Content[0].Text, `"answer":"Safety、Performance"`) {
-		t.Errorf("multi-select join failed: %s", v.Message.Content[0].Content[0].Text)
+	v := decodeAskControlResponse(t, body)
+	if !strings.Contains(v.Response.Response.Message, `"answer":"Safety、Performance"`) {
+		t.Errorf("multi-select join failed: %s", v.Response.Response.Message)
 	}
 }
 
-// TestBuildAskUserToolResultMultiQuestionPositional locks in the
+// TestBuildAskUserControlResponseMultiQuestionPositional locks in the
 // positional pairing contract: when two questions share the same Header
 // (or both are blank — claude-code treats `header` as optional), each
 // question still gets its own answer back. A previous header-keyed map
-// approach collapsed duplicates and fed the model the wrong tool_result.
-func TestBuildAskUserToolResultMultiQuestionPositional(t *testing.T) {
+// approach collapsed duplicates and fed the model the wrong answer.
+func TestBuildAskUserControlResponseMultiQuestionPositional(t *testing.T) {
 	// Two questions with IDENTICAL headers — the realistic shape when the
 	// model omits header entirely and both fall back to "".
-	body, err := claudecode.BuildAskUserToolResultForTest(
+	body, err := claudecode.BuildAskUserControlResponseForTest(
 		claudecode.PendingAskEntry{
-			ToolUseID: "toolu_pos",
+			CCRequestID: "cc_pos",
 			Questions: []proto.PromptForUserChoiceQuestion{
 				{Header: "", Question: "q1"},
 				{Header: "", Question: "q2"},
@@ -319,10 +218,10 @@ func TestBuildAskUserToolResultMultiQuestionPositional(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Fatalf("buildAskUserToolResult: %v", err)
+		t.Fatalf("buildAskUserControlResponse: %v", err)
 	}
-	v := decodeAskResult(t, body)
-	text := v.Message.Content[0].Content[0].Text
+	v := decodeAskControlResponse(t, body)
+	text := v.Response.Response.Message
 	// Both answers must round-trip; the bug we're locking in against was
 	// "both questions end up with B1" because map["":B1] overwrote "":A1.
 	if !strings.Contains(text, `"answer":"A1"`) {
@@ -337,10 +236,10 @@ func TestBuildAskUserToolResultMultiQuestionPositional(t *testing.T) {
 	}
 }
 
-func TestBuildAskUserToolResultMatchesStableQuestionIDs(t *testing.T) {
-	body, err := claudecode.BuildAskUserToolResultForTest(
+func TestBuildAskUserControlResponseMatchesStableQuestionIDs(t *testing.T) {
+	body, err := claudecode.BuildAskUserControlResponseForTest(
 		claudecode.PendingAskEntry{
-			ToolUseID: "toolu_ids",
+			CCRequestID: "cc_ids",
 			Questions: []proto.PromptForUserChoiceQuestion{
 				{ID: "environment", Header: "Environment"},
 				{ID: "checks", Header: "Checks"},
@@ -354,36 +253,15 @@ func TestBuildAskUserToolResultMatchesStableQuestionIDs(t *testing.T) {
 		},
 	)
 	if err != nil {
-		t.Fatalf("buildAskUserToolResult: %v", err)
+		t.Fatalf("buildAskUserControlResponse: %v", err)
 	}
-	v := decodeAskResult(t, body)
-	text := v.Message.Content[0].Content[0].Text
+	v := decodeAskControlResponse(t, body)
+	text := v.Response.Response.Message
 	if !strings.Contains(text, `"answer":"Staging","header":"Environment"`) {
 		t.Fatalf("stable environment answer missing: %s", text)
 	}
 	if !strings.Contains(text, `"answer":"Unit、Integration","header":"Checks"`) {
 		t.Fatalf("stable multi-select answer missing: %s", text)
-	}
-}
-
-// TestBuildAskUserToolResultTimeoutKeepsSuccessShape is the contract
-// "don't trigger a retry": even on timeout we set is_error=false and
-// rely on the body text to redirect the agent.
-func TestBuildAskUserToolResultTimeoutKeepsSuccessShape(t *testing.T) {
-	body, err := claudecode.BuildAskUserToolResultForTest(
-		claudecode.PendingAskEntry{ToolUseID: "toolu_t", Questions: []proto.PromptForUserChoiceQuestion{{Header: "?"}}},
-		proto.PromptForUserChoiceDecisionPayload{Cancelled: true, Reason: "timeout"},
-	)
-	if err != nil {
-		t.Fatalf("buildAskUserToolResult: %v", err)
-	}
-	v := decodeAskResult(t, body)
-	if v.Message.Content[0].IsError {
-		t.Errorf("IsError = true on timeout; want false to avoid retry loop")
-	}
-	text := v.Message.Content[0].Content[0].Text
-	if !strings.Contains(text, "10 minutes") {
-		t.Errorf("timeout text doesn't mention the window: %s", text)
 	}
 }
 
@@ -471,10 +349,6 @@ func TestTranslateControlRequestAskUserQuestionIntercepted(t *testing.T) {
 	if entry.CCRequestID != "cc_req_xyz" {
 		t.Errorf("entry.CCRequestID = %q, want cc_req_xyz", entry.CCRequestID)
 	}
-	if entry.ToolUseID != "" {
-		t.Errorf("entry.ToolUseID = %q, want empty (control_request path)", entry.ToolUseID)
-	}
-
 	// And: a normal control_request (non-AskUserQuestion) still falls
 	// through to the legacy permission path.
 	tr2 := claudecode.NewTranslatorWithAskForTest("run_c2", claudecode.NewPendingTableForTest(), claudecode.NewPendingAskTableForTest(), counterMinter(), askCounterMinter())
@@ -512,6 +386,9 @@ func TestBuildAskUserControlResponseSingleSelect(t *testing.T) {
 	}
 	if !strings.Contains(v.Response.Response.Message, `"answer":"Confirm"`) {
 		t.Errorf("answer not encoded in message: %s", v.Response.Response.Message)
+	}
+	if !strings.Contains(v.Response.Response.Message, `"header":"Confirm delete"`) {
+		t.Errorf("header not echoed: %s", v.Response.Response.Message)
 	}
 }
 

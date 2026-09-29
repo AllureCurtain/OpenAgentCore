@@ -51,6 +51,7 @@ func TestSandboxDeploymentSetupPersistsWithoutExecution(t *testing.T) {
 	if err != nil || selected.Provider != input.Provider || selected.CoreURL != "https://core.example" || selected.OwnerEpoch != before.OwnerEpoch {
 		t.Fatal(selected, err)
 	}
+	input.ExpectedGeneration = selected.Generation
 	replay, err := w.InitializeSandboxDeployment(t.Context(), id, input)
 	if err != nil || !reflect.DeepEqual(replay, selected) {
 		t.Fatal("identical retry changed selection", replay, err)
@@ -122,7 +123,7 @@ func TestSandboxDeploymentSetupConcurrentSelection(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if conflicts != 10 {
+	if conflicts != 19 {
 		t.Fatal("both provider selections won", conflicts)
 	}
 	winner, err := s.GetSandboxSetup(t.Context())

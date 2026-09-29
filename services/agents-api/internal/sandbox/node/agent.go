@@ -17,11 +17,12 @@ import (
 )
 
 type AgentConfig struct {
+	Generations    *GenerationManager
 	CoreURL        string
 	StateDirectory string
 	Identity       Identity
 	Credential     string
-	Provider       sandbox.Provider
+	Provider       sandbox.SandboxProvider
 	Probe          func(context.Context) (Health, error)
 	// Dialer is optional, primarily for an operator-supplied TLS trust configuration.
 	Dialer *websocket.Dialer
@@ -38,12 +39,17 @@ type agent struct {
 	healthSeen atomic.Bool
 }
 type agentConnection struct {
-	conn  *websocket.Conn
-	id    string
-	epoch uint64
-	send  sync.Mutex
-	done  chan struct{}
-	once  sync.Once
+	controlBusy                    bool
+	version                        int
+	controls                       sync.Mutex
+	pending                        *generationControl
+	controlSequence, controlCursor uint64
+	conn                           *websocket.Conn
+	id                             string
+	epoch                          uint64
+	send                           sync.Mutex
+	done                           chan struct{}
+	once                           sync.Once
 }
 
 func (c *agentConnection) close() { c.once.Do(func() { close(c.done); _ = c.conn.Close() }) }
@@ -54,6 +60,7 @@ func (c *agentConnection) write(f frame) error {
 	case <-c.done:
 		return ErrUnavailable
 	default:
+		f.Version = c.version
 		return writeFrame(c.conn, f)
 	}
 }
@@ -61,16 +68,19 @@ func (c *agentConnection) write(f frame) error {
 type work struct {
 	request    request
 	connection *agentConnection
+	provider   sandbox.SandboxProvider
+	release    func()
+	ready      bool
 }
 
 // Run owns one persistent node identity and reconnects its transport only. It
 // never resends a Provider request. The bounded worker outlives each connection.
 func Run(ctx context.Context, config AgentConfig) error {
-	if config.Provider == nil || config.Probe == nil {
+	if config.Generations == nil && (config.Provider == nil || config.Probe == nil) {
 		return sandbox.ErrInvalid
 	}
 	_, checkpoint := config.Provider.(sandbox.CheckpointProvider)
-	if checkpoint != (config.Identity.Provider == "microsandbox") {
+	if config.Generations == nil && checkpoint != (config.Identity.Provider == "microsandbox") {
 		return sandbox.ErrInvalid
 	}
 	release, err := lockDirectory(config.StateDirectory)
@@ -140,6 +150,11 @@ func Run(ctx context.Context, config AgentConfig) error {
 	}
 }
 func (a *agent) health(ctx context.Context, host *hostHealthSampler) (Health, error) {
+	if a.config.Generations != nil {
+		health := Health{Generations: a.config.Generations.Statuses(), ObservedAt: time.Now().UTC(), ActiveOperations: int(a.active.Load())}
+		host.fill(&health, a.config.StateDirectory)
+		return health, nil
+	}
 	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	h, e := a.config.Probe(probeCtx)
@@ -193,14 +208,18 @@ func (a *agent) connect(ctx context.Context) error {
 	host := new(hostHealthSampler)
 	health, _ := a.health(ctx, host)
 	_ = conn.SetReadDeadline(time.Now().Add(15 * time.Second))
-	if err = writeFrame(conn, frame{Type: "hello", Identity: &a.config.Identity, Health: &health}); err != nil {
+	version := ProtocolVersion
+	if a.config.Generations != nil {
+		version = GenerationProtocolVersion
+	}
+	if err = writeFrame(conn, frame{Version: version, Type: "hello", Identity: &a.config.Identity, Health: &health}); err != nil {
 		return err
 	}
 	welcome, err := readFrame(conn)
 	if err != nil {
 		return err
 	}
-	if welcome.Type != "welcome" || !validID(welcome.ConnectionID) || welcome.OwnerEpoch == 0 {
+	if welcome.Version != version || welcome.Type != "welcome" || !validID(welcome.ConnectionID) || welcome.OwnerEpoch == 0 {
 		return sandbox.ErrInvalid
 	}
 	a.mu.Lock()
@@ -215,7 +234,7 @@ func (a *agent) connect(ctx context.Context) error {
 			return err
 		}
 	}
-	current := &agentConnection{conn: conn, id: welcome.ConnectionID, epoch: welcome.OwnerEpoch, done: make(chan struct{})}
+	current := &agentConnection{version: version, conn: conn, id: welcome.ConnectionID, epoch: welcome.OwnerEpoch, done: make(chan struct{})}
 	a.current = current
 	a.mu.Unlock()
 	defer current.close()
@@ -224,14 +243,41 @@ func (a *agent) connect(ctx context.Context) error {
 	detach := context.AfterFunc(connectionCtx, current.close)
 	defer detach()
 	go a.heartbeats(connectionCtx, current, host)
+	var controlDone chan struct{}
+	controlWork := make(chan []sandbox.GenerationRetention, 1)
+	if a.config.Generations != nil {
+		if err := a.config.Generations.Deployment(*welcome.Deployment); err != nil {
+			return err
+		}
+		controlDone = make(chan struct{})
+		go func() { defer close(controlDone); a.garbageCollection(connectionCtx, current, controlWork) }()
+		defer func() { cancel(); <-controlDone }()
+	}
 	sequence := uint64(0)
 	for {
 		_ = conn.SetReadDeadline(time.Now().Add(35 * time.Second))
 		f, e := readFrame(conn)
-		if e != nil {
-			return e
+		if e != nil || f.Version != version {
+			if e != nil {
+				return e
+			}
+			return sandbox.ErrInvalid
 		}
 		if f.Type == "heartbeat_ack" && f.ConnectionID == current.id {
+			if version == GenerationProtocolVersion {
+				if f.OwnerEpoch != current.epoch {
+					return sandbox.ErrOwnership
+				}
+				if err := a.config.Generations.Deployment(*f.Deployment); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if f.Type == "retention_ack" && version == GenerationProtocolVersion {
+			if err := a.acceptRetention(current, f, controlWork); err != nil {
+				return err
+			}
 			continue
 		}
 		if f.Type != "request" || f.Request == nil {
@@ -246,10 +292,20 @@ func (a *agent) connect(ctx context.Context) error {
 			_ = current.write(frame{Type: "response", Response: &response{ID: q.ID, ConnectionID: current.id, ErrorCode: "invalid"}})
 			continue
 		}
+		task := work{request: q, connection: current, provider: a.config.Provider, ready: a.ready.Load()}
+		if a.config.Generations != nil {
+			task.provider, task.ready, task.release, err = a.config.Generations.Acquire(q.DeploymentGeneration)
+			if err != nil {
+				_ = current.write(frame{Type: "response", Response: &response{ID: q.ID, ConnectionID: current.id, ErrorCode: "unconfirmed"}})
+				continue
+			}
+		}
 		select {
-		case a.queue <- work{q, current}:
+		case a.queue <- task:
 		default:
-			// Closing makes every pending result unknown; queued calls are never replayed.
+			if task.release != nil {
+				task.release()
+			}
 			return ErrUnavailable
 		}
 	}
@@ -265,7 +321,11 @@ func (a *agent) heartbeats(ctx context.Context, c *agentConnection, host *hostHe
 			return
 		case <-ticker.C:
 			h, _ := a.health(ctx, host)
-			if c.write(frame{Type: "heartbeat", ConnectionID: c.id, Health: &h}) != nil {
+			if c.write(frame{Type: "heartbeat", ConnectionID: c.id, OwnerEpoch: c.epoch, Health: &h}) != nil {
+				c.close()
+				return
+			}
+			if a.config.Generations != nil && a.requestRetention(c) != nil {
 				c.close()
 				return
 			}
@@ -273,38 +333,55 @@ func (a *agent) heartbeats(ctx context.Context, c *agentConnection, host *hostHe
 	}
 }
 func (a *agent) worker(ctx context.Context) {
+	defer func() {
+		for {
+			select {
+			case task := <-a.queue:
+				if task.release != nil {
+					task.release()
+				}
+			default:
+				return
+			}
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case task := <-a.queue:
-			a.mu.Lock()
-			current := a.current
-			a.mu.Unlock()
-			if current != task.connection || ctx.Err() != nil {
-				continue
-			}
-			select {
-			case <-task.connection.done:
-				continue
-			default:
-			}
-			if !time.Now().Before(task.request.deadline) {
-				_ = task.connection.write(frame{Type: "response", Response: &response{ID: task.request.ID, ConnectionID: task.connection.id, ErrorCode: "unconfirmed"}})
-				continue
-			}
-			if requiresReady(task.request) && !a.ready.Load() {
-				_ = task.connection.write(frame{Type: "response", Response: &response{ID: task.request.ID, ConnectionID: task.connection.id, ErrorCode: "unconfirmed"}})
-				continue
-			}
-			// All calls serialize across reconnects. The Provider may retain its own
-			// allocation flock beyond this deadline when a native mutation is uncertain.
-			operationCtx, cancel := context.WithDeadline(context.Background(), task.request.deadline)
-			a.active.Add(1)
-			result := execute(operationCtx, a.config.Provider, task.request)
-			a.active.Add(-1)
-			cancel()
-			_ = task.connection.write(frame{Type: "response", Response: &result})
+			a.executeWork(ctx, task)
 		}
 	}
+}
+func (a *agent) executeWork(ctx context.Context, task work) {
+	if task.release != nil {
+		defer task.release()
+	}
+	a.mu.Lock()
+	current := a.current
+	a.mu.Unlock()
+	if current != task.connection || ctx.Err() != nil {
+		return
+	}
+	select {
+	case <-task.connection.done:
+		return
+	default:
+	}
+	ready := a.ready.Load()
+	if a.config.Generations != nil {
+		ready = a.config.Generations.Ready(task.request.DeploymentGeneration)
+	}
+	if !time.Now().Before(task.request.deadline) || requiresReady(task.request) && !ready {
+		_ = task.connection.write(frame{Type: "response", Response: &response{ID: task.request.ID, ConnectionID: task.connection.id, ErrorCode: "unconfirmed"}})
+		return
+	}
+	// Detached native completion retains its local provider reference across cancellation.
+	operationCtx, cancel := context.WithDeadline(context.Background(), task.request.deadline)
+	a.active.Add(1)
+	result := execute(operationCtx, task.provider, task.request)
+	a.active.Add(-1)
+	cancel()
+	_ = task.connection.write(frame{Type: "response", Response: &result})
 }

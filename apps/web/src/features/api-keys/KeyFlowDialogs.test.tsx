@@ -3,7 +3,8 @@ import type { ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import type { KeyFlow } from "./key-flows";
+import { AgentCoreError } from "@agents-core-web/agents-client";
+import { flowError, keyFlowReducer, type KeyFlow } from "./key-flows";
 import { KeyFlowDialogs, PendingKeyNotice } from "./KeyFlowDialogs";
 import type { KeyFlowControls } from "./use-key-flow";
 import { type AdminIssuedKey, type Project } from "../../lib/admin-view";
@@ -39,5 +40,17 @@ describe("one-time key display", () => {
     expect(html).toContain("Issue a key for Production");
     expect(html).toContain("An active key of this project already has this name.");
     expect(html).toMatch(/<button class="button primary" type="submit" form="key-issue-form" disabled="">/);
+  });
+});
+
+
+describe("typed name rejection", () => {
+  it("binds the server error to the name input and leaves a rejected form usable", () => {
+    const flow: KeyFlow = { step: "issue", project, name: "valid", busy: false, error: flowError(new AgentCoreError("raw", 400, "invalid_name", "name", undefined, { max_length: 80 })) };
+    const html = renderToStaticMarkup(<KeyFlowDialogs controls={controls(flow)} taken={[]} />);
+    expect(html).toContain('aria-invalid="true"');
+    expect(html).toContain("80 characters");
+    expect(html).not.toMatch(/form="key-issue-form" disabled/);
+    expect(keyFlowReducer(flow, { type: "setName", name: "corrected" })).toMatchObject({ error: null, busy: false });
   });
 });

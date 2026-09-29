@@ -7,7 +7,7 @@ test.afterEach(async ({ request }) => expectManagementBoundary(request));
 test("sets up sandboxes with Core's address read-only, never sending it", async ({ page, request }) => {
   const bodies: string[] = [];
   page.on("request", (sent) => { if (sent.url().includes("/core/v1/sandbox/deployment")) bodies.push(sent.postData() ?? ""); });
-  await openConsole(page, request, "nodes", { sandbox: "none" });
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "none" });
   await page.getByRole("button", { name: "Own machines" }).click();
   await page.getByRole("button", { name: "microsandbox Recommended" }).click();
   await page.getByRole("button", { name: /^Standard/ }).click();
@@ -19,10 +19,11 @@ test("sets up sandboxes with Core's address read-only, never sending it", async 
   await expect(page.getByRole("dialog", { name: "Add node" })).toBeVisible();
   expect(await writes(request)).toEqual(["POST /core/v1/sandbox/deployment"]);
   expect(bodies.some((entry) => entry.includes("core_url"))).toBe(false);
+  expect(bodies.filter(Boolean).map((entry) => JSON.parse(entry))).toEqual([expect.objectContaining({ expected_generation: 0 })]);
 });
 
 test("explains an E2B rejection in the wizard, with the file to edit and the command to apply it", async ({ page, request }) => {
-  await openConsole(page, request, "nodes", { sandbox: "none", installation: "local" });
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "none", installation: "local" });
   await page.getByRole("button", { name: "E2B cloud" }).click();
   await selectFixtureE2BBuild(page);
   await page.getByRole("button", { name: "Next" }).click();
@@ -30,7 +31,7 @@ test("explains an E2B rejection in the wizard, with the file to edit and the com
   await expect(address).toContainText("Only the Core machine can reach this address");
   await page.getByRole("button", { name: "Save configuration" }).click();
   const rejection = page.locator(".wizard-rejection");
-  await expect(rejection).toContainText("E2B sandboxes reach Core over the internet.");
+  await expect(rejection).toContainText("E2B sandboxes need an HTTPS public_url reachable from the internet.");
   await expect(rejection).toContainText("/opt/oac/config.json");
   await expect(rejection).toContainText("sudo oac apply");
   // Nothing was saved and nothing is uncertain: no dialog, and the wizard stays on its review.

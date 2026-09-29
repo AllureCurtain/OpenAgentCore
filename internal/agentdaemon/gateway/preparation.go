@@ -25,7 +25,7 @@ func (s *Session) SubscribePreparation(requestID string) (*Subscription, error) 
 		return nil, errors.New("agentdaemon gateway: invalid, duplicate or excess preparation subscription")
 	}
 	ch := make(chan proto.Envelope, 16)
-	sub := &Subscription{Events: ch, ch: ch, durable: true}
+	sub := &Subscription{Events: ch, ch: ch}
 	s.preparations[requestID] = &preparationSubscription{sub: sub}
 	return sub, nil
 }

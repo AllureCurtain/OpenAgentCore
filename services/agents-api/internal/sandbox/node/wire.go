@@ -17,6 +17,8 @@ import (
 )
 
 const ProtocolVersion = 1
+const GenerationProtocolVersion = 2
+const MaxControlFrameBytes = 32 * 1024
 const MaxFrameBytes = 72 * 1024 * 1024
 const maxPending = 32
 const maxRequestTimeoutMillis int64 = 120000
@@ -36,16 +38,17 @@ type Identity struct {
 }
 
 type Health struct {
-	Diagnostic           string    `json:"diagnostic,omitempty"`
-	ProviderReady        bool      `json:"provider_ready"`
-	ObservedAt           time.Time `json:"observed_at"`
-	ActiveOperations     int       `json:"active_operations"`
-	CPUCount             *int64    `json:"cpu_count,omitempty"`
-	CPUUtilization       *float64  `json:"cpu_utilization"`
-	TotalMemoryBytes     *int64    `json:"total_memory_bytes"`
-	EffectiveCPUCores    *float64  `json:"effective_cpu_cores"`
-	AvailableMemoryBytes *int64    `json:"available_memory_bytes,omitempty"`
-	AvailableDiskBytes   *int64    `json:"available_disk_bytes,omitempty"`
+	Generations          []sandbox.GenerationStatus `json:"generations,omitempty"`
+	Diagnostic           string                     `json:"diagnostic,omitempty"`
+	ProviderReady        bool                       `json:"provider_ready"`
+	ObservedAt           time.Time                  `json:"observed_at"`
+	ActiveOperations     int                        `json:"active_operations"`
+	CPUCount             *int64                     `json:"cpu_count,omitempty"`
+	CPUUtilization       *float64                   `json:"cpu_utilization"`
+	TotalMemoryBytes     *int64                     `json:"total_memory_bytes"`
+	EffectiveCPUCores    *float64                   `json:"effective_cpu_cores"`
+	AvailableMemoryBytes *int64                     `json:"available_memory_bytes,omitempty"`
+	AvailableDiskBytes   *int64                     `json:"available_disk_bytes,omitempty"`
 }
 
 type EnrollmentRequest struct {
@@ -73,12 +76,13 @@ type EnrollmentResponse struct {
 }
 
 type request struct {
-	ID            string `json:"id"`
-	Sequence      uint64 `json:"sequence"`
-	ConnectionID  string `json:"connection_id"`
-	OwnerEpoch    uint64 `json:"owner_epoch"`
-	Operation     string `json:"operation"`
-	TimeoutMillis int64  `json:"timeout_ms"`
+	DeploymentGeneration uint64 `json:"deployment_generation,omitempty"`
+	ID                   string `json:"id"`
+	Sequence             uint64 `json:"sequence"`
+	ConnectionID         string `json:"connection_id"`
+	OwnerEpoch           uint64 `json:"owner_epoch"`
+	Operation            string `json:"operation"`
+	TimeoutMillis        int64  `json:"timeout_ms"`
 	// deadline is anchored to the receiving host and never crosses the wire.
 	deadline    time.Time
 	Reference   sandbox.Reference         `json:"reference"`
@@ -104,14 +108,16 @@ type response struct {
 }
 
 type frame struct {
-	Version      int       `json:"version"`
-	Type         string    `json:"type"`
-	Identity     *Identity `json:"identity,omitempty"`
-	Health       *Health   `json:"health,omitempty"`
-	ConnectionID string    `json:"connection_id,omitempty"`
-	OwnerEpoch   uint64    `json:"owner_epoch,omitempty"`
-	Request      *request  `json:"request,omitempty"`
-	Response     *response `json:"response,omitempty"`
+	Deployment   *sandbox.NodeDeployment `json:"deployment,omitempty"`
+	Control      *generationControl      `json:"control,omitempty"`
+	Version      int                     `json:"version"`
+	Type         string                  `json:"type"`
+	Identity     *Identity               `json:"identity,omitempty"`
+	Health       *Health                 `json:"health,omitempty"`
+	ConnectionID string                  `json:"connection_id,omitempty"`
+	OwnerEpoch   uint64                  `json:"owner_epoch,omitempty"`
+	Request      *request                `json:"request,omitempty"`
+	Response     *response               `json:"response,omitempty"`
 }
 
 func validID(s string) bool {
@@ -130,20 +136,33 @@ func readFrame(conn *websocket.Conn) (frame, error) {
 	if kind != websocket.TextMessage || len(data) > MaxFrameBytes {
 		return f, sandbox.ErrInvalid
 	}
+	return decodeFrame(data)
+}
+
+func decodeFrame(data []byte) (frame, error) {
+	var f frame
 	d := json.NewDecoder(bytes.NewReader(data))
 	d.DisallowUnknownFields()
-	if d.Decode(&f) != nil || d.Decode(new(any)) != io.EOF || f.Version != ProtocolVersion {
+	if d.Decode(&f) != nil || d.Decode(new(any)) != io.EOF || (f.Version != ProtocolVersion && f.Version != GenerationProtocolVersion) {
 		return frame{}, sandbox.ErrInvalid
+	}
+	if f.Version == GenerationProtocolVersion && validateGenerationJSON(data, f.Type) != nil {
+		return frame{}, sandbox.ErrInvalid
+	}
+	if err := validateVersionFrame(f, len(data)); err != nil {
+		return frame{}, err
 	}
 	return f, nil
 }
 func writeFrame(conn *websocket.Conn, f frame) error {
-	f.Version = ProtocolVersion
+	if f.Version == 0 {
+		f.Version = ProtocolVersion
+	}
 	if err := conn.SetWriteDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		return err
 	}
 	data, err := json.Marshal(f)
-	if err != nil || len(data) > MaxFrameBytes {
+	if err != nil || len(data) > MaxFrameBytes || validateVersionFrame(f, len(data)) != nil {
 		return sandbox.ErrInvalid
 	}
 	return conn.WriteMessage(websocket.TextMessage, data)
@@ -252,7 +271,7 @@ func (q request) validate() error {
 	}
 	return sandbox.ErrInvalid
 }
-func execute(ctx context.Context, p sandbox.Provider, q request) response {
+func execute(ctx context.Context, p sandbox.SandboxProvider, q request) response {
 	out := response{ID: q.ID, ConnectionID: q.ConnectionID}
 	err := q.validate()
 	if err != nil {

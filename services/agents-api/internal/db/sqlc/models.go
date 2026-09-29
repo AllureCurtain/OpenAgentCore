@@ -61,18 +61,24 @@ type DeploymentModelProvider struct {
 	MaxOutputTokens int32              `json:"max_output_tokens"`
 	EncryptedConfig []byte             `json:"encrypted_config"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	Revision        pgtype.UUID        `json:"revision"`
+	LastUsedAt      pgtype.Timestamptz `json:"last_used_at"`
+	LastErrorCode   pgtype.Text        `json:"last_error_code"`
+	LastErrorAt     pgtype.Timestamptz `json:"last_error_at"`
+	RecoveryPending bool               `json:"recovery_pending"`
 }
 
 type Device struct {
-	ID             pgtype.UUID        `json:"id"`
-	TenantID       pgtype.UUID        `json:"tenant_id"`
-	Name           string             `json:"name"`
-	CredentialHash pgtype.Text        `json:"credential_hash"`
-	CreatedAt      pgtype.Timestamptz `json:"created_at"`
-	LastSeenAt     pgtype.Timestamptz `json:"last_seen_at"`
-	RevokedAt      pgtype.Timestamptz `json:"revoked_at"`
-	EnvironmentID  pgtype.UUID        `json:"environment_id"`
-	ExecutorKeyID  pgtype.UUID        `json:"executor_key_id"`
+	ID                  pgtype.UUID        `json:"id"`
+	TenantID            pgtype.UUID        `json:"tenant_id"`
+	Name                string             `json:"name"`
+	CredentialHash      pgtype.Text        `json:"credential_hash"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	LastSeenAt          pgtype.Timestamptz `json:"last_seen_at"`
+	RevokedAt           pgtype.Timestamptz `json:"revoked_at"`
+	EnvironmentID       pgtype.UUID        `json:"environment_id"`
+	ExecutorKeyID       pgtype.UUID        `json:"executor_key_id"`
+	ArchiveCancelTurnID pgtype.UUID        `json:"archive_cancel_turn_id"`
 }
 
 type Environment struct {
@@ -82,6 +88,7 @@ type Environment struct {
 	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 	FailureReason pgtype.Text        `json:"failure_reason"`
 	FailedAt      pgtype.Timestamptz `json:"failed_at"`
+	FailureDetail []byte             `json:"failure_detail"`
 }
 
 type EnvironmentConnection struct {
@@ -240,13 +247,14 @@ type RuntimeAllocation struct {
 	NodeID                pgtype.UUID        `json:"node_id"`
 	ObservationError      string             `json:"observation_error"`
 	ComputePhaseChangedAt pgtype.Timestamptz `json:"compute_phase_changed_at"`
+	DeploymentGeneration  pgtype.Int8        `json:"deployment_generation"`
 }
 
 type RuntimeDeployment struct {
 	Singleton              bool               `json:"singleton"`
 	InstallationID         pgtype.UUID        `json:"installation_id"`
 	BackendFingerprint     string             `json:"backend_fingerprint"`
-	Maintenance            bool               `json:"maintenance"`
+	AdmissionPaused        bool               `json:"admission_paused"`
 	UpdatedAt              pgtype.Timestamptz `json:"updated_at"`
 	ProviderKind           string             `json:"provider_kind"`
 	LocalNodeID            pgtype.UUID        `json:"local_node_id"`
@@ -263,6 +271,25 @@ type RuntimeDeployment struct {
 	E2bTemplateCpus        pgtype.Int4        `json:"e2b_template_cpus"`
 	E2bTemplateMemoryMib   pgtype.Int4        `json:"e2b_template_memory_mib"`
 	E2bTemplateRootDiskMib pgtype.Int4        `json:"e2b_template_root_disk_mib"`
+	ResetClear             pgtype.Text        `json:"reset_clear"`
+	ResetRequestedAt       pgtype.Timestamptz `json:"reset_requested_at"`
+	ResetDeadlineAt        pgtype.Timestamptz `json:"reset_deadline_at"`
+	ResetForcedAt          pgtype.Timestamptz `json:"reset_forced_at"`
+	ResetAudit             []byte             `json:"reset_audit"`
+	E2bApiUrl              string             `json:"e2b_api_url"`
+	E2bDomain              string             `json:"e2b_domain"`
+}
+
+type RuntimeDeploymentGeneration struct {
+	Generation             int64              `json:"generation"`
+	ProviderKind           string             `json:"provider_kind"`
+	Specification          []byte             `json:"specification"`
+	E2bTemplate            string             `json:"e2b_template"`
+	E2bTemplateBuildStatus pgtype.Text        `json:"e2b_template_build_status"`
+	E2bTemplateCpus        pgtype.Int4        `json:"e2b_template_cpus"`
+	E2bTemplateMemoryMib   pgtype.Int4        `json:"e2b_template_memory_mib"`
+	E2bTemplateRootDiskMib pgtype.Int4        `json:"e2b_template_root_disk_mib"`
+	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 	E2bApiUrl              string             `json:"e2b_api_url"`
 	E2bDomain              string             `json:"e2b_domain"`
 }
@@ -313,6 +340,8 @@ type RuntimeNode struct {
 	DeploymentGeneration int64              `json:"deployment_generation"`
 	CoreUrl              string             `json:"core_url"`
 	EnrollmentID         pgtype.UUID        `json:"enrollment_id"`
+	ReadyGeneration      pgtype.Int8        `json:"ready_generation"`
+	ProtocolVersion      int32              `json:"protocol_version"`
 }
 
 type RuntimeNodeEnrollment struct {
@@ -326,11 +355,23 @@ type RuntimeNodeEnrollment struct {
 	ID             pgtype.UUID        `json:"id"`
 }
 
+type RuntimeNodeGenerationStatus struct {
+	NodeID              pgtype.UUID        `json:"node_id"`
+	Generation          int64              `json:"generation"`
+	SpecificationDigest string             `json:"specification_digest"`
+	ConnectionID        pgtype.UUID        `json:"connection_id"`
+	OwnerEpoch          int64              `json:"owner_epoch"`
+	State               string             `json:"state"`
+	Diagnostic          string             `json:"diagnostic"`
+	ObservedAt          pgtype.Timestamptz `json:"observed_at"`
+}
+
 type RuntimePlacement struct {
-	EnvironmentID pgtype.UUID        `json:"environment_id"`
-	NodeID        pgtype.UUID        `json:"node_id"`
-	ReservedAt    pgtype.Timestamptz `json:"reserved_at"`
-	ReleasedAt    pgtype.Timestamptz `json:"released_at"`
+	EnvironmentID        pgtype.UUID        `json:"environment_id"`
+	NodeID               pgtype.UUID        `json:"node_id"`
+	ReservedAt           pgtype.Timestamptz `json:"reserved_at"`
+	ReleasedAt           pgtype.Timestamptz `json:"released_at"`
+	DeploymentGeneration pgtype.Int8        `json:"deployment_generation"`
 }
 
 type Session struct {
@@ -375,8 +416,9 @@ type SessionEvent struct {
 }
 
 type SessionExecutionConfiguration struct {
-	SessionID     pgtype.UUID `json:"session_id"`
-	Configuration []byte      `json:"configuration"`
+	SessionID                  pgtype.UUID `json:"session_id"`
+	Configuration              []byte      `json:"configuration"`
+	DeploymentProviderRevision pgtype.UUID `json:"deployment_provider_revision"`
 }
 
 type SessionItem struct {
@@ -387,6 +429,7 @@ type SessionItem struct {
 	Position    int32              `json:"position"`
 	Payload     []byte             `json:"payload"`
 	OutputIndex pgtype.Int4        `json:"output_index"`
+	SettledAt   pgtype.Timestamptz `json:"settled_at"`
 }
 
 type SessionModelExecution struct {

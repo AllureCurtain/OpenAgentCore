@@ -9,7 +9,7 @@ import (
 )
 
 func TestRuntimeEnrollmentApprovedCapacity(t *testing.T) {
-	s, _, view, _ := webSpecificationFixture(t, "microsandbox")
+	s, w, view, _ := webSpecificationFixture(t, "microsandbox")
 	for _, capacity := range []RuntimeNodeCapacity{{0, 8}, {3, 2}, {1, 1000001}} {
 		if _, err := s.CreateRuntimeEnrollment(t.Context(), capacity); !errors.Is(err, ErrInvalidInput) {
 			t.Fatal("invalid capacity accepted", err)
@@ -50,9 +50,13 @@ func TestRuntimeEnrollmentApprovedCapacity(t *testing.T) {
 	if err != nil || config.MaxActive != 2 || config.MaxRetained != 5 {
 		t.Fatal("configuration read ignored admin update", config, err)
 	}
-	// Invalid capacity is reported before the deployment's maintenance conflict.
-	if _, err := s.pool.Exec(t.Context(), "UPDATE runtime_deployment SET maintenance=true"); err != nil {
+	// Invalid capacity is reported before the active reset conflict. Enter reset
+	// through its owner transaction so the fixture obeys the admission invariant.
+	if _, err := w.StartSandboxReset(SandboxResetTestContext(t.Context()), view.InstallationID, SandboxResetRequest{ExpectedGeneration: view.Generation, Clear: "auto"}); err != nil {
 		t.Fatal(err)
+	}
+	if _, err := s.CreateRuntimeEnrollment(t.Context(), RuntimeNodeCapacity{1, 3}); !errors.Is(err, ErrSandboxResetInProgress) {
+		t.Fatal("valid capacity did not reach the reset guard", err)
 	}
 	if _, err := s.CreateRuntimeEnrollment(t.Context(), RuntimeNodeCapacity{3, 2}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatal("invalid capacity reported as a conflict", err)

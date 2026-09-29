@@ -26,31 +26,87 @@ type ExecutorCredential struct {
 // principal; the target must be a self_hosted Environment of that Project whose
 // Session is not deleted, and only credentials restricted to it are managed.
 
+// ExecutorConnectionState is an internal durable observation, never a wire payload.
+// In particular the current credential digest must not be serialized.
+type ExecutorConnectionState struct {
+	DeviceID          string     `json:"-"`
+	BoundKeyID        *string    `json:"-"`
+	EnrolledAt        *time.Time `json:"-"`
+	LastSeenAt        *time.Time `json:"-"`
+	CredentialHash    string     `json:"-"`
+	EnvironmentStatus string     `json:"-"`
+}
+
+type ExecutorCredentialState struct {
+	EnvironmentID string `json:"-"`
+	Credentials   []ExecutorCredential
+	Connection    ExecutorConnectionState
+}
+
 func (s *Store) ListProjectExecutorCredentials(ctx context.Context, project identity.Principal, environment string) ([]ExecutorCredential, error) {
-	if err := s.selfHostedExecutorTarget(ctx, project, environment); err != nil {
-		return nil, err
+	state, err := s.ProjectExecutorCredentialState(ctx, project, environment)
+	return state.Credentials, err
+}
+
+// ProjectExecutorCredentialState reads list metadata and binding facts in one
+// read-only snapshot. The snapshot ends before any live peer/authority observation.
+func (s *Store) ProjectExecutorCredentialState(ctx context.Context, project identity.Principal, environment string) (ExecutorCredentialState, error) {
+	if err := project.Validate(); err != nil {
+		return ExecutorCredentialState{}, ErrInvalidInput
 	}
 	tenant, err := parseID(project.TenantID)
 	if err != nil {
-		return nil, err
+		return ExecutorCredentialState{}, err
 	}
-	rows, err := s.queries.ListEnvironmentExecutorCredentials(ctx, sqlc.ListEnvironmentExecutorCredentialsParams{
-		TenantID: tenant, EnvironmentID: parsePathID(environment),
-		SubjectKind: pgtype.Text{String: project.SubjectKind, Valid: true}, SubjectID: pgtype.Text{String: project.SubjectID, Valid: true},
-	})
-	if err != nil {
-		return nil, err
-	}
-	result := make([]ExecutorCredential, 0, len(rows))
-	for _, row := range rows {
-		credential := ExecutorCredential{KeyID: uuid.UUID(row.KeyID.Bytes).String(), CreatedAt: row.CreatedAt.Time}
-		if row.RevokedAt.Valid {
-			revoked := row.RevokedAt.Time
-			credential.RevokedAt = &revoked
+	environmentID := parsePathID(environment)
+	result := ExecutorCredentialState{Credentials: []ExecutorCredential{}}
+	err = pgx.BeginTxFunc(ctx, s.pool, pgx.TxOptions{IsoLevel: pgx.RepeatableRead, AccessMode: pgx.ReadOnly}, func(tx pgx.Tx) error {
+		q := s.queries.WithTx(tx)
+		row, err := q.GetEnvironmentExecutorConnection(ctx, sqlc.GetEnvironmentExecutorConnectionParams{EnvironmentID: environmentID, TenantID: tenant})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrNotFound
 		}
-		result = append(result, credential)
-	}
-	return result, nil
+		if err != nil {
+			return err
+		}
+		result.EnvironmentID = uuid.UUID(environmentID.Bytes).String()
+		result.Connection.EnvironmentStatus = row.EnvironmentStatus
+		if row.DeviceID.Valid {
+			result.Connection.DeviceID = uuid.UUID(row.DeviceID.Bytes).String()
+		}
+		if row.ExecutorKeyID.Valid {
+			key := uuid.UUID(row.ExecutorKeyID.Bytes).String()
+			result.Connection.BoundKeyID = &key
+		}
+		if row.EnrolledAt.Valid {
+			at := row.EnrolledAt.Time
+			result.Connection.EnrolledAt = &at
+		}
+		if row.LastSeenAt.Valid {
+			at := row.LastSeenAt.Time
+			result.Connection.LastSeenAt = &at
+		}
+		if row.CredentialHash.Valid {
+			result.Connection.CredentialHash = row.CredentialHash.String
+		}
+		rows, err := q.ListEnvironmentExecutorCredentials(ctx, sqlc.ListEnvironmentExecutorCredentialsParams{
+			TenantID: tenant, EnvironmentID: environmentID,
+			SubjectKind: pgtype.Text{String: project.SubjectKind, Valid: true}, SubjectID: pgtype.Text{String: project.SubjectID, Valid: true},
+		})
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			credential := ExecutorCredential{KeyID: uuid.UUID(row.KeyID.Bytes).String(), CreatedAt: row.CreatedAt.Time}
+			if row.RevokedAt.Valid {
+				revoked := row.RevokedAt.Time
+				credential.RevokedAt = &revoked
+			}
+			result.Credentials = append(result.Credentials, credential)
+		}
+		return nil
+	})
+	return result, err
 }
 
 // IssueProjectExecutorCredential issues a new key or, with rotate, replaces the

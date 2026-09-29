@@ -26,6 +26,7 @@ import (
 // The controlled provider records external effects independently of DB phases.
 // Lost replies retain those effects so recovery must use observation, not replay.
 type fakeCheckpointProvider struct {
+	preparation *initializationPeer
 	lifecycleProvider
 	computes                                                     map[string]sandbox.ComputeState
 	snapshots                                                    map[string]sandbox.SnapshotIdentity
@@ -191,10 +192,22 @@ func (p *fakeCheckpointProvider) connect(ctx context.Context, b sandbox.Bootstra
 	}
 	go func() {
 		defer conn.Close()
+		transfer := initializationTransfer{peer: p.preparation}
 		for {
 			var env proto.Envelope
 			if conn.ReadJSON(&env) != nil {
 				return
+			}
+			if env.Type == proto.TypeRuntimePrepare && p.preparation != nil {
+				reply, err := transfer.receive(env)
+				if err != nil {
+					p.preparation.t.Error(err)
+					return
+				}
+				if conn.WriteJSON(reply) != nil {
+					return
+				}
+				continue
 			}
 			if env.Type == proto.TypeDeviceShutdown {
 				return

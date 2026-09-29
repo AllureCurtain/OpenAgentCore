@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,8 @@ import (
 // RuntimeProvider binds one deployment to one sandbox installation.
 // BackendFingerprint identifies its namespace independently of mutable sizing.
 type RuntimeProvider struct {
+	// PublishUnconfigured updates the shared observation cache after reset commit.
+	PublishUnconfigured              func(uint64)
 	Generation                       uint64
 	Mode                             string
 	loadDeployment                   func(context.Context) (*RuntimeProvider, error)
@@ -32,24 +35,26 @@ type RuntimeProvider struct {
 	CoreURL                          string
 	InstallationID                   string
 	BackendFingerprint               string
-	Provider                         sandbox.Provider
-	Maintenance                      bool
+	Provider                         sandbox.SandboxProvider
+	AdmissionPaused                  bool
 	Suspension                       *RuntimeSuspensionPolicy
 }
 
 type runtimeLifecycle struct {
-	store         *store.Store
-	registry      *gateway.Registry
-	config        RuntimeProvider
-	nodeID        string
-	gate          chan struct{}
-	ctx           context.Context
-	stop          context.CancelFunc
-	cursor        string
-	pendingCursor string
-	connections   map[string]*runtimeConnection
-	initializing  *runtimeInitialization
-	wakeHints     chan struct{}
+	store           *store.Store
+	registry        *gateway.Registry
+	config          RuntimeProvider
+	nodeID          string
+	gate            chan struct{}
+	ctx             context.Context
+	stop            context.CancelFunc
+	cancelMu        sync.Mutex
+	reconcileCancel context.CancelFunc
+	cursor          string
+	pendingCursor   string
+	connections     map[string]*runtimeConnection
+	initializing    *runtimeInitialization
+	wakeHints       chan struct{}
 }
 
 func newRuntimeManager(s *store.Store, registry *gateway.Registry, config *RuntimeProvider) (*runtimeManager, error) {
@@ -70,7 +75,7 @@ func newRuntimeManager(s *store.Store, registry *gateway.Registry, config *Runti
 		}
 	}
 	ctx, stop := context.WithCancel(context.Background())
-	return &runtimeManager{store: s, registry: registry, config: copied, setupInstallationID: config.InstallationID, loadDeployment: config.loadDeployment, prepareDeployment: config.prepareDeployment, setupGate: make(chan struct{}, 1), mutationGate: make(chan struct{}, 1), ctx: ctx, cancel: stop, nodes: make(map[string]*runtimeNode), failed: make(chan error, 1), inventory: make(chan struct{}, 1)}, nil
+	return &runtimeManager{store: s, registry: registry, config: copied, setupInstallationID: config.InstallationID, loadDeployment: config.loadDeployment, prepareDeployment: config.prepareDeployment, publishUnconfigured: config.PublishUnconfigured, setupGate: make(chan struct{}, 1), mutationGate: make(chan struct{}, 1), ctx: ctx, cancel: stop, nodes: make(map[string]*runtimeNode), failed: make(chan error, 1), inventory: make(chan struct{}, 1)}, nil
 }
 
 func validatedRuntimeProvider(config *RuntimeProvider, registry *gateway.Registry) (RuntimeProvider, error) {
@@ -90,7 +95,7 @@ func validatedRuntimeProvider(config *RuntimeProvider, registry *gateway.Registr
 	if copied.Mode != "" && copied.Mode != "nodes" && copied.Mode != "direct" {
 		return RuntimeProvider{}, sandbox.ErrInvalid
 	}
-	if copied.Mode == "direct" && (copied.ProviderKind != "e2b" || copied.LocalNodeID != "" || copied.Suspension != nil) {
+	if copied.Mode == "direct" && (copied.ProviderKind == "" || copied.LocalNodeID != "" || copied.Suspension != nil) {
 		return RuntimeProvider{}, sandbox.ErrInvalid
 	}
 	if config.Suspension != nil {
@@ -173,7 +178,7 @@ func (r *runtimeLifecycle) provision(ctx context.Context, tenant, environment, p
 		return store.RuntimeAllocation{}, sandbox.ErrInvalid
 	}
 	if _, err := r.store.GetRuntimeAllocation(ctx, tenant, environment); errors.Is(err, store.ErrNotFound) {
-		if r.config.Maintenance && r.config.Generation == 0 {
+		if r.config.AdmissionPaused && r.config.Generation == 0 {
 			return store.RuntimeAllocation{}, ErrExecutionUnavailable
 		}
 		if err := r.computeFreshCapacity(ctx, providerKey); err != nil {
@@ -260,13 +265,11 @@ func (w *Worker) ReconcileManagedRuntimes(ctx context.Context) error {
 }
 
 func (r *runtimeLifecycle) reconcile(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	detach := context.AfterFunc(r.ctx, cancel)
-	defer func() { detach(); cancel() }()
-	if err := r.lock(ctx); err != nil {
+	ctx, finish, err := r.beginReconcile(ctx)
+	if err != nil {
 		return err
 	}
-	defer func() { <-r.gate }()
+	defer finish()
 	rows, err := r.store.ListRuntimeAllocationsForNode(ctx, r.nodeID, r.cursor)
 	if err != nil {
 		return err
@@ -323,6 +326,15 @@ func (r *runtimeLifecycle) observe(ctx context.Context, owner store.RuntimeAlloc
 		owner, err = r.store.RequestRuntimeCleanup(ctx, owner)
 		if err != nil {
 			return err
+		}
+		if peer, err := r.registry.LookupDevice(owner.DeviceID); err == nil {
+			draining, err := peer.DrainArchivedCancellation(ctx)
+			if err != nil {
+				return err
+			}
+			if draining {
+				return nil
+			}
 		}
 		r.clearRuntimeState(owner)
 	} else if owner.ComputePhase == "disabled" || owner.ComputePhase == "running" {

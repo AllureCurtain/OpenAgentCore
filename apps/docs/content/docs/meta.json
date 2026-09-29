@@ -6,10 +6,12 @@
     "concepts",
     "execution-model",
     "install",
+    "install-options",
     "configure",
     "---Application access---",
     "bootstrap-projects-keys",
     "quickstart",
+    "user-guide",
     "public-api",
     "agents-and-tools",
     "sessions",
@@ -17,11 +19,17 @@
     "environments-and-files",
     "hosted-providers",
     "self-hosted-execution",
+    "self-hosted-native",
     "---Administration---",
     "console",
     "admin-api",
     "observability",
     "troubleshooting",
-    "api-reference"
+    "api-reference",
+    "---Development---",
+    "development",
+    "harness-onboarding",
+    "runtime-protocol",
+    "sandbox-provider"
   ]
 }

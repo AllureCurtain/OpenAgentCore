@@ -130,6 +130,8 @@ export interface HostedRuntimeRow {
   session: AgentSession | null;
   /** The host of the Runtime's allocation, when the fleet lists it. */
   node: SandboxNode | null;
+  /** Ownership generation from a matching allocation, never the deployment target or node pin. */
+  deploymentGeneration: number | null;
   /** Seconds from the Runtime's start to its last sample. */
   uptimeSeconds: number | null;
 }
@@ -140,6 +142,7 @@ export function hostedRuntimeRows(
   fleet: { nodes: readonly SandboxNode[]; allocations: readonly SandboxAllocation[] } | null,
 ): HostedRuntimeRow[] {
   const nodes = new Map((fleet?.nodes ?? []).map((node) => [node.id, node]));
+  const generations = new Map((fleet?.allocations ?? []).map((allocation) => [allocation.id, allocation.deployment_generation]));
   const nodeOfAllocation = new Map((fleet?.allocations ?? []).map((allocation) => [allocation.id, nodes.get(allocation.node_id) ?? null]));
   return load.observations
     .filter((observation) => !projectId || observation.project_id === projectId)
@@ -147,6 +150,7 @@ export function hostedRuntimeRows(
       observation,
       session: load.sessions.get(observation.session_id) ?? null,
       node: observation.instance.allocation_id ? nodeOfAllocation.get(observation.instance.allocation_id) ?? null : null,
+      deploymentGeneration: observation.instance.allocation_id ? generations.get(observation.instance.allocation_id) ?? null : null,
       uptimeSeconds: observation.status === "observed" && observation.started_at !== null && observation.observed_at !== null && observation.observed_at >= observation.started_at
         ? observation.observed_at - observation.started_at
         : null,

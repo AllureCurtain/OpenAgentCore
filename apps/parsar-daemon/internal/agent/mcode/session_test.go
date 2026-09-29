@@ -19,7 +19,7 @@ func testRequest(t *testing.T) proto.PromptRequestPayload {
 	t.Helper()
 	t.Setenv("OAC_RUNTIME_HOME", t.TempDir())
 	return proto.PromptRequestPayload{RunID: "run-1", ConversationID: "conversation-1", AgentStateKey: "conversation-1/agent-1/mcode", Input: proto.TextInput("Hello"), AgentOptions: map[string]any{
-		"model": "fixture", "mcode_provider": map[string]any{"kind": "custom", "enabled": true}, "system_prompt": "Current instructions",
+		"model": "fixture", "model_provider": map[string]any{"protocol": "anthropic", "base_url": "https://provider.example/v1", "api_key": "fixture-key", "context_window": 64000, "max_output_tokens": 4096}, "system_prompt": "Current instructions",
 	}}
 }
 
@@ -198,6 +198,7 @@ func TestMCodeProcess(t *testing.T) {
 	}
 	scanner := bufio.NewScanner(os.Stdin)
 	var promptID json.RawMessage
+	prompts, configurations := 0, 0
 	for scanner.Scan() {
 		var frame rpcFrame
 		if json.Unmarshal(scanner.Bytes(), &frame) != nil {
@@ -248,6 +249,15 @@ func TestMCodeProcess(t *testing.T) {
 				result = map[string]any{"configOptions": []map[string]any{{"id": "permissionMode"}}}
 			}
 		case "session/set_config_option":
+			configurations++
+			if scenario == "executor-backpressure" && configurations > 1 {
+				send(rpcFrame{JSONRPC: "2.0", ID: frame.ID, Result: json.RawMessage("{}")})
+				time.Sleep(time.Minute)
+				os.Exit(0)
+			}
+			if scenario == "executor-preexit" && configurations > 1 {
+				os.Exit(0)
+			}
 			var params map[string]string
 			_ = json.Unmarshal(frame.Params, &params)
 			if params["configId"] == "model" && params["value"] != "m:custom_provider%3Aoac:fixture:v:" {
@@ -258,10 +268,33 @@ func TestMCodeProcess(t *testing.T) {
 				Prompt []map[string]string `json:"prompt"`
 			}
 			_ = json.Unmarshal(frame.Params, &input)
-			if strict := scenario == "strict-cancel" || strings.HasPrefix(scenario, "prepared"); (strict && len(input.Prompt) != 2) || (!strict && len(input.Prompt) != 1) {
+			if strict := scenario == "strict-cancel" || (strings.HasPrefix(scenario, "prepared") || strings.HasPrefix(scenario, "executor")); (strict && len(input.Prompt) != 2) || (!strict && len(input.Prompt) != 1) {
 				os.Exit(9)
 			}
+			if strings.HasPrefix(scenario, "executor") {
+				prompts++
+				promptID = frame.ID
+				if scenario == "executor-exit" {
+					os.Exit(0)
+				}
+				if input.Prompt[0]["text"] == "wait" {
+					update("agent_message_chunk", map[string]any{"content": map[string]string{"type": "text", "text": "ready"}})
+					continue
+				}
+				update("agent_message_chunk", map[string]any{"content": map[string]string{"type": "text", "text": input.Prompt[0]["text"]}})
+				update("tool_call", map[string]any{"toolCallId": "repeated-call", "name": "Read", "status": "in_progress", "rawInput": map[string]any{}})
+				update("tool_call_update", map[string]any{"toolCallId": "repeated-call", "status": "completed"})
+				raw, _ := json.Marshal(map[string]string{"stopReason": "end_turn"})
+				send(rpcFrame{JSONRPC: "2.0", ID: frame.ID, Result: raw})
+				// These frames precede the next control barrier on the wire and
+				// must never become the following Turn's output.
+				for range 100 {
+					update("agent_message_chunk", map[string]any{"content": map[string]string{"type": "text", "text": "OLD"}})
+				}
+				continue
+			}
 			if scenario == "prepared-mcp-cancel" {
+				promptID = frame.ID
 				update("tool_call", map[string]any{"toolCallId": "native-call", "name": "mcp__proof_server__read_status", "status": "in_progress", "rawInput": map[string]any{}})
 				continue
 			}
@@ -294,7 +327,17 @@ func TestMCodeProcess(t *testing.T) {
 			}
 			update("usage_update", map[string]any{"used": 2000, "size": 64000, "cost": map[string]any{"amount": 2, "currency": "USD"}})
 			result = map[string]string{"stopReason": "end_turn"}
+		case "mcode/session/delegation/stop":
+			result = map[string]any{"receipt": map[string]any{"failedSessionIds": []string{}}}
+		case "session/cancel":
+			raw, _ := json.Marshal(map[string]string{"stopReason": "cancelled"})
+			send(rpcFrame{JSONRPC: "2.0", ID: promptID, Result: raw})
+			continue
 		case "mcode/session/steer":
+			if scenario == "executor-steer-unknown" {
+				send(rpcFrame{JSONRPC: "2.0", ID: frame.ID, Error: &rpcError{Code: -32000, Message: "Unknown input outcome"}})
+				continue
+			}
 			if scenario == "steer-lost" {
 				os.Exit(0)
 			}

@@ -14,7 +14,7 @@ func TestMCodeExecutionOptInIsVersionBound(t *testing.T) {
 		t.Run(tc.enabled+"/"+tc.version, func(t *testing.T) {
 			t.Setenv("OAC_RUNTIME_MCODE_AGENTS_API", tc.enabled)
 			rc := &runContext{stdout: io.Discard, stderr: io.Discard}
-			info := discoverMCode(rc, func(context.Context, string) (string, error) { return tc.version, nil })
+			info := discoverMCode(t.Context(), rc, func(context.Context, string) (string, error) { return tc.version, nil })
 			if !info.Available || info.Capabilities.EnvironmentNone != tc.qualified || info.Capabilities.DurableInputReceipts != tc.qualified || info.Capabilities.SubagentObservations != tc.qualified {
 				t.Fatalf("capabilities=%+v", info.Capabilities)
 			}

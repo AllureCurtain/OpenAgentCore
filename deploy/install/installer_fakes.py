@@ -45,7 +45,7 @@ class FakeHost:
         self.nodes = []
         self.remote_core = {}  # web-only: origin -> (status, installation_id)
         self.deployment_core_url = ""  # what an old Core reports for its sandbox deployment
-        self.deployment = {"provider": ""}  # what sandbox_setup reads and posts
+        self.deployment = {"provider": "", "generation": 0, "reset": None, "resources": {"allocations": 0, "pending": 0}}  # what sandbox_setup reads and posts
         self.deployment_posts = []
         self.volumes = {}
         self.project_containers = {}
@@ -188,7 +188,7 @@ class FakeHost:
                     self.containers[name]["running"] = True
             if "web" in names:
                 web = services["web"]
-                self.web_port = int(web["ports"][0].split(":")[1]) if "ports" in web else int(
+                self.web_port = int(web["ports"][0].rsplit(":", 2)[1]) if "ports" in web else int(
                     web["environment"]["OAC_WEB_ADDR"].rsplit(":", 1)[1])
             environment = path.parent / "core.env"
             if "core" in names and (self.core["fails"] or
@@ -200,7 +200,7 @@ class FakeHost:
 
     def load_core(self, root, service):
         if "ports" in service:
-            self.core["port"] = int(service["ports"][0].split(":")[1])
+            self.core["port"] = int(service["ports"][0].rsplit(":", 2)[1])
         digests = root / "generated/core-key-digests.json"
         self.core["digests"] = json.loads(digests.read_text()) if digests.exists() else json.loads(
             (root / "admin/core-key-digests.json").read_text())
@@ -313,19 +313,25 @@ class FakeHost:
             raise ConnectionRefusedError()
         if sha256(req.get_header("Authorization", "").removeprefix("Bearer ")) not in digests:
             return 401, b'{"error": {"message": "Invalid Core key"}}'
-        if path == "core/v1/sandbox/deployment/maintenance" and req.get_method() == "PATCH":
-            self.deployment["maintenance"] = json.loads(req.data)["maintenance"]
-            return 200, json.dumps(dict(self.deployment, installation_id=self.core_installation_id)).encode()
         if path != "core/v1/sandbox/deployment":
             return 404, b""
+        # The upgraded Core migration resumes admission without a reset.
+        self.deployment.pop("maintenance", None)
+        self.deployment.setdefault("reset", None)
+        runtime = (self.deployment.get("specification") or {}).get("runtime") or {}
+        reference = runtime.get("microsandbox_ref", "")
+        if reference.startswith("parsar-core-runtime@"):
+            runtime["microsandbox_ref"] = "oac-runtime@" + reference.split("@", 1)[1]
         if req.get_method() in ("POST", "PUT"):
             selection = json.loads(req.data)
             self.deployment_posts.append(selection)
+            if selection.get("expected_generation") != self.deployment.get("generation", 0):
+                return 409, b'{"error":{"code":"generation_stale","message":"Deployment generation changed"}}'
             if self.deployment_refusal:
                 return 409, json.dumps({"error": {"message": self.deployment_refusal}}).encode()
             # E2B adopts the template build's size.
             self.deployment = {"provider": selection["provider"], "generation": self.deployment.get("generation", 0) + 1,
-                "maintenance": self.deployment.get("maintenance", False), "resources": {"allocations": 0, "pending": 0},
+                "reset": None, "resources": {"allocations": 0, "pending": 0},
                 "specification": {"runtime": selection.get("runtime"), "resources": selection.get("resources", {"cpus": 2, "memory_mib": 2048})}}
         native = self.native["active"] and self.native["addr"] == port
         environment = self.native["environment"] if native else self.core.get("environment", "")
@@ -342,7 +348,7 @@ MANIFEST = {
     "runtime_ref": "oac-runtime@sha256:" + "b" * 64,
     "microsandbox": {"runtime_sha256": "5" * 64, "firmware_sha256": "6" * 64},
 }
-MODULES = ("install.py", "configuration.py", "config_model.py", "config.schema.json", "oac_cli.py", "convert.py", "rename.py",
+MODULES = ("install.py", "install_output.py", "configuration.py", "config_model.py", "config.schema.json", "oac_cli.py", "convert.py", "rename.py",
            "native_service.py", "sandbox_setup.py", "node_spec.py", "distribution.py", "install.sh")
 
 
@@ -364,8 +370,7 @@ def make_bundle(directory, manifest, commit=None):
     for name in MODULES:
         (bundle / name).write_bytes(Path(__file__).with_name(name).read_bytes())
     (bundle / "standard-sizes.json").write_bytes(STANDARD_SIZES.read_bytes())
-    for name in ("node-install.pyz", "self-hosted-install.pyz"):
-        (bundle / name).write_bytes(b"synthetic verified Python bootstrap")
+    (bundle / "node-install.pyz").write_bytes(b"synthetic verified Python bootstrap")
     (bundle / "oac.pyz").write_bytes(b"synthetic oac command " + manifest["source_commit"].encode())
     manifest["artifacts"] = {}
     for name in ("images/runtime.tar.gz", "native/bin/oac-node",

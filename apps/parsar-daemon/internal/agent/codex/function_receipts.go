@@ -26,6 +26,10 @@ type pendingFunction struct {
 }
 
 func (s *Session) SubmitFunctionResult(ctx context.Context, result proto.FunctionResultPayload) error {
+	if !s.beginOperation() {
+		return agent.ErrSteeringInactive
+	}
+	defer s.endOperation()
 	if s.functions == nil {
 		return agent.ErrUnknownFunctionCall
 	}
@@ -59,7 +63,11 @@ func (s *Session) SubmitFunctionResult(ctx context.Context, result proto.Functio
 	// This operation owns both transport failure and native application. A generic
 	// write deadline must not close the process after a native receipt has won.
 	written := make(chan error, 1)
+	if !s.beginOperation() {
+		return agent.ErrUnknownFunctionCall
+	}
 	go func() {
+		defer s.endOperation()
 		if err := ctx.Err(); err != nil {
 			written <- err
 			return

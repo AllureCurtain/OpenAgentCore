@@ -26,7 +26,7 @@ func enableWorkerEnvironment(t *testing.T, h *dispatchHarness) {
 }
 
 func workerEnvironmentCapabilities() proto.AgentKindCapabilities {
-	return proto.AgentKindCapabilities{Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: true, EnvironmentNone: true, WebSearchControl: true, TextVerbosity: true, ExecutionControls: true, SubagentControl: true, ToolObservations: true, Preparation: true, LocalEnvironment: true, LocalEnvironmentNetworkPolicy: true, WorkspaceReadPreparation: true, WorkspaceOutputExport: true}
+	return proto.AgentKindCapabilities{Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: true, EnvironmentNone: true, WebSearchControl: true, TextVerbosity: true, ExecutionControls: true, SubagentControl: true, ToolObservations: true, Preparation: true, LocalEnvironment: true, WorkspaceReadPreparation: true, WorkspaceOutputExport: true}
 }
 
 func workerEnvironmentReservation(t *testing.T, h *dispatchHarness) store.EnvironmentInputReservation {
@@ -62,6 +62,11 @@ func workerFrames(t *testing.T, runtimes ...*dispatchHarness) <-chan proto.Envel
 				var env proto.Envelope
 				if h.conn.ReadJSON(&env) != nil {
 					return
+				}
+				var keep bool
+				env, keep = h.executionFrame(env)
+				if !keep {
+					continue
 				}
 				select {
 				case frames <- env:

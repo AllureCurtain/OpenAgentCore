@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -20,7 +21,6 @@ const (
 	ProvisioningSetupCommand   = "setup"
 	ProvisioningPythonPackages = "python"
 	ProvisioningNPMPackages    = "npm"
-	ProvisioningSystemPackages = "system"
 	ProvisioningInitialFile    = "file"
 	ProvisioningSkill          = "skill"
 )
@@ -36,13 +36,12 @@ type ProvisioningFailure struct {
 
 // reason renders the public Session error. The setup_commands and Python package
 // labels match observed official errors (which append raw pip output for Python;
-// Core never does). The npm, system package, file and Skill labels are unverified.
+// Core never does). The npm, file and Skill labels are unverified.
 // A script step without a reported exit status keeps the generic reason.
 func (f ProvisioningFailure) reason() string {
 	label := map[string]string{
 		ProvisioningPythonPackages: "Python package installation",
 		ProvisioningNPMPackages:    "npm package installation",
-		ProvisioningSystemPackages: "System package installation",
 	}[f.Step]
 	if f.Step == ProvisioningSetupCommand && f.Index >= 0 {
 		label = fmt.Sprintf("setup_commands[%d]", f.Index)
@@ -61,29 +60,35 @@ func (f ProvisioningFailure) reason() string {
 // EnvironmentFailure is a hosted Environment's recorded provisioning failure. It
 // makes the Session failed with this reason and last activity time.
 type EnvironmentFailure struct {
-	Reason   string    `json:"reason"`
-	FailedAt time.Time `json:"failed_at"`
+	Reason   string                     `json:"reason"`
+	FailedAt time.Time                  `json:"failed_at"`
+	Detail   *ProvisioningFailureDetail `json:"-"`
 }
 
 func environmentFailure(row sqlc.Environment) *EnvironmentFailure {
 	if row.Status != "failed" || !row.FailureReason.Valid || !row.FailedAt.Valid {
 		return nil
 	}
-	return &EnvironmentFailure{Reason: row.FailureReason.String, FailedAt: row.FailedAt.Time}
+	failure := &EnvironmentFailure{Reason: row.FailureReason.String, FailedAt: row.FailedAt.Time}
+	var detail ProvisioningFailureDetail
+	if json.Unmarshal(row.FailureDetail, &detail) == nil {
+		failure.Detail = detail.sanitized()
+	}
+	return failure
 }
 
 // terminateRuntimeEnvironment participates in the allocation's Session transaction.
 // Public expiry does not assert compute removal or invent an expired SSE variant.
 // A first failure records the hosted provisioning failure; an already terminal
 // Environment only settles remaining input, without repeating events.
-func terminateRuntimeEnvironment(ctx context.Context, q *sqlc.Queries, current sqlc.GetRuntimeAllocationRow, reason string, cancel func() error) error {
+func terminateRuntimeEnvironment(ctx context.Context, q *sqlc.Queries, current sqlc.GetRuntimeAllocationRow, reason string, detail *ProvisioningFailureDetail, cancel func() error) error {
 	row, err := q.GetSessionEnvironment(ctx, sqlc.GetSessionEnvironmentParams{TenantID: current.TenantID, ID: current.SessionID})
 	if err != nil {
 		return err
 	}
 	terminal := row.Environment.Status == "expired" || row.Environment.Status == "failed"
 	if !terminal && !current.Expired {
-		return failHostedEnvironment(ctx, q, row, current.SessionID, reason, cancel)
+		return failHostedEnvironment(ctx, q, row, current.SessionID, reason, detail, cancel)
 	}
 	return withEnvironmentInputActivity(ctx, q, current.SessionID, func() error {
 		if !terminal {
@@ -103,8 +108,16 @@ func terminateRuntimeEnvironment(ctx context.Context, q *sqlc.Queries, current s
 // safe reason, then one agent.session.failed snapshot. The snapshot captures the
 // settled input activity, Usage and the failure, matching later Session reads.
 // Pending input settles as failed exactly as before.
-func failHostedEnvironment(ctx context.Context, q *sqlc.Queries, row sqlc.GetSessionEnvironmentRow, session pgtype.UUID, reason string, cancel func() error) error {
-	failedAt, err := q.RecordEnvironmentFailure(ctx, sqlc.RecordEnvironmentFailureParams{ID: row.Environment.ID, FailureReason: pgtype.Text{String: reason, Valid: true}})
+func failHostedEnvironment(ctx context.Context, q *sqlc.Queries, row sqlc.GetSessionEnvironmentRow, session pgtype.UUID, reason string, detail *ProvisioningFailureDetail, cancel func() error) error {
+	var rawDetail []byte
+	if detail != nil {
+		var err error
+		rawDetail, err = json.Marshal(detail)
+		if err != nil {
+			return err
+		}
+	}
+	failedAt, err := q.RecordEnvironmentFailure(ctx, sqlc.RecordEnvironmentFailureParams{ID: row.Environment.ID, FailureReason: pgtype.Text{String: reason, Valid: true}, FailureDetail: rawDetail})
 	if err != nil {
 		return err
 	}

@@ -85,7 +85,10 @@ read.
 `openai_hosted` keeps the official wire name and means Core-managed compute here.
 The deployment chooses E2B or its own Docker/microsandbox nodes. A public
 `self_hosted` Environment uses caller-owned compute and the same colocated
-Runtime. For a `self_hosted` Session, the deployment operator issues the
+Runtime on Linux, macOS or Windows; managed Providers remain Linux-only. Native
+Runtime execution uses the launching user's permissions without an inner sandbox.
+See [native installation and validation status](../self-hosted-native.md).
+For a `self_hosted` Session, the deployment operator issues the
 Environment's executor credential with the Core key; see
 [executor credentials](../../contracts/agents-api/environment-executor-credentials.md).
 Our daemon transport and the supported native harness differences are

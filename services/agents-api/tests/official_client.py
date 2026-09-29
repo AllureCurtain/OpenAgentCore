@@ -36,6 +36,7 @@ from official_session_requests import verify_session_create_requests
 from official_session_metadata import verify_session_metadata, verify_active_session_metadata
 from official_session_creators import verify_session_creators, verify_creator_recovery
 from official_source_file_list import verify_source_file_list, verify_source_file_list_recovery
+from official_diagnostics import finish_server
 from openai import AuthenticationError, BadRequestError, ConflictError, InternalServerError, NotFoundError, OpenAI
 import yaml
 
@@ -114,7 +115,8 @@ def main():
         core_key_digests.write_text(json.dumps([hashlib.sha256(admin_token.encode()).hexdigest()]))
         credential_key = Path(directory) / "credential-key.txt"
         credential_key.touch(mode=0o600)
-        credential_key.write_text(base64.b64encode(secrets.token_bytes(32)).decode() + "\n")
+        credential_key_value = base64.b64encode(secrets.token_bytes(32)).decode()
+        credential_key.write_text(credential_key_value + "\n")
         env = dict(os.environ, OAC_DATABASE_URL=dsn, OAC_CORE_KEY_DIGESTS_FILE=str(core_key_digests), OAC_ADDR=f"127.0.0.1:{port}", OAC_DEFAULT_HARNESS="codex")
         env["OAC_CREDENTIAL_KEY_FILE"] = str(credential_key)
         # Enable the real Worker/gateway admission path without connecting a daemon.
@@ -122,24 +124,22 @@ def main():
         env["OAC_PUBLIC_URL"] = f"http://127.0.0.1:{port}"
         with (Path(directory) / "server.log").open("w+") as log:
             def start():
+                nonlocal process
                 child = subprocess.Popen([binary], env=env, stdout=log, stderr=log)
-                try:
-                    deadline = time.monotonic() + 20
-                    with httpx2.Client(trust_env=False, timeout=1) as probe:
-                        while time.monotonic() < deadline:
-                            if child.poll() is not None:
-                                raise AssertionError("Agents API exited during startup")
-                            try:
-                                if probe.get(base + "/healthz").status_code == 200:
-                                    return child
-                            except httpx2.TransportError:
-                                pass
-                            time.sleep(0.1)
-                    raise AssertionError("Agents API did not become healthy")
-                except BaseException:
-                    child.terminate()
-                    child.wait(timeout=15)
-                    raise
+                # The outer finally also owns failed-start cleanup and diagnostics.
+                process = child
+                deadline = time.monotonic() + 20
+                with httpx2.Client(trust_env=False, timeout=1) as probe:
+                    while time.monotonic() < deadline:
+                        if child.poll() is not None:
+                            raise AssertionError("Agents API exited during startup")
+                        try:
+                            if probe.get(base + "/healthz").status_code == 200:
+                                return child
+                        except httpx2.TransportError:
+                            pass
+                        time.sleep(0.1)
+                raise AssertionError("Agents API did not become healthy")
 
             def client(token, **scope):
                 return OpenAI(api_key=token, **scope, base_url=base + "/v1", max_retries=0, _strict_response_validation=True, http_client=httpx2.Client(trust_env=False, timeout=10, event_hooks={"response": [validate_response]}))
@@ -377,16 +377,8 @@ def main():
                 print("Official Go client: creation/retries, retrieval, bidirectional pagination and tenant isolation passed.")
                 print("Official client: upstream and generated response schemas, persistence/restart, retries, pagination, tenant isolation and explicit unsupported options passed.")
             finally:
-                if process and process.poll() is None:
-                    process.terminate()
-                    process.wait(timeout=15)
-                log.flush()
-                log.seek(0)
-                output = log.read()
-                assert admin_token not in output, "Administrator token leaked into the service log"
-                assert all(token not in output for token in tokens), "API key leaked into the service log"
-                assert credential_canary not in output, "Credential token leaked into the service log"
-                assert credential_key.read_text().strip() not in output, "Credential key leaked into the service log"
+                finish_server(process, log, [admin_token, *tokens, credential_canary,
+                                            credential_key_value], sys.exc_info()[1])
 
 
 if __name__ == "__main__":

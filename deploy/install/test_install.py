@@ -20,6 +20,8 @@ import install
 import node_spec
 from installer_fakes import MANIFEST, STANDARD_SIZES, FakeHost, make_bundle, run_installer
 
+REAL_RUN = subprocess.run
+
 BUILD = "base:0f6c1e8e-7d3a-4b8e-9a51-2b7f7f0c9d11"
 
 
@@ -54,10 +56,126 @@ class InstallerTests(unittest.TestCase):
         path.chmod(mode)
         return path
 
+    def test_host_check_accepts_current_account_including_root(self):
+        for uid in (0, 1000):
+            with self.subTest(uid=uid), mock.patch.object(install.os, "getuid", return_value=uid), \
+                    mock.patch.object(install.platform, "system", return_value="Linux"), \
+                    mock.patch.object(install.platform, "machine", return_value="x86_64"):
+                self.host.commands.clear()
+                install.check_host()
+                self.assertEqual(self.host.commands, [
+                    ["docker", "compose", "version", "--short"],
+                    ["docker", "info", "--format", "{{.ServerVersion}}"],
+                ])
+
+    def test_root_identity_is_preserved_in_service_configuration(self):
+        with mock.patch.object(install.os, "getuid", return_value=0), \
+                mock.patch.object(install.os, "getgid", return_value=0):
+            self.install("--sandbox", "none")
+        state = self.document("state.json")
+        self.assertEqual((state["uid"], state["gid"]), (0, 0))
+        services = self.document("generated/compose.json")["services"]
+        for name in ("core", "migrate", "web"):
+            self.assertEqual(services[name]["user"], "0:0")
+        self.assertNotIn("user", services["database"])
+        self.assertEqual(self.host.running(), {"database", "core", "web"})
+
+    def test_install_and_repair_hold_same_lock_before_all_writes(self):
+        original_create = install.create
+        original_finish = install.finish
+        inodes = []
+
+        def assert_busy():
+            inodes.append((self.root / ".oac.lock").stat().st_ino)
+            probe = "import fcntl,sys; f=open(sys.argv[1], 'r+');\ntry: fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)\nexcept BlockingIOError: sys.exit(73)"
+            result = REAL_RUN([sys.executable, "-c", probe, str(self.root / ".oac.lock")],
+                                    capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 73, result.stderr)
+            with self.assertRaisesRegex(install.oac_cli.OacError, "Another oac"):
+                self.install()
+            with self.assertRaisesRegex(install.oac_cli.OacError, "Another oac"):
+                with install.oac_cli.locked(self.root):
+                    self.fail("A second operation acquired the installation lock")
+
+        def create(*args, **kwargs):
+            assert_busy()
+            return original_create(*args, **kwargs)
+
+        def finish(*args, **kwargs):
+            assert_busy()
+            return original_finish(*args, **kwargs)
+
+        with mock.patch.object(install, "create", create), mock.patch.object(install, "finish", finish):
+            self.install()
+            before = self.document("state.json")
+            keys = {p.name: p.read_bytes() for p in (self.root / "secrets").iterdir()}
+            self.install()
+        self.assertEqual(len(set(inodes)), 1)
+        self.assertEqual(before["installation_id"], self.document("state.json")["installation_id"])
+        self.assertEqual(keys, {p.name: p.read_bytes() for p in (self.root / "secrets").iterdir()})
+
+    def test_repair_contention_changes_no_installation_bytes(self):
+        self.install()
+        before = self.snapshot()
+        with install.oac_cli.locked(self.root):
+            with self.assertRaisesRegex(install.oac_cli.OacError, "Another oac"):
+                self.install()
+        self.assertEqual(before, self.snapshot())
+
+    def test_interrupted_finish_repairs_with_original_identity_and_lock(self):
+        with mock.patch.object(install, "prepare_node_payload", side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                self.install()
+        before = self.document("state.json")
+        inode = (self.root / ".oac.lock").stat().st_ino
+        secret = (self.root / "secrets/core.key").read_bytes()
+        self.install()
+        self.assertEqual(before["installation_id"], self.document("state.json")["installation_id"])
+        self.assertEqual(inode, (self.root / ".oac.lock").stat().st_ino)
+        self.assertEqual(secret, (self.root / "secrets/core.key").read_bytes())
+
+    def test_fresh_web_refuses_old_core_before_creating_installation(self):
+        self.host.remote_core["https://core.example"] = (404, None)
+        with mock.patch.object(install, "check_host", side_effect=AssertionError("host touched")), \
+                mock.patch.object(install, "create", side_effect=AssertionError("installation created")), \
+                self.assertRaisesRegex(install.InstallError, "not supported;.*reinstall"):
+            self.install("--web-only", "--core-url", "https://core.example", "--core-key-file", self.key_file())
+        self.assertFalse(self.root.exists())
+
+    def test_fresh_web_accepts_current_core_and_records_its_identity(self):
+        self.host.remote_core["https://core.example"] = (200, self.host.core_installation_id)
+        key = self.key_file()
+        self.install("--web-only", "--core-url", "https://core.example", "--core-key-file", key)
+        self.assertEqual(self.document("state.json")["core_installation_id"], self.host.core_installation_id)
+        self.assertEqual((self.root / "secrets/core.key").read_text(), key.read_text())
+        self.assertEqual(self.host.running(), {"web"})
+
+    def test_web_repair_refuses_old_paired_core_before_payload_or_state_writes(self):
+        self.host.remote_core["https://core.example"] = (200, self.host.core_installation_id)
+        self.install("--web-only", "--core-url", "https://core.example", "--core-key-file", self.key_file())
+        before = self.snapshot()
+        self.host.remote_core["https://core.example"] = (404, None)
+        with self.assertRaisesRegex(install.InstallError, "not supported;.*reinstall"):
+            self.install()
+        self.assertEqual(before, self.snapshot())
+
+    def test_different_revision_and_conversion_refuse_before_mutation(self):
+        self.install()
+        state = self.document("state.json")
+        state["source_commit"] = "b" * 40
+        install.oac_cli.save_state(self.root, state)
+        before = self.snapshot()
+        with self.assertRaisesRegex(install.InstallError, "not supported;.*reinstall"):
+            self.install()
+        self.assertEqual(before, self.snapshot())
+        with self.assertRaises(SystemExit):
+            self.install("--convert")
+        self.assertEqual(before, self.snapshot())
+
     def test_fresh_install_writes_config_json_and_the_layout(self):
         previous = os.umask(0)
         try:
-            self.install("--public-url", "https://core.example", "--web-port", "8181")
+            self.install("--public-url", "https://core.example", "--port", "8181")
         finally:
             os.umask(previous)
         config = self.document("config.json")
@@ -66,7 +184,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual((state["mode"], state["native_core"], state["source_commit"]), ("all", False, "a" * 40))
         self.assertEqual(set(state["images"]), {"core", "database", "web"})
         self.assertEqual(set(state["secrets_sha256"]), {"credential.key", "database.password"})
-        names = {str(path.relative_to(self.root)) for path in self.root.rglob("*") if path.parent.name != "node-payload"
+        names = {str(path.relative_to(self.root)) for path in self.root.rglob("*") if "node-payload" not in path.relative_to(self.root).parts[:-1]
                  and "runtime" not in path.parts}
         self.assertEqual(names, {
             ".oac.lock", "config.json", "state.json", "oac", "node-payload", "secrets", "secrets/core.key",
@@ -80,40 +198,54 @@ class InstallerTests(unittest.TestCase):
         output = self.output.getvalue()
         for name in ("core.key", "credential.key", "database.password"):
             self.assertNotIn((self.root / "secrets" / name).read_text(), output)
-        self.assertIn("Console: https://core.example\nAPI base URL: https://core.example/v1\n"
-                      "Local-only API on this host: http://127.0.0.1:8091/v1\n", output)
-        self.assertIn(f"Settings: {self.root / 'config.json'}. Edit it, then run {self.root / 'oac'} apply.", output)
+        for line in ("Console: https://core.example", "API base URL: https://core.example/v1",
+                     "Local-only API on this host: http://127.0.0.1:8091/v1",
+                     f"Settings: {self.root / 'config.json'}", f"Apply settings: {self.root / 'oac'} apply"):
+            self.assertIn("  " + line + "\n", output)
 
     def test_output_labels_public_and_local_addresses(self):
-        key = "{root}/secrets/core.key"
         cases = {
-            "default": ([], ["Console: http://127.0.0.1:8080 (local only)\n",
-                             "API base URL: http://127.0.0.1:8091/v1 (local only)\n",
-                             f"Next: sign in to Web with the Core key in {key}, then create a Project and its API key "
-                             "on the Projects and keys page.",
-                             # Sandboxes call Core at public_url, so a loopback install has no nodes yet.
-                             "\nNodes need an HTTPS public URL that other machines and their sandboxes can reach: "
-                             "set public_url in {root}/config.json and run {root}/oac apply first.\nAdd nodes: in "
-                             "Web, open Nodes and choose Add node"]),
-            "core-only": (["--core-only"], ["API base URL: http://127.0.0.1:8091/v1 (local only)\n",
-                                            "Next: create a Project and its API key through the Core management API at "
-                                            f"http://127.0.0.1:8091/core/v1 (local only) with the Core key in {key}."]),
-            # Web answers 404 on /v1, so a loopback public URL on its port points to Core's API.
-            "loopback": (["--public-url", "http://localhost:8080"], ["Console: http://localhost:8080 (local only)\n",
-                                                                     "API base URL: http://127.0.0.1:8091/v1 (local only)\n"]),
+            "default": ([], ["Console: http://127.0.0.1:8080 (local only)",
+                             "API base URL: http://127.0.0.1:8091/v1 (local only)",
+                             "Use this key to sign in to Web.",
+                             "Before adding nodes, set public_url to a reachable HTTPS address",
+                             "Add nodes: in Web, open Nodes and choose Add node"]),
+            "core-only": (["--core-only"], ["API base URL: http://127.0.0.1:8091/v1 (local only)",
+                                            "Create a Project and its API key through the Core management API:",
+                                            "http://127.0.0.1:8091/core/v1 (local only)"]),
+            "loopback": (["--public-url", "http://localhost:8080"], ["Console: http://localhost:8080 (local only)",
+                                                                     "API base URL: http://127.0.0.1:8091/v1 (local only)"]),
         }
         for name, (flags, expected) in cases.items():
             with self.subTest(name=name):
                 self.root, self.output = self.work / name, io.StringIO()
                 self.install(*flags)
+                output = " ".join(self.output.getvalue().split())
                 for line in expected:
-                    self.assertIn(line.format(root=self.root), self.output.getvalue())
+                    self.assertIn(line, output)
+                self.assertIn(f"Core key file: {self.root / 'secrets/core.key'}", output)
+
+
+    def test_no_change_repair_does_not_claim_service_health(self):
+        self.install("--sandbox", "none")
+        self.output = io.StringIO()
+        original_http = install.oac_cli.http
+        def unhealthy(url, *args, **kwargs):
+            if url.endswith(("/healthz", "/console/auth")):
+                return 503, None
+            return original_http(url, *args, **kwargs)
+        with mock.patch.object(install.oac_cli, "http", side_effect=unhealthy):
+            self.install()
+        output = self.output.getvalue()
+        self.assertIn("Installation settings checked. Use Status below to inspect service health.", output)
+        for misleading in ("Installation complete.", "Repair complete.", "checking their health"):
+            self.assertNotIn(misleading, output)
 
     def test_rerun_reads_config_json_rejects_flags_and_repairs(self):
         self.install()
         before = self.snapshot()
         with self.assertRaisesRegex(install.InstallError, "config.json. Edit it and run .*oac apply"):
-            self.install("--web-port", "8081")
+            self.install("--port", "8081")
         self.assertEqual(self.snapshot(), before)
         (self.root / "oac").unlink()
         config = self.document("config.json")
@@ -124,7 +256,7 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual((self.root / "oac").read_bytes(), (self.bundle / "oac.pyz").read_bytes())
         self.assertEqual(self.host.recreated, ["web"])
         other, _ = make_bundle(self.work / "other", MANIFEST, commit="b" * 40)
-        with self.assertRaisesRegex(install.InstallError, "oac upgrade"):
+        with self.assertRaisesRegex(install.InstallError, "not supported;.*reinstall"):
             with contextlib.redirect_stdout(self.output):
                 run_installer(install, other, ["--install-dir", self.root])
 
@@ -146,7 +278,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIn("--core-key-file", output.getvalue())
         self.root.mkdir()
         (self.root / "installation.json").write_text("{}")
-        with self.assertRaisesRegex(install.InstallError, "predates config.json; run ./install.sh --convert"):
+        with self.assertRaisesRegex(install.InstallError, "not supported;.*reinstall"):
             self.install()
         # A fresh install stopped before config.json started nothing: starting over is safe.
         (self.root / "installation.json").unlink()
@@ -154,7 +286,8 @@ class InstallerTests(unittest.TestCase):
         with self.assertRaisesRegex(install.InstallError, "stopped before writing config.json"):
             self.install()
         (self.root / "state.json").write_text('{"format": 1, "generated": {}}')
-        with self.assertRaisesRegex(install.InstallError, "stopped before writing config.json"):
+        (self.root / "state.json").chmod(0o600)
+        with self.assertRaisesRegex(install.oac_cli.OacError, "not supported;.*reinstall"):
             self.install()
 
     def test_a_live_installation_missing_config_json_is_never_told_to_start_over(self):
@@ -178,8 +311,9 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(set(self.document("generated/compose.json")["services"]), {"web"})
         self.assertEqual((web["network_mode"], web["environment"]["OAC_WEB_UPSTREAM"]), ("host", "http://127.0.0.1:9091"))
         self.assertNotIn(source.read_text(), self.output.getvalue())
-        self.assertIn("Console: http://127.0.0.1:8080 (local only)\nNext: sign in to Web with the Core key in "
-                      + str(self.root / "secrets/core.key") + ", then create a Project", self.output.getvalue())
+        self.assertIn("Console: http://127.0.0.1:8080 (local only)\n", self.output.getvalue())
+        self.assertIn("Core key file: " + str(self.root / "secrets/core.key"), self.output.getvalue())
+        self.assertIn("Create a Project and its API key", self.output.getvalue())
         self.assertNotIn("API base URL", self.output.getvalue())
         self.assertFalse(any(command[:2] == ["docker", "load"] and not command[-1].endswith("web.tar")
                              for command in self.host.commands))
@@ -210,11 +344,13 @@ class InstallerTests(unittest.TestCase):
     def test_a_new_installation_selects_microsandbox_at_web_standard_size(self):
         self.install("--public-url", "https://core.example")
         standard = json.loads(STANDARD_SIZES.read_text())
-        self.assertEqual(self.host.deployment_posts, [{"provider": "microsandbox", "resources": standard["microsandbox"],
+        self.assertEqual(self.host.deployment_posts, [{"provider": "microsandbox", "expected_generation": 0, "resources": standard["microsandbox"],
                                                        "runtime": node_spec.release(self.manifest)}])
-        self.assertIn("\nSandboxes: microsandbox, Standard (2 CPUs, 4 GiB). Its nodes need KVM (/dev/kvm); this host "
-                      "needs it only if you add it as a node.\nAdd nodes: in Web, open Nodes and choose Add node, then "
-                      "paste the command on each host, this one included.\n", self.output.getvalue())
+        output = " ".join(self.output.getvalue().split())
+        for message in ("Sandboxes: microsandbox, Standard (2 CPUs, 4 GiB).",
+                        "Execution nodes need KVM (/dev/kvm). This host needs KVM only if you add it as a node.",
+                        "Add nodes: in Web, open Nodes and choose Add node, then run the command on each execution host."):
+            self.assertIn(message, output)
         self.assertNotIn(install.DOCKER_RISKS, self.output.getvalue())
         self.assertNotIn("sandbox", json.dumps(self.document("config.json")))
         # A repair never selects again.
@@ -246,15 +382,15 @@ class InstallerTests(unittest.TestCase):
                      "without KVM"):
             self.assertIn(risk, output)
         standard = json.loads(STANDARD_SIZES.read_text())
-        docker = {"provider": "docker", "resources": standard["docker"], "runtime": node_spec.release(self.manifest)}
+        docker = {"provider": "docker", "expected_generation": 0, "resources": standard["docker"], "runtime": node_spec.release(self.manifest)}
         prompt = self.install_docker("--core-only", "--accept-docker-risks")
         prompt.assert_not_called()
         self.assertEqual(self.host.deployment_posts, [docker])
-        self.root, self.host.deployment = self.work / "confirmed", {"provider": ""}
+        self.root, self.host.deployment = self.work / "confirmed", {"provider": "", "generation": 0, "reset": None}
         prompt = self.install_docker(answer="y")
         prompt.assert_called_once_with("Use Docker sandboxes anyway? [y/N] ")
         self.assertEqual(self.host.deployment_posts, [docker, docker])
-        self.assertIn("\nSandboxes: Docker, Standard (2 CPUs, 2 GiB).\n", self.output.getvalue())
+        self.assertIn("\n  Sandboxes: Docker, Standard (2 CPUs, 2 GiB).\n", self.output.getvalue())
 
     def test_e2b_needs_a_public_address_a_private_key_file_and_an_exact_build(self):
         secret = "synthetic-e2b-key-0123456789"
@@ -279,9 +415,9 @@ class InstallerTests(unittest.TestCase):
             self.assertFalse(self.root.exists())
         key.chmod(0o600)
         self.install("--sandbox", "e2b", "--e2b-api-key-file", key, "--e2b-template", BUILD, "--public-url", "https://core.example")
-        self.assertEqual(self.host.deployment_posts, [{"provider": "e2b", "e2b": {"api_key": secret, "template": BUILD}}])
+        self.assertEqual(self.host.deployment_posts, [{"provider": "e2b", "expected_generation": 0, "e2b": {"api_key": secret, "template": BUILD}}])
         self.assertIn(f"Sandboxes: E2B template {BUILD} (2 CPUs, 2 GiB). E2B runs them; no nodes are needed.",
-                      self.output.getvalue())
+                      " ".join(self.output.getvalue().split()))
         self.assertNotIn(secret, self.output.getvalue() + (self.root / "config.json").read_text()
                          + (self.root / "state.json").read_text())
 
@@ -301,8 +437,11 @@ class InstallerTests(unittest.TestCase):
                                     f"rerun ./install.sh --install-dir {self.root}. The sandbox backend was not chosen; "
                                     "after the repair, choose it on the Nodes page in Web$"):
             self.install("--sandbox", "microsandbox")
+        self.assertNotIn("Installation complete.", self.output.getvalue())
+        self.assertIn("==> Applying settings and starting services as needed...", self.output.getvalue())
         self.host.core["fails"] = False
         self.install()
+        self.assertIn("Installation settings checked.", self.output.getvalue())
         self.assertEqual(self.host.deployment_posts, [])
 
     def test_a_refused_selection_leaves_the_services_running(self):
@@ -316,16 +455,53 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(self.host.running(), {"database", "core", "web"})
         self.assertIn("Console: https://core.example\n", self.output.getvalue())
         self.assertNotIn("Sandboxes:", self.output.getvalue())
+        self.assertNotIn("Installation complete.", self.output.getvalue())
+        self.assertIn("Services are running; sandbox setup needs attention.", self.output.getvalue())
 
     def test_node_payload_exports_only_matched_distribution_files(self):
         self.install()
-        payload = self.root / "node-payload"
+        payload = self.root / "node-payload/releases" / ("a" * 40)
         exported = {str(path.relative_to(payload)) for path in payload.rglob("*") if path.is_file()}
-        self.assertEqual(exported, {"node-install.pyz", "self-hosted-install.pyz", "manifest.json", "SHA256SUMS",
+        self.assertEqual(exported, {"node-install.pyz", "manifest.json", "SHA256SUMS",
                                     "runtime/seccomp.json"})
         (payload / "node-install.pyz").write_text("changed")
         with self.assertRaisesRegex(install.InstallError, "node payload differs"):
             install.prepare_node_payload(self.root, self.document("state.json"), self.bundle)
+
+    def test_node_payload_upgrade_retains_immutable_old_release(self):
+        self.install()
+        payload = self.root / "node-payload"
+        old = payload / "releases" / ("a" * 40)
+        snapshot = {str(p.relative_to(old)): p.read_bytes() for p in old.rglob("*") if p.is_file()}
+        manifest = dict(MANIFEST, source_commit="b" * 40)
+        bundle, _ = make_bundle(self.work / "bundle-b", manifest)
+        install.prepare_node_payload(self.root, self.document("state.json"), bundle, replace=True)
+        self.assertEqual(json.loads((payload / "active.json").read_text()), {"source_commit": "b" * 40})
+        self.assertEqual(snapshot, {str(p.relative_to(old)): p.read_bytes() for p in old.rglob("*") if p.is_file()})
+        self.assertTrue((payload / "releases" / ("b" * 40) / "node-install.pyz").is_file())
+        # A changed release cannot overwrite its immutable name or publication.
+        (bundle / "node-install.pyz").write_text("changed release")
+        with self.assertRaisesRegex(install.InstallError, "node payload differs"):
+            install.prepare_node_payload(self.root, self.document("state.json"), bundle, replace=True)
+        self.assertEqual(json.loads((payload / "active.json").read_text()), {"source_commit": "b" * 40})
+
+    def test_legacy_flat_payload_is_refused_without_conversion(self):
+        import shutil
+        self.install()
+        payload = self.root / "node-payload"
+        old = payload / "releases" / ("a" * 40)
+        for path in old.rglob("*"):
+            if path.is_file():
+                target = payload / path.relative_to(old)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(path, target)
+        shutil.rmtree(payload / "releases")
+        (payload / "active.json").unlink()
+        bundle, _ = make_bundle(self.work / "bundle-b", dict(MANIFEST, source_commit="b" * 40))
+        before = self.snapshot()
+        with self.assertRaisesRegex(install.InstallError, "not supported;.*reinstall"):
+            install.prepare_node_payload(self.root, self.document("state.json"), bundle, replace=True)
+        self.assertEqual(before, self.snapshot())
 
     def test_bundle_verifies_transferred_bytes_and_checksum_list(self):
         self.assertEqual(install.verify_bundle(self.bundle)["source_commit"], "a" * 40)
@@ -357,7 +533,7 @@ class InstallerTests(unittest.TestCase):
                 if "inspect" in arguments else original(arguments, **kwargs))):
             with self.assertRaisesRegex(distribution.DistributionError, "identity or platform"):
                 self.install()
-        self.assertFalse(self.root.exists())
+        self.assertEqual({p.name for p in self.root.iterdir()}, {".oac.lock"})
 
     def test_cli_failure_does_not_print_external_command_secrets(self):
         secret = "synthetic-sensitive-command-value"

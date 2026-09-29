@@ -47,9 +47,11 @@ type Router struct {
 	shutdownWG          dispatchWork  // waits for all pump goroutines
 	idleTimeout         time.Duration
 	closed              bool
+	executors           map[string]*executorState
 	preparations        map[string]*preparationState
 	preparationRequests map[string]*preparationState
 	preparationTimeout  time.Duration
+	runtimePreparation *runtimePreparationTransfer
 	workspaceWrite      *workspaceUpload
 	workspaceExport     *workspaceExport
 	workspaceReads      map[string]struct{}
@@ -135,6 +137,7 @@ func New(cfg Config) (*Router, error) {
 		applied:             make(map[string]appliedInteractionDecision),
 		shutdownCh:          make(chan struct{}),
 		idleTimeout:         idleTimeout,
+		executors:           make(map[string]*executorState),
 		preparations:        make(map[string]*preparationState),
 		preparationRequests: make(map[string]*preparationState),
 		preparationTimeout:  preparationTimeout,
@@ -165,6 +168,8 @@ func (r *Router) Handle(ctx context.Context, env proto.Envelope) error {
 	ctx = adoptEnvelopeTrace(ctx, env)
 
 	switch env.Type {
+	case proto.TypeRuntimePrepare:
+		return r.handleRuntimePrepare(ctx, env)
 	case proto.TypeWorkspaceExport:
 		return r.handleWorkspaceExport(ctx, env)
 	case proto.TypeWorkspaceWrite:

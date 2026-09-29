@@ -45,13 +45,14 @@ with the Core key.
 | `projects`, `projects/{project_id}[/archive]`, `projects/{project_id}/keys[/{key_id}]` | Projects and their API keys | [Administrator contract](../../contracts/agents-api/admin-api.md) |
 | `projects/{project_id}/{agents,environment-templates,skills,files,vaults,sessions}/**` | Resource reads and deletion, Session history, artifacts and archive | [Administrator contract](../../contracts/agents-api/admin-api.md) |
 | `projects/{project_id}/sessions/{session_id}/execution-configuration` | Committed harness and model selection | [Execution configuration](../../contracts/agents-api/execution-configuration.md) |
+| `projects/{project_id}/sessions/{session_id}/diagnostics`, `projects/{project_id}/sessions/{session_id}/turns/{turn_id}/diagnostics` | Root failure categories and Item receipt timing | [Session diagnostics](../../contracts/agents-api/session-diagnostics.md) |
 | `projects/{project_id}/sessions/{session_id}/runtime-observation`, `sandbox/runtime-observations` | Current Runtime observations | [Runtime observations](../../contracts/agents-api/runtime-observability-api.md) |
 | `projects/{project_id}/sessions/{session_id}/runtime-history` | Stored Runtime history | [Runtime history](../../contracts/agents-api/runtime-history-api.md) |
 | `projects/{project_id}/{resource-owners,write-operations}`, `audit-log`, `summary` | Provenance, write history, administrator audit and usage summary | [Write audit](../../contracts/agents-api/write-audit.md), [administrator contract](../../contracts/agents-api/admin-api.md) |
 | `projects/{project_id}/environments/{environment_id}/executor-credentials[/{key_id}]` | Executor credentials for a self-hosted Environment | [Executor credentials](../../contracts/agents-api/environment-executor-credentials.md) |
 | `installation` | Public URL, API base URL, source commit, the installer's process settings and what is bound to the public URL; available before any deployment | [Installation](../../contracts/agents-api/installation.md) |
 | `metrics` | Core's own process metrics | [Core metrics](../../contracts/agents-api/core-metrics.md) |
-| `sandbox/deployment[/maintenance]`, `sandbox/e2b/templates[/{template_id}/builds]`, `sandbox/enrollment-tokens`, `sandbox/nodes[/{node_id}[/allocations]]` | Core Web server or operator scripts with the Core key: sandbox deployment and read-only E2B template discovery, node enrollment tokens and nodes | [Sandbox deployment](../../contracts/agents-api/sandbox-deployment.md), [node operations](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md), [node host history](../../contracts/agents-api/node-host-history.md) |
+| `sandbox/deployment[/reset]`, `sandbox/e2b/templates[/{template_id}/builds]`, `sandbox/enrollment-tokens`, `sandbox/nodes[/{node_id}[/allocations]]` | Core Web server or operator scripts with the Core key: sandbox deployment, read-only E2B template discovery, node enrollment tokens and nodes | [Sandbox deployment](../../contracts/agents-api/sandbox-deployment.md), [node operations](../../services/agents-api/HOSTED-SANDBOX-MANAGER.md), [node host history](../../contracts/agents-api/node-host-history.md) |
 | `harnesses`, `harnesses/{harness}/model-provider` | Supported harnesses and each harness's deployment default model provider (write-only key) | [Model execution](../../contracts/agents-api/model-execution.md#deployment-defaults) |
 
 ## Machine connection API
@@ -81,8 +82,8 @@ the Core key or a Project API key.
 - [Core OpenAPI](../../contracts/agents-api/core.openapi.yaml): generated `/core/v1`
   routes, all authenticated by the Core key.
 - [Machine connection OpenAPI](../../contracts/agents-api/runtime.openapi.yaml):
-  generated `/api/v1` sandbox node routes. The node WebSocket and the private
-  daemon transport are described in the node and Runtime credential guides.
+  generated `/api/v1` sandbox node routes. The node WebSocket is described in the [generation protocol](../../contracts/agents-api/node-generation-protocol.md); the private
+  daemon transport is described in the Runtime credential guide.
 - [Administrator contract](../../contracts/agents-api/admin-api.md): Project/key
   lifecycle, resources, explicit hosted Session archive, summary,
   errors/deletion preconditions, audit and historical copy provenance.

@@ -39,12 +39,6 @@ func nativeEnvironmentStatus(ctx context.Context, rpc *JSONRPCClient, id string)
 	return result.Status, nil
 }
 
-func configureRestrictedShellEnvironment(plan *SessionPlan) {
-	plan.ExtraConfig = append(plan.ExtraConfig,
-		[2]string{"shell_environment_policy.inherit", `"core"`},
-		[2]string{"shell_environment_policy.ignore_default_excludes", "false"})
-}
-
 // Native still recognizes the retired transport variables. Reject them before
 // setup so inherited or operator options cannot select a separate executor.
 // The explicit none selector remains part of native execution isolation.

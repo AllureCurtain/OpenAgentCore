@@ -9,9 +9,9 @@ from uuid import UUID
 
 from e2b import Sandbox, SandboxQuery, SandboxState
 from e2b.api.client.models.sandbox_metric import SandboxMetric
-from e2b.exceptions import FileNotFoundException, SandboxNotFoundException
+from e2b.exceptions import AuthenticationException, FileNotFoundException, SandboxNotFoundException
 
-from sdk import connection_material, definitely_rejected, list_builds, list_templates, read_metrics, restore, run, sdk_options, validate_deployment
+from sdk import connection_material, definitely_rejected, list_builds, list_templates, read_metrics, restore, run, sdk_options, validate_deployment, verify_team_template
 from state import Failure, Receipt, private_root, read_receipt
 
 PREFIX = 'oac_'
@@ -68,8 +68,8 @@ class Provider:
         self.reference = request['Reference']
         self.references = request.get('References') or []
         if (request['Version'] != 1 or request['Operation'] not in
-                ('create', 'inspect', 'renew', 'kill', 'command', 'validate_deployment', 'observe', 'list_templates', 'list_builds') or
-                (request['Operation'] not in ('validate_deployment', 'observe', 'list_templates', 'list_builds') and
+                ('create', 'inspect', 'renew', 'kill', 'command', 'validate_deployment', 'observe', 'list_templates', 'list_builds', 'verify_credential') or
+                (request['Operation'] not in ('validate_deployment', 'observe', 'list_templates', 'list_builds', 'verify_credential') and
                  not valid_reference(self.reference)) or
                 (request['Operation'] == 'observe' and
                  (not 1 <= len(self.references) <= 100 or
@@ -326,17 +326,67 @@ class Provider:
         return {PREFIX + field.lower(): value for field, value in
                 dict(reference, InstallationID=self.config['InstallationID']).items()}
 
+    def verify_credential(self):
+        verify_team_template(self.config, self.remaining)
+        validate_deployment(self.config, self.remaining)
+        if not isinstance(self.references, list) or len(self.references) > 32 or not all(valid_reference(r) for r in self.references):
+            raise Failure('invalid')
+        root = private_root(self.config)
+        wanted = {}
+        for reference in self.references:
+            record = read_receipt(self.config, root, reference)
+            if record is None:
+                # Missing durable evidence is not proof that Create never ran.
+                raise Failure('unconfirmed')
+            if record.get('status') in ('killed', 'rejected') and record.get('settled') is True:
+                continue
+            if record.get('settled') is not True:
+                raise Failure('unconfirmed')
+            ids = record.get('ids')
+            if not isinstance(ids, list) or not ids or any(not isinstance(i, str) or not i for i in ids):
+                raise Failure('unconfirmed')
+            for identity in ids:
+                if identity in wanted:
+                    raise Failure('unconfirmed')
+                wanted[identity] = self.metadata_for(reference)
+        if not wanted:
+            return
+        paginator = Sandbox.list(query=SandboxQuery(metadata={PREFIX + 'installationid': self.config['InstallationID']},
+                                 state=[SandboxState.RUNNING, SandboxState.PAUSED]), limit=100, **self.options())
+        for _ in range(100):
+            self.remaining()
+            if not paginator.has_next:
+                raise Failure('team_mismatch')
+            page = paginator.next_items(**self.options())
+            if len(page) > 100:
+                raise Failure('unconfirmed')
+            for cloud in page:
+                expected = wanted.get(cloud.sandbox_id)
+                if expected is not None:
+                    if any(cloud.metadata.get(k) != v for k, v in expected.items()):
+                        raise Failure('team_mismatch')
+                    del wanted[cloud.sandbox_id]
+            if not wanted:
+                return
+        raise Failure('unconfirmed')
+
     def execute(self):
-        if self.q['Operation'] in ('validate_deployment', 'observe', 'list_templates', 'list_builds'):
+        if self.q['Operation'] in ('validate_deployment', 'observe', 'verify_credential', 'list_templates', 'list_builds'):
             try:
                 if self.q['Operation'] == 'list_templates':
                     return {'Version': 1, 'Templates': list_templates(self.config, self.remaining), 'ErrorCode': ''}
                 if self.q['Operation'] == 'list_builds':
                     return {'Version': 1, 'Builds': list_builds(self.config, self.remaining), 'ErrorCode': ''}
+                if self.q['Operation'] == 'verify_credential':
+                    self.verify_credential()
+                    return {'Version': 1, 'DeploymentValid': True, 'ErrorCode': ''}
                 if self.q['Operation'] == 'observe':
                     return {'Version': 1, 'Observations': self.observe(), 'ErrorCode': ''}
+                verify_team_template(self.config, self.remaining)
                 build = validate_deployment(self.config, self.remaining)
                 return {'Version': 1, 'DeploymentValid': True, 'TemplateBuild': build, 'ErrorCode': ''}
+            except AuthenticationException:
+                return {'Version': 1, 'ErrorCode': 'unauthorized'}
             except Failure as error:
                 return {'Version': 1, 'ErrorCode': error.code}
             except Exception:

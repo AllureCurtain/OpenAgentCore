@@ -1,6 +1,6 @@
 -- name: SaveSessionExecutionConfiguration :exec
-INSERT INTO session_execution_configuration(session_id, configuration)
-VALUES (@session_id, @configuration);
+INSERT INTO session_execution_configuration(session_id, configuration, deployment_provider_revision)
+VALUES (@session_id, @configuration, sqlc.narg(deployment_provider_revision));
 
 -- name: GetSessionExecutionConfiguration :one
 SELECT s.id, s.engine, s.configuration AS session_configuration,

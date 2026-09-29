@@ -24,7 +24,7 @@ const diagnostics: Record<string, { label: MessageKey; advice: MessageKey }> = {
     label: "Sandbox provider unavailable",
     advice: "Restore the provider on the assigned node, then refresh. A connected node alone does not confirm that its sandbox provider is ready.",
   },
-  // The first readiness check a node's provider failed; the node sends only the code.
+  // Fixed Runtime preparation and provider readiness diagnostics; Core sends only the code.
   docker_unavailable: {
     label: "Docker unavailable",
     advice: "The node can't reach the Docker daemon. Check that Docker is running and the node can use its socket.",
@@ -32,6 +32,10 @@ const diagnostics: Record<string, { label: MessageKey; advice: MessageKey }> = {
   docker_limits_unsupported: {
     label: "Docker limits unsupported",
     advice: "Docker on this host doesn't enforce CPU and memory limits. Enable cgroup limits.",
+  },
+  runtime_download_failed: {
+    label: "Runtime download failed",
+    advice: "Runtime files could not be downloaded or verified. Check the node's network access and the configured Runtime release.",
   },
   runtime_image_unavailable: {
     label: "Runtime image missing",
@@ -56,6 +60,7 @@ const nodeDiagnostics: ReadonlySet<string> = new Set([
   "provider_unavailable",
   "docker_unavailable",
   "docker_limits_unsupported",
+  "runtime_download_failed",
   "runtime_image_unavailable",
   "kvm_unavailable",
   "microsandbox_artifacts_unavailable",

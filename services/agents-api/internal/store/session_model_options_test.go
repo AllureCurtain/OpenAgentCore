@@ -3,7 +3,6 @@ package store
 import (
 	"bytes"
 	"encoding/json"
-	"reflect"
 	"testing"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
@@ -11,9 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// Sessions frozen from the retired operator options file keep their native
-// options; new Sessions store only the flat provider bundle.
-func TestHistoricalSessionNativeOptionsRemainReadable(t *testing.T) {
+func TestSessionModelExecutionStoresOnlyProviderBundle(t *testing.T) {
 	_, pool := testStore(t)
 	cipher, err := credentialcrypto.New(bytes.Repeat([]byte{33}, 32))
 	if err != nil {
@@ -27,15 +24,18 @@ func TestHistoricalSessionNativeOptionsRemainReadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	flat, frozen, err := st.SessionModelExecutionWithOptions(ctx, tenant, session.ID)
-	if err != nil || flat == nil || *flat != *provider || frozen != nil {
+	flat, err := st.SessionModelExecution(ctx, tenant, session.ID)
+	if err != nil || flat == nil || *flat != *provider {
 		t.Fatal("new Session did not store a flat provider bundle", err)
 	}
 	options := map[string]any{"codex_provider": map[string]any{
 		"base_url": provider.BaseURL, "bearer_token": provider.APIKey, "wire_api": "responses",
 		"http_headers": map[string]any{"x-deployment-secret": "header-secret-canary"},
 	}, "mode": "trusted-deployment-mode"}
-	historical, err := json.Marshal(sessionModelExecution{ModelProviderInput: *provider, NativeOptions: options})
+	historical, err := json.Marshal(struct {
+		v1.ModelProviderInput
+		NativeOptions map[string]any `json:"native_options"`
+	}{*provider, options})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,8 +46,7 @@ func TestHistoricalSessionNativeOptionsRemainReadable(t *testing.T) {
 	if _, err := pool.Exec(ctx, "UPDATE session_model_execution SET encrypted_config=$2 WHERE session_id=$1", session.ID, ciphertext); err != nil {
 		t.Fatal(err)
 	}
-	legacy, legacyOptions, err := NewWithCredentialCipher(pool, cipher).SessionModelExecutionWithOptions(ctx, tenant, session.ID)
-	if err != nil || legacy == nil || *legacy != *provider || !reflect.DeepEqual(legacyOptions, options) {
-		t.Fatal("historical native options could not be read", err)
+	if _, err := NewWithCredentialCipher(pool, cipher).SessionModelExecution(ctx, tenant, session.ID); err == nil {
+		t.Fatal("retired native options accepted in provider bundle")
 	}
 }

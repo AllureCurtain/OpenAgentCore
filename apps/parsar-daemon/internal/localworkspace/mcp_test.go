@@ -1,6 +1,7 @@
 package localworkspace
 
 import (
+	"os"
 	"slices"
 	"testing"
 
@@ -28,11 +29,15 @@ func TestEnvironmentMCPCredentialsNeverFallBackToNativeEnv(t *testing.T) {
 }
 
 func TestMCPStdioLauncherContainsOnlyInstalledIdentity(t *testing.T) {
-	server := proto.EnvironmentMCP{PackageRoot: "plugins/0", Server: agentplugin.MCPServer{
+	server := proto.EnvironmentMCP{InstallationRoot: "/private/runtime/capabilities", WorkspaceRoot: "/private/runtime/workspace", PackageRoot: "plugins/0", Server: agentplugin.MCPServer{
 		Name: "package_tool", Type: "stdio", Command: "untrusted-command", Args: []string{"private-argument"},
 	}}
 	command, args := MCPStdioCommand(server)
-	if command != "/usr/bin/python3" || !slices.Equal(args, []string{"-I", "-S", MCPInitializer, "stdio", "plugins/0", "package_tool"}) {
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if command != executable || !slices.Equal(args, []string{"runtime-mcp-exec", "/private/runtime/capabilities", "plugins/0", "package_tool"}) {
 		t.Fatal("native configuration included untrusted process configuration")
 	}
 }

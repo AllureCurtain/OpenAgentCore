@@ -16,7 +16,8 @@ add nodes. Applications call Core's API with those keys.
 6. [Add a node](/hosted-providers).
 
 These pages describe the current source. Every bundle carries the docs that match it
-under `docs/`; if you install an older bundle, follow those.
+under `docs/`. Core supports fresh installation and repair of the
+same release; historical-version upgrades and conversion are unsupported.
 
 ## Prerequisites
 
@@ -24,10 +25,12 @@ under `docs/`; if you install an older bundle, follow those.
 
 - Linux amd64 with Python 3.9 or newer.
 - Docker Engine with Docker Compose 2.26.0 or newer (`docker compose version`).
-- A non-root user who can run `docker`. The installer refuses root.
+- An account that can run `docker` and write to the installation directory. Both
+  ordinary users and root are supported; the installer uses the current account
+  without invoking sudo, switching accounts or changing Docker permissions.
 - Free loopback ports 8091 (Core) and 8080 (Web), or
-  [other ports](#ports-and-directory).
-- The GitHub CLI, `gh`, to download the bundle.
+  [custom listeners](/install-options#listeners-and-access).
+- curl to fetch the installation script; no GitHub CLI or login is required.
 
 The Core host needs no KVM and no systemd user services, unless you choose
 [native Core](#native-core).
@@ -44,47 +47,52 @@ public URL and set it later.
 
 ## Download a release
 
-The repository is internal for now, so GitHub asks you to sign in first:
-
-```sh
-gh auth login
-```
-
-Pick a release, download its offline bundle and check it:
-
-```sh
-gh release list --repo MiniMax-AI/parsar-core
-mkdir -p "$HOME/.oac/releases" && cd "$HOME/.oac/releases"
-gh release download <tag> --repo MiniMax-AI/parsar-core --pattern '*-linux-amd64-offline.tar.gz*'
-sha256sum -c oac-<commit>-linux-amd64-offline.tar.gz.sha256
-tar -xzf oac-<commit>-linux-amd64-offline.tar.gz
-cd oac-<commit>-linux-amd64
-```
-
-`<tag>` is the release tag from the list, and `<commit>` is the source commit in the
-asset names. The installer also checks every file in the bundle against its
-`SHA256SUMS` before it changes anything.
-
-Each release has two bundles:
-
-| Bundle | Contains | Use it for |
-| --- | --- | --- |
-| `oac-<commit>-linux-amd64-offline.tar.gz` | Core, Web and PostgreSQL images, the installers and every node and Runtime file | Any installation. Web serves the node files to your nodes and self-hosted executors |
-| `oac-<commit>-linux-amd64.tar.gz` | The same without the node and Runtime files | Core-only hosts, and installations that use only E2B. Web can't add nodes or connect self-hosted executors until the files are present |
-
-To add the node files to the smaller bundle, create an `artifacts/` directory in the
-extracted bundle, download the release's other `oac-<commit>-linux-amd64-*`
-assets (not the two bundles) into it, then run `./install.sh`, or rerun it if the
-installation already exists. Nodes download these files only from your Web console,
-never from GitHub, so node hosts need no GitHub access.
+Every Release includes a standalone [install.sh](https://github.com/MiniMax-AI/parsar-core/releases/latest/download/install.sh).
+It selects the latest published stable release by default, downloads that release's
+control-plane bundle and checksum, verifies the archive, and runs its bundled installer.
+This installs Core, Web and PostgreSQL without downloading Runtime images or node
+execution files. Nodes download those separately when they are added.
+You do not need to find a tag, commit SHA or archive filename.
 
 ## Install
 
-From the extracted bundle:
+Install the latest stable release:
 
 ```sh
-./install.sh --public-url https://core.example
+curl -fsSL https://github.com/MiniMax-AI/parsar-core/releases/latest/download/install.sh | bash
 ```
+
+For an HTTPS deployment, pass the public address:
+
+```sh
+curl -fsSL https://github.com/MiniMax-AI/parsar-core/releases/latest/download/install.sh | bash -s -- --public-url https://core.example
+```
+
+To select a version, add `--version v1.2.3` after `bash -s --`. Explicit versions
+may include prereleases; the default never selects one. Other arguments go unchanged
+to the bundled installer. You can also download `install.sh` from the Release page
+and run `bash install.sh --version v1.2.3`. The examples below use this saved script
+or the bundle's existing `./install.sh`.
+
+The downloader resolves the release once, verifies SHA-256 before extraction, and
+retains the verified bundle under `~/.oac/releases/` for repair. It never replaces
+an existing installation or upgrades it. To repair an installed version, select
+that same version explicitly. The bundled installer also checks its own
+`SHA256SUMS` before changing installation state.
+
+For machines without GitHub access, transfer the Release's
+`*-linux-amd64-offline.tar.gz` and matching `.sha256` file, verify and extract
+them locally, then run the bundled `./install.sh`. This explicitly includes node and
+Runtime files so Web can serve them without release access. The default online
+installation uses the smaller archive and leaves those downloads to the nodes.
+
+The installer prints each stage before it starts, including image preparation and
+service startup. Its final summary groups access addresses, sign-in details,
+next steps and management commands. Colors are enabled only in a terminal; set
+`NO_COLOR=1` to disable them. Redirected output stays plain text. A failed step
+stops installation and never prints a successful completion message. A no-change
+repair checks installation settings without rechecking health; use `oac status`
+to inspect service health.
 
 The installer:
 
@@ -98,36 +106,14 @@ The installer:
 It creates no Project or API key, makes no model request and runs no sample task.
 It ends by printing the console address, the API base URL and the next steps.
 
-Without `--public-url`, the installation serves only this host
-(`http://127.0.0.1:8080` for Web, `http://127.0.0.1:8091/v1` for the API). Set
+Without `--public-url`, the installation uses its configured loopback addresses.
+See [listener configuration](/install-options#listeners-and-access). Set
 `public_url` in `config.json` later and run `oac apply`; you don't reinstall. Nodes,
 E2B and self-hosted executors need the public URL.
 
-### Installer options
+### Installation choices
 
-Flags only seed `config.json` for a new installation. Afterwards you change settings in
-`config.json` with [`oac apply`](/configure#process-settings-configjson),
-and rerunning `install.sh` accepts no flag except `--install-dir`.
-
-| Option | Default | Meaning |
-| --- | --- | --- |
-| `--public-url URL` | none: local access only | Public origin of Core and Web behind your reverse proxy, such as `https://core.example`: HTTPS, no path. Plain HTTP only for a loopback host. Seeds `public_url` |
-| `--sandbox docker\|microsandbox\|e2b\|none` | `microsandbox` (`none` with `--web-only`) | [Sandbox backend](#sandbox-backend) to start with. A one-time choice saved in the database; change it later in Web |
-| `--accept-docker-risks` | | With `--sandbox docker`: accept Docker's [weaker isolation](#sandbox-backend) without the prompt; required without a terminal |
-| `--e2b-api-key-file FILE` | | With `--sandbox e2b`: absolute path of a private file (no group or other access, at most 4 KiB) holding the E2B API key |
-| `--e2b-template ID:BUILD` | | With `--sandbox e2b`: the ready template build, `template-id:build-uuid` |
-| `--e2b-api-url URL` | Official E2B | With `--sandbox e2b`: compatible service HTTPS API origin; use together with `--e2b-domain` |
-| `--e2b-domain DOMAIN` | Official E2B | With `--sandbox e2b`: sandbox data-plane DNS suffix; use together with `--e2b-api-url` |
-| `--core-only` | | [Mode](#modes): Core and PostgreSQL, without Web |
-| `--web-only` | | [Mode](#modes): Web only, connected to an existing Core. Needs `--core-url` and `--core-key-file` |
-| `--core-url URL` | | With `--web-only`: origin of the existing Core, HTTPS or loopback HTTP. Seeds `web.core_url` |
-| `--core-key-file FILE` | | With `--web-only`: absolute path of a private file holding that Core's Core key (at least 32 characters) |
-| `--native-core` | off | Run [Core as a systemd user service](#native-core) instead of a container |
-| `--core-port PORT` | `8091` | Loopback port of Core. Seeds `ports.core` |
-| `--web-port PORT` | `8080` | Loopback port of Web. Seeds `ports.web` |
-| `--install-dir DIR` | `~/.oac/core` | Absolute installation directory. It must be empty or missing |
-| `--config FILE` | | Seed `config.json` from a prepared file instead of the setting flags above (`--public-url`, the mode flags, `--native-core`, ports, `--core-url`) |
-| `--convert`, `--yes` | | [Convert an installation](/troubleshooting#convert-an-earlier-installation) made before the OpenAgentCore rename; `--yes` skips the confirmation |
+For flags, listener addresses and custom ports, see [Installation options](/install-options).
 
 #### Sandbox backend
 
@@ -141,7 +127,7 @@ A deployment runs its sandboxes on exactly one backend:
 | `none` | Nothing yet | Choose the backend on the **Nodes** page in Web |
 
 The Standard sizes come from the bundle's copy of Web's
-[`standard-sizes.json`](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/apps/web/src/features/sandbox/standard-sizes.json). The
+[`standard-sizes.json`](https://github.com/MiniMax-AI/parsar-core/blob/e4d5a1d30520a967b3a44a257ed1b6c21e388388/apps/web/src/features/sandbox/standard-sizes.json). The
 installer saves the choice through the same administrator API that Web uses once the
 services are healthy. If Core refuses it, for example because E2B rejects the key,
 the installer prints Core's message and exits with an error; the services keep
@@ -165,7 +151,7 @@ it installs anything:
 ```
 
 Prepare the template build with the
-[E2B guide](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/services/agents-api/deploy/e2b/README.md). To change the backend or
+[E2B guide](https://github.com/MiniMax-AI/parsar-core/blob/e4d5a1d30520a967b3a44a257ed1b6c21e388388/services/agents-api/deploy/e2b/README.md). To change the backend or
 the sandbox size later, use the Nodes page in Web; see
 [Nodes](/hosted-providers#change-the-sandbox-backend-or-size).
 
@@ -206,9 +192,10 @@ Browsers use `console.example`, and nodes download their installer from it.
 Applications, nodes and sandboxes call Core at `core.example`, and self-hosted
 executors download their installer from there too, which is why `core.example` sends
 `/node-install/*` to the Web host. Web serves those files only for its own name, so the
-proxy rewrites Host. The Web host serves every node and executor file, so install it
-from the offline bundle (or add `artifacts/`) when the deployment has nodes or
-self-hosted executors.
+proxy rewrites Host. Web serves bootstrap metadata and any locally available node
+artifacts. Missing artifacts redirect to the matching release and download directly
+on the node; the Web host does not fetch the Runtime image. For disconnected nodes,
+install Web from the offline bundle (or add its verified `artifacts/`).
 
 Caddy on the Core host, where `203.0.113.10` stands for the Web host's address:
 
@@ -311,14 +298,6 @@ lingering for that user (`sudo loginctl enable-linger "$USER"`), and the bundle'
 native binaries must load on the host. PostgreSQL then listens on a loopback port
 the installer picks (`ports.database`), and Web uses the host network. Native Core
 needs no KVM and is unrelated to the sandbox backend.
-
-#### Ports and directory
-
-Core and Web listen on `127.0.0.1` only; the reverse proxy reaches them there. The
-installer refuses a port that is in use. Several installations can share a host with
-their own `--install-dir` and ports, for example
-`--install-dir "$HOME/.oac/core-2" --core-port 8092 --web-port 8081`. Each has its
-own database, Core key and nodes.
 
 ## HTTPS and the reverse proxy
 
@@ -455,10 +434,9 @@ at Add node.
 
 ## Sign in to Web
 
-1. Open the console address the installer printed: your public URL, or
-   `http://127.0.0.1:8080` on the Core host. Use exactly that address; Web refuses
-   other host names. For a loopback installation on a remote machine, forward the port
-   first: `ssh -L 8080:127.0.0.1:8080 <core-host>`.
+1. Open the console address the installer printed. Use exactly that address; Web
+   refuses other host names. For a loopback installation on a remote machine,
+   forward the configured address and port through SSH first.
 2. Sign in with the Core key:
 
    ```sh
@@ -490,8 +468,8 @@ at Add node.
 **Show Getting started** in the sidebar brings it back.
 
 An existing pre-rename installation at `~/.parsar/core` blocks a new default install.
-Use `./install.sh --convert` after draining it with the old release, or explicitly
-choose another `--install-dir`. See [conversion and retained backups](/troubleshooting#convert-an-earlier-installation).
+Historical conversion is not supported. Preserve the existing installation and explicitly
+choose another `--install-dir`. See [installation version policy](/troubleshooting#installation-version-policy).
 
 ## What the installer creates
 
@@ -506,7 +484,7 @@ The installation directory, `~/.oac/core` by default, mode `0700`:
 | `secrets/database.password` | PostgreSQL password |
 | `state.json` | Format 2, installation ID, Compose project name, image IDs and source commit. Written by the tools only |
 | `generated/` | Files derived from `config.json`: `compose.json`, `core.env`, `core-key-digests.json`, `settings.json`, `config.schema.json`, and `runtime-history.json` or the native Core unit when used. `oac apply` rewrites them; don't edit them |
-| `node-payload/` | The node and self-hosted installers, the manifest and the node files that Web serves at `/node-install/` |
+| `node-payload/` | The managed node installer, the manifest and the node files that Web serves at `/node-install/` |
 | `state/e2b/` | Private E2B receipts |
 | `native/` | Core binaries, with `--native-core` only |
 
@@ -516,8 +494,8 @@ Web-only installations have only `secrets/core.key` among the secrets, and no
 In Docker, the installer creates a Compose project named `oac-<10 hex digits>`
 (`project` in `state.json`) with the containers `database`, `migrate` (runs the
 migrations, then exits), `core` and `web`, and the volume `<project>_database` that
-holds all data. Core and Web publish only `127.0.0.1:8091` and `127.0.0.1:8080`. The
-database publishes no port unless Core is native.
+holds all data. Core and Web publish their configured listeners. The database
+publishes no port unless Core is native, when it remains on loopback.
 
 The database holds the sandbox backend selection, and later your Projects, keys,
 nodes, default models and all execution history. Apart from Docker's own storage,
@@ -530,6 +508,6 @@ Rerunning `./install.sh` from the same bundle repairs an installation: it reload
 missing images, restores a missing `oac` command, copies node files newly placed in
 `artifacts/`, applies `config.json` and starts the services. It accepts only
 `--install-dir`. It refuses a bundle from another release; see
-[Upgrades](/troubleshooting#upgrade-an-installation).
+[installation version policy](/troubleshooting#installation-version-policy).
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/docs/getting-started/install.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/e4d5a1d30520a967b3a44a257ed1b6c21e388388/docs/getting-started/install.md)

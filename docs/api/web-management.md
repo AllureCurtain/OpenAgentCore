@@ -19,7 +19,7 @@ The browser uses the console's own origin and signs in with the
 | `GET /console/auth` | No body | `200 {"mode":"login"}` or `200 {"mode":"authenticated"}` |
 | `POST /console/auth/login` | `Content-Type: application/json`, body `{"core_key":"…"}`; other members are rejected | `200 {"mode":"authenticated"}` and an HttpOnly, SameSite=Strict session cookie (Secure over HTTPS) |
 | `POST /console/auth/logout` | No credential payload | `200 {"mode":"login"}`; clears the cookie and the server-side session |
-| `GET /console/config` | Signed-in session | `node_installer`, `node_installer_sha256`, `self_hosted_installer`, `self_hosted_installer_sha256`, and `node_artifacts`: the providers (`docker`, `microsandbox`) whose node assets this console holds |
+| `GET /console/config` | Signed-in session | `node_installer`, `node_installer_sha256`, `node_artifacts`: the providers (`docker`, `microsandbox`) whose node assets this console holds |
 
 Sign-in errors use the console's `{"error": "…"}` envelope: 400 for a malformed
 body, 401 for a wrong key, 415 for a non-JSON body, 429 with `Retry-After` when
@@ -79,15 +79,15 @@ and [generated OpenAPI](../../contracts/agents-api/core.openapi.yaml)
 define deployment and node operations:
 
 - `GET/POST/PUT /core/v1/sandbox/deployment` and
-  `PATCH /core/v1/sandbox/deployment/maintenance`.
+  `POST/DELETE /core/v1/sandbox/deployment/reset`.
 - `GET /core/v1/sandbox/nodes`, `PATCH/DELETE /core/v1/sandbox/nodes/{node_id}`,
   and `GET /core/v1/sandbox/nodes/{node_id}/allocations`.
 - `POST /core/v1/sandbox/enrollment-tokens` for a one-time node installation command.
   Its non-secret `enrollment_id` reappears on the node that command registers.
 
 PostgreSQL owns one provider, per-sandbox resource specification and immutable
-Runtime selection. POST initializes it; PUT replaces the complete selection using
-`expected_generation`. Requests carry `resources` and, for Docker/microsandbox,
+Runtime selection. POST initializes it and PUT updates the same provider; both
+require the observed `expected_generation`, including zero at first setup. Requests carry `resources` and, for Docker/microsandbox,
 `runtime`; safe responses return `specification` and `specification_digest`.
 Response `resources.allocations` and `resources.pending` are cleanup counts, not
 CPU, memory or disk settings. E2B accepts a write-only key and exact template build
@@ -100,23 +100,34 @@ Responses show
 the build as read at selection time in `e2b.template_build`. Microsandbox responses
 return its idle `suspension` policy; other providers return null.
 
-Provider, resource and Runtime changes all require global maintenance and verified
-cleanup of retained/pending resources. Core validates the candidate before commit;
-a rejection preserves the previous configuration. A changed commit advances the
-generation and retires old nodes and enrollment tokens atomically. Explicitly resume
-after success. Neither switching nor editing configuration deletes resources or
-migrates existing Sessions. During maintenance, administrators can explicitly
-[archive each retained hosted Session](../../contracts/agents-api/admin-api.md#administrative-session-archive)
-through the Core administrator API at the current generation, then read its
-resource disposition and recheck deployment counts. Archive preserves history
-and persisted Files/Artifacts; unpersisted workspace contents are lost and the
-original Session cannot resume. This API does not add a console archive control.
+Same-team E2B updates apply online after verification. Existing sandboxes retain
+their generation and use the committed credential for management; omitting the key
+preserves it, while explicitly submitting even the same key verifies a replacement.
+Node-provider updates still require zero retained/pending resources and no reset.
+Changing backend or E2B team requires explicit durable reset before a new POST.
+Auto archives idle/queued/suspended hosted Sessions, waits for started work and
+file writes, and escalates at its persisted deadline; force requests cancellation
+and verified cleanup. The deployment response supplies the authoritative
+`reset.remaining` partition and offline-node subset; Web must not derive either
+from independently loaded lists. The separate `rollout.state` describes target
+preparation; old-generation resource counts alone do not imply active preparation.
+Poll rapidly while reset is active or rollout is preparing. Node `ready_generation`
+is a durable serving pin, not proof of current connectivity. Target unknown, failed
+or update-required state does not by itself invalidate confirmed old-generation
+service; consume Core's connection/provider facts separately.
+
+Administrators may [archive an individual hosted Session](../../contracts/agents-api/admin-api.md#administrative-session-archive)
+at the current generation without reset. History and persisted Files/Artifacts
+survive; unpersisted workspace is lost and the original Session cannot resume.
+Cancel reset stops further archives, not cleanup already requested. After zero
+resources Core clears the selection and advances generation; configure again using
+that new generation. Never automatically replay an uncertain write.
 Public Environment Templates, the `/v1` contract and
 caller-owned `self_hosted` provisioning remain unchanged.
 
 `GET /api/v1/sandbox-node/configuration` uses an enrollment Bearer token, or a
 retained node Bearer credential with `X-OAC-Node-ID`. This read does not consume
-enrollment. Retained matching nodes can read their configuration during maintenance.
+enrollment. Retained matching nodes can read their configuration during reset.
 Installers must verify the returned generation, specification digest and Runtime
 before registration; local files cannot override the saved limits. A mismatch
 returns `sandbox_specification_mismatch` without replacing node state.

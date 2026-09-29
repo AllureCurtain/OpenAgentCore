@@ -16,7 +16,7 @@ func TestThreadRequestsApplyDeploymentPolicy(t *testing.T) {
 			for _, method := range []string{"thread/start", "thread/resume"} {
 				t.Run(method, func(t *testing.T) {
 					t.Setenv("OAC_RUNTIME_HOME", t.TempDir())
-					plan, _, err := prepareSessionPlan(context.Background(), proto.PromptRequestPayload{AgentStateKey: "conv/agent/codex", DisableSubagents: true, AgentOptions: map[string]any{"permissions": ":danger-full-access"}}, sessionConfig{permissionProfile: profile})
+					plan, _, err := prepareSessionPlan(context.Background(), proto.PromptRequestPayload{AgentStateKey: "conv/agent/codex", DisableSubagents: true, AgentOptions: map[string]any{"permissions": ":danger-full-access"}}, sessionConfig{})
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -48,15 +48,10 @@ func TestThreadRequestsApplyDeploymentPolicy(t *testing.T) {
 					if request.Params["approvalPolicy"] != "never" {
 						t.Fatal("approval policy changed")
 					}
-					if profile == "" {
-						if request.Params["sandbox"] != "danger-full-access" || request.Params["permissions"] != nil {
-							t.Fatalf("default policy changed: %+v", request.Params)
-						}
-					} else {
-						if request.Params["sandbox"] != nil || request.Params["permissions"] != profile {
-							t.Fatalf("managed policy lost: %+v", request.Params)
-						}
+					if request.Params["sandbox"] != "danger-full-access" || request.Params["permissions"] != nil {
+						t.Fatalf("bypass policy changed: %+v", request.Params)
 					}
+
 					if method == "thread/resume" && request.Params["threadId"] != "old-thread" {
 						t.Fatalf("resume lost thread ID: %+v", request.Params)
 					}

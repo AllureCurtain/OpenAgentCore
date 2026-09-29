@@ -34,6 +34,11 @@ func (s *session) Steer(ctx context.Context, input proto.PromptSteerPayload) err
 
 // SteerWithReceipt separates a complete bridge write from native consumption.
 func (s *session) SteerWithReceipt(ctx context.Context, input proto.PromptSteerPayload, written func()) error {
+	select {
+	case <-s.cancelOutput:
+		return agent.ErrSteeringInactive
+	default:
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -42,9 +47,10 @@ func (s *session) SteerWithReceipt(ctx context.Context, input proto.PromptSteerP
 	}
 	data, err := json.Marshal(struct {
 		Type    string             `json:"type"`
+		TurnID  string             `json:"turn_id"`
 		InputID string             `json:"input_id"`
 		Input   proto.MessageInput `json:"input"`
-	}{Type: "steer", InputID: input.InputID, Input: input.Input})
+	}{Type: "steer", TurnID: s.runID, InputID: input.InputID, Input: input.Input})
 	if err != nil || len(data) > 1024*1024 {
 		return fmt.Errorf("%w: input exceeds bridge limit", agent.ErrSteeringRejected)
 	}
@@ -74,7 +80,7 @@ func (s *session) SteerWithReceipt(ctx context.Context, input proto.PromptSteerP
 	s.steering.mu.Unlock()
 	// Cancellation must release a blocked write, but a lost receipt after a full
 	// write preserves the process and unknown outcome without automatic redelivery.
-	stop := context.AfterFunc(ctx, s.process.Cancel)
+	stop := context.AfterFunc(ctx, s.invalidate)
 	s.writeMu.Lock()
 	if err = ctx.Err(); err == nil {
 		_, err = s.process.Stdin.Write(append(data, '\n'))
@@ -82,7 +88,7 @@ func (s *session) SteerWithReceipt(ctx context.Context, input proto.PromptSteerP
 	s.writeMu.Unlock()
 	stop()
 	if err != nil {
-		s.process.Cancel()
+		s.invalidate()
 		return fmt.Errorf("claudesdk: input transport failed")
 	}
 	if written != nil {

@@ -111,19 +111,10 @@ func (q *Queries) RetireSandboxEnrollments(ctx context.Context) error {
 }
 
 const retireSandboxNodes = `-- name: RetireSandboxNodes :exec
-UPDATE runtime_nodes SET removed_at=clock_timestamp(),connection_id=NULL,provider_ready=false WHERE removed_at IS NULL
+UPDATE runtime_nodes SET removed_at=clock_timestamp(),connection_id=NULL,provider_ready=false,ready_generation=NULL WHERE removed_at IS NULL
 `
 
 func (q *Queries) RetireSandboxNodes(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, retireSandboxNodes)
-	return err
-}
-
-const setSandboxMaintenance = `-- name: SetSandboxMaintenance :exec
-UPDATE runtime_deployment SET maintenance=$1,updated_at=clock_timestamp() WHERE singleton=true
-`
-
-func (q *Queries) SetSandboxMaintenance(ctx context.Context, maintenance bool) error {
-	_, err := q.db.Exec(ctx, setSandboxMaintenance, maintenance)
 	return err
 }

@@ -3,22 +3,25 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"net/http"
+	"net/url"
+	"strconv"
 
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 )
 
 // SandboxE2BInput is write-only provider configuration. Safe responses use the
 // store's separate deployment view and never serialize this request.
 type SandboxE2BInput struct {
-	APIKey   string `json:"api_key"`
-	Template string `json:"template"`
-	APIURL   string `json:"api_url,omitempty"`
-	Domain   string `json:"domain,omitempty"`
+	APIKey   *string `json:"api_key,omitempty"`
+	APIURL   string  `json:"api_url,omitempty"`
+	Domain   string  `json:"domain,omitempty"`
+	Template string  `json:"template"`
 }
 
 type SandboxDeploymentInput struct {
+	ExpectedGeneration *uint64 `json:"expected_generation" binding:"required"`
 	// Per-sandbox limits, required for Docker and microsandbox. E2B may omit
 	// them; Core then uses the validated template build's cpus and memory_mib.
 	Resources sandbox.Resources       `json:"resources"`
@@ -29,13 +32,16 @@ type SandboxDeploymentInput struct {
 
 type SandboxDeploymentChangeInput struct {
 	SandboxDeploymentInput
-	ExpectedGeneration uint64 `json:"expected_generation"`
 }
 
 func (v SandboxDeploymentInput) request() store.SandboxDeploymentSetupRequest {
-	input := store.SandboxDeploymentSetupRequest{Provider: v.Provider, DeploymentSpec: sandbox.DeploymentSpec{Resources: v.Resources, Runtime: v.Runtime}}
+	input := store.SandboxDeploymentSetupRequest{ExpectedGeneration: *v.ExpectedGeneration, Provider: v.Provider, DeploymentSpec: sandbox.DeploymentSpec{Resources: v.Resources, Runtime: v.Runtime}}
 	if v.E2B != nil {
-		input.E2B = &store.SandboxE2BConfiguration{APIKey: v.E2B.APIKey, Template: v.E2B.Template, APIURL: v.E2B.APIURL, Domain: v.E2B.Domain}
+		input.E2B = &store.SandboxE2BConfiguration{Template: v.E2B.Template, APIURL: v.E2B.APIURL, Domain: v.E2B.Domain}
+		if v.E2B.APIKey != nil {
+			input.E2B.APIKey = *v.E2B.APIKey
+			input.E2B.ReplaceCredential = true
+		}
 	}
 	return input
 }
@@ -60,13 +66,14 @@ func WithSandboxDeploymentSetup(initialize func(context.Context, store.SandboxDe
 
 func WithSandboxDeploymentChanges(
 	update func(context.Context, store.SandboxDeploymentUpdateRequest) (store.RuntimeDeploymentView, error),
-	maintenance func(context.Context, store.SandboxMaintenanceRequest) (store.RuntimeDeploymentView, error),
+	reset func(context.Context, store.SandboxResetRequest) (store.RuntimeDeploymentView, error),
+	cancel func(context.Context, uint64) (store.RuntimeDeploymentView, error),
 ) Option {
-	return func(h *Handler) { h.sandboxUpdate = update; h.sandboxMaintenance = maintenance }
+	return func(h *Handler) { h.sandboxUpdate = update; h.sandboxReset = reset; h.sandboxResetCancel = cancel }
 }
 
 // @Summary Initialize the deployment sandbox provider
-// @Description Selects a provider, enforced resource limits and pinned Runtime release. Core derives the deployment's core_url from the installation public URL and rejects a core_url member with 400. E2B returns 409 sandbox_configuration_error while the public URL is loopback. E2B credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory, returned in specification.resources. Exact retries return the existing selection; differing selections and file-managed deployments reject. This does not create compute or execute work.
+// @Description Selects a provider, enforced resource limits and pinned Runtime release. Core derives the deployment's core_url from the installation public URL and rejects a core_url member with 400. E2B returns 409 sandbox_configuration_error while the public URL is loopback. E2B credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory, returned in specification.resources. Requires explicit expected_generation, including zero at first setup. Stale retries reject before provider validation. An identical selection at the current generation is a no-op; differing selections and file-managed deployments reject. This does not create compute or execute work.
 // @Tags Sandbox Manager
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -84,7 +91,7 @@ func (h *Handler) initializeSandboxDeployment(w http.ResponseWriter, r *http.Req
 		return
 	}
 	var input SandboxDeploymentInput
-	if decodeInputObject(raw, &input, "provider", "e2b", "resources", "runtime") != nil {
+	if decodeInputObject(raw, &input, "provider", "e2b", "resources", "runtime", "expected_generation") != nil || input.ExpectedGeneration == nil || nullSandboxKey(raw) {
 		writeStoreError(w, r, store.ErrInvalidInput)
 		return
 	}
@@ -100,8 +107,8 @@ func (h *Handler) initializeSandboxDeployment(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, result)
 }
 
-// @Summary Change a fully drained deployment's sandbox configuration
-// @Description Requires maintenance, the current generation and verified cleanup of all old resources. Credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory. A core_url member is rejected with 400; the address comes from the installation public URL. Historical records are retained; old node credentials and enrollments are retired. Explicitly resume after success. Never automatically retry an uncertain write.
+// @Summary Change the sandbox deployment configuration
+// @Description Requires the observed generation, the same backend type and no active reset. E2B same-team changes apply online: allocations retain immutable generation and current credentials; omitted api_key preserves it, explicit submission including the same key verifies and advances generation. Other teams require explicit reset. Node providers retain the zero-resource guard and retire old nodes/tokens on change. Core rejects core_url input. Never automatically replay an uncertain write; rollout.state is the authoritative preparation polling signal.
 // @Tags Sandbox Manager
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -119,7 +126,7 @@ func (h *Handler) updateSandboxDeployment(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var input SandboxDeploymentChangeInput
-	if decodeInputObject(raw, &input, "provider", "e2b", "resources", "runtime", "expected_generation") != nil || input.ExpectedGeneration == 0 {
+	if decodeInputObject(raw, &input, "provider", "e2b", "resources", "runtime", "expected_generation") != nil || input.ExpectedGeneration == nil || nullSandboxKey(raw) {
 		writeStoreError(w, r, store.ErrInvalidInput)
 		return
 	}
@@ -127,7 +134,7 @@ func (h *Handler) updateSandboxDeployment(w http.ResponseWriter, r *http.Request
 		writeStoreError(w, r, store.ErrSandboxDeploymentConflict)
 		return
 	}
-	result, err := h.sandboxUpdate(r.Context(), store.SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: input.request(), ExpectedGeneration: input.ExpectedGeneration})
+	result, err := h.sandboxUpdate(r.Context(), store.SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: input.request(), ExpectedGeneration: *input.ExpectedGeneration})
 	if err != nil {
 		writeStoreError(w, r, err)
 		return
@@ -135,38 +142,100 @@ func (h *Handler) updateSandboxDeployment(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, result)
 }
 
-// @Summary Pause or resume new hosted allocations
-// @Description Requires the current generation. Maintenance preserves execution, cleanup and history. Resume requires successfully activated provider configuration.
+// @Summary Start or escalate a durable sandbox deployment reset
+// @Description Archives hosted Sessions and waits for confirmed provider cleanup, preserving history and Files/Artifacts. Auto waits for started or waiting Turns and file writes until the durable deadline; force cancels them. The same clear is idempotent; force escalates auto. Requires the current generation. Self-hosted Sessions are unchanged.
 // @Tags Sandbox Manager
 // @Produce json
 // @Security DeploymentAdminAuth
 // @Accept json
-// @Param body body store.SandboxMaintenanceRequest true "Maintenance state"
+// @Param body body store.SandboxResetRequest true "Reset mode and current deployment generation"
 // @Success 200 {object} store.RuntimeDeploymentView
 // @Failure 400,401,409,500,503 {object} CoreErrorResponse
-// @Router /core/v1/sandbox/deployment/maintenance [patch]
-func (h *Handler) setSandboxMaintenance(w http.ResponseWriter, r *http.Request) {
-	raw, ok := readJSONBody(w, r)
+// @Router /core/v1/sandbox/deployment/reset [post]
+func (h *Handler) startSandboxReset(w http.ResponseWriter, r *http.Request) {
+	raw, ok := readJSONBodyLimit(w, r, 4096, "Reset request is too large.")
 	if !ok {
 		return
 	}
-	// Omitted or null maintenance is not an instruction to resume.
 	var input struct {
-		Maintenance        *bool  `json:"maintenance"`
-		ExpectedGeneration uint64 `json:"expected_generation"`
+		ExpectedGeneration *uint64 `json:"expected_generation"`
+		Clear              string  `json:"clear"`
+		DeadlineSeconds    *int32  `json:"deadline_seconds"`
 	}
-	if decodeInputObject(raw, &input, "maintenance", "expected_generation") != nil || input.Maintenance == nil || input.ExpectedGeneration == 0 {
-		writeStoreError(w, r, store.ErrInvalidInput)
+	if decodeInputObject(raw, &input, "expected_generation", "clear", "deadline_seconds") != nil || input.ExpectedGeneration == nil || nullSandboxKey(raw) {
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "A current expected_generation is required.", "expected_generation")
 		return
 	}
-	if h.sandboxMaintenance == nil {
+	if input.Clear != "auto" && input.Clear != "force" {
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "Choose auto or force for clear.", "clear")
+		return
+	}
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(raw, &fields)
+	if value, present := fields["deadline_seconds"]; present && string(value) == "null" {
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "deadline_seconds must be an integer when supplied.", "deadline_seconds")
+		return
+	}
+	if input.DeadlineSeconds != nil && (input.Clear != "auto" || *input.DeadlineSeconds < 300 || *input.DeadlineSeconds > 86400) {
+		writeCoreError(w, http.StatusBadRequest, "invalid_request_error", "deadline_seconds applies only to auto and must be between 300 and 86400.", CoreErrorDetails{"min": CoreErrorNumber(300), "max": CoreErrorNumber(86400)}, "deadline_seconds")
+		return
+	}
+	if h.sandboxReset == nil {
 		writeStoreError(w, r, store.ErrSandboxDeploymentConflict)
 		return
 	}
-	result, err := h.sandboxMaintenance(r.Context(), store.SandboxMaintenanceRequest{Maintenance: *input.Maintenance, ExpectedGeneration: input.ExpectedGeneration})
+	setAdminAuditSource(r, "")
+	result, err := h.sandboxReset(r.Context(), store.SandboxResetRequest{ExpectedGeneration: *input.ExpectedGeneration, Clear: input.Clear, DeadlineSeconds: input.DeadlineSeconds})
 	if err != nil {
 		writeStoreError(w, r, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// @Summary Cancel a sandbox deployment reset
+// @Description Restores admission but never restores Sessions already archived. With no reset running this is an idempotent read, provided the generation still matches.
+// @Tags Sandbox Manager
+// @Produce json
+// @Security DeploymentAdminAuth
+// @Param expected_generation query integer true "Current deployment generation"
+// @Success 200 {object} store.RuntimeDeploymentView
+// @Failure 400,401,409,500,503 {object} CoreErrorResponse
+// @Router /core/v1/sandbox/deployment/reset [delete]
+func (h *Handler) cancelSandboxReset(w http.ResponseWriter, r *http.Request) {
+	query, err := parseResetGeneration(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request_error", "A single current expected_generation is required.", "expected_generation")
+		return
+	}
+	if h.sandboxResetCancel == nil {
+		writeStoreError(w, r, store.ErrSandboxDeploymentConflict)
+		return
+	}
+	setAdminAuditSource(r, "")
+	result, err := h.sandboxResetCancel(r.Context(), query)
+	if err != nil {
+		writeStoreError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+func parseResetGeneration(r *http.Request) (uint64, error) {
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil || len(query) != 1 || len(query["expected_generation"]) != 1 {
+		return 0, store.ErrInvalidInput
+	}
+	return strconv.ParseUint(query.Get("expected_generation"), 10, 64)
+}
+
+// Null is an invalid explicit credential, not the omitted-key preservation path.
+func nullSandboxKey(raw json.RawMessage) bool {
+	var body struct {
+		E2B map[string]json.RawMessage `json:"e2b"`
+	}
+	if json.Unmarshal(raw, &body) != nil {
+		return false
+	}
+	key, present := body.E2B["api_key"]
+	return present && string(key) == "null"
 }

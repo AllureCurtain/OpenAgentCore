@@ -21,6 +21,10 @@ class DistributionError(Exception):
     pass
 
 
+class ArtifactError(DistributionError):
+    """Transfer or immutable artifact provenance failed, not provider readiness."""
+
+
 def image_identities(manifest, name):
     """Both immutable IDs describe the same archive, as proven by the builder."""
     identities = []
@@ -28,7 +32,7 @@ def image_identities(manifest, name):
         mapping = manifest.get(field)
         value = mapping.get(name) if isinstance(mapping, dict) else None
         if not isinstance(value, str) or not re.fullmatch(r'sha256:[0-9a-f]{64}', value):
-            raise DistributionError('Missing or invalid immutable image identity: ' + name)
+            raise ArtifactError('Missing or invalid immutable image identity: ' + name)
         identities.append(value)
     return tuple(identities)
 
@@ -82,13 +86,13 @@ def artifact(manifest, name):
     entry = manifest.get('artifacts', {}).get(name)
     revision = manifest.get('source_commit', '')
     if not isinstance(entry, dict) or not re.fullmatch(r'[0-9a-f]{40}', revision):
-        raise DistributionError('Missing versioned artifact: ' + name)
+        raise ArtifactError('Missing versioned artifact: ' + name)
     filename = entry.get('filename', '')
     if (not isinstance(filename, str) or not re.fullmatch(r'[A-Za-z0-9._-]+', filename)
             or revision not in filename or filename in ('.', '..')
             or not re.fullmatch(r'[0-9a-f]{64}', str(entry.get('sha256', '')))
             or type(entry.get('size')) is not int or entry['size'] <= 0):
-        raise DistributionError('Invalid artifact metadata: ' + name)
+        raise ArtifactError('Invalid artifact metadata: ' + name)
     return entry
 
 
@@ -107,15 +111,27 @@ def safe_url(value):
                 or '\\' in value or parsed.scheme != 'https' and not (parsed.scheme == 'http' and loopback)):
             raise ValueError()
     except ValueError:
-        raise DistributionError('Artifact downloads require HTTPS; loopback HTTP is only for local testing') from None
+        raise ArtifactError('Artifact downloads require HTTPS; loopback HTTP is only for local testing') from None
     return value
 
 
+class ArtifactRedirect(urllib.request.HTTPRedirectHandler):
+    """Only artifact bytes may follow HTTPS redirects; metadata stays on Core."""
+    def redirect_request(self, request, fp, code, msg, headers, newurl):
+        safe_url(newurl)
+        if urlsplit(newurl).scheme != 'https' or request.get_method() not in ('GET', 'HEAD'):
+            raise ArtifactError('Artifact redirects require HTTPS')
+        # Carry resume headers, never credentials or cookies, to a release/CDN host.
+        forwarded = {name: value for name, value in request.header_items()
+                     if name.lower() in ('range', 'if-range')}
+        return urllib.request.Request(newurl, headers=forwarded,
+                                      method=request.get_method(), unverifiable=True)
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
-    """Downloads come only from the console, which never redirects; a redirect
-    could hand verified names to another origin, so every one is refused."""
+    """Bootstrap metadata and credentials stay on the configured console origin."""
     def redirect_request(self, request, fp, code, message, headers, newurl):
-        raise DistributionError('Artifact and metadata downloads do not follow redirects; check the console URL '
+        raise ArtifactError('Metadata downloads do not follow redirects; check the console URL '
                                 'and the reverse proxy in front of it')
 
 
@@ -138,7 +154,7 @@ def obtain_artifact(manifest, logical_path, destination, offline_root=None):
     target = checked_path(destination)
     if target.exists():
         if not matches(target, entry):
-            raise DistributionError('Cached artifact differs; preserve the installation and inspect: ' + logical_path)
+            raise ArtifactError('Cached artifact differs; preserve the installation and inspect: ' + logical_path)
         return target
     source = None
     if offline_root is not None:
@@ -151,7 +167,7 @@ def obtain_artifact(manifest, logical_path, destination, offline_root=None):
         return copy_artifact(source, target, entry, logical_path)
     base = manifest.get('artifact_base_url', '')
     if not isinstance(base, str) or not base or urlsplit(base).query:
-        raise DistributionError('No downloadable artifact source; use the matching offline bundle')
+        raise ArtifactError('No downloadable artifact source; use the matching offline bundle')
     url = safe_url(base.rstrip('/') + '/' + entry['filename'])
     # A private partial file survives interruptions and reruns; the next attempt asks
     # for the missing bytes only. The complete file is still verified as a whole.
@@ -164,17 +180,17 @@ def obtain_artifact(manifest, logical_path, destination, offline_root=None):
             if error.code == 416:
                 discard_partial(partial)
             elif error.code not in (408, 429, 500, 502, 503, 504) or attempt == 2:
-                raise DistributionError(f'Artifact download failed (HTTP {error.code}): {logical_path}. Check the console and retry.') from None
+                raise ArtifactError(f'Artifact download failed (HTTP {error.code}): {logical_path}. Check the console and retry.') from None
         except (urllib.error.URLError, socket.timeout, ConnectionError, http.client.HTTPException):
             if attempt == 2:
-                raise DistributionError('Artifact transfer interrupted: ' + logical_path + '. Check network access and rerun; '
+                raise ArtifactError('Artifact transfer interrupted: ' + logical_path + '. Check network access and rerun; '
                                         'the download resumes where it stopped.') from None
         time.sleep(attempt + 1)
     else:
-        raise DistributionError('Artifact download did not complete')
+        raise ArtifactError('Artifact download did not complete')
     if digest(partial) != entry['sha256']:
         discard_partial(partial)
-        raise DistributionError('Artifact checksum mismatch: ' + logical_path)
+        raise ArtifactError('Artifact checksum mismatch: ' + logical_path)
     os.chmod(partial, 0o700 if logical_path.startswith('native/') else 0o600)
     os.replace(partial, target)
     validator_path(partial).unlink(missing_ok=True)
@@ -198,10 +214,10 @@ def copy_artifact(source, target, entry, logical_path):
             for block in iter(lambda: stream.read(1024 * 1024), b''):
                 count += len(block)
                 if count > entry['size']:
-                    raise DistributionError('Artifact exceeds published size: ' + logical_path)
+                    raise ArtifactError('Artifact exceeds published size: ' + logical_path)
                 output.write(block)
         if count != entry['size'] or digest(temporary) != entry['sha256']:
-            raise DistributionError('Artifact checksum mismatch: ' + logical_path)
+            raise ArtifactError('Artifact checksum mismatch: ' + logical_path)
         os.chmod(temporary, 0o700 if logical_path.startswith('native/') else 0o600)
         os.replace(temporary, target)
         return target
@@ -238,7 +254,7 @@ def download_partial(url, partial, entry, logical_path):
         if validator:
             headers['If-Range'] = validator
     request = urllib.request.Request(url, headers=headers)
-    with urllib.request.build_opener(NoRedirect()).open(request, timeout=30) as stream:
+    with urllib.request.build_opener(ArtifactRedirect()).open(request, timeout=30) as stream:
         if offset and (stream.status != 206 or not stream.headers.get('Content-Range', '').startswith(f'bytes {offset}-')):
             offset = 0  # The server sent the whole file; start over.
         if not offset:
@@ -260,12 +276,12 @@ def download_partial(url, partial, entry, logical_path):
                 if count > size:
                     output.close()
                     discard_partial(partial)
-                    raise DistributionError('Artifact exceeds published size: ' + logical_path)
+                    raise ArtifactError('Artifact exceeds published size: ' + logical_path)
                 output.write(block)
                 window_count += len(block)
                 if time.monotonic() - window >= SLOW_SECONDS:
                     if window_count < SLOW_BYTES:
-                        raise DistributionError(f'Artifact download stalled (under {SLOW_BYTES // 1024} KiB in {SLOW_SECONDS} s): '
+                        raise ArtifactError(f'Artifact download stalled (under {SLOW_BYTES // 1024} KiB in {SLOW_SECONDS} s): '
                                                 f'{logical_path}. The downloaded part is kept; check the network, then rerun '
                                                 'the command to resume.')
                     window, window_count = time.monotonic(), 0
@@ -286,12 +302,12 @@ def runtime_archive(manifest, cache_root, offline_root=None):
     expanded = {'sha256': entry.get('unpacked_sha256'), 'size': entry.get('unpacked_size')}
     if (not re.fullmatch(r'[0-9a-f]{64}', str(expanded['sha256']))
             or type(expanded['size']) is not int or expanded['size'] <= 0):
-        raise DistributionError('Runtime archive is missing unpacked verification metadata')
+        raise ArtifactError('Runtime archive is missing unpacked verification metadata')
     root = Path(cache_root)
     target = checked_path(root / 'images/runtime.tar')
     if target.exists():
         if not matches(target, expanded):
-            raise DistributionError('Cached Runtime archive differs; preserve state and inspect it')
+            raise ArtifactError('Cached Runtime archive differs; preserve state and inspect it')
         return target
     archive = obtain_artifact(manifest, 'images/runtime.tar.gz', root / 'images/runtime.tar.gz', offline_root)
     fd, temporary = tempfile.mkstemp(prefix='.runtime-', dir=target.parent)
@@ -301,13 +317,13 @@ def runtime_archive(manifest, cache_root, offline_root=None):
             for block in iter(lambda: stream.read(1024 * 1024), b''):
                 count += len(block)
                 if count > expanded['size']:
-                    raise DistributionError('Runtime archive exceeds published unpacked size')
+                    raise ArtifactError('Runtime archive exceeds published unpacked size')
                 output.write(block)
         if not matches(Path(temporary), expanded):
-            raise DistributionError('Unpacked Runtime checksum mismatch')
+            raise ArtifactError('Unpacked Runtime checksum mismatch')
         os.replace(temporary, target)
     except (gzip.BadGzipFile, EOFError):
-        raise DistributionError('Invalid compressed Runtime archive') from None
+        raise ArtifactError('Invalid compressed Runtime archive') from None
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
@@ -353,7 +369,7 @@ def load_manifest(source_url=None, offline_root=None):
         if (manifest.get('platform') != 'linux/amd64'
                 or not re.fullmatch(r'[0-9a-f]{40}', manifest.get('source_commit', ''))):
             raise DistributionError('Unsupported distribution platform or revision')
-        # Artifacts come only from the console, never from a release URL the build recorded.
+        # Resolve artifacts through the console, which selects local bytes or a pinned HTTPS release.
         manifest['artifact_base_url'] = source_url.rstrip('/') + '/node-install/artifacts' if source_url and offline_root is None else ''
         return manifest
     except (ValueError, TypeError, AttributeError):

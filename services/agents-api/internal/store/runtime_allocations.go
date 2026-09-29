@@ -16,6 +16,7 @@ import (
 // RuntimeAllocation retains compute ownership, not public readiness. It survives
 // Session deletion until cleanup is confirmed. No bootstrap secret is retained.
 type RuntimeAllocation struct {
+	DeploymentGeneration                                          uint64
 	NodeID                                                        string
 	ObservationError                                              string
 	ComputePhase                                                  string
@@ -100,6 +101,7 @@ func (s *Store) ReserveRuntimeAllocation(ctx context.Context, tenant, environmen
 		if err != nil {
 			return err
 		}
+		generation := pgtype.Int8{Int64: deployment.Generation, Valid: true}
 		if deployment.Mode == "nodes" {
 			placement, err := q.GetRuntimePlacement(ctx, lookup.ID)
 			if err != nil {
@@ -109,13 +111,14 @@ func (s *Store) ReserveRuntimeAllocation(ctx context.Context, tenant, environmen
 				return ErrRuntimeNodeUnavailable
 			}
 			nodeID = placement.NodeID
+			generation = placement.DeploymentGeneration
 		}
 		if err := createEnvironmentDevice(ctx, q, lookup, session, device); err != nil {
 			return err
 		}
 		row, err := q.CreateRuntimeAllocation(ctx, sqlc.CreateRuntimeAllocationParams{
 			ID: pgtype.UUID{Bytes: uuid.New(), Valid: true}, EnvironmentID: lookup.ID,
-			DeviceID: device.ID, ProviderKey: provider, NodeID: nodeID,
+			DeviceID: device.ID, ProviderKey: provider, NodeID: nodeID, DeploymentGeneration: generation,
 		})
 		if err == nil {
 			result = runtimeAllocationFromRow(row, session, lookup.TenantID, pgtype.Timestamptz{}, false)
@@ -208,7 +211,7 @@ func runtimeAllocationFromRow(row sqlc.RuntimeAllocation, session, tenant pgtype
 		retainedUntil = &value
 	}
 	return RuntimeAllocation{
-		NodeID: runtimeUUID(row.NodeID), ObservationError: row.ObservationError,
+		DeploymentGeneration: uint64(row.DeploymentGeneration.Int64), NodeID: runtimeUUID(row.NodeID), ObservationError: row.ObservationError,
 		ComputePhase: row.ComputePhase, ComputeRevision: row.ComputeRevision, ComputeState: row.ComputeState,
 		ComputeActivityAt: row.ComputeActivityAt.Time, ComputeWakeRequested: row.ComputeWakeRequested, ComputeRetainedUntil: retainedUntil,
 		ID: uuid.UUID(row.ID.Bytes).String(), EnvironmentID: uuid.UUID(row.EnvironmentID.Bytes).String(),

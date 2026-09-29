@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -60,9 +61,9 @@ func TestSaveSetsRestrictivePerms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat auth.json: %v", err)
 	}
-	// auth.json holds the long-lived runner_credential — anything
-	// but 0600 leaks it on a shared CI box.
-	if mode := info.Mode().Perm(); mode != 0o600 {
+	// Unix stores credentials with 0600; Windows uses normal account ACLs,
+	// which are not represented by Go permission bits.
+	if mode := info.Mode().Perm(); runtime.GOOS != "windows" && mode != 0o600 {
 		t.Errorf("auth.json perm = %o, want 0600", mode)
 	}
 }
@@ -109,7 +110,7 @@ func TestSaveOverwritesAndHealsPerms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stat: %v", err)
 	}
-	if mode := info.Mode().Perm(); mode != 0o600 {
+	if mode := info.Mode().Perm(); runtime.GOOS != "windows" && mode != 0o600 {
 		t.Errorf("perm after re-save = %o, want 0600 (healing failed)", mode)
 	}
 	got, err := auth.Load("default")

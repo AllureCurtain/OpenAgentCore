@@ -23,7 +23,6 @@ ARTIFACTS = {
     "images/runtime.tar.gz": "runtime.tar.gz",
     "native/bin/oac-node": "sandbox-node",
     "native/bin/oac-daemon": "daemon",
-    "native/bin/oac-selfhost": "runtime-launcher",
     "native/bin/oac-microsandbox-provider": "microsandbox-provider",
     "native/microsandbox/msb": "msb",
     "native/microsandbox/libkrunfw.so.5.6.1": "libkrunfw.so.5.6.1",
@@ -36,9 +35,13 @@ ARTIFACTS = {
 # bundle's commit, so no bundled link leads outside the bundle.
 BUNDLED_DOCS = (
     "README.md",
+    "README.zh-CN.md",
+    "docs/user-guide.md",
+    "docs/development.md",
     "docs/configuration.md",
     "docs/getting-started/README.md",
     "docs/getting-started/install.md",
+    "docs/getting-started/install-options.md",
     "docs/getting-started/nodes.md",
     "docs/getting-started/operations.md",
     "docs/getting-started/quickstart.md",
@@ -47,7 +50,7 @@ BUNDLED_DOCS = (
     "contracts/agents-api/environment-executor-credentials.md",
 )
 # Files the bundled docs show, copied as they are, so they work offline.
-BUNDLED_FILES = ("docs/assets/openagentcore-banner.png",)
+BUNDLED_FILES = ("docs/assets/openagentcore-banner.png", "docs/assets/architecture.png")
 REPOSITORY_URL = "https://github.com/MiniMax-AI/parsar-core"
 MARKDOWN_LINK = re.compile(r"(!?)\[((?:[^\[\]]|\[[^\]]*\])*)\]\(([^)\s]+)((?:\s+\"[^\"]*\")?)\)")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
@@ -158,20 +161,11 @@ def image_identities(archive, build_id):
         return config_digest, manifest_digest
 
 
-def verify_runtime(image, daemon, helpers, source):
+def verify_runtime(image, daemon, source):
     details = verify_image(image)
-    helpers, source = pathlib.Path(helpers), pathlib.Path(source)
+    source = pathlib.Path(source)
     files = {"/usr/local/bin/oac-daemon": pathlib.Path(daemon)}
-    for name in ("oac-codex-directory", "oac-codex-write", "oac-workspace-export"):
-        files["/usr/local/bin/" + name] = helpers / name
-    files["/usr/local/bin/oac-runtime-initialize"] = source / "services/agents-api/deploy/runtime/initialize.py"
-    files["/usr/local/bin/oac-tool-root"] = source / "services/agents-api/deploy/runtime/tool-root.py"
     environment = dict(value.split("=", 1) for value in details["Config"]["Env"] if "=" in value)
-    if "OAC_RUNTIME_CODEX_BIN" in environment:
-        files["/etc/codex/requirements.toml"] = source / "services/agents-api/deploy/codex/requirements.toml"
-        files["/etc/codex/tool-env.py"] = source / "services/agents-api/deploy/codex/tool-env.py"
-    if "OAC_RUNTIME_CLAUDE_SDK_ENTRYPOINT" in environment:
-        files["/usr/local/bin/oac-claude-shell-prefix"] = source / "services/agents-api/deploy/claude/shell-prefix.py"
     if "OAC_RUNTIME_MCODE_BIN" in environment:
         for name in ("launch.mjs", "bridge.mjs", "check.mjs", "tool-executor.mjs", "subagent-snapshot.mjs", "source.json"):
             files["/opt/mcode-harness/" + name] = source / "packages/mcode-harness" / name
@@ -243,24 +237,22 @@ OAC_CLI_MODULES = ("oac_cli.py", "config_model.py", "config.schema.json", "confi
                   "native_service.py", "distribution.py", "node_spec.py")
 
 
-def bootstraps(bundle, epoch):
+def bootstraps(bundle, epoch, revision):
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("Invalid operator source revision")
     bundle = pathlib.Path(bundle)
-    for source, output in (("node_install.py", "node-install.pyz"),
-                           ("self_hosted_install.py", "self-hosted-install.pyz")):
-        with tempfile.TemporaryDirectory(dir=bundle.parent) as directory:
-            for original, packaged in ((source, "__main__.py"), ("distribution.py", "distribution.py")):
-                target = pathlib.Path(directory) / packaged
-                shutil.copyfile(bundle / original, target)
-                os.utime(target, (int(epoch), int(epoch)))
-            if source == "node_install.py":
-                target = pathlib.Path(directory) / "node_spec.py"
-                shutil.copyfile(bundle / "node_spec.py", target)
-                os.utime(target, (int(epoch), int(epoch)))
-            zipapp.create_archive(directory, bundle / output, compressed=True)
+    with tempfile.TemporaryDirectory(dir=bundle.parent) as directory:
+        modules = (("node_install.py", "__main__.py"), ("distribution.py", "distribution.py"),
+                   *((name, name) for name in ("node_spec.py", "node_generations.py")))
+        for original, packaged in modules:
+            target = pathlib.Path(directory) / packaged
+            shutil.copyfile(bundle / original, target)
+            os.utime(target, (int(epoch), int(epoch)))
+        zipapp.create_archive(directory, bundle / "node-install.pyz", compressed=True)
     with tempfile.TemporaryDirectory(dir=bundle.parent) as directory:
         for name in OAC_CLI_MODULES:
             shutil.copyfile(bundle / name, pathlib.Path(directory) / name)
-        (pathlib.Path(directory) / "__main__.py").write_text("import oac_cli\n\noac_cli.entry()\n")
+        (pathlib.Path(directory) / "__main__.py").write_text(f"import oac_cli\n\noac_cli.SOURCE_COMMIT = {revision!r}\noac_cli.entry()\n")
         for path in pathlib.Path(directory).iterdir():
             os.utime(path, (int(epoch), int(epoch)))
         zipapp.create_archive(directory, bundle / "oac.pyz", interpreter="/usr/bin/env python3", compressed=True)

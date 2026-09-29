@@ -1,4 +1,8 @@
-# Call the API
+# Run your first Session
+
+Before starting, [install Core and Web](install.md), issue a Project API key, and
+prepare a ready managed node or E2B backend. You also need Python 3.9+ and model
+provider access. This walkthrough uses Codex with a Responses-compatible provider.
 
 Core serves the OpenAI Agents API. Applications use the official OpenAI SDK with two
 environment variables, which the SDK reads by default:
@@ -45,6 +49,16 @@ isolated. When the administrator rotates your key, they issue a new one in the s
 Project and revoke the old one; your assets stay.
 
 ## Run a Session
+
+Set the provider's exact model ID and Responses API base URL. Use a test account
+that is authorized to make a model request:
+
+```sh
+export MODEL_NAME='your-model-id'
+export MODEL_BASE_URL='https://your-provider.example/v1'
+read -rs MODEL_API_KEY && export MODEL_API_KEY
+```
+
 
 A Core-hosted Session (`openai_hosted`) runs in a sandbox that Core creates: on a node
 with free capacity, or on E2B. Core prepares the daemon, native harness and workspace
@@ -124,19 +138,35 @@ returns it. Self-hosted Sessions always bring their own provider, because the de
 holds the operator's key and the executor host belongs to the application; see
 [Self-hosted executors](self-hosted.md).
 
-## Observe and recover
+## Wait for the result
+
+Continue in the same Python process. A Session ID confirms creation, not success.
+This bounded loop reads durable state instead of resubmitting work:
 
 ```python
-current = client.beta.agents.sessions.retrieve(session.id)
-turns = client.beta.agents.sessions.turns.list(session.id)
-items = client.beta.agents.sessions.items.list(session.id)
-print(current.id, turns.data, items.data)
+import time
+
+for _ in range(120):
+    turns = client.beta.agents.sessions.turns.list(session.id, order="desc").data
+    if turns and turns[0].status in {"completed", "failed", "cancelled"}:
+        turn = turns[0]
+        print("Turn:", turn.id, turn.status)
+        print(client.beta.agents.sessions.items.list(session.id).data)
+        if turn.status != "completed":
+            raise RuntimeError("Inspect the recorded Turn and Items before retrying")
+        break
+    current = client.beta.agents.sessions.retrieve(session.id)
+    if current.status == "failed":
+        raise RuntimeError("Session preparation failed; inspect its Environment")
+    time.sleep(1)
+else:
+    raise TimeoutError(f"Session {session.id} is still pending; inspect it before retrying")
 ```
 
-Wait for the Turn's final state before treating a task as done. After a disconnect,
-recover through Session, Turn and Items reads: the event stream is live only and does
-not replay history. Don't submit the same work as a new Session when a response is
-lost.
+Success means the Turn is `completed` and its recorded output describes the created
+file. A timeout does not cancel the task or prove failure. The
+[user guide](../user-guide.md) explains how to inspect files, send another message,
+add Skills/Plugins/MCP, cancel work and recover after disconnection.
 
 Files, Artifacts, cancellation and their current limits are in the
 [coverage ledger](../../contracts/agents-api/README.md). MCP credentials use the

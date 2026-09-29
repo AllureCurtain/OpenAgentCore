@@ -11,6 +11,7 @@ import (
 
 	"errors"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/execution"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox/node"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 	"github.com/google/uuid"
@@ -58,7 +59,7 @@ func TestManagedSetupNeverReusesAnotherGenerationOrUnverifiedState(t *testing.T)
 	db := &setupStore{value: store.SandboxSetup{InstallationID: "installation", Provider: "docker", Generation: 1}}
 	s := &managedSetup{store: db, installationID: "installation"}
 	cached := &execution.RuntimeProvider{InstallationID: "installation", ProviderKind: "docker", Generation: 1}
-	s.selected.Store(cached)
+	s.publish(cached)
 	if got, err := s.load(t.Context()); err != nil || got != cached {
 		t.Fatal("matching immutable selection was not reused")
 	}
@@ -101,18 +102,18 @@ func TestManagedSetupPreparesWithoutPublishing(t *testing.T) {
 	defer hub.Close()
 	s := &managedSetup{installationID: id, hub: hub, store: &setupStore{}, publicURL: "https://core.example"}
 	previous := &execution.RuntimeProvider{InstallationID: id, Generation: 1, ProviderKind: "docker"}
-	s.selected.Store(previous)
+	s.publish(previous)
 	candidate, err := s.prepare(t.Context(), store.SandboxSetup{InstallationID: id, Provider: "microsandbox", Mode: "nodes", IdleSeconds: 300, RetentionSeconds: 86400})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.selected.Load() != previous || candidate.Config.ProviderKind != "microsandbox" || candidate.Config.Suspension == nil || candidate.Config.CoreURL != "https://core.example/api/v1" {
+	if s.selected.Load().Config != previous || candidate.Config.ProviderKind != "microsandbox" || candidate.Config.Suspension == nil || candidate.Config.CoreURL != "https://core.example/api/v1" {
 		t.Fatal("preparation published or lost candidate configuration")
 	}
 	committed := *candidate.Config
-	committed.Generation, committed.Maintenance = 2, true
+	committed.Generation, committed.AdmissionPaused = 2, true
 	candidate.Publish(&committed)
-	if got := s.selected.Load(); got.Generation != 2 || got.ProviderKind != "microsandbox" || !got.Maintenance {
+	if got := s.selected.Load(); got.Generation != 2 || got.Config.ProviderKind != "microsandbox" || !got.Config.AdmissionPaused {
 		t.Fatal("commit did not publish the validated selection")
 	}
 }
@@ -123,10 +124,10 @@ func TestManagedSetupRejectedCandidateRetainsSelection(t *testing.T) {
 	t.Setenv("OAC_E2B_STATE_DIR", t.TempDir())
 	s := &managedSetup{installationID: id}
 	previous := &execution.RuntimeProvider{InstallationID: id, Generation: 1, ProviderKind: "docker"}
-	s.selected.Store(previous)
+	s.publish(previous)
 	_, err := s.prepare(t.Context(), store.SandboxSetup{InstallationID: id, Provider: "e2b", Mode: "direct",
 		E2B: &store.SandboxE2BConfiguration{APIKey: "synthetic-key", Template: "runtime:" + uuid.NewString()}})
-	if !errors.Is(err, execution.ErrExecutionUnavailable) || s.selected.Load() != previous {
+	if !errors.Is(err, execution.ErrExecutionUnavailable) || s.selected.Load().Config != previous {
 		t.Fatal("rejected candidate lost the previous selection", err)
 	}
 }
@@ -146,4 +147,65 @@ func TestCoreRejectsFileManagedSandboxConfiguration(t *testing.T) {
 	if _, err := configureManagedNodes(nil, "https://core.example", nil); err == nil {
 		t.Fatal("accepted a second configuration source")
 	}
+}
+
+type delayedSetupStore struct {
+	setupStore
+	entered, release chan struct{}
+}
+
+func (s *delayedSetupStore) GetSandboxSetup(ctx context.Context) (store.SandboxSetup, error) {
+	value := s.value
+	close(s.entered)
+	select {
+	case <-s.release:
+		return value, nil
+	case <-ctx.Done():
+		return store.SandboxSetup{}, ctx.Err()
+	}
+}
+func TestManagedSetupResetTombstoneRejectsDelayedProviderLoad(t *testing.T) {
+	id := uuid.NewString()
+	db := &delayedSetupStore{setupStore: setupStore{value: store.SandboxSetup{InstallationID: id, Provider: "docker", Generation: 1}}, entered: make(chan struct{}), release: make(chan struct{})}
+	s := &managedSetup{installationID: id, store: db}
+	done := make(chan error, 1)
+	go func() {
+		provider, err := s.load(t.Context())
+		if err == nil && provider != nil {
+			err = errors.New("old provider survived reset")
+		}
+		done <- err
+	}()
+	<-db.entered
+	s.publishUnconfigured(2)
+	close(db.release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if s.selected.Load().Generation != 2 || s.selected.Load().Config != nil || s.ObservationProviderType() != "" {
+		t.Fatal("empty publication lost its generation")
+	}
+	s.publish(&execution.RuntimeProvider{Generation: 1, ProviderKind: "docker"})
+	if s.selected.Load().Config != nil {
+		t.Fatal("late old publication resurrected provider")
+	}
+	next := &execution.RuntimeProvider{Generation: 3, ProviderKind: "microsandbox"}
+	s.publish(next)
+	if s.selected.Load().Config != next || s.ObservationProviderType() != "microsandbox" {
+		t.Fatal("reset blocked subsequent configuration")
+	}
+}
+
+func (s *setupStore) GetSandboxAllocationSetup(_ context.Context, _ sandbox.Reference) (store.SandboxSetup, error) {
+	return s.value, nil
+}
+func (s *setupStore) SandboxGenerationPage(context.Context, int64) ([]store.SandboxSetup, error) {
+	return nil, nil
+}
+func (s *setupStore) SandboxCredentialAllocationPage(context.Context, string) ([]store.RuntimeAllocation, error) {
+	return nil, nil
+}
+
+func (s *setupStore) ResolveRuntimeGeneration(context.Context, sandbox.Reference) (string, uint64, error) {
+	return "", 0, errors.New("unexpected node generation lookup")
 }

@@ -4,12 +4,12 @@ import { OpenAIAgentsClient } from "./client";
 import type { ModelProviderInput, SavedAgentCore, WebSearchToolInput } from "./types";
 
 describe("saved Agent execution defaults", () => {
-  it("sends complete replacement inputs and preserves omission versus null", async () => {
+  it.each(["anthropic", "responses", "chat_completions"] as const)("sends %s replacement inputs and preserves omission versus null", async (protocol) => {
     const calls: unknown[] = [];
     const safe: SavedAgentCore = {
       harness: "codex",
       model_provider: {
-        protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true,
+        protocol, base_url: "https://model.example/v1", api_key_configured: true,
       },
     };
     const client = new OpenAIAgentsClient({
@@ -22,7 +22,7 @@ describe("saved Agent execution defaults", () => {
       }) as typeof fetch,
     });
     const provider: ModelProviderInput = {
-      protocol: "responses", base_url: "https://model.example/v1", api_key: "write-only-fixture",
+      protocol, base_url: "https://model.example/v1", api_key: "write-only-fixture",
     };
     const agent = await client.createAgent({ model: "example-model", x_agents_core: { harness: "codex", model_provider: provider } });
     expect(agent.x_agents_core).toEqual(safe);

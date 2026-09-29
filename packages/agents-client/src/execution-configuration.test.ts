@@ -26,6 +26,16 @@ describe("frozen execution configuration", () => {
     });
     expect(await client.retrieveSessionExecutionConfiguration(projectId, id, { signal: abort.signal })).toEqual(snapshot);
   });
+  it.each(["anthropic", "responses", "chat_completions"] as const)("preserves the %s upstream protocol for every harness", async (protocol) => {
+    for (const harness of ["codex", "claude_sdk", "mcode"]) {
+      const value = structuredClone(snapshot);
+      value.harness.value = harness;
+      value.model_provider.configuration!.protocol = protocol;
+      value.model_provider.configuration!.context_window = 200000;
+      value.model_provider.configuration!.max_output_tokens = 8000;
+      expect(await clientReturning(value).retrieveSessionExecutionConfiguration(projectId, id)).toEqual(value);
+    }
+  });
   it.each([
     { status: "redacted", source: "deployment", configuration: null },
     { status: "available", source: "deployment", configuration: { protocol: "responses", base_url: "https://deployment.example/v1", api_key_configured: true } },
@@ -42,6 +52,7 @@ describe("frozen execution configuration", () => {
     (value: any) => { value.model_provider.configuration.base_url += "?key=secret-canary"; },
     (value: any) => { value.session_id = "wrong-session"; },
     (value: any) => { value.model.source = "guessed"; },
+    (value: any) => { value.model_provider.configuration.protocol = "chat-completions"; },
   ])("rejects unsafe or inconsistent responses without echoing them", async (mutate) => {
     const value = structuredClone(snapshot); mutate(value);
     await expect(clientReturning(value).retrieveSessionExecutionConfiguration(projectId, id)).rejects.toMatchObject({ code: "invalid_admin_response" });

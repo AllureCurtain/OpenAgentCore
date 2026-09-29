@@ -195,6 +195,10 @@ func (s *Session) handleCodexUserInput(raw json.RawMessage, rpcID any) (any, err
 }
 
 func (s *Session) submitCodexPermission(requestID string, decision proto.PermissionDecisionPayload) error {
+	if !s.beginOperation() {
+		return agent.ErrSteeringInactive
+	}
+	defer s.endOperation()
 	s.interactions.mu.Lock()
 	pending, ok := s.interactions.permissions[requestID]
 	if ok {
@@ -243,6 +247,10 @@ func (s *Session) sendCodexPermissionReply(pending pendingCodexPermission, appro
 }
 
 func (s *Session) submitCodexUserInput(askID string, decision proto.PromptForUserChoiceDecisionPayload) error {
+	if !s.beginOperation() {
+		return agent.ErrSteeringInactive
+	}
+	defer s.endOperation()
 	s.interactions.mu.Lock()
 	pending, ok := s.interactions.asks[askID]
 	if ok {
@@ -311,6 +319,10 @@ func (s *Session) submitCodexUserInput(askID string, decision proto.PromptForUse
 }
 
 func (s *Session) expireCodexPermission(requestID string) {
+	if !s.beginOperation() {
+		return
+	}
+	defer s.endOperation()
 	s.interactions.mu.Lock()
 	pending, ok := s.interactions.permissions[requestID]
 	if ok {
@@ -326,6 +338,10 @@ func (s *Session) expireCodexPermission(requestID string) {
 }
 
 func (s *Session) expireCodexAsk(askID string) {
+	if !s.beginOperation() {
+		return
+	}
+	defer s.endOperation()
 	s.interactions.mu.Lock()
 	pending, ok := s.interactions.asks[askID]
 	if ok {

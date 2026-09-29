@@ -36,7 +36,7 @@ func (h *Handler) getEnvironment(w http.ResponseWriter, r *http.Request) {
 
 func environmentResponse(environment store.Environment) (v1.EnvironmentInfo, error) {
 	configuration, err := storedEnvironment(environment.Configuration)
-	if err != nil || (configuration.Type != "self_hosted" && configuration.Type != "openai_hosted") || (configuration.Type == "self_hosted" && len(configuration.CapabilityDirectories) != 0) || environment.ID == "" {
+	if err != nil || (configuration.Type != "self_hosted" && configuration.Type != "openai_hosted") || environment.ID == "" {
 		return v1.EnvironmentInfo{}, errors.New("unsupported stored environment metadata configuration")
 	}
 	switch environment.Status {

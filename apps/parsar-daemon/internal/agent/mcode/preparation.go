@@ -3,145 +3,85 @@ package mcode
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 )
 
+// Prepared retains its single admission API over the same native Executor.
+// Runtime's Session lifecycle uses Executor directly.
 type prepared struct {
-	mu      sync.Mutex
-	session *Session
-	ready   chan struct{}
-	started chan struct{}
-	failure error
-	closed  bool
-	binding *preparedStart
-}
-
-type preparedStart struct {
-	runID  string
-	prompt proto.MessageInput
-	out    chan<- proto.Envelope
+	mu              sync.Mutex
+	executor        *executor
+	session         *Session
+	started, closed bool
 }
 
 func NewPreparationFactory(config WorkspaceConfig) agent.PreparationFactory {
+	factory := NewExecutorFactory(&config)
 	return func(ctx context.Context, req proto.PromptRequestPayload) (agent.Prepared, error) {
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		if req.RunID != "" || len(req.Input) != 0 || req.ConversationID != "" {
-			return nil, fmt.Errorf("mcode: preparation cannot contain input or product context")
-		}
-		opts, err := prepareWorkspaceOptions(ctx, config, req)
+		value, err := factory(ctx, req)
 		if err != nil {
+			if value != nil {
+				return &prepared{executor: value.(*executor)}, err
+			}
 			return nil, err
 		}
-		s, err := launch(ctx, req, opts, config.Binary, nil)
-		if err != nil {
-			return nil, err
-		}
-		p := &prepared{session: s, ready: make(chan struct{}), started: make(chan struct{})}
-		go s.run(p)
-		<-p.ready
-		if p.failure != nil {
-			<-s.finished
-			return nil, p.failure
-		}
-		if ctx.Err() != nil {
-			_ = p.Close()
-			return nil, ctx.Err()
-		}
-		return p, nil
+		e := value.(*executor)
+		return &prepared{executor: e, session: newTurnSession(ctx, req, e.opts, e.connection, nil)}, nil
 	}
 }
 
-func (p *prepared) Start(ctx context.Context, runID string, prompt proto.MessageInput, out chan<- proto.Envelope) (agent.Session, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
+func (p *prepared) Start(ctx context.Context, runID string, input proto.MessageInput, out chan<- proto.Envelope) (agent.Session, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.closed || p.binding != nil {
+	if p.closed || p.started {
 		return nil, fmt.Errorf("mcode: preparation is no longer available")
 	}
-	if strings.TrimSpace(runID) == "" || prompt.Validate() != nil || out == nil || ctx.Err() != nil {
-		return nil, fmt.Errorf("mcode: start requires a live context, identity, prompt and output")
+	turn, err := p.executor.StartTurn(ctx, runID, input, out)
+	if turn != nil {
+		p.started, p.session = true, turn.(*Session)
 	}
-	select {
-	case <-p.session.process.Context().Done():
-		return nil, fmt.Errorf("mcode: prepared process ended")
-	case <-p.session.exited:
-		return nil, fmt.Errorf("mcode: prepared process exited")
-	default:
-	}
-	p.binding = &preparedStart{runID: runID, prompt: prompt, out: out}
-	close(p.started)
-	return p.session, nil
+	return turn, err
 }
 
 func (p *prepared) Close() error {
 	p.mu.Lock()
-	if p.binding != nil {
-		p.mu.Unlock()
+	started := p.started
+	if !started {
+		p.closed = true
+	}
+	p.mu.Unlock()
+	if started {
 		return nil
 	}
-	p.closed = true
-	p.mu.Unlock()
-	return p.closeUnused(context.Background())
+	return p.executor.Close(context.Background())
 }
 
 func (p *prepared) Cancel(ctx context.Context) error {
 	p.mu.Lock()
 	p.closed = true
-	started := p.binding != nil
+	current, started := p.session, p.started
 	p.mu.Unlock()
-	if !started {
-		return p.closeUnused(ctx)
-	}
-	return p.session.Cancel(ctx)
-}
-
-// An unconsumed preparation has no model input or child work to settle.
-func (p *prepared) closeUnused(ctx context.Context) error {
-	p.session.process.Cancel()
-	select {
-	case <-p.session.finished:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-}
-
-func (p *prepared) CancellationOutcome() proto.DonePayload { return p.session.CancellationOutcome() }
-
-// The Session goroutine owns preparation, input submission and terminal output.
-func (p *prepared) awaitStart(err error) error {
-	p.failure = err
-	close(p.ready)
-	if err != nil {
-		return err
-	}
-	for {
-		var ended error
-		select {
-		case <-p.started:
-		case <-p.session.process.Context().Done():
-			ended = p.session.process.Context().Err()
-		case _, ok := <-p.session.frames:
-			if ok {
-				continue
+	if started {
+		if err := current.Cancel(ctx); err != nil {
+			// The single-use Prepared owns disposal as well as cancellation.
+			if closeErr := p.executor.Close(ctx); closeErr != nil {
+				return closeErr
 			}
-			ended = fmt.Errorf("mcode: prepared process exited")
+			return nil
 		}
-		p.mu.Lock()
-		if b := p.binding; b != nil {
-			p.session.req.RunID, p.session.req.Input, p.session.out = b.runID, b.prompt, b.out
-		} else {
-			p.closed = true
-		}
-		p.mu.Unlock()
-		return ended
 	}
+	return p.executor.Close(ctx)
+}
+
+func (p *prepared) CancellationOutcome() proto.DonePayload {
+	p.mu.Lock()
+	s := p.session
+	p.mu.Unlock()
+	if s == nil {
+		return proto.DonePayload{}
+	}
+	return s.CancellationOutcome()
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/runtimeobs"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox/contracttest"
 	"github.com/containerd/errdefs"
 	"github.com/google/uuid"
 	"github.com/moby/moby/client"
@@ -107,12 +108,7 @@ func TestDockerProviderLifecycle(t *testing.T) {
 		}
 	})
 	info, e := p.Create(ctx, b)
-	if e != nil {
-		t.Fatal(e)
-	}
-	if info.State != "running" || info.ProviderID == "" {
-		t.Fatalf("bad compute observation: %+v", info)
-	}
+	contracttest.AssertObservation(t, info, e, b.Reference, "", "running")
 	resources, e := p.Observe(ctx, runtimeobs.Target{
 		TenantID: b.TenantID, SessionID: b.SessionID, EnvironmentID: b.EnvironmentID, Mode: runtimeobs.ModeManaged,
 		Instance: runtimeobs.Instance{AllocationID: b.AllocationID, ProviderKey: installationID, DeviceID: b.DeviceID},

@@ -11,10 +11,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
+	"github.com/MiniMax-AI-Dev/parsar/internal/runtimefs"
 )
 
 // Profile is the on-disk representation of one paired credential.
@@ -68,21 +68,22 @@ func Save(profile string, p Profile) error {
 	if err != nil {
 		return err
 	}
-	authFile := filepath.Join(dir, "auth.json")
-	tmp := authFile + ".tmp"
 	raw, err := json.MarshalIndent(p, "", "  ")
 	if err != nil {
-		return fmt.Errorf("auth: marshal profile: %w", err)
+		return errors.New("auth: could not encode profile")
 	}
-	// os.WriteFile with the final mode in one shot, so umask is
-	// irrelevant.
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
-		return fmt.Errorf("auth: write tmp: %w", err)
+	if err = runtimefs.EnsurePrivateDir(dir); err != nil {
+		return errors.New("auth: private profile unavailable")
 	}
-	if err := os.Rename(tmp, authFile); err != nil {
-		_ = os.Remove(tmp)
-		return fmt.Errorf("auth: rename: %w", err)
+	held, err := os.OpenRoot(dir)
+	if err != nil {
+		return errors.New("auth: private profile unavailable")
 	}
+	defer held.Close()
+	if err = runtimefs.WritePrivateAtomic(held, "auth.json", raw); err != nil {
+		return errors.New("auth: private profile write failed")
+	}
+
 	return nil
 }
 

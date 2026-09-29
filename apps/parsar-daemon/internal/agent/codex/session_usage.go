@@ -30,7 +30,7 @@ func (s *Session) onUsageUpdated(raw json.RawMessage) {
 		s.usageMu.Unlock()
 		return
 	}
-	if s.terminal.Load() {
+	if s.terminal.Load() || s.retiredTurns[p.TurnID] {
 		return
 	}
 	var observed *TurnUsage

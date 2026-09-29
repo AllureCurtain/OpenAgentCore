@@ -6,6 +6,7 @@ import { HelpTip } from "../../components/console-ui";
 import { ThemeMenu } from "../../components/ThemeMenu";
 import { useToast } from "../../components/Toast";
 import { setLanguage } from "../../i18n";
+import { queryClient } from "../../lib/queries";
 import { OnboardingLayout } from "../onboarding/OnboardingLayout";
 import { withTransition } from "../onboarding/view-transition";
 import { changeConsoleAuth, ConsoleAuthError, readConsoleAuth, type ConsoleAuth } from "./auth";
@@ -49,16 +50,24 @@ export function ConsoleAccess({ children }: { children: ReactNode }) {
   const [failed, setFailed] = useState(false);
   const [revision, setRevision] = useState(0);
   const generation = useRef(0);
+  const authMode = useRef<ConsoleAuth["mode"] | null>(null);
+  const acceptStatus = useCallback((next: ConsoleAuth, newSession = false) => {
+    // clear() cancels query owners synchronously. Late mutations must retain
+    // their own ownership check before publishing into the new session.
+    if (newSession || (authMode.current === "authenticated" && next.mode === "login")) queryClient.clear();
+    authMode.current = next.mode;
+    setStatus(next);
+  }, []);
   const refresh = useCallback(() => setRevision((current) => current + 1), []);
   useEffect(() => {
     const controller = new AbortController();
     const current = ++generation.current;
     setFailed(false);
     void readConsoleAuth(controller.signal).then((value) => {
-      if (generation.current === current) setStatus(value);
+      if (generation.current === current) acceptStatus(value);
     }).catch(() => { if (!controller.signal.aborted && generation.current === current) setFailed(true); });
     return () => { controller.abort(); generation.current++; };
-  }, [revision]);
+  }, [revision, acceptStatus]);
   useEffect(() => {
     if (status?.mode !== "authenticated") return;
     const check = () => { if (document.visibilityState === "visible") refresh(); };
@@ -69,15 +78,16 @@ export function ConsoleAccess({ children }: { children: ReactNode }) {
   if (status?.mode === "authenticated") return <ConsoleAccountContext.Provider value={{ logout: async () => {
     const next = await changeConsoleAuth({ action: "logout" });
     generation.current++;
-    setStatus(next);
+    acceptStatus(next, true);
   } }}>{children}</ConsoleAccountContext.Provider>;
 
   return <OnboardingLayout scene={status ? "login" : null} controls={<><ThemeMenu /><ConsoleLanguage /></>}>
     {status && !failed ? <CoreKeyForm key={revision} onAuthenticated={(next, from) => {
+      queryClient.clear();
       // The console opens on the Overview, revealed from the pressed button.
       withTransition("enter", () => {
         generation.current++;
-        setStatus(next);
+        acceptStatus(next);
       }, from);
     }} /> :
       <div className="console-auth-form" aria-live="polite"><p>{t(failed ? "Could not connect to your console." : "Connecting to your console…")}</p>

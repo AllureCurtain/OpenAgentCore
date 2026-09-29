@@ -28,4 +28,23 @@ describe("sandbox diagnostics", () => {
     expect(message?.label).toBe("Sandbox state needs attention");
     expect(JSON.stringify(message)).not.toContain("private-provider-error");
   });
+  it("preserves the typed download diagnostic on an online node and suppresses stale offline health", () => {
+    const diagnostic: SandboxNodeDiagnostic = "runtime_download_failed";
+    expect(nodeProviderDiagnostic({ online: true, provider_ready: false, diagnostic })).toBe(diagnostic);
+    expect(nodeProviderDiagnostic({ online: false, provider_ready: false, diagnostic })).toBe("");
+  });
+  it("explains download and verification failures separately from provider image failures in both languages", () => {
+    const diagnostic: SandboxNodeDiagnostic = "runtime_download_failed";
+    expect(sandboxDiagnosticMessage(diagnostic, "en")).toEqual({
+      label: "Runtime download failed",
+      advice: "Runtime files could not be downloaded or verified. Check the node's network access and the configured Runtime release.",
+    });
+    expect(sandboxDiagnosticMessage(diagnostic, "zh")).toEqual({
+      label: "Runtime 下载失败",
+      advice: "Runtime 文件下载或验证失败。请检查节点网络连接及配置的 Runtime 发布版本。",
+    });
+    for (const locale of ["en", "zh"] as const) {
+      expect(sandboxDiagnosticMessage(diagnostic, locale)).not.toEqual(sandboxDiagnosticMessage("runtime_image_unavailable", locale));
+    }
+  });
 });

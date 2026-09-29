@@ -32,14 +32,16 @@ specification; they cannot select different resources or a different Runtime.
 Harness selection is independent. Snapshot suspension is available only on
 microsandbox; Docker and E2B retain their own supported lifecycle.
 
-Provider, resource and Runtime changes require global maintenance, the current
-generation and verified zero retained allocations or pending hosted Environments.
-Use the [maintenance procedure](../../HOSTED-SANDBOX-MANAGER.md#removal-and-maintenance).
-Stopped compute, snapshots and unknown operations remain blockers. Maintenance
-and configuration changes do not delete resources or migrate Sessions. Keep the
-original node identity, backend paths and credentials until cleanup is confirmed.
-Session deletion removes its saved artifacts and is not a history-preserving
-resource-release operation.
+Same-provider resource and Runtime edits currently require no active reset,
+the current generation and verified zero held allocations or pending Environments.
+A backend change requires explicit reset and confirmed cleanup, then a new setup.
+See the [reset procedure](../../HOSTED-SANDBOX-MANAGER.md#removal-and-reset).
+Stopped compute, snapshots and unknown operations remain blockers. Keep the original
+node identity, paths and credentials until cleanup is confirmed. Explicit archive
+preserves history and persisted Files/Artifacts but discards unpersisted workspace;
+ordinary Session deletion has different retention behavior. Existing Sessions never
+migrate to another backend.
+
 
 Core rejects `AGENTS_API_MANAGED_RUNTIMES_FILE`. It does not automatically adopt an
 older file-managed database, even after its resources are drained. Keep the
@@ -99,9 +101,10 @@ substituting a local image for an already saved release.
 
 The provider performs the existing Runtime bootstrap, starts the daemon as
 uid/gid 1000 and creates `/run/oac` as a private control directory. No model,
-Core or tenant credential belongs in the image. The ordinary Runtime initializer
-and native isolation profile still apply; snapshot restore does not rerun setup
-commands or initial file writes.
+Core or tenant credential belongs in the image. The Runtime initializer executes
+with that user's existing permissions; the microVM is the isolation boundary.
+System dependencies belong in the image: Runtime does not run apt or sudo and
+rejects `system_packages`. Snapshot restore does not rerun setup or initial files.
 
 ## Deployment and node configuration
 
@@ -125,8 +128,8 @@ retention.
 The private node provider file supplies its absolute helper/runtime/firmware paths,
 short Runtime home and explicit host network policy. Permit the required Core,
 model and package-registry endpoints. Creation and restore apply the same host
-policy. Native tool-network policy remains separate and uses the existing Runtime
-controls. Never repoint a retained backend namespace or overwrite node identity
+policy. The daemon does not enforce `disabled` or `restricted` native network
+modes; combinations without required outer enforcement are unsupported. Never repoint a retained backend namespace or overwrite node identity
 to bypass a configuration mismatch.
 
 Use the existing [standalone Core setup](../../README.md) for the database,

@@ -2,6 +2,7 @@ import type { AgentSession } from "@agents-core-web/agents-client";
 import { useTranslation } from "react-i18next";
 
 import { HelpTip, StatusDot, type Tone } from "../../components/console-ui";
+import { SessionFailure } from "./session-diagnostics";
 import { statusKey } from "./session-log";
 
 export const sessionStatusTone: Record<string, Tone> = { in_progress: "pending", requires_action: "warning", failed: "danger", idle: "neutral" };
@@ -18,7 +19,7 @@ export function useWaitingFor() {
  * Failures stay visible under the status, truncated only in lists. Required
  * actions appear here in lists and in their own facts on the Session page.
  */
-export function SessionStatus({ session, truncate = false }: { session: AgentSession; truncate?: boolean }) {
+export function SessionStatus({ session, truncate = false, projectId }: { session: AgentSession; truncate?: boolean; projectId?: string }) {
   const { t } = useTranslation("sessions");
   const waitingFor = useWaitingFor()(session);
   const key = statusKey(session.status);
@@ -29,6 +30,7 @@ export function SessionStatus({ session, truncate = false }: { session: AgentSes
       {truncate && session.required_actions.some((action) => action.type === "function_call") ? <HelpTip label={t("log.waitingLabel")}>{t("detail.applicationAction")}</HelpTip> : null}
     </span>
   );
+  if (session.status === "failed" && projectId) return <span className={truncate ? "session-status session-status-truncated" : "session-status"}>{status}<SessionFailure projectId={projectId} session={session} truncate={truncate} /></span>;
   if (!reason) return status;
   return (
     <span className={truncate ? "session-status session-status-truncated" : "session-status"}>

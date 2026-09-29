@@ -194,6 +194,7 @@ func TestSlowOpeningAndClosingLeaveOtherNodesResponsive(t *testing.T) {
 	live := connectRawNode(t, server.URL, fast)
 	defer live.Close()
 	go serveRawInfo(live)
+	wait(t, func() bool { return hub.Online(fast.NodeID) })
 	beginRawNode(t, server.URL, slow)
 	select {
 	case <-opening:

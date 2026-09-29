@@ -57,6 +57,7 @@ var ErrSessionClosed = errors.New("agentdaemon gateway: session closed")
 type WSConn interface {
 	ReadMessage() (int, []byte, error)
 	WriteMessage(messageType int, data []byte) error
+	WriteControl(messageType int, data []byte, deadline time.Time) error
 	SetReadLimit(limit int64)
 	SetReadDeadline(t time.Time) error
 	SetWriteDeadline(t time.Time) error
@@ -106,6 +107,8 @@ type Session struct {
 	subs              map[string]*Subscription
 	preparationMu     sync.Mutex
 	preparations      map[string]*preparationSubscription
+	capabilitiesMu    sync.Mutex
+	capabilities      map[string]chan proto.Envelope
 	workspaceWriteMu  sync.Mutex
 	workspaceWrites   map[string]chan proto.Envelope
 	suspendMu         sync.Mutex
@@ -125,6 +128,11 @@ type Session struct {
 
 	// closeOnce guards the shutdown path so concurrent Close calls
 	// collapse into one.
+	receiptMu    sync.Mutex
+	deliveries   map[string]struct{}
+	receiptDrain device.ArchivedCancellationReceipt
+	receiptTimer *time.Timer
+
 	closeOnce sync.Once
 	closed    chan struct{}
 }
@@ -197,8 +205,6 @@ func (s *Session) LastSeen() time.Time {
 // AgentKindStatus returns the latest advertised descriptor for kind.
 // found=false means the daemon has not advertised that kind; snapshotKnown
 // distinguishes "no heartbeat yet" from "heartbeat arrived and omitted it".
-// Before the first heartbeat, legacy Claude Code behavior is preserved so
-// older daemons can still receive claude_code prompt_requests immediately.
 func (s *Session) AgentKindStatus(kind string) (info device.SupportedAgentKind, found bool, snapshotKnown bool) {
 	kind = strings.TrimSpace(kind)
 	if kind == "" {
@@ -210,9 +216,6 @@ func (s *Session) AgentKindStatus(kind string) (info device.SupportedAgentKind, 
 	copy(kinds, s.supportedKinds)
 	s.kindsMu.RUnlock()
 	if !seen {
-		if kind == "claude_code" {
-			return legacyClaudeCodeKind(), true, false
-		}
 		return device.SupportedAgentKind{}, false, false
 	}
 	for _, candidate := range kinds {
@@ -232,33 +235,20 @@ func (s *Session) setSupportedAgentKinds(kinds []device.SupportedAgentKind) {
 	s.kindsMu.Unlock()
 }
 
-func legacyClaudeCodeKind() device.SupportedAgentKind {
-	return device.SupportedAgentKind{
-		Kind:      "claude_code",
-		Available: true,
-		Capabilities: device.KindCapabilities{
-			Streaming:   true,
-			Permissions: true,
-			Usage:       true,
-			Resume:      true,
-		},
-	}
-}
-
-// Close tears the session down: closes the WS, drains subscribers
-// with a synthetic error+done pair, and deregisters. Idempotent.
+// Close closes the transport and subscriptions with ErrSessionClosed, then
+// releases connection ownership. It establishes no execution outcome. Idempotent.
 func (s *Session) Close(reason string) {
 	s.closeOnce.Do(func() {
+		s.stopReceiptTimer()
 		close(s.closed)
 		_ = s.conn.Close()
-		// Synthetic error + done so the connector's translation loop
-		// sees a clean EOF and unsubscribes naturally.
+		// Transport failure must remain distinct from native execution facts.
 		s.subsMu.Lock()
 		subs := s.subs
 		s.subs = map[string]*Subscription{}
 		s.subsMu.Unlock()
 		for runID, sub := range subs {
-			s.closeSubscription(runID, sub, reason)
+			s.closeSubscription(sub)
 			s.reg.DetachRun(runID)
 		}
 		s.reg.Deregister(s)
@@ -266,6 +256,7 @@ func (s *Session) Close(reason string) {
 		s.closeWorkspaceReads()
 		s.closeSuspendReplies()
 		s.closeWorkspaceWrites()
+		s.closeCapabilities()
 		s.closeWorkspaceExports()
 		s.markOfflineOnClose()
 		s.releaseOwnerLease()
@@ -276,28 +267,9 @@ func (s *Session) Close(reason string) {
 // permanent conditions (e.g. runtime deleted) can be distinguished
 // from transient disconnects.
 func (s *Session) CloseWithCode(code int, reason string) {
-	_ = s.conn.SetWriteDeadline(time.Now().Add(WriteTimeout))
-	_ = s.conn.WriteMessage(websocket.CloseMessage,
-		websocket.FormatCloseMessage(code, reason))
+	// gorilla permits WriteControl concurrently with the sole data writer.
+	_ = s.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(code, reason), time.Now().Add(WriteTimeout))
 	s.Close(reason)
-}
-
-func (s *Session) deliverSynthetic(runID string, ch chan proto.Envelope, reason string) {
-	if reason == "" {
-		reason = "device disconnected"
-	}
-	errEnv, _ := proto.NewEnvelope(proto.TypeError, runID, proto.ErrorPayload{Error: reason})
-	doneEnv, _ := proto.NewEnvelope(proto.TypeDone, runID, proto.DonePayload{})
-	// Non-blocking — drop rather than hang the close path on a
-	// wedged subscriber.
-	select {
-	case ch <- errEnv:
-	default:
-	}
-	select {
-	case ch <- doneEnv:
-	default:
-	}
 }
 
 // Send queues an envelope for the WS write loop. Returns ErrSessionClosed
@@ -308,7 +280,7 @@ func (s *Session) deliverSynthetic(runID string, ch chan proto.Envelope, reason 
 // daemon frame inherits the caller's trace_id. Callers that explicitly
 // set env.Trace win.
 func (s *Session) Send(ctx context.Context, env proto.Envelope) error {
-	if s.IsClosed() {
+	if s.IsClosed() || !s.allowsReceiptFrame(env, true) {
 		return ErrSessionClosed
 	}
 	if env.Trace == "" {
@@ -381,6 +353,9 @@ func (s *Session) writeLoop() {
 			if !ok {
 				return
 			}
+			if !s.allowsReceiptFrame(env, true) {
+				continue
+			}
 			raw, err := json.Marshal(env)
 			if err != nil {
 				s.log("agentdaemon gateway: marshal outbound envelope: %v", err)
@@ -412,9 +387,11 @@ func (s *Session) readLoop() {
 			s.log("agentdaemon gateway: read frame: %v", err)
 			return
 		}
-		s.markSeen()
-		if !s.renewOwnerLease() {
-			return
+		if !s.receiptDraining() {
+			s.markSeen()
+			if !s.renewOwnerLease() {
+				return
+			}
 		}
 
 		var env proto.Envelope
@@ -512,6 +489,10 @@ func (s *Session) handleHeartbeat(env proto.Envelope) {
 		return
 	}
 	if status.Deleted {
+		draining, drainErr := s.DrainArchivedCancellation(ctx)
+		if drainErr == nil && draining {
+			return
+		}
 		s.log("agentdaemon gateway: runtime retired, closing session device=%s", s.DeviceID)
 		// "retired" rather than "deleted by admin": the row may have
 		// been soft-deleted by sandbox stale-row cleanup or by an
@@ -522,21 +503,6 @@ func (s *Session) handleHeartbeat(env proto.Envelope) {
 }
 
 func deviceKindsFromHeartbeat(p proto.HeartbeatPayload) []device.SupportedAgentKind {
-	if len(p.SupportedAgentKinds) == 0 {
-		if !p.ClaudeAvailable {
-			return nil
-		}
-		return []device.SupportedAgentKind{{
-			Kind:      "claude_code",
-			Available: true,
-			Capabilities: device.KindCapabilities{
-				Streaming:   true,
-				Permissions: true,
-				Usage:       true,
-				Resume:      true,
-			},
-		}}
-	}
 	out := make([]device.SupportedAgentKind, 0, len(p.SupportedAgentKinds))
 	for _, info := range p.SupportedAgentKinds {
 		out = append(out, device.SupportedAgentKind{
@@ -557,7 +523,6 @@ func deviceKindsFromHeartbeat(p proto.HeartbeatPayload) []device.SupportedAgentK
 				ToolObservations:               info.Capabilities.ToolObservations,
 				EnvironmentNone:                info.Capabilities.EnvironmentNone,
 				LocalEnvironment:               info.Capabilities.LocalEnvironment,
-				LocalEnvironmentNetworkPolicy:  info.Capabilities.LocalEnvironmentNetworkPolicy,
 				Preparation:                    info.Capabilities.Preparation,
 				WorkspaceReadPreparation:       info.Capabilities.WorkspaceReadPreparation,
 				WorkspaceOutputExport:          info.Capabilities.WorkspaceOutputExport,
@@ -583,9 +548,15 @@ func deviceKindsFromHeartbeat(p proto.HeartbeatPayload) []device.SupportedAgentK
 }
 
 func (s *Session) dispatch(env proto.Envelope) {
+	if !s.allowsReceiptFrame(env, false) {
+		return
+	}
 	switch env.Type {
 	case proto.TypeWorkspaceExportResult:
 		s.dispatchWorkspaceExport(env)
+		return
+	case proto.TypeRuntimePrepareResult:
+		s.dispatchCapabilities(env)
 		return
 	case proto.TypeWorkspaceWriteResult:
 		s.dispatchWorkspaceWrite(env)
@@ -607,11 +578,9 @@ func (s *Session) dispatch(env proto.Envelope) {
 			requestID = strings.TrimSpace(p.RequestID)
 		}
 		if requestID == "" {
-			requestID = strings.TrimSpace(env.ID)
+			return
 		}
-		if requestID != "" {
-			s.reg.AttachPermission(requestID, s)
-		}
+		s.reg.AttachPermission(requestID, s)
 	case proto.TypePermissionCancel:
 		if env.ID != "" {
 			s.reg.DetachPermission(env.ID)
@@ -647,9 +616,7 @@ func (s *Session) dispatch(env proto.Envelope) {
 
 	// All run-correlated frames fan to the matching subscriber. Current
 	// permission and prompt-for-user-choice frames keep their interaction ID
-	// in the payload so Envelope.ID remains the run ID. Legacy permission
-	// frames put the permission ID in Envelope.ID; those are still indexed
-	// above but cannot be correlated to a run subscriber.
+	// in the payload so Envelope.ID remains the run ID.
 	if env.ID == "" {
 		return
 	}

@@ -45,12 +45,12 @@ func runPreparationHelper() {
 			features = []string{"workspace_tools", "workspace_prepare"}
 		}
 		if strings.HasPrefix(mode, "structured-") {
-			features = append(features, "local_runtime_v1", "structured_output")
+			features = append(features, "local_runtime_v2", "structured_output")
 			if mode == "structured-ready" {
 				features = append(features, "workspace_structured_output")
 			}
 		}
-		_ = json.NewEncoder(os.Stdout).Encode(RuntimeInfo{Type: "runtime_ready", Protocol: 2, Node: "fixture", SDK: "fixture", MCP: "fixture", Native: "fixture", Features: features})
+		_ = json.NewEncoder(os.Stdout).Encode(RuntimeInfo{Type: "runtime_ready", Protocol: 3, Node: "fixture", SDK: "fixture", MCP: "fixture", Native: "fixture", Features: features})
 		return
 	}
 	state := os.Getenv("CLAUDE_CONFIG_DIR")
@@ -63,7 +63,7 @@ func runPreparationHelper() {
 	_ = os.WriteFile(filepath.Join(state, "prepare.json"), raw, 0o600)
 	var fields map[string]json.RawMessage
 	var request startRequest
-	if json.Unmarshal(raw, &fields) != nil || json.Unmarshal(raw, &request) != nil || request.Type != "prepare" || fields["input"] != nil || fields["run_id"] != nil || request.Workspace == nil {
+	if json.Unmarshal(raw, &fields) != nil || json.Unmarshal(raw, &request) != nil || request.Type != "executor_prepare" || fields["input"] != nil || fields["run_id"] != nil || request.Workspace == nil {
 		os.Exit(3)
 	}
 	emit := func(event bridgeEvent) { _ = json.NewEncoder(os.Stdout).Encode(event) }
@@ -84,7 +84,7 @@ func runPreparationHelper() {
 			time.Sleep(time.Millisecond)
 		}
 	}
-	emit(bridgeEvent{Type: "prepared"})
+	emit(bridgeEvent{Type: "executor_ready", Protocol: 3})
 	if strings.HasPrefix(mode, "directory-") {
 		runWorkspaceDirectoryHelper(scanner, state, mode)
 		return
@@ -99,15 +99,19 @@ func runPreparationHelper() {
 	raw = append([]byte{}, scanner.Bytes()...)
 	_ = os.WriteFile(filepath.Join(state, "start.json"), raw, 0o600)
 	fields = nil
-	if json.Unmarshal(raw, &fields) != nil || len(fields) != 2 || string(fields["type"]) != `"start"` || string(fields["input"]) != `[{"content":[{"type":"input_text","text":"hello"}]}]` {
+	if json.Unmarshal(raw, &fields) != nil || len(fields) != 3 || string(fields["type"]) != `"turn_start"` || string(fields["input"]) != `[{"content":[{"type":"input_text","text":"hello"}]}]` {
 		os.Exit(4)
 	}
+	var turnID string
+	_ = json.Unmarshal(fields["turn_id"], &turnID)
+	emit, finish := helperTurnOutput(scanner, turnID)
+	defer finish()
 	if mode == "cancellation" {
-		runCancellationHelper(request, "cancellation-wait", emit)
+		runCancellationHelper(request, "cancellation-wait", scanner, emit)
 		return
 	}
 	if strings.HasPrefix(mode, "commands") {
-		runCommandsHelper(request, mode, emit)
+		runCommandsHelper(request, mode, scanner, emit)
 		return
 	}
 	emit(bridgeEvent{Type: "input_ready", SessionID: request.Resume})

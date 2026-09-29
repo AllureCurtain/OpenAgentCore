@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { nodeInstallCommand, nodeLogCommand, nodeUninstallCommand, selfHostedInstallCommand, type NodeInstallMode } from "./enrollment-command";
+import { nodeInstallCommand, nodeLogCommand, nodeUninstallCommand, type NodeInstallMode } from "./enrollment-command";
 
 describe("sandbox connection and enrollment", () => {
   const digest = "a".repeat(64);
@@ -35,13 +35,6 @@ $s python3 "$d/node-install.pyz" --uninstall --installation-id '7f3c2a90-5b1e-4c
     expect(nodeLogCommand("7f3c2a90-fixture", "sudo")).toBe("sudo journalctl -u oac-node-7f3c2a90-fixture.service");
     expect(nodeLogCommand("7f3c2a90-fixture", "user")).toBe("journalctl --user -u oac-node-7f3c2a90-fixture.service");
     expect(nodeLogCommand("a b", "user")).toBe("journalctl --user -u 'oac-node-a b.service'");
-  });
-  it("creates the exact self-hosted executor install command, every value quoted", () => {
-    const command = selfHostedInstallCommand({ publicUrl: "https://core.example", digest: "b".repeat(64), environmentId: "env'1", remoteUrl: "wss://core.example/api/v1/agent-daemon/ws" });
-    expect(command).toBe(`(umask 077; d=$(mktemp -d) || exit; trap 'rm -rf "$d"' EXIT
-curl -fsS --max-time 30 --max-filesize 1048576 'https://core.example/node-install/self-hosted-install.pyz' -o "$d/install.pyz" &&
-printf '%s  %s\\n' '${"b".repeat(64)}' "$d/install.pyz" | sha256sum -c --status &&
-python3 "$d/install.pyz" --source-url 'https://core.example' --environment-id 'env'\\''1' --remote 'wss://core.example/api/v1/agent-daemon/ws')`);
   });
   // "as root": a root shell runs the sudo command without sudo; "no sudo": the no-sudo command.
   it.each(["success", "download failure", "checksum mismatch", "installer failure", "as root", "no sudo"])("executes safely, passes the token only on stdin and cleans private downloads after %s", (scenario) => {

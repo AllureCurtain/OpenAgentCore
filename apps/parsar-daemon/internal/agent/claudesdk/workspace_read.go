@@ -57,6 +57,9 @@ func (p *prepared) ReadWorkspaceFile(ctx context.Context, path string, maxBytes 
 }
 
 func (s *session) ReadWorkspaceFile(ctx context.Context, path string, maxBytes int) (agent.WorkspaceReadResult, error) {
+	if s.owner != nil {
+		return s.owner.base.ReadWorkspaceFile(ctx, path, maxBytes)
+	}
 	read, err := s.admitWorkspaceRead(ctx, path, maxBytes)
 	if err != nil {
 		return agent.WorkspaceReadResult{}, err

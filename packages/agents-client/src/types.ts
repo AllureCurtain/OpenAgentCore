@@ -1186,7 +1186,7 @@ export type CoreHarnessKind = "claude_sdk" | "codex" | "mcode";
 
 /** A complete replacement bundle. API keys are write-only. */
 export interface ModelProviderInput {
-  protocol: "anthropic" | "responses";
+  protocol: "anthropic" | "responses" | "chat_completions";
   base_url: string;
   api_key: string;
   context_window?: number;
@@ -1195,7 +1195,7 @@ export interface ModelProviderInput {
 }
 
 export interface ModelProviderView {
-  protocol: "anthropic" | "responses";
+  protocol: "anthropic" | "responses" | "chat_completions";
   base_url: string;
   context_window?: number;
   max_output_tokens?: number;
@@ -1204,7 +1204,12 @@ export interface ModelProviderView {
 }
 
 /** A harness's deployment default model provider in Core. The key is never returned. */
+export type ProviderObservationErrorCode = "authentication_error" | "connection_failed" | "rate_limit_exceeded" | "usage_limit_exceeded" | "server_overloaded" | "server_error" | "resource_not_found" | "request_timeout" | "invalid_request";
+
 export interface HarnessModelProvider extends ModelProviderView {
+  last_used_at: string | null;
+  last_error_code: ProviderObservationErrorCode | null;
+  last_error_at: string | null;
   object: "core.model_provider";
   harness: CoreHarnessKind;
   updated_at: string;
