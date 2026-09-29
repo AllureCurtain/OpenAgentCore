@@ -3594,6 +3594,9 @@ The configuration preparation contract in `apps/parsar-daemon/internal/agent/har
 is mandatory for every Executor factory. Shared wire types live in
 `internal/agentdaemon/proto`; native model fields and their application are documented
 in [Harness onboarding](contracts/agents-api/harness-onboarding.md#native-model-configuration).
+The standalone Core build includes the shared `internal/modeltransport` route
+qualification code alongside the adapter declarations; Runtime still owns proxy
+startup and request forwarding.
 Public configuration sources and inheritance belong to
 [model execution](contracts/agents-api/model-execution.md).
 
