@@ -137,7 +137,7 @@ func TestDeploymentModelProvidersHTTP(t *testing.T) {
 			t.Fatal("safe deployment view changed the selected upstream protocol")
 		}
 		provider, err := st.DeploymentModelProvider(t.Context(), "codex")
-		if err != nil || provider == nil || provider.Protocol != protocol || provider.BaseURL != "https://deployment.example/v1" || provider.APIKey != "deployment-canary" {
+		if err != nil || provider == nil || provider.Provider == nil || provider.Provider.Protocol != protocol || provider.Provider.BaseURL != "https://deployment.example/v1" || provider.Provider.APIKey != "deployment-canary" {
 			t.Fatal("cross-protocol deployment bundle did not round trip", err)
 		}
 	}
