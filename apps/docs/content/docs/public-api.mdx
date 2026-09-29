@@ -3,46 +3,67 @@ title: "API namespaces and credentials"
 description: "The public application API, private administration API and machine connection interface."
 ---
 
-Core serves three namespaces. Protected operations authenticate their own callers;
-credentials cannot be substituted across these boundaries. Versioned native
-installer downloads are public release content.
+Core serves three namespaces. Each has one kind of caller and its own credential;
+no credential works in another namespace. Versioned native installer downloads are
+public release content.
 
 | Namespace | Caller | Credential | Contents | Reference |
 | --- | --- | --- | --- | --- |
-| `/v1` | Applications (business systems, SDKs) | Project API key | Exactly the pinned official Agents API routes. Core-only fields live only in `x_agents_core` (`harness`, `model_provider`, `harness_config`, Session `installation`) | [Public API](/sessions) |
+| `/v1` | Applications (business systems, SDKs) | Project API key | Exactly the pinned official Agents API routes. Core-only fields live only in `x_agents_core` (`harness`, `model_provider`, `harness_config`, Session `installation`) | [Agents API guide](/sessions) |
 | `/core/v1` | Core Web's server and operator scripts | [Core key](/troubleshooting#core-key) | Installation facts, Projects and keys, resource reads and deletion, Session archive, credential issuance, metrics, audit, sandbox deployment and nodes, deployment model providers | [Core API](#core-api), [Web API](/admin-api), [Core OpenAPI](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/core.openapi.yaml) |
 | `/api/v1` | Nodes, Runtime daemons, self-hosted executors | Machine credentials: short-lived Session installation grants, node enrollment tokens and executor credentials issued through `/core/v1` or claimed by installation, node credentials registered with an enrollment token, and daemon credentials Core writes into hosted sandboxes | Machine bootstrap and connections: `/api/v1/sandbox-node/*` and `/api/v1/agent-daemon/*`, including WebSockets; each credential works only on its own routes | [Node operations](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/services/agents-api/HOSTED-SANDBOX-MANAGER.md#register-a-host), [executor credentials](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/environment-executor-credentials.md), [machine OpenAPI](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/runtime.openapi.yaml) |
 
-A Project API key gets 401 on `/core/v1` and `/api/v1`; the Core key gets 401 on
-`/v1` and `/api/v1`. Projects own assets. Multiple equally privileged keys share
-the Project's assets and execution principal; provenance retains the key that
-performed each write. Projects and application keys live in PostgreSQL, never
-deployment configuration.
+A credential used in another namespace gets 401: a Project API key on `/core/v1` or
+`/api/v1`, the Core key on `/v1` or `/api/v1`. How Projects and keys behave is in
+[Projects own assets](/concepts#projects-own-assets).
 
-The browser talks only to Web's server: `/console/auth` and `/console/config`,
-`/node-install/*`, the static pages, and `/core/v1/*`, which the server forwards
-with the Core key after sign-in and same-origin checks. Users sign in to Web with
-the Core key and get an HttpOnly session cookie; the browser never receives the
-key. Core decides which `/core/v1` routes
-exist; Web returns 404 for `/v1` and `/api/v1`, whatever credential a request
-carries.
-
-The deployment's reverse proxy sends `/v1`, `/v1/*` and `/api/v1/*` to Core and
-every other path, including `/core/v1/*`, to Web. Operator scripts call `/core/v1`
-with the Core key on Core's loopback port, not through the public entry.
+**Routing.** The reverse proxy sends `/v1` and `/api/v1` to Core and everything else
+to Web ([proxy setup](/install#https-and-the-reverse-proxy)).
+Browsers reach `/core/v1` only through Web's server, which adds the Core key after
+sign-in; Web returns 404 for `/v1` and `/api/v1`. Operator scripts call `/core/v1`
+on Core's loopback port. Details: [Web and Core](/admin-api).
 
 ## Public API
 
-Applications call every `/v1` route with a Project API key. The routes are exactly
-the 58 method and path pairs in
-[upstream-routes.json](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/upstream-routes.json); the
-[Public API guide](/sessions) groups them by resource. `/v1` has no
-Core-only route.
+Applications call `/v1` with a Project API key. The routes are exactly the 58 pairs
+in [upstream-routes.json](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/upstream-routes.json). The
+[Agents API guide](/sessions) explains every resource with SDK and HTTP
+examples.
 
 ## Core API
 
 All routes are under `/core/v1`. Core Web's server and operator scripts call them
-with the Core key.
+with the Core key. Most administrators use Web instead; call the API directly for
+automation.
+
+### Common tasks
+
+Run these on the Core host, against Core's loopback port. The helper reads the key
+from its file, keeping it off the command line:
+
+```sh
+core() {  # core METHOD PATH [JSON body]
+  curl -fsS -X "$1" "http://127.0.0.1:8091/core/v1$2" \
+    -H @<(printf 'Authorization: Bearer %s\n' "$(cat ~/.oac/core/secrets/core.key)") \
+    -H 'Content-Type: application/json' ${3:+-d "$3"}
+}
+```
+
+| Task | Command |
+| --- | --- |
+| List Projects | `core GET /projects` |
+| Create a Project | `core POST /projects '{"name": "billing-bot"}'` |
+| Issue an API key (shown once, as `key`) | `core POST /projects/$PROJECT_ID/keys '{"name": "prod"}'` |
+| Revoke a key | `core DELETE /projects/$PROJECT_ID/keys/$KEY_ID` |
+| Archive a Project (revokes all keys) | `core POST /projects/$PROJECT_ID/archive` |
+| See harnesses and their default models | `core GET /harnesses` |
+| Set Codex's default model | `core PUT /harnesses/codex/model-configuration '{"model": "your-model-id", "model_provider": {"protocol": "responses", "base_url": "https://provider.example/v1", "api_key": "sk-..."}}'` |
+| Issue an executor credential | See [self-hosted execution](/self-hosted-execution#operator-credential-management) |
+| Installation facts, including the API base URL | `core GET /installation` |
+
+Errors use the [Core error envelope](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/core-errors.md).
+
+### All routes
 
 | Routes | Contents | Contract |
 | --- | --- | --- |
@@ -56,7 +77,7 @@ with the Core key.
 | `projects/{project_id}/environments/{environment_id}/executor-credentials[/{key_id}]` | Executor credentials for a self-hosted Environment | [Executor credentials](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/environment-executor-credentials.md) |
 | `installation` | Public URL, API base URL, source commit, the installer's process settings and what is bound to the public URL; available before any deployment | [Installation](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/installation.md) |
 | `metrics` | Core's own process metrics | [Core metrics](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/core-metrics.md) |
-| `sandbox/deployment[/reset]`, `sandbox/e2b/templates[/{template_id}/builds]`, `sandbox/enrollment-tokens`, `sandbox/nodes[/{node_id}[/allocations]]` | Core Web server or operator scripts with the Core key: sandbox deployment, read-only E2B template discovery, node enrollment tokens and nodes | [Sandbox deployment](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/sandbox-deployment.md), [node operations](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/services/agents-api/HOSTED-SANDBOX-MANAGER.md), [node host history](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/node-host-history.md) |
+| `sandbox/deployment[/reset]`, `sandbox/e2b/templates[/{template_id}/builds]`, `sandbox/enrollment-tokens`, `sandbox/nodes[/{node_id}[/allocations]]` | Sandbox deployment, read-only E2B template discovery, node enrollment tokens and nodes | [Sandbox deployment](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/sandbox-deployment.md), [node operations](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/services/agents-api/HOSTED-SANDBOX-MANAGER.md), [node host history](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/node-host-history.md) |
 | `harnesses`, `harnesses/{harness}/model-configuration` | Supported harnesses and each harness's deployment default model configuration (write-only provider key) | [Model execution](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/model-execution.md#deployment-defaults) |
 
 ## Machine connection API
@@ -100,19 +121,15 @@ support. The [coverage record](https://github.com/MiniMax-AI/parsar-core/blob/66
 qualified workflows, native differences and unresolved behavior. Update the
 relevant contract and this index when adding or moving an API surface.
 
-Core administration failures use the [Core error envelope](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/contracts/agents-api/core-errors.md),
-including typed optional safe details and distinct console proxy rejection codes.
-The public and machine error contracts remain unchanged.
+## Self-hosted installation
 
-### Self-hosted installation
-
-Authenticated Session creation/detail responses include short-lived commands in
+Creating or reading a `self_hosted` Session returns short-lived install commands in
 `x_agents_core.installation`. Core Web reads the same commands at
 `GET /core/v1/projects/{project_id}/environments/{environment_id}/installation`.
 Machine installers use `POST /api/v1/agent-daemon/installation` and its `/claim`
-subroute with the installation Bearer authorization. Qualified artifacts beneath
-`/api/v1/agent-daemon/install/{version}/` are public, immutable release content.
-See [native self-hosted installation](/self-hosted-native) for expiry, retry,
-credential ownership and platform rules.
+subroute with the installation Bearer authorization. Qualified artifacts under
+`/api/v1/agent-daemon/install/{version}/` are public, immutable release content. See
+the [native Runtime guide](/self-hosted-native) for expiry, retry, credential
+ownership and platform rules.
 
 [Repository source](https://github.com/MiniMax-AI/parsar-core/blob/6687a06294cb733baa876c82fde910b0f2c0a3eb/docs/api/README.md)

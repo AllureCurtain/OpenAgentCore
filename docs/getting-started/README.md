@@ -1,39 +1,38 @@
 # OpenAgentCore documentation
 
-Start with the path that matches your role. These pages are the canonical sources
-for the documentation website; generated site pages are not a second manual.
+OpenAgentCore runs AI agents on your own infrastructure behind the OpenAI Agents
+API. Pick the path that matches your role. New here? Read the
+[architecture overview](../architecture.md) first.
 
-## First installation and first task
+## Operators: install and run
 
-1. [Install Core and Web](install.md), then sign in with the Core key.
-2. [Add managed execution capacity](nodes.md) or
-   [connect your own Runtime](self-hosted.md).
-3. Issue a Project API key and follow the [first Session walkthrough](quickstart.md).
-4. Continue with the [user guide](../user-guide.md) for capabilities, files and recovery.
+1. [Install Core and Web](install.md) and sign in.
+2. Add execution capacity: [managed nodes or E2B](nodes.md), or
+   [your own machine](self-hosted.md).
+3. Issue a Project API key and hand it to the application developer.
 
-## Operate a deployment
-
-| Guide | Use it for |
+| Guide | Covers |
 | --- | --- |
-| [Installation](install.md) | Host prerequisites, release bundles, HTTPS and first sign-in |
-| [Configuration](../configuration.md) | Installer configuration and database-owned settings |
-| [Nodes](nodes.md) | Managed capacity, readiness and removal |
-| [Self-hosted execution](self-hosted.md) | Connecting a user-owned machine to a Session |
-| [Native daemon](../self-hosted-native.md) | Platform support and local installation lifecycle |
-| [Operations](operations.md) | Service lifecycle, backups, keys, repair and troubleshooting |
-| [Administrator console](../web/README.md) | Monitoring and managing Core through Web |
+| [Installation](install.md) | Prerequisites, HTTPS, first sign-in, advanced options |
+| [Configuration](../configuration.md) | `config.json`, default models, sandbox deployment |
+| [Nodes](nodes.md) | Adding, checking and removing managed nodes |
+| [Self-hosted execution](self-hosted.md) | Connecting your own machine to a Session |
+| [Native Runtime](../self-hosted-native.md) | Platforms, installing and operating `oac-daemon` |
+| [Operations](operations.md) | Services, backups, keys, repair and troubleshooting |
+| [Web console](../web/README.md) | What the console shows and manages |
 
-## Build an application
+## Application developers: build on the API
 
-The [user guide](../user-guide.md) connects common tasks to their detailed contracts.
-The [API index](../api/README.md) identifies each caller and credential. Use the
-[coverage record](../../contracts/agents-api/README.md) to check operation support
-and Harness differences before relying on an optional feature.
+| Guide | Covers |
+| --- | --- |
+| [Quickstart](quickstart.md) | From a Project API key to a finished Session |
+| [User guide](../user-guide.md) | Common tasks: harness and model choice, follow-ups, capabilities, files, cancel |
+| [Agents API guide](../api/public-agent-api.md) | Every resource, with SDK and HTTP examples |
+| [Examples](../examples.md) | Complete applications built on the API |
+| [API index](../api/README.md) | All three namespaces and their credentials |
 
-## Extend Core
+## Contributors: extend Core
 
-Start with the [developer guide](../development.md). It links the repository map,
-required checks and extension points for Harness adapters, Runtime implementations
-and Sandbox Providers. Architecture rules live in
-[CONTRIBUTING.md](../../CONTRIBUTING.md); distribution and release procedures live in
-[the maintainer guide](../maintainers.md).
+Start with the [developer guide](../development.md): repository map, local setup,
+and how to add a Sandbox Provider, a harness or a Runtime feature. Repository rules
+are in [CONTRIBUTING.md](../../CONTRIBUTING.md).

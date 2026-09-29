@@ -27,20 +27,10 @@ The diagram has four tiers:
 
 ![Three namespaces and their credentials](assets/architecture-api-surfaces.png)
 
-Core serves three namespaces. Each has one kind of caller and its own credential;
-a credential used in another namespace gets 401.
-
-| Namespace | Caller | Credential | Purpose |
-| --- | --- | --- | --- |
-| Agents API, `/v1` | Applications and the official SDK | Project API key | Exactly the pinned OpenAI Agents API routes. Core-only fields live in `x_agents_core` |
-| Core API, `/core/v1` | Core Web's server and operator scripts | Core key | Projects and keys, resource reads and deletion, audit, nodes, metrics and deployment settings |
-| Machine API, `/api/v1` | Sandbox nodes and Runtime daemons | Machine credentials issued through `/core/v1` | Node enrollment and connection, Runtime daemon WebSocket |
-
-The browser never receives the Core key: Web keeps it on its server and forwards
-signed-in `/core/v1` requests. The reverse proxy sends `/v1` and `/api/v1` to Core
-and everything else to Web. The [API index](api/README.md) owns the complete
-route and credential matrix; [design principles](design-principles.md) explain
-Projects, keys and administrator authority.
+Core serves three namespaces: the Agents API (`/v1`) for applications, the Core
+API (`/core/v1`) for operators, and a machine API (`/api/v1`) for nodes and Runtime
+daemons. Each has its own credential; one used elsewhere gets 401. The
+[API index](api/README.md) owns the full matrix of callers, credentials and routes.
 
 ## Core
 
@@ -98,15 +88,12 @@ message order, receipts and failure ownership.
 
 ## Boundaries to keep in mind
 
-- **Isolation belongs to the outer Environment.** The daemon runs tools with its
-  launching user's permissions and adds no filesystem, permission or network
-  sandbox. Docker, microsandbox or E2B provide managed isolation
-  ([native Runtime guide](self-hosted-native.md)).
+- **Isolation belongs to the outer Environment.** The daemon is not a sandbox
+  ([Runtime and outer isolation](design-principles.md#runtime-and-outer-isolation)).
 - **Execution and compute have separate lifetimes.** Closing an executor does not
   release its allocation, destroy its Environment or delete its workspace.
   Reclamation is an explicit Sandbox Provider operation.
-- **Model keys stay with the compute that owns them.** A deployment default model
-  provider applies only on operator compute; a self-hosted Session must bring its
-  own ([model execution](../contracts/agents-api/model-execution.md)).
+- **Model keys stay with the compute that owns them.** A self-hosted Session brings
+  its own model provider ([why](user-guide.md#which-model-provider-a-session-uses)).
 - **Core Web is an administrator console.** It calls only `/core/v1` and cannot
   start Sessions or send input ([Web architecture](web/architecture.md)).

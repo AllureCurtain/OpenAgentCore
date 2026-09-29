@@ -6,17 +6,15 @@ creates the Session through `/v1` and receives a command that installs and conne
 Linux, macOS and Windows use the same Runtime protocol. Core-managed Providers
 remain Linux-only.
 
-The daemon runs with its launching user's permissions and adds no inner
-filesystem, permission or network sandbox. Its tools may access that user's files
-and Runtime credentials. Managed isolation belongs to the outer Environment;
-self-hosted operators choose any outer isolation they need. See the
-[native installation guide](../self-hosted-native.md) for prerequisites, commands
-and supported platforms.
+**The daemon is not a sandbox:** tools run with its launching user's permissions.
+Use a container or VM if you need isolation; see
+[Runtime and outer isolation](../design-principles.md#runtime-and-outer-isolation).
+Platforms, prerequisites and commands are in the
+[native Runtime guide](../self-hosted-native.md).
 
-An executor credential works for one Environment only. It cannot call the Agent
-API, Core API or node enrollment. Default model providers never apply to
-self-hosted Sessions: the request or Agent must carry its own model provider.
-Otherwise creation fails with 400 `model_provider_required`.
+An executor credential works for one Environment only, and for nothing else. The
+Session must bring its own model provider; the installation default never applies
+([why](../user-guide.md#which-model-provider-a-session-uses)).
 
 ## Connect a host
 
@@ -50,6 +48,8 @@ Otherwise creation fails with 400 `model_provider_required`.
    installation directory when prompted. Installation creates the workspace if
    needed, starts the daemon and checks its connection. For automation, append
    `--non-interactive --harness codex` and optionally `--install-dir ABS`.
+3. Send a Turn. A connected Environment proves only the machine connection; the
+   first Turn checks the harness and model.
 
 In Web, open the **Self-hosted** Session and copy the command under **Connect a
 host**. A command expires after 30 minutes; fetch the Session again for a fresh
@@ -57,10 +57,6 @@ one. The [native guide](../self-hosted-native.md#install-and-connect) covers ret
 platform prerequisites and credential storage. Core must be reachable from the
 host with TLS outside loopback. Native installation does not require Docker.
 
-A connected Environment proves only the machine connection. Send a Turn to check
-the selected harness and model. Core supplies the Session's model provider over
-this Environment's authenticated executor connection. The host's user and tools
-running with that user's permissions can access locally stored Runtime data.
 
 ## Local capability directories
 

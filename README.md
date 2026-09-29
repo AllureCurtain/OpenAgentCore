@@ -6,73 +6,68 @@
 
 An open-source, self-hosted implementation of the OpenAI Agents API with multiple native harnesses.
 
-[Get started](#quick-start) · [Documentation](#documentation) · [Call the API](docs/getting-started/quickstart.md) · [Contributing](CONTRIBUTING.md)
+[Install](#install) · [Call the API](docs/getting-started/quickstart.md) · [Documentation](#documentation) · [Contributing](CONTRIBUTING.md)
 
 **English** · [简体中文](README.zh-CN.md)
 
 </div>
 
-Choose Codex, Claude Code or MiniMax Code as your execution engine. Sandbox providers,
-model providers and harnesses connect through defined protocols and thin adapters,
-so you can add or replace components without changing Core orchestration.
+## What it is
 
-## Quick start
+OpenAgentCore runs AI agents on your own infrastructure behind the OpenAI Agents API.
 
-On a Linux amd64 host with Docker and Python 3.9+, install the latest stable release:
+- **Same API as OpenAI.** Point the official OpenAI SDK, or plain HTTP, at your
+  installation. No new client to learn.
+- **Your choice of agent.** Each Session runs a native harness: Codex, Claude Code or
+  MiniMax Code, with the model provider you configure.
+- **Your choice of machine.** Agents work in a managed sandbox (Docker, microsandbox
+  or E2B), or on your own Linux, macOS or Windows machine.
+- **Every part is replaceable.** Sandboxes, harnesses and model providers plug in
+  through defined protocols.
+
+## Install
+
+On a Linux amd64 host with Docker and Python 3.9+:
 
 ```sh
 curl -fsSL https://github.com/MiniMax-AI/parsar-core/releases/latest/download/install.sh | bash
 ```
 
-You can customize the listen address, ports and deployment settings with these [installation options](docs/getting-started/install-options.md).
+Then:
 
-1. [Install Core and Web](docs/getting-started/install.md) on a Linux host. The guide
-   covers prerequisites, release download, local trials and HTTPS setup.
-2. Sign in to Web with the installer-created Core key. Configure a model provider,
-   create a Project and issue its API key. For managed execution,
-   [add a node or configure E2B](docs/getting-started/nodes.md).
-3. [Run your first Session](docs/getting-started/quickstart.md) with the pinned Python
-   SDK. The walkthrough checks authentication, submits a task and waits for its result.
+1. **Sign in to Web**, the admin console, with the Core key the installer created.
+2. **Set a default model** and **issue a Project API key**.
+3. **Add execution capacity:** a node, E2B, or your own machine.
+4. **[Run your first Session](docs/getting-started/quickstart.md)** with the OpenAI SDK.
 
-To execute on your own Linux, macOS or Windows machine, follow the
-[self-hosted Runtime guide](docs/getting-started/self-hosted.md).
+The [installation guide](docs/getting-started/install.md) covers each step, HTTPS
+and a quick local trial. Listen addresses, ports and other options: [installation options](docs/getting-started/install-options.md).
 
 ## How it fits together
 
 ![OpenAgentCore architecture](docs/assets/architecture.png)
 
-Core exposes two APIs. Applications use the public **Agents API** (`/v1`), the same
-protocol as OpenAI's. Operators use the private **Core API** (`/core/v1`) through
-Web. Core manages Sessions and execution state. Runtime prepares Skills and MCP tools,
-then runs the selected harness. Sandbox providers manage environments; model providers
-serve inference requests. Each connection is a defined protocol, so any component
-can be replaced on its own.
+Core exposes two APIs:
 
-Managed Providers supply Linux environments. Self-hosted daemons run on Linux,
-macOS and Windows, subject to the selected Harness's
-[platform support](docs/self-hosted-native.md#platforms-and-prerequisites). The daemon uses
-its starting account's permissions; isolation belongs to an outer sandbox.
-Releasing an executor does not destroy its Environment.
+| API | Path | Used by |
+| --- | --- | --- |
+| **Agents API** | `/v1` | Your applications. Same protocol as OpenAI's |
+| **Core API** | `/core/v1` | Operators, through Web |
 
-See the [coverage record](contracts/agents-api/README.md) for supported API operations
-and native harness differences.
+Core keeps all state. The Runtime runs the chosen harness inside the Environment.
+Each connection is a defined protocol, so any part can be replaced on its own. See
+the [architecture guide](docs/architecture.md).
 
 ## Documentation
 
-For a complete application example using the Parsar product UI, see
-[`example/parsar`](example/parsar/README.md): model, Skill, MCP and runtime management, reusable Agents, and independent
-Sessions backed by the public API.
-
-| Start here | Purpose |
+| I want to | Start with |
 | --- | --- |
-| [Documentation index](docs/getting-started/README.md) | Installation, usage and administration reading paths |
-| [Architecture](docs/architecture.md) | Components, the three API namespaces and a Session end to end |
-| [User guide](docs/user-guide.md) | Sessions, Skills/Plugins/MCP, files, cancellation and recovery |
-| [Configuration](docs/configuration.md) | Operator settings and model configuration |
-| [API reference](docs/api/README.md) | Application, administration and machine APIs |
-| [Developer guide](docs/development.md) | Repository map, local setup, builds and validation |
-| [Add a Harness](contracts/agents-api/harness-onboarding.md) | Start with [agent/harness.go](apps/parsar-daemon/internal/agent/harness.go), then adapter implementation and acceptance |
-| [Core–Runtime protocol](docs/runtime-protocol.md) | Lifecycle, capability preparation and execution |
-| [Add a Sandbox Provider](docs/sandbox-provider.md) | Environment creation and resource ownership |
+| Install and operate an installation | [Installation](docs/getting-started/install.md), then [operations](docs/getting-started/operations.md) |
+| Build an application on the API | [Quickstart](docs/getting-started/quickstart.md), then the [Agents API guide](docs/api/public-agent-api.md) |
+| See a complete application | [Examples](docs/examples.md) |
+| Run agents on my own machine | [Self-hosted execution](docs/getting-started/self-hosted.md) |
+| Understand the design | [Architecture](docs/architecture.md) |
+| Add a sandbox, harness or other component | [Developer guide](docs/development.md) |
 
-Before changing code, read [the contributor rules](CONTRIBUTING.md).
+All pages: [documentation index](docs/getting-started/README.md). Before changing
+code, read the [contributor rules](CONTRIBUTING.md).

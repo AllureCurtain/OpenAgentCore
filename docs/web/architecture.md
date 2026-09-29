@@ -53,18 +53,9 @@ grant a browser execution authority.
 | Core API and PostgreSQL | Project isolation, resource state, deletion preconditions, audit and scheduling |
 | Runtime and native adapters | Existing allocation, process lifecycle and execution protocols |
 
-A Project owns one tenant and one principal; its keys have equal access to its
-assets. Projects and keys are database records. Configuration contains deployment
-settings, not business identities. Core has no separate API-user or role model.
-
-Revoking one key prevents new authentication without removing assets or admitted
-work. Archiving a Project disables all its keys and retains resources for
-administrator inspection and deletion.
-
-Management adds no execution path. It can inspect metadata and history and apply
-existing deletion rules. It cannot edit arbitrary resources, create Sessions, send
-input or cancel work. A deletion conflict cannot be resolved by an implicit
-cancellation from the console.
+Projects, keys and administrator authority follow the
+[design principles](../design-principles.md#projects-own-assets). The console adds
+no execution path: a deletion conflict is never resolved by an implicit cancellation.
 
 Secret fields remain write-only; Skill source and Artifact content have explicit
 read routes, while Source File content does not have an administrator download

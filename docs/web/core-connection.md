@@ -64,18 +64,9 @@ and display only. Keep deployment, application, node and provider credentials ou
 
 ## Projects and application keys
 
-Installation creates no Project or application key. An administrator creates a
-Project and issues named keys on the console's **Projects and keys** page, which
-uses the [administrator API](../../contracts/agents-api/admin-api.md), or with that
-API directly.
-The Project owns one tenant and one principal; its keys share assets and permissions.
-Writes retain each key's provenance. All Projects and application keys live in
-PostgreSQL, independently of deployment configuration.
-
-Issuance returns plaintext once; Core stores its digest. Deliver the new key to the
-application privately. Rotate by issuing a replacement in the same Project and
-revoking the old key. Archive disables every key while retaining assets and admitted
-work. Ordinary metadata reads cannot recover plaintext.
+Installation creates no Project or key. Create them on **Projects and keys** or
+through the [administrator API](../../contracts/agents-api/admin-api.md); see
+[Projects and API keys](../getting-started/operations.md#projects-and-api-keys).
 
 ## Verification and diagnosis
 

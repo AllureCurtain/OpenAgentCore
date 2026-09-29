@@ -92,6 +92,19 @@ Session deletion/archival is outside this example. Skill deletion is a separate
 explicit Core operation. Earlier templates and instances become Agent configs on
 startup; they are never presented as actual Sessions.
 
+A few more implementation details:
+
+- **Providers and models** are saved together in one SQLite transaction. Editing
+  reads a Provider and its models as one snapshot; changing a model advances the
+  Provider's revision.
+- **Browser calls** use `OpenAIAgentsClient`; only Session creation goes through a
+  small server adapter. Closing the browser aborts the upstream stream, never the
+  running Session.
+- **Workspaces:** hosted Sessions each get their own. User-machine Sessions use the
+  selected host directory, so the same path means shared files.
+- **Skills on a user machine** come only from local capability directories; managed
+  Skill references are rejected explicitly, not ignored.
+
 ## Validation
 
 ```sh
@@ -133,9 +146,7 @@ Agent organization informs the product flow; no Multica code is copied.
 
 ## Connect a user machine
 
-This branch builds on `codex/qualified-release-promotion-20260928` (native daemon
-support). Run a matching Core and daemon version; the older preview Core does not
-qualify this workflow. The optional unified Harness installer PR is not included.
+Run a matching Core and daemon version.
 
 Create a user-machine runtime and start a Session with an Agent using Codex or
 Claude Code. No initial Turn is sent. Open **Connect user machine**, obtain the
