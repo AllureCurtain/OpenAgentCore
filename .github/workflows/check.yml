@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: core-check-${{ github.workflow }}-${{ inputs.ref || github.ref }}
+  group: core-check-${{ github.workflow }}-${{ inputs.ref && github.run_id || github.ref }}
   cancel-in-progress: true
 
 jobs:

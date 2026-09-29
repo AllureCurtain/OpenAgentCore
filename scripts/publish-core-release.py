@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upload a draft, verify its source, then publish once without cleanup on failure."""
+"""Create and upload one draft, then publish its fixed ID without automatic retries."""
 
 import argparse
 import importlib.util
@@ -17,8 +17,8 @@ spec.loader.exec_module(distribution)
 
 
 def api(repository, endpoint, *args):
-    return json.loads(subprocess.check_output(
-        ["gh", "api", "repos/" + repository + "/" + endpoint, *args], text=True))
+    url = endpoint if endpoint.startswith("https://") else "repos/" + repository + "/" + endpoint
+    return json.loads(subprocess.check_output(["gh", "api", url, *args], text=True))
 
 
 def verify_tag(repository, tag, revision):
@@ -33,6 +33,25 @@ def verify_tag(repository, tag, revision):
             raise ValueError("Version tag does not resolve to a commit")
         endpoint = "git/tags/" + obj["sha"]
     raise ValueError("Too many nested annotated tags")
+
+
+def refuse_existing(repository, tag):
+    # The tag lookup endpoint omits drafts. Listing includes authenticated drafts.
+    page = 1
+    while True:
+        releases = api(repository, "releases?per_page=100&page=" + str(page))
+        if any(release["tag_name"] == tag for release in releases):
+            raise ValueError("Release or draft already exists; inspect it before retrying")
+        if len(releases) < 100:
+            return
+        page += 1
+
+
+def verify_draft(release, tag, revision):
+    if (not release["draft"] or release["tag_name"] != tag
+            or release["target_commitish"] != revision
+            or type(release["id"]) is not int or release["id"] <= 0):
+        raise ValueError("Release draft identity changed")
 
 
 def publish(assets, repository, revision, tag, mode):
@@ -51,10 +70,10 @@ def publish(assets, repository, revision, tag, mode):
     files = sorted(assets.iterdir())
     if not files or any(p.is_symlink() or not p.is_file() for p in files):
         raise ValueError("Expected a nonempty directory containing only regular asset files")
-    # Verify the archives after transfer between jobs. Their manifests bind the
-    # remaining Runtime assets; the builder validates that contract.
+    # The builder validates the manifest and Runtime assets. Verify archives again
+    # after the Actions artifact transfer between jobs.
     stem = "oac-" + revision + "-linux-amd64"
-    archives = [assets / (stem + ".tar.gz")]
+    archives = [assets / (stem + ".tar.gz"), assets / "install.sh"]
     if mode == "publish" or (assets / (stem + "-offline.tar.gz")).exists():
         archives.append(assets / (stem + "-offline.tar.gz"))
     for archive in archives:
@@ -62,33 +81,41 @@ def publish(assets, repository, revision, tag, mode):
         if checksum.read_text() != distribution.sha256(archive) + "  " + archive.name + "\n":
             raise ValueError("Distribution archive checksum mismatch")
 
-    command = ["gh", "release", "create", tag, "--repo", repository,
-               "--target", revision, "--title", "OpenAgentCore " + tag,
-               "--notes", "Linux amd64 distribution from commit " + revision + "."]
+    refuse_existing(repository, tag)
     if mode == "publish":
         verify_tag(repository, tag, revision)
-        command.append("--verify-tag")
-        if "-" in tag.split("+", 1)[0]:
-            command.append("--prerelease")
-    # Explicit drafts keep gh's error cleanup away from the publication request.
-    # Existing releases fail creation; do not overwrite or replay an ambiguous write.
-    command.append("--draft")
-    subprocess.run(command + [str(p.resolve()) for p in files], check=True)
+    prerelease = mode == "publish" and "-" in tag.split("+", 1)[0]
+    release = api(repository, "releases", "--method", "POST",
+                  "-f", "tag_name=" + tag, "-f", "target_commitish=" + revision,
+                  "-f", "name=OpenAgentCore " + tag,
+                  "-f", "body=Linux amd64 distribution from commit " + revision + ".",
+                  "-F", "draft=true", "-F", "prerelease=" + str(prerelease).lower())
+    verify_draft(release, tag, revision)
+    release_id = release["id"]
+    endpoint = "releases/" + str(release_id)
+    # Keep every operation bound to the ID returned by creation. No tag lookup,
+    # overwrite, deletion or automatic retry can select another release.
+    expected = {p.name: p.stat().st_size for p in files}
+    for path in files:
+        uploaded = api(repository, "https://uploads.github.com/repos/" + repository
+                       + "/" + endpoint + "/assets?name=" + quote(path.name, safe=""),
+                       "--method", "POST", "-H", "Content-Type: application/octet-stream",
+                       "-H", "Content-Length: " + str(expected[path.name]), "--input", str(path.resolve()))
+        if (uploaded["state"] != "uploaded" or uploaded["name"] != path.name
+                or uploaded["size"] != expected[path.name]):
+            raise ValueError("Asset upload was not confirmed; inspect the draft")
+    release = api(repository, endpoint)
+    verify_draft(release, tag, revision)
+    actual = release["assets"]
+    if (len(actual) != len(expected)
+            or any(a["state"] != "uploaded" for a in actual)
+            or {a["name"]: a["size"] for a in actual} != expected):
+        raise ValueError("Release asset inventory differs from the build")
     if mode == "draft":
         return
-
-    release = api(repository, "releases/tags/" + quote(tag, safe=""))
-    if (not release["draft"] or release["tag_name"] != tag
-            or release["target_commitish"] != revision):
-        raise ValueError("Release draft identity changed")
-    release_id = release["id"]
-    if type(release_id) is not int or release_id <= 0:
-        raise ValueError("Invalid Release ID")
-    # Uploads can take minutes. Recheck the tag immediately before publishing the
-    # fixed Release ID, so a moved tag cannot silently relabel this build.
+    # Uploads can take minutes. Recheck immediately before the one publish request.
     verify_tag(repository, tag, revision)
-    result = api(repository, "releases/" + str(release_id),
-                 "--method", "PATCH", "-F", "draft=false")
+    result = api(repository, endpoint, "--method", "PATCH", "-F", "draft=false")
     if result["id"] != release_id or result["draft"] or result["tag_name"] != tag:
         raise ValueError("Publication result is unknown; inspect the existing Release")
 
