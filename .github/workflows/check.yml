@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   check:
-    runs-on: ubuntu-22.04
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     timeout-minutes: 40
     services:
       postgres:
@@ -37,7 +37,7 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: useblacksmith/checkout@v1
         with:
           ref: ${{ inputs.ref || github.sha }}
       - name: Select shared Go caches
