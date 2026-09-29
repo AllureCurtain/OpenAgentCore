@@ -820,6 +820,16 @@
     "reason": "The explicitly named Parsar application example retains product branding; it does not rename the Core runtime."
   },
   {
+    "path": "docs/examples.md",
+    "regex": "(?i)parsar",
+    "reason": "The examples guide describes the explicitly named Parsar application example; it does not rename the Core runtime."
+  },
+  {
+    "path": "apps/docs/content/docs/examples.mdx",
+    "regex": "(?i)parsar",
+    "reason": "Generated copy of docs/examples.md: The examples guide describes the explicitly named Parsar application example; it does not rename the Core runtime."
+  },
+  {
     "path": "pnpm-lock.yaml",
     "regex": "(?:example/parsar|@oac/parsar-example)",
     "reason": "The explicitly named Parsar application example retains product branding; it does not rename the Core runtime."

@@ -45,7 +45,7 @@
     "slug": "quickstart",
     "source": "docs/getting-started/quickstart.md",
     "title": "Call the Agent API",
-    "description": "Use the pinned SDK, a Project API key and an explicit model provider to run a Session."
+    "description": "From a Project API key to a finished Session in three steps."
   },
   {
     "slug": "public-api",
@@ -62,8 +62,14 @@
   {
     "slug": "sessions",
     "source": "docs/api/public-agent-api.md",
-    "title": "Sessions and public resources",
-    "description": "Agents, Sessions, Turns, events and resources in the pinned public contract."
+    "title": "Agents API guide",
+    "description": "Every public resource with OpenAI SDK and HTTP examples: Agents, Sessions, input, streaming, files, Skills, templates and Vaults."
+  },
+  {
+    "slug": "examples",
+    "source": "docs/examples.md",
+    "title": "Examples",
+    "description": "Complete applications built on the Agents API, and what each one shows."
   },
   {
     "slug": "environments-and-files",

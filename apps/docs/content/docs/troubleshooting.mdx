@@ -122,15 +122,17 @@ refuses. `rotate-core-key` refuses to run on a Web-only installation.
 
 ## Projects and API keys
 
-Create Projects and issue their keys in Web, on **Projects and keys**, or with the
-[Core API](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/admin-api.md) under `/core/v1/projects`. A key's
-plaintext is shown once; Core stores only its digest. All keys of a Project share its
-assets and execution principal, and each write records the key that made it.
+Create Projects and issue keys in Web, on **Projects and keys**, or through the
+[Core API](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/admin-api.md) under `/core/v1/projects`. How
+Projects and keys behave is in [Projects own assets](/concepts#projects-own-assets).
 
-To rotate an application key, issue another key in the same Project, update the
-application, then **Revoke** the old key. **Archive** disables all of a Project's keys
-and keeps its assets and accepted work. Administrators can inspect and delete retained
-resources but can't execute with the Core key.
+To rotate an application key:
+
+1. Issue a new key in the same Project.
+2. Update the application to use it.
+3. **Revoke** the old key.
+
+**Archive** disables every key of a Project and keeps its assets.
 
 ## Data and current-release repair
 

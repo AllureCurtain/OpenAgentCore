@@ -3,118 +3,159 @@ title: "Use OpenAgentCore"
 description: "Sessions, capabilities, files, cancellation and recovery."
 ---
 
-Complete the [first Session walkthrough](/quickstart) before using
-this guide. It provides `client` and `session`; the examples below continue that
-Session. For exact request fields, use the [API reference](/public-api).
+Common tasks for application developers. Start with the
+[quickstart](/quickstart); it sets up `client` and `session`. Every
+operation here is shown with SDK and HTTP examples in the
+[Agents API guide](/sessions).
 
 ## Choose where a task runs
 
-| Environment | What you prepare | Next step |
+A Session's `environment.type` decides where its agent works:
+
+| Environment | Runs on | You prepare |
 | --- | --- | --- |
-| `openai_hosted` | Ready managed capacity and a configured model | Core creates the Environment and connects its daemon |
-| `self_hosted` | Your machine, workspace, daemon and model provider | [Connect the Runtime](/self-hosted-execution) to the returned Environment |
-| `none` | An existing device connection and its configured Harness | Check the qualified profile in [Harness selection](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/harness-selection.md) |
+| `openai_hosted` | A sandbox Core creates on a node or E2B | Nothing; the administrator provides capacity |
+| `self_hosted` | Your own Linux, macOS or Windows machine | The machine, a workspace directory and the daemon. See [self-hosted execution](/self-hosted-execution) |
+| `none` | An existing device connection, no workspace | A connected device with its harness |
 
-Use the [Environment contract](/environments-and-files) for placement,
-expiry and supported combinations. Model selection and provider precedence are
-explained once in the [application quickstart](/quickstart#model-providers).
+Placement, expiry and supported combinations:
+[Environment contract](/environments-and-files).
 
-## Continue a Session
+## Choose a harness and a model
 
-A Session keeps the conversation and its fixed execution configuration. Submit a
-follow-up after the previous Turn settles:
+The harness is the agent program that runs your Session. Set it in
+`x_agents_core.harness` on the Agent; if you don't, the installation's default
+(Codex unless changed) is used.
+
+| Harness | `harness` | Native model parameters (`harness_config`) |
+| --- | --- | --- |
+| Codex | `codex` | `model_reasoning_effort` |
+| Claude Code | `claude_sdk` | `effort`, `thinking` |
+| MiniMax Code | `mcode` | None. The provider must set `context_window` and `max_output_tokens` |
+
+- **Model.** `agent.model` is the provider's exact model ID. An inline Agent on an
+  `openai_hosted` or `none` Session may omit it to use the installation default's
+  model. Saved Agents always need one.
+- **Provider protocol.** Any harness accepts `responses`, `anthropic` or
+  `chat_completions`; the Runtime converts when the harness doesn't speak it
+  natively. Native model parameters need a native protocol.
+- **Native parameters.** `x_agents_core.harness_config` passes the harness's own
+  settings; see [native model configuration](/harness-onboarding#native-model-configuration).
+
+Selecting a harness doesn't make an unsupported model or operation work; see
+[harness selection](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/harness-selection.md).
+
+### Which model provider a Session uses
+
+A Session takes its model provider from the first of these that has one. They are
+never merged:
+
+1. `x_agents_core.model_provider` in the Session creation request;
+2. the saved Agent's `x_agents_core.model_provider`;
+3. the installation's default model configuration for the harness, set by the
+   administrator. It also supplies the model and native parameters when the Session
+   leaves them out.
+
+| Environment | Request or Agent provider | Installation default | Neither |
+| --- | --- | --- | --- |
+| `openai_hosted` | Used | Used | 400 `model_provider_required` |
+| `self_hosted` | Used | Never | 400 `model_provider_required` |
+| `none` | Rejected (400) | Used | Allowed: the device supplies the model |
+
+Self-hosted Sessions never use the default, because it holds the operator's key and
+your machine is outside the operator's control. A Session freezes its provider at
+creation; later changes affect only new Sessions. Full rules:
+[model execution](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/model-execution.md).
+
+## Follow up and steer
+
+Send another message to the same Session to continue with its history and workspace:
 
 ```python
-client.beta.agents.sessions.events.create(
-    session.id,
-    events=[{
-        "type": "agent.session.input.message",
-        "input": [{
-            "role": "user",
-            "content": [{"type": "input_text", "text": "Summarize the file you created."}],
-        }],
-    }],
-)
+client.beta.agents.sessions.events.create(session.id, events=[{
+    "type": "agent.session.input.message",
+    "input": [{"role": "user", "content": [{"type": "input_text", "text": "Summarize the file you created."}]}],
+}])
 ```
 
-Read the new Turn and Items using the same observation loop as the quickstart.
-Submitting while a Turn is active steers that Turn where supported; it does not
-create an independent parallel task. Create a new Session for a different fixed
-configuration or workspace. See [message input](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/message-input.md)
-for supported content, steering and idempotency rules.
+- **Idle Session:** the message starts a new Turn.
+- **Running Turn:** the message joins it (steering). It never starts a parallel task.
+- **Different configuration or workspace:** create a new Session.
 
-## Prepare Skills, Plugins and MCP
+See [Send input](/sessions#send-input).
 
-Select capabilities when creating the Session, before sending work that needs them.
-Runtime installs one snapshot and passes its Skill paths and MCP declarations to the
-Harness. Reconnect reuses that snapshot; changing local source files does not alter
-an existing Session.
+## Watch the output live
 
-| Task | Guide |
+Open the event stream before sending input, and print text as it arrives:
+
+```python
+with client.beta.agents.sessions.events.stream(session.id) as stream:
+    for event in stream:
+        if event.type == "agent.session.turn.output_text.delta":
+            print(event.delta, end="", flush=True)
+        if event.type in {"agent.session.turn.completed", "agent.session.turn.failed", "agent.session.turn.cancelled"}:
+            break
+```
+
+The stream is live only. After a disconnect, read Turns and Items to fill the gap.
+See [Stream events](/sessions#stream-events).
+
+## Give the agent Skills, Plugins and MCP
+
+Choose capabilities when you create the Session. The Runtime installs them once, as a
+snapshot; editing the source later doesn't change a running Session.
+
+| To | Use |
 | --- | --- |
-| Upload a Skill source and select a version | [Source Files and Skills](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/source-files.md) |
-| Use local Skill/Plugin directories | [Local capability directories](/self-hosted-execution#local-capability-directories) |
-| Provide initial files, user-directory packages or setup | [Environment Templates](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/environment-templates.md) |
-| Declare tools, MCP and function callbacks | [Execution tools](/agents-and-tools) |
-| Choose a supported tool policy | [Tool policy](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/tool-policy.md) |
+| Upload a Skill and pick a version | [Skills](/sessions#skills) |
+| Reuse packages, files, setup and network rules | [Environment Templates](/sessions#environment-templates) |
+| Call your own code from the agent | [Function tools](/sessions#function-tools) |
+| Connect an MCP server, with credentials | [Execution tools](/agents-and-tools) and [Vaults](/sessions#vaults) |
+| Use Skill or Plugin directories on your machine | [Local capability directories](/self-hosted-execution#local-capability-directories) |
 
-System dependencies must already exist on the host or in its image/template.
-See the [Runtime installation guide](/self-hosted-native) for dependencies and
-platform support. Missing preparation fails before execution; do not retry a task
-as a new Session to work around an unresolved preparation error.
+System packages must already be in the machine or image. Preparation errors fail the
+Session before any work runs; fix the cause instead of retrying in a new Session.
 
-## Read results and files
+## Send files and get results
 
-Turn state tells you whether execution is active, completed, failed or cancelled.
-Items hold the recorded conversation and tool results; live events describe changes
-as they happen. A disconnected stream is not a completion receipt. The
-[history and events contract](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/history-events-usage.md) explains
-pagination, event delivery and Usage.
+| To | Use |
+| --- | --- |
+| Put a file in the workspace | [Workspace files](/sessions#workspace-files) |
+| Upload once, reference by ID | [Source Files](/sessions#source-files) |
+| Download what the agent wrote to `outputs/` | [Artifacts](/sessions#artifacts) |
+| Read the conversation and tool results | [Turns and Items](/sessions#turns-and-items) |
 
-| Resource | Use it for | Reference |
-| --- | --- | --- |
-| Environment Files | Inspect or transfer workspace contents | [Environment Files](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/environment-files.md) |
-| Artifacts | Retrieve captured outputs associated with execution | [Artifacts and public resources](/sessions) |
-| Source Files | Upload input used by a Skill or other declared resource | [Source Files](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/source-files.md) |
-
-These resources have different lifetimes. Deleting a Session does not erase files
-from a user-owned machine. Reclaiming managed compute is a separate Environment
-operation; stopping an executor does not imply reclamation.
+Deleting a Session doesn't erase files on your own machine. Reclaiming a managed
+sandbox is a separate operation.
 
 ## Cancel and recover
 
-To cancel current work:
+Cancel the current Turn:
 
 ```python
-client.beta.agents.sessions.events.create(
-    session.id,
-    events=[{"type": "agent.session.input.cancel"}],
-)
+client.beta.agents.sessions.events.create(session.id, events=[{"type": "agent.session.input.cancel"}])
 ```
 
-Read the Turn until its terminal state is recorded. HTTP acceptance alone does not
-prove native processes have stopped. A cancellation or delivery error must be
-interpreted using the returned state and the
-[error contract](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/core-errors.md).
+The work has stopped when the Turn reads `cancelled`, not when the request returns.
 
-After a lost response or connection, first retrieve the existing Session, Turns
-and Items. Do not assume work was never submitted and send it again. For self-hosted
-execution, restart the same installation with its retained workspace and native
-history; follow the [operator lifecycle](/self-hosted-native#add-harnesses-and-operate-the-installation).
-A new Session captures a new configuration, not the history of a deleted one.
+After a lost response or connection:
+
+1. Read the Session, its Turns and Items.
+2. If the work isn't there, retry with the **same** `Idempotency-Key`.
+3. Never resend without a key; you may run the work twice.
+
+On a self-hosted machine, restart the same installation to keep its workspace and
+history; see [operating the installation](/self-hosted-native#add-harnesses-and-operate-the-installation).
 
 ## Diagnose a failure
 
-1. Check the Session, latest Turn and required actions in the API or Web.
-2. Confirm that the Environment is connected and its selected Harness is available.
-3. Check the model/provider and capability combination against
-   [supported execution](/agents-and-tools).
-4. Follow [operations and troubleshooting](/troubleshooting) for service
-   logs, credentials and node readiness. Runtime observations may be stale; the
-   [diagnostics contract](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/session-diagnostics.md) identifies
-   which observations are available.
+1. Read the Session's `status` and `error`, and the latest Turn's `error`.
+2. Check that the Environment is connected and its harness is available.
+3. Check the harness, model and tool combination in
+   [execution tools](/agents-and-tools).
+4. Ask the administrator to check [operations and troubleshooting](/troubleshooting#troubleshooting)
+   for service logs, credentials and node readiness.
 
-Administrative actions use a different credential from application work. Keep the
-[API namespace reference](/public-api) at hand when diagnosing authentication errors.
+A 401 usually means a key from the wrong namespace; see the [API index](/public-api).
 
 [Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/docs/user-guide.md)

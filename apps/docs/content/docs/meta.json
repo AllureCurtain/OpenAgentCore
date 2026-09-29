@@ -15,6 +15,7 @@
     "public-api",
     "agents-and-tools",
     "sessions",
+    "examples",
     "---Execution---",
     "environments-and-files",
     "hosted-providers",
