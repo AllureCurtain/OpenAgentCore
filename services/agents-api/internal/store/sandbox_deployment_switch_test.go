@@ -42,7 +42,7 @@ func TestSandboxE2BEndpointPersistenceAndOnlineSwitch(t *testing.T) {
 	change := e2bSelection()
 	change.E2B.Template = input.E2B.Template
 	update := SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: change, ExpectedGeneration: view.Generation}
-	changed, err := w.UpdateSandboxDeployment(t.Context(), id, update)
+	changed, err := w.UpdateSandboxDeployment(SandboxResetTestContext(t.Context()), id, update)
 	if err != nil || changed.Generation != view.Generation+1 || changed.E2B == nil || changed.E2B.APIURL != "https://api.e2b.app" || changed.E2B.Domain != "e2b.app" {
 		t.Fatal("online endpoint switch failed", changed, err)
 	}

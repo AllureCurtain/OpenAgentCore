@@ -197,6 +197,12 @@ func TestNodeGenerationDowngradePreservesServingProtocol(t *testing.T) {
 				if err == nil {
 					t.Fatal("downgrade discarded required node protocol")
 				}
+				// DownTo may have removed later, reversible migrations before the
+				// node protocol migration refused the downgrade. Restore the current
+				// schema before using this version of the Store to verify recovery.
+				if _, err = migration.Up(t.Context()); err != nil {
+					t.Fatal("refused downgrade could not restore current schema", err)
+				}
 				if _, err = s.RuntimeNodeGenerationConfiguration(t.Context(), node.NodeID, node.Credential, 1); err != nil {
 					t.Fatal("refused downgrade damaged retained recovery", err)
 				}
