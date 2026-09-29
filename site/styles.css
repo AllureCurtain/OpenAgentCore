@@ -29,8 +29,7 @@ pre { overflow-x: auto; margin: 0; }
 .site-header { min-height: 96px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); gap: 24px; }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-size: 21px; font-weight: 650; letter-spacing: -.05em; white-space: nowrap; }
 .brand-core { font-weight: 400; color: var(--muted); }
-.brand-mark { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 9px; background: var(--ink); color: #fff; font: 650 23px/1 var(--mono); margin-right: 4px; padding-bottom: 5px; }
-.brand-mark span { color: #b7a6f4; }
+.brand-mark { display: block; width: 34px; height: 34px; margin-right: 4px; flex: 0 0 auto; }
 nav { display: flex; align-items: center; gap: 32px; font-size: 13px; font-weight: 500; }
 nav a:hover, .footer-links a:hover { color: var(--accent); }
 .nav-github { display: inline-flex; align-items: center; gap: 18px; border: 1px solid #d8d8e2; border-radius: 7px; padding: 10px 15px; background: #fff; }

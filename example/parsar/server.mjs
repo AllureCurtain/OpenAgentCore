@@ -320,7 +320,7 @@ if (
     createHandler(config, { frontend: vite?.middlewares, store }),
   );
   server.listen(config.port, "127.0.0.1", () => {
-    process.stdout.write(`Parsar: http://127.0.0.1:${config.port}\n`);
+    process.stdout.write(`OpenAgentCore: http://127.0.0.1:${config.port}\n`);
   });
   for (const signal of ["SIGINT", "SIGTERM"])
     process.on(signal, () => {

@@ -42,16 +42,16 @@ Usage:
   pnpm core:doctor -- [--parsar <checkout>] [--profile <name>] [--timeout-ms <milliseconds>]
 
 The doctor performs only GET requests. It never creates an Agent, Session, Turn,
-or Item, and it never makes a model/provider call. The optional Parsar checkout is
+or Item, and it never makes a model/provider call. The optional OpenAgentCore checkout is
 used only to run the upstream daemon status command. No credential value, response
 body, daemon output, or private filesystem path is printed.
 
 The authenticated read validates only the basic Agent resource envelope. Known
 tool variants receive basic field validation; additive JSON fields and unknown
 nonempty tool-type discriminants are accepted. A passing result does not prove
-that the Web supports those tools or complete Parsar protocol compatibility.
+that the Web supports those tools or complete Agents API protocol compatibility.
 
-Pinned Parsar Agents API contract:
+Pinned Agents API contract:
   ${PARSAR_PROTOCOL_BASELINE_REVISION}
 
 Exit codes:
@@ -120,11 +120,11 @@ export function parseCoreDoctorArgs(argv) {
   }
 
   if (positional.length > 1 || (positional.length === 1 && parsarPath)) {
-    throw new CoreDoctorUsageError("provide at most one Parsar checkout");
+    throw new CoreDoctorUsageError("provide at most one OpenAgentCore checkout");
   }
   if (positional.length === 1) parsarPath = positional[0];
   if (typeof parsarPath === "string" && parsarPath.trim() === "") {
-    throw new CoreDoctorUsageError("Parsar checkout cannot be empty");
+    throw new CoreDoctorUsageError("OpenAgentCore checkout cannot be empty");
   }
   if (!PROFILE_PATTERN.test(profile)) {
     throw new CoreDoctorUsageError("invalid daemon profile name");
@@ -279,7 +279,7 @@ function createReport() {
     render(exitCode) {
       const lines = [
         "OpenAgentCore Doctor (read-only)",
-        `Parsar protocol baseline: ${PARSAR_PROTOCOL_BASELINE_REVISION}`,
+        `Agents API protocol baseline: ${PARSAR_PROTOCOL_BASELINE_REVISION}`,
         "",
       ];
       for (const check of checks) lines.push(`[${check.level}] ${check.layer}: ${check.message}`);
@@ -782,7 +782,7 @@ export async function inspectDaemon({ parsarPath, profile, timeoutMs, env, runCo
   if (parsarPath) {
     cwd = await validateParsarCheckout(parsarPath);
     if (!cwd) {
-      report.add("FAIL", "Daemon", "the supplied Parsar checkout is invalid or unreadable.");
+      report.add("FAIL", "Daemon", "the supplied OpenAgentCore checkout is invalid or unreadable.");
       return { exitCode: CORE_DOCTOR_EXIT_CODES.usageOrInternalError };
     }
     command = "go";

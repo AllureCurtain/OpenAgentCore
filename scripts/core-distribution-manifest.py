@@ -50,7 +50,7 @@ BUNDLED_DOCS = (
     "contracts/agents-api/environment-executor-credentials.md",
 )
 # Files the bundled docs show, copied as they are, so they work offline.
-BUNDLED_FILES = ("docs/assets/openagentcore-banner.png", "docs/assets/architecture.png")
+BUNDLED_FILES = ("docs/assets/openagentcore-banner.jpg", "docs/assets/architecture.png")
 REPOSITORY_URL = "https://github.com/MiniMax-AI/parsar-core"
 MARKDOWN_LINK = re.compile(r"(!?)\[((?:[^\[\]]|\[[^\]]*\])*)\]\(([^)\s]+)((?:\s+\"[^\"]*\")?)\)")
 FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")

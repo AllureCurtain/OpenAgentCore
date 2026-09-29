@@ -228,6 +228,14 @@ design would need parallel compatibility paths, raise the issue with a concrete 
 tradeoffs before implementing the disputed behavior. Continue independent work
 while the decision is pending. Do not silently preserve obsolete private designs.
 
+Public project branding uses OpenAgentCore. The canonical vector mark is
+`docs/assets/openagentcore-logo.svg`; static Web, docs and example assets use
+the same outline, with transparent margins cropped, theme-aware favicon colors
+and dark-surface inversion. The canonical SVG preserves the reference PNG canvas.
+The README hero uses the supplied `docs/assets/openagentcore-banner.jpg`.
+Historical provenance, external repository URLs, import paths and existing data
+identifiers retain their original spelling; do not rename those as display copy.
+
 Core Web leads with operations: Monitor (Overview, Core metrics, Agent metrics,
 Sandbox metrics, Session log), Resources and Platform. Pages use the shared
 components in `apps/web/src/components` and the tokens in `apps/web/src/styles`,

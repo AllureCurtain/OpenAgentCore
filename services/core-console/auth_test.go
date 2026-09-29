@@ -25,7 +25,7 @@ func coreKeyConsoleConfig(t *testing.T, backend http.Handler) config {
 	if err := os.Mkdir(filepath.Join(dist, "assets"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for name, body := range map[string]string{"index.html": "console application", "assets/main.js": "app script", "private.txt": "not public", "oac-mark-light.png": "light mark", "oac-mark-dark.png": "dark mark", "parsar-mark-light.png": "retired mark"} {
+	for name, body := range map[string]string{"index.html": "console application", "assets/main.js": "app script", "private.txt": "not public", "oac-mark.svg": "vector mark", "favicon.svg": "vector favicon", "parsar-mark-light.png": "retired mark"} {
 		if err := os.WriteFile(filepath.Join(dist, name), []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -105,12 +105,12 @@ func TestCoreKeySignInSessionAndLogout(t *testing.T) {
 			t.Errorf("private path %s returned %d", path, w.Code)
 		}
 	}
-	for _, path := range []string{"/", "/index.html", "/assets/main.js", "/oac-mark-light.png", "/oac-mark-dark.png"} {
+	for _, path := range []string{"/", "/index.html", "/assets/main.js", "/oac-mark.svg", "/favicon.svg"} {
 		if w := authRequest(h, "GET", path, "", nil); w.Code != 200 {
 			t.Errorf("login asset %s returned %d", path, w.Code)
 		}
 	}
-	for _, path := range []string{"/oac-mark-light.png", "/oac-mark-dark.png"} {
+	for _, path := range []string{"/oac-mark.svg", "/favicon.svg"} {
 		if w := authRequest(h, "HEAD", path, "", nil); w.Code != 200 {
 			t.Errorf("login asset HEAD %s returned %d", path, w.Code)
 		}

@@ -5,4 +5,4 @@ Complete applications on the OpenAgentCore public API. See the
 
 | Example | Summary |
 | --- | --- |
-| [Parsar](parsar/README.md) | Agent workbench: models, Skills, MCP, reusable Agents and Sessions on any runtime |
+| [OpenAgentCore workbench](parsar/README.md) | Agent workbench: models, Skills, MCP, reusable Agents and Sessions on any runtime |

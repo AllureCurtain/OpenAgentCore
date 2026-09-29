@@ -188,16 +188,12 @@ a {
   flex: 0 0 18px;
 }
 
-.brand-mark-dark {
-  display: none;
+html[data-theme="dark"] .brand-mark {
+  filter: invert(1);
 }
 
-html[data-theme="dark"] .brand-mark-light {
-  display: none;
-}
-
-html[data-theme="dark"] .brand-mark-dark {
-  display: block;
+.onboarding-mark {
+  filter: invert(1);
 }
 
 .brand-name,
