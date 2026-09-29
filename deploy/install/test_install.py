@@ -226,6 +226,21 @@ class InstallerTests(unittest.TestCase):
                 self.assertIn(f"Core key file: {self.root / 'secrets/core.key'}", output)
 
 
+    def test_no_change_repair_does_not_claim_service_health(self):
+        self.install("--sandbox", "none")
+        self.output = io.StringIO()
+        original_http = install.oac_cli.http
+        def unhealthy(url, *args, **kwargs):
+            if url.endswith(("/healthz", "/console/auth")):
+                return 503, None
+            return original_http(url, *args, **kwargs)
+        with mock.patch.object(install.oac_cli, "http", side_effect=unhealthy):
+            self.install()
+        output = self.output.getvalue()
+        self.assertIn("Installation settings checked. Use Status below to inspect service health.", output)
+        for misleading in ("Installation complete.", "Repair complete.", "checking their health"):
+            self.assertNotIn(misleading, output)
+
     def test_rerun_reads_config_json_rejects_flags_and_repairs(self):
         self.install()
         before = self.snapshot()
@@ -423,10 +438,10 @@ class InstallerTests(unittest.TestCase):
                                     "after the repair, choose it on the Nodes page in Web$"):
             self.install("--sandbox", "microsandbox")
         self.assertNotIn("Installation complete.", self.output.getvalue())
-        self.assertIn("==> Starting services and checking their health...", self.output.getvalue())
+        self.assertIn("==> Applying settings and starting services as needed...", self.output.getvalue())
         self.host.core["fails"] = False
         self.install()
-        self.assertIn("Repair complete.", self.output.getvalue())
+        self.assertIn("Installation settings checked.", self.output.getvalue())
         self.assertEqual(self.host.deployment_posts, [])
 
     def test_a_refused_selection_leaves_the_services_running(self):

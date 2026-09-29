@@ -2174,8 +2174,8 @@ not widen sandbox network policies or change credential admission.
 The distribution build sets umask 022 for non-root-readable payloads; installation
 credentials and state retain their explicit private permissions.
 
-Installer progress describes the operation about to run; completion follows its
-existing health and authentication checks. Keep terminal styling optional, honor
+Installer progress describes the operation about to run. Do not imply fresh
+health checks on a no-change repair. Keep terminal styling optional, honor
 `NO_COLOR`, and preserve plain redirected logs. Summaries show credential file
 locations, never their values. The bundled `install_output.py` owns presentation
 and is shipped and checksum-verified with the installer.

@@ -519,7 +519,7 @@ def finish(root, bundle, manifest, fresh=False, selection=None):
     retry = f"rerun ./install.sh --install-dir {root}"
     try:
         args = argparse.Namespace(dry_run=False, yes=False, confirm_public_url_change=None)
-        step("Starting services and checking their health")
+        step("Applying settings and starting services as needed")
         oac_cli._apply(root, args, False, True, sys.stdin.isatty(),
                        lambda message: print(message, flush=True), retry=retry)
     except oac_cli.OacError as error:

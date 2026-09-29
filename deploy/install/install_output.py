@@ -63,7 +63,7 @@ def sandbox_lines(config, selection, deployment, reachable):
 def summary(root, config, addresses, fresh, selection, deployment, reachable, incomplete):
     mode = config["mode"]
     status = ("Services are running; sandbox setup needs attention." if incomplete else
-              "Installation complete." if fresh else "Repair complete.")
+              "Installation complete." if fresh else "Installation settings checked. Use Status below to inspect service health.")
     print("\n" + color(status, "33" if incomplete else "32"))
     heading("Access")
     for address in addresses:
