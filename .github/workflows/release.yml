@@ -22,11 +22,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: core-release-${{ inputs.ref || github.sha }}
+  group: core-release-${{ github.event_name == 'push' && github.ref || inputs.ref }}
   cancel-in-progress: false
 
 jobs:
+  check:
+    uses: ./.github/workflows/check.yml
+    with:
+      ref: ${{ inputs.ref || github.sha }}
+
   build:
+    needs: check
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     outputs:
@@ -97,6 +103,8 @@ jobs:
           for asset in "$HOME/.oac/build/core-distribution/"*; do
             if [[ -f "$asset" ]]; then ln "$asset" "$HOME/.oac/build/release-upload/"; fi
           done
+          cp deploy/install-release.sh "$HOME/.oac/build/release-upload/install.sh"
+          (cd "$HOME/.oac/build/release-upload" && sha256sum install.sh > install.sh.sha256)
       - uses: actions/upload-artifact@v6
         with:
           name: core-release-${{ steps.source.outputs.revision }}
@@ -104,24 +112,26 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
-  draft:
-    if: github.event_name == 'workflow_dispatch' && inputs.draft_release
+  release:
+    if: github.event_name == 'push' || inputs.draft_release
     needs: build
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.build.outputs.revision }}
+          persist-credentials: false
       - uses: actions/download-artifact@v6
         with:
           name: core-release-${{ needs.build.outputs.revision }}
           path: release-upload
-      - name: Create an unpublished draft
+      - name: Publish the version tag or create a manual draft
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_REVISION: ${{ needs.build.outputs.revision }}
           RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
-        run: |
-          printf 'Matched Linux amd64 artifacts from commit %s. Build output is not live execution qualification.\n' "$RELEASE_REVISION" > release-notes.md
-          gh release create "$RELEASE_TAG" --draft --target "$RELEASE_REVISION" \
-            --title "OpenAgentCore $RELEASE_REVISION" --notes-file release-notes.md release-upload/*
+          RELEASE_MODE: ${{ github.event_name == 'push' && 'publish' || 'draft' }}
+        run: python3 scripts/publish-core-release.py --assets release-upload

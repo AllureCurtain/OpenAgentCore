@@ -1973,9 +1973,19 @@ refers to.
 `make build-core-distribution` builds from clean committed source and reuses the
 existing API, Runtime, SDK, helper and Web builders. Artifacts record source and
 immutable image identities, the actual Runtime manifest digest, checksums and
-microsandbox runtime/firmware hashes and executable native payloads. Release generation is not publication or
-qualification. A release must be tested from fresh extraction with real models;
-no synthetic result may substitute for native execution acceptance.
+microsandbox runtime/firmware hashes and executable native payloads. Local distribution builds do not publish. The tag-triggered release workflow
+reuses the full repository check on the exact build source, then publishes the
+matched assets automatically; manual runs remain artifact-only or draft-only.
+Only publication receives repository write permission. Never overwrite release
+assets or move an existing version tag. The [maintainer guide](docs/maintainers.md#publish-a-version)
+owns tag syntax, prereleases and failed-publication recovery.
+Release assets include `deploy/install-release.sh` as standalone `install.sh`
+with a checksum. This public downloader resolves latest once (or a selected tag),
+verifies the offline archive before safe extraction, and delegates to that bundle's
+installer. It introduces no separate installation state, upgrade path or login flow.
+Build/test success is distinct from real-model qualification; maintainers assess
+that evidence before pushing a release tag, and no synthetic result substitutes
+for native execution acceptance.
 
 Distribution `images` records each exported image's config digest;
 `image_manifest_digests` records its OCI manifest/index digest. Derive and verify
