@@ -8,7 +8,7 @@ const app = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const repo = path.resolve(app, '../..')
 const guides = JSON.parse(fs.readFileSync(path.join(app, 'scripts/guides.json'), 'utf8'))
 const routes = new Map(guides.map(g => [g.source, g.slug === 'index' ? '/' : '/' + g.slug]))
-const sourceRevision = '75bf4484ba957344ae374354858bbdfe104f5c4f'
+const sourceRevision = '0d546dfd38e1bdd754b0887442d7b358a73002a6'
 const sourceURL = relative => `https://github.com/MiniMax-AI/parsar-core/blob/${sourceRevision}/${relative}`
 const digest = text => crypto.createHash('sha256').update(text).digest('hex')
 function mdx(text) {
@@ -44,14 +44,11 @@ for (const guide of guides) {
     return label + '(' + url + (anchor ? '#' + anchor : '') + ')'
   })
   const en = `---\ntitle: ${JSON.stringify(guide.title)}\ndescription: ${JSON.stringify(guide.description)}\n---\n\n` + (guide.slug === 'execution-model' ? '![Application, administration and machine credential boundaries](/images/architecture.svg)\n\n' : '') + mdx(body.trim()) + `\n\n[Repository source](${sourceURL(guide.source)})\n`
-  const zh = `---\ntitle: ${JSON.stringify(guide.title + ' · 中文导读')}\ndescription: "当前版本的中文导读；完整操作步骤见英文正文。"\n---\n\n${guide.zh.replaceAll('<', '&lt;')}\n\n此页为中文导读，完整且与当前源码同步的步骤请阅读[英文正文](/en/${guide.slug === 'index' ? '' : guide.slug})。\n\n[安装](/install) · [配置](/configure) · [API 与凭据](/public-api) · [节点](/hosted-providers) · [应用示例](/quickstart)\n`
-  for (const [suffix, text] of [['', en], ['.zh', zh]]) {
-    const relative = `content/docs/${guide.slug}${suffix}.mdx`
-    fs.writeFileSync(path.join(app, relative), text)
-    record.outputs[relative] = digest(text)
-  }
+  const relative = `content/docs/${guide.slug}.mdx`
+  fs.writeFileSync(path.join(app, relative), en)
+  record.outputs[relative] = digest(en)
   record.sources[guide.source] = digest(original)
 }
 record.sources['apps/docs/scripts/guides.json'] = digest(fs.readFileSync(path.join(app, 'scripts/guides.json')))
 fs.writeFileSync(path.join(app, 'content/guide-sources.json'), JSON.stringify(record, null, 2) + '\n')
-console.log('Rendered ' + guides.length + ' current guides and Chinese reading notes.')
+console.log('Rendered ' + guides.length + ' current English guides.')

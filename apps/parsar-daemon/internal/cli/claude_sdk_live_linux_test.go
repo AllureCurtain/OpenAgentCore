@@ -57,7 +57,7 @@ func TestLiveRegisteredClaudeSDK(t *testing.T) {
 		t.Setenv(name, value)
 	}
 	stdout, stderr := &strings.Builder{}, &strings.Builder{}
-	discovery, err := discoverAgentCLIs(&runContext{stdout: stdout, stderr: stderr}, "acceptance", unavailableCLIChecks())
+	discovery, err := discoverAgentCLIs(t.Context(), &runContext{stdout: stdout, stderr: stderr}, "acceptance", unavailableCLIChecks())
 	if err != nil || discovery.ClaudeSDK == nil || !discovery.ClaudeSDK.Info.Available {
 		t.Fatal("SDK-only discovery failed", err)
 	}

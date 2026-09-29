@@ -1,5 +1,36 @@
 # Contributing to OpenAgentCore
 
+Start with [Develop OpenAgentCore](docs/development.md) for checkout, toolchains,
+component locations and focused checks. This guide owns repository-wide workflow
+and architecture rules. Detailed protocols and native implementation rules have
+one canonical owner, listed below; update that owner when changing its contract.
+
+## Documentation ownership
+
+| Subject | Canonical source |
+| --- | --- |
+| User concepts and authority | [Design principles](docs/design-principles.md) |
+| API callers, credentials and route inventory | [API index](docs/api/README.md) |
+| Public wire types and qualified behavior | [Agents API contracts](contracts/agents-api/README.md), [pinned upstream](contracts/agents-api/upstream.json), and linked operation contracts |
+| Runtime messages, receipts and failure ownership | [Core–Runtime protocol](docs/runtime-protocol.md) and `internal/agentdaemon/proto` |
+| Harness interfaces and onboarding | [Harness onboarding](contracts/agents-api/harness-onboarding.md) and `agent/harness.go` |
+| Provider interfaces and onboarding | [Sandbox Provider guide](docs/sandbox-provider.md) and `sandbox/sandbox_provider.go` |
+| Claude private bridge and Runtime artifact | [Claude SDK adapter](packages/claude-sdk-adapter/README.md) |
+| Operator installation and configuration | [Installation](docs/getting-started/install.md), [configuration](docs/configuration.md), [operations](docs/getting-started/operations.md) |
+| Web components, interaction and visual rules | [Web design](apps/web/DESIGN.md) and [Web architecture](docs/web/architecture.md) |
+| Documentation website generation | [Docs app](apps/docs/README.md) |
+
+English Markdown in `docs/`, component guides and `contracts/` is authored source.
+The docs app generates guide pages and API references from these sources. Never
+edit generated copies to establish a different rule. Keep documentation and code
+comments in English; the root project README is provided in English and Chinese,
+and user-facing internationalized product copy may be bilingual.
+
+Historical acceptance records retain their original revisions and limits. They
+are evidence, not current installation instructions or authority to restore a
+retired implementation. Keep task chronology and one-off rollout reports out of
+new contributor rules.
+
 ## Repository boundary
 
 This repository is the standalone execution substrate copied from Parsar at the
@@ -21,7 +52,29 @@ hashes. Do not automatically sync or delete the original repository's Core.
 Core orchestrates protocol-defined operations. Sandbox providers, Runtime
 implementations, harnesses and model providers are replaceable components.
 User-owned machines, E2B, Docker and other environments must expose the same
-execution protocol; placement and connection details belong to their providers.
+execution protocol. Resource management selects machines, allocates capacity and
+creates, bootstraps, renews and reclaims Environments; Runtime initializes files,
+tool configuration, packages, setup and capabilities, then executes
+work and recovers within an Environment. Keep these contracts and lifetimes
+separate: closing a Session executor does not release its allocation, destroy its
+Environment or delete its workspace. Reclamation is an explicit resource-manager
+operation coordinated with active work.
+
+Capability preparation uses one Runtime path for managed bundles and self-hosted
+local directories. Core resolves configuration, versions
+and resources; Runtime uses one parser and `installed.json` snapshot to supply
+Skill paths and MCP declarations to adapters. Preparation must complete before
+execution; reconnect reuses installed contents, and new Sessions freeze a new
+configuration snapshot. The protocol is platform-neutral. Self-hosted daemons run natively on Linux,
+Windows and macOS; managed Providers remain Linux-only. The daemon executes with
+its launching user's permissions. It does not sandbox tools, files or networks,
+including on Linux. Managed isolation belongs to the outer Docker/E2B Environment,
+created by Core through a Provider. Harness adapters use bypass execution on all
+platforms. Runtime authentication, process cleanup and state consistency remain
+required; none constitutes isolation from tools running as the same user.
+Installation layout may differ, but Core preparation and execution cannot branch
+on operating system or Environment source. Platform support requires native CI builds and automated tests; cross-compilation
+alone is insufficient.
 
 - Keep component boundaries explicit through shared interfaces and versioned
   protocols. Register implementations behind those interfaces. Adding an
@@ -44,17 +97,51 @@ execution protocol; placement and connection details belong to their providers.
   the pinned public API, or authorize unrelated refactors or live Session
   configuration switching.
 
+### Sandbox Provider contract
+
+The [Sandbox Provider onboarding guide](docs/sandbox-provider.md) owns integration
+and operation semantics. Its canonical interface is
+[`SandboxProvider`](services/agents-api/internal/sandbox/sandbox_provider.go).
+Use that interface for compute lifecycle and bounded bootstrap; optional
+interfaces own checkpoint and read-only observation behavior. Construction owns
+vendor configuration, and common orchestration selects capabilities rather than
+provider names.
+
+## Core–Runtime integration contract
+
+The [Core–Runtime protocol](docs/runtime-protocol.md) owns message order,
+identities, receipts and failure ownership. Shared types and validators live only
+in `internal/agentdaemon/proto`; change both peers together with an exact
+wire-version check. Do not add a parallel schema or historical wire fallback.
+Hosted and self-hosted peers use the same contract. The project is not public:
+change current callers and implementations together instead of maintaining
+historical compatibility layers, aliases or migrations.
+
+`make check-runtime-contract` is the focused shared-contract entry point. Its
+checks also run through `check-go` and `check-agents-api` in the required full gate.
+Keep failure, cancellation, disconnect and cleanup assertions in that common
+suite; native adapter acceptance remains required for advertised capabilities.
+
 ## Workflow and quality
 
-Develop in an isolated worktree on a feature branch and submit a PR. Do not edit
-or commit implementation directly on main. An empty repository bootstrap commit
-is only the comparison base for the first import PR. Choose review depth by risk. Substantial changes and changes involving security,
-shared lifecycle ownership or uncertain cross-package behavior need an independent
-blind review after validation. Give the reviewer only requirements, acceptance
-criteria, boundaries, repository path and comparison baseline. Small, verified
-fixes may use self-review, including focused corrections after a blind review;
-repeat independent review when a correction materially changes the design or risk.
-Fix in-scope blockers before delivery. Do not use `codex exec` as a substitute reviewer.
+Before development, record the requirements, acceptance criteria and scope. Make
+only the changes needed for that scope; keep unrelated refactors separate. Work
+in an isolated Git worktree on a feature branch and submit a PR. Do not edit or
+commit implementation directly on main.
+
+After implementation and necessary validation, have a fresh independent subagent
+review the complete diff. Give it only the requirements, acceptance criteria,
+boundaries, repository path and comparison baseline, without an implementation
+summary, self-assessment or earlier review findings. Explain those review criteria
+to the user. Fix substantiated in-scope findings, validate, then use another fresh
+reviewer. If the review/fix cycle repeats, reassess the design and scope before
+adding more changes; report an unresolved blocker rather than broadening the task.
+Do not use `codex exec` as a substitute reviewer.
+
+Search for existing formatters, parsers, validation and error mappers before adding
+one. Share frontend formatting and labels in `apps/web/src/lib/`; reuse components
+and tokens. Keep one error mapper per API surface. Split growing files at an
+existing ownership boundary rather than adding unrelated responsibilities.
 
 The [API documentation index](docs/api/README.md) lists the three namespaces:
 `/v1` for applications (Project API key), `/core/v1` for Core Web's server and
@@ -84,8 +171,10 @@ removed; only the historical `source:"admin_copy"` provenance read remains, fed 
 or request bodies enter logs. The console's fixed actor label (`console`) is only
 an audit display label, never an authorization input.
 
-When requirements conflict, object ownership is unclear, or a design would need
-parallel compatibility paths, raise the issue with a concrete recommendation and
+Apply the latest explicit user decisions when older documents conflict, and
+update the affected current guidance. Historical evidence does not override those
+decisions. When requirements remain unresolved, object ownership is unclear, or a
+design would need parallel compatibility paths, raise the issue with a concrete recommendation and
 tradeoffs before implementing the disputed behavior. Continue independent work
 while the decision is pending. Do not silently preserve obsolete private designs.
 
@@ -96,28 +185,16 @@ described in `apps/web/DESIGN.md`. Keep explanations behind help tips, but keep
 errors, warnings and safety notices visible. Browser-derived metrics state their
 coverage, keep missing values missing, bound their fan-out and time, report a failed
 read as failed and never imply deployment-wide or billing totals.
+Sandbox deployment setup, configuration, reset and progress belong to the System
+secondary page (`#system?id=sandbox`). Nodes owns node management; Overview and
+metrics pages link to these owners instead of repeating their controls or details.
+Keep uncommon resource edits and rollout details in dialogs, and avoid repeating
+the same information within or across pages. Core responses remain the source of
+truth for deployment and connection state.
 
-For subsequent alignment and milestone closure batches, the main thread coordinates
-design, shared interface agreements, file ownership, integration and merge. First
-reconcile main and the boards, then list remaining mandatory milestone work,
-acceptance, scope ceilings and stop conditions. Use built-in GPT-6 Astra high
-subagents for two or three related tasks with disjoint file ownership, or separate
-implementation from real acceptance. Do not create a design per harness or have
-multiple agents edit one shared interface. Validation workers use independent
-databases, ports and containers. Run targeted tests during development, then the
-stable batch's required checks, real regression, generation and independent review.
-Do not split an already active batch again just to adopt this workflow. Preserve
-confirmed native differences and queue nonblocking findings without expanding the
-milestone; stop after completing it when the user has set that boundary.
-
-For the continuous official-semantics alignment campaign, repeat owned-resource
-API/documentation comparisons, bounded implementation batches, acceptance and
-rescan until reasonably addressable discovered differences are removed. Maintain
-operation-level evidence, including unverified behavior and approved native
-harness/daemon differences. A merged batch does not finish the campaign. Discuss
-uncertain designs before expanding mechanisms; simplify repeated patch loops and
-record unresolved low-ROI cases with evidence and impact. Never defer a safety or
-data-consistency blocker while claiming the affected workflow passed.
+Track the selected milestone and its evidence in the active project board when
+one is in use. Record unrelated findings without automatically starting them.
+Do not claim completion of a broader compatibility target from one merged batch.
 
 Session creation requires initial input for `none`, and for streaming creation
 outside `self_hosted`. Report inline agent protocol errors first, then check these
@@ -206,8 +283,7 @@ Run `make check` before completion. The standalone gate includes all daemon/shar
 Go tests, Core contract/client/service tests, Core Web and TypeScript client
 checks (including fixture-only Playwright acceptance), a real dedicated PostgreSQL test
 database, byte-for-byte sqlc regeneration checks, standalone API builds, Claude SDK
-tests and packaging, MiniMax companion checks, and Rust filesystem-helper
-tests/format/Clippy. It intentionally has no product Web/server/installer gates. The full gate fails when the database variable is missing. The test database role
+tests and packaging, MiniMax companion checks, and native daemon filesystem tests. It includes the Core distribution and installer gates, but no Parsar product Web or server gates. The full gate fails when the database variable is missing. The test database role
 needs CREATE DATABASE permission: managed-provider tests create and drop isolated
 `oac_*_tests` databases because provider identity is deployment-wide.
 Set `OAC_TEST_DATABASE_URL` to that dedicated database and `OAC_TEST_OFFICIAL_SDK_PYTHON`
@@ -215,8 +291,7 @@ to the pinned SDK interpreter. `PARSAR_AGENTS_API_TEST_DATABASE_URL` is retired;
 `make check-database` reports its replacement when only the old name is set.
 Tests must not bypass the production provider-switch guard.
 
-Use Go from `go.mod`, Node 22, pnpm 10.30.3, Python 3.9+, Rust 1.95.0 with rustfmt
-and Clippy, and Linux OpenSSL development libraries. `make sqlc-generate` owns only
+Use Go from `go.mod`, Node 22, pnpm 10.30.3 and Python 3.9+. `make sqlc-generate` owns only
 `services/agents-api/internal/db/sqlc` (sqlc v1.29.0). Do not rewrite landed
 migrations. The public protocol schema is `contracts/agents-api/openapi.yaml`;
 there is no product swaggo contract in this repository. Preserve its pinned types,
@@ -231,11 +306,9 @@ of product routes.
 Core changes must retain the independent build and official-client workflow.
 Native adapter changes require their applicable build/check targets and live provider
 acceptance. Real execution checks require real models; do not count omitted
-prerequisites or mocked responses as live acceptance. `packages/codex-executor`
-retains only the directory, write and workspace-export Rust helpers. Its build and
-check targets remain; the separate `packages/codex-harness`, its build/check scripts
-and its CI/`make check` gate are retired. Historical remote native probes are not
-current validation entrypoints.
+prerequisites or mocked responses as live acceptance. Workspace Files run in the
+daemon's portable Go implementation and are covered by its tests. Historical
+remote native probes are not current validation entrypoints.
 
 ## Core operational metrics
 
@@ -267,9 +340,9 @@ offline backfill is allowed.
 
 ## Architecture boundaries
 
-The following execution rules are retained from the source contributor guide.
-References to the product describe the external client boundary, not components
-included in this repository.
+These rules govern execution ownership across components. Operation-specific
+wire behavior and acceptance evidence live in the linked contracts. References
+to the Parsar product describe an external client boundary.
 
 ### Product and execution service separation
 
@@ -335,23 +408,6 @@ databases, credentials and migrations. The product uses Core exclusively; it has
   Parsar uses the same public contract as any other client, with no privileged
   endpoint or direct execution-table access. An OpenAI endpoint is a possible
   client target only where the requested capabilities and credentials support it.
-- Maintain tasks, priorities and evidence in the Feishu board. Register issues
-  discovered during a task without switching work or automatically selecting them
-  next. Only a direct acceptance blocker justifies a minimal in-scope fix. After
-  each bounded task passes checks/review and merges, mark its child entry done.
-  Treat each selected concise Core TODO item as a delivery milestone. The long-term
-  Goal retains the objective, constraints and standards; detailed-board entries are
-  smaller tasks within that milestone. Batch related small tasks when they share a
-  functional outcome and safety boundary, then validate and independently review
-  the batch once stable. Do not manufacture one PR per internal wiring step.
-  Finish the selected milestone before choosing another. The main agent selects
-  tasks; subagents handle technical design, scoped collaboration and review, not
-  prioritization. Stop after the complete milestone when the user sets that boundary;
-  do not automatically claim the next one or mark the long-term objective complete. Product integration, UI and business Team work remain
-  outside Core delivery. Prioritize a sound architecture skeleton
-  and correct principal workflows with real API validation. Record and defer
-  low-frequency corner cases when risk and ROI permit; do not let minor details
-  delay the main work. Required checks and material correctness guarantees apply.
 
 - Parsar owns users, workspaces, business authorization, Agent/Team definitions,
   capabilities, product conversations, IM/sharing, approval decisions and billing.
@@ -384,21 +440,6 @@ daemon sockets and native harness Sessions. Create an Environment association in
 the same transaction as its Session and creation identity when this resource is
 implemented. Keep mutable connection/registration state out of immutable
 configuration; replacement ownership must fence stale observations.
-
-The current MVP covers Codex, Claude Code and MiniMax Code through the shared
-single-Agent path: Session
-creation, environment preparation, native execution, files/artifacts, cancellation,
-reconnection/recovery queries, and standalone deployment acceptance. Select each
-bounded child from the complete board within the selected concise-TODO task;
-nonblocking local improvements stay queued.
-Authentication, tenant/credential isolation, state consistency and data loss remain
-material acceptance requirements. Optional feature equality is not required. After
-the three profiles pass merged-main validation, publish the results, limitations
-and backlog. The user has since renewed continuous Core delivery: select and
-finish large tasks from the concise TODO, retaining bounded child acceptance.
-Additional harness implementations remain queued. The separately authorized
-Subagent batch targets the six read operations across these three harnesses and
-does not change the complete pinned protocol target.
 
 The current hosted architecture is V1: Core runs independently; each Environment
 sandbox contains its daemon, selected native harness, local tools and workspace.
@@ -473,7 +514,7 @@ forwarding. The explicit daemon-executor decision supersedes the previous native
 executor interoperability requirement. The superseded execution route is removed;
 retain reusable filesystem helpers,
 necessary regressions and historical evidence without a compatibility layer.
-The private daemon wire protocol is 0.6.0. Initial, prepared and active input use
+The private daemon wire protocol is 0.8.0. Initial, prepared and active input use
 the same ordered MessageInput contract, replacing scalar prompts and attachments.
 User-message boundaries and text/image order remain intact through Core and the
 Runtime wire; adapters own native conversion and receipt aggregation. Text-only
@@ -483,8 +524,8 @@ unqualified harnesses (Claude SDK, MiniMax Code) reject them at admission rather
 their input rewritten. Codex has a flat native
 input list and uses blank-line separators between messages; this does not preserve
 independent native user-message boundaries. No old wire fallback is maintained.
-Deploy Core and daemon together; the existing major/minor WebSocket check rejects
-older major/minor peers before dispatch rather than ignoring removed fields.
+Deploy Core and daemon together; the WebSocket check requires the exact wire
+version, including patch, and rejects mismatches before dispatch.
 The independently packaged Claude bridge uses protocol 3 for a prepared Executor
 and separately identified Turns; readiness rejects other protocol versions.
 Image-bearing messages require a qualified profile/placement before persistence
@@ -532,9 +573,11 @@ or load encrypted file bodies. Record original creation intent before resolution
 Template parsing, persistence and resolution must not select a harness or Provider,
 or depend on native tool names and private harness paths. The shared initializer
 uses the packaged Runtime contract for trusted commands, workspace/staging paths,
-confidential input and completion receipts. Each Provider supplies that same
-Runtime and carries initialization commands through RunCommand; each adapter owns
-native tool configuration. A new harness or Provider must not require template
+confidential input and completion receipts. Each Provider bootstraps the same
+daemon; all initialization uses its authenticated `runtime_prepare` protocol.
+The common runner depends on Environment and Session identity and a Runtime peer,
+not a Provider, deployment type or operating system. Each adapter owns native tool
+configuration. A new harness or Provider must not require template
 business-logic changes. Reuse qualified shared helpers even when their executable
 names have historical engine prefixes; renaming is not a boundary fix. Select real
 regressions by the changed shared, Provider and adapter boundaries, rather than
@@ -569,36 +612,41 @@ transaction stores a safe reason with the failed Environment and records
 `environment.failed`, `error` and one `agent.session.failed`; Session reads derive
 `failed`, that reason and the failure time from the same record, and live streams end
 after the failed event. The initializer reports only the integer exit status of a
-failed sandboxed step. Core composes the reason from a fixed step label and that status,
+failed initialization command. Core composes the reason from a fixed step label and that status,
 never from command, package-manager or file output; unknown effects, timeouts and
 receipts without a status keep a generic reason. New input then gets the observed 409
 `conflict_error`; expiry and pending-input settlement keep their behavior.
 Completed environments never reinstall initial files on reconnect or native recovery.
-Provider RunCommand carries bounded stdin, not confidential argv. Only fixed trusted
-initializers may run with Runtime authority. User setup and package install hooks
-run in the common packaged sandbox, without daemon credentials or native history.
-Files, resolved Skills and inline Plugins precede system, npm/Python packages and ordered setup commands. Initialization has
-provisioning network access; requested network restrictions apply to native tools
-after setup. Confidential env and setup snapshots are encrypted independently of
-ordinary metadata. Adapters apply tool env only after isolation, never to the
-credential-bearing daemon/native harness launcher.
-Reuse the packaged atomic file writer and anchored parent creation across all profiles.
+The typed Runtime preparation protocol carries bounded confidential input. The
+daemon owns the common Go initialization implementation; Core supplies no
+executable or host-platform field. Initial files and tool configuration precede
+Skill/Plugin bundles, npm/Python packages and ordered setup, followed by capability
+directory capture. Commands run directly with the starting account's permissions
+and host network. Outer Environments own managed isolation; unsupported network
+restrictions must reject rather than silently run unrestricted. Confidential env
+and setup snapshots are encrypted independently of ordinary metadata. Adapters
+apply explicit tool variables without automatically inheriting daemon credentials;
+this does not prevent same-user tools from reading local Runtime state.
+Reuse runtimefs atomic replacement and anchored logical-workspace paths for initial
+files on every platform. Public Files creation keeps its own non-replacement rule.
 
-System packages use one Runtime-owned tool root, separate from trusted daemon and
-harness executables. Build its immutable seed from the base image before adding
-Runtime/harness code or secrets; include the matching package database and base
-tool symlink targets. The shared installer extracts independent inodes and runs
-apt/dpkg inside an unprivileged namespace. Package scripts cannot access Runtime
-credentials, native history or outer processes. Later setup and native tools enter
-the installed root read-only, retaining the authorized workspace and adapter-owned
-scratch. `/workspace` and `/environment/workspace` refer to the same authorized
-workspace inside that root, preserving native working directories. Native adapters
-own entry and existing process cancellation; Core never
-selects an engine or Provider for package initialization. No live filesystem
-snapshot, second lifecycle owner or package-manager framework is introduced.
-Core preserves the system-package requirement in the common execution binding;
-a missing installation receipt fails preparation instead of falling back to base
-tools. This requirement does not add execution prerequisites to Files reads.
+System dependencies must be preinstalled in the managed image/template or by the
+self-hosted user. `packages.system` rejects explicitly, including a supplied null
+or empty list. Runtime does not run apt, sudo, an unprivileged system-root installer
+or any other automatic system-package operation. No daemon privilege increase or
+managed-only exception is permitted. Missing dependencies fail the consuming
+operation. npm and Python use local prefix/target directories; setup requires Bash
+and Windows requires Git Bash, without a substitute shell.
+Package responses retain the official required `system: []` field as empty
+response metadata; it is not stored as an initialization option.
+
+Initialization and package directories default under `OAC_RUNTIME_HOME` and may be
+selected with `OAC_RUNTIME_INITIALIZATION_DIRECTORY` and
+`OAC_RUNTIME_PACKAGE_DIRECTORY`. Packaged Linux images select their existing
+`/environment` layout through those settings. `OAC_RUNTIME_TOOL_ENV_FILE` selects
+explicit configuration. These are resource paths, never Environment-source or OS
+switches in Core. Runtime process ownership waits for exit and I/O settlement;
+confirmed failures retain only a bounded exit status, never command output.
 
 Skills and their immutable versions are Core-owned tenant resources, independent of
 Sessions and native Skill installations. Serialize version allocation and pointer
@@ -630,14 +678,15 @@ installation directories are not portable public paths.
 Inline and referenced Skill ZIPs use the same confidential initialization snapshot and installer.
 Core validates portable manifests and bounded regular-file archives, returns only
 safe Skill metadata, and freezes content before native preparation. The Runtime
-owns `/environment/initialization/capabilities/skills/<name>`; setup and native tools may read but
-not modify this tree. Public Plugin ZIPs preserve their complete package
+owns `skills/<name>` below its configured capability root; the manifest validates
+the installed snapshot before reuse. This is state
+consistency, not protection from the launching user. Public Plugin ZIPs preserve their complete package
 layout and reuse the shared archive and portable Skill parsers. Core keeps safe
 Plugin metadata separate from encrypted archives. Templates inherit or replace
 Plugin and capability-directory lists through the same hosted resolver.
 
 After ordered setup, the existing initializer snapshots declared workspace-contained
-capability directories into protected storage and writes one installed manifest.
+capability directories into Runtime storage and writes one installed manifest.
 This is an initialization artifact, not a second lifecycle owner or database ledger.
 Directory bytes are observed after setup; they are not frozen at Session creation.
 The common daemon resolves the manifest only for executable preparation and passes
@@ -656,40 +705,21 @@ fails explicitly, without silent partial activation or a generic plugin framewor
 
 Environment-origin MCP declarations use the shared Plugin parser and frozen
 installed packages. The installation manifest retains selected MCP package roots;
-Runtime re-parses those protected packages without another configuration copy,
+Runtime re-parses those installed packages without another configuration copy,
 credential cache or lifecycle ledger. Native adapters must explicitly qualify and
 project supported declarations before public admission. Parent-directory Skill
 discovery does not activate nested Plugin MCP configuration.
 
-The packaged stdio entry enters the existing initialization sandbox before parsing
-or executing a server. It mounts only the fixed static daemon helper, which resolves
-the selected installed declaration, reads explicitly selected initialized user
-variables, applies package-relative cwd and replaces itself with the server. Native
-MCP stdin/stdout pass directly to the sandbox; no protocol forwarding loop,
-Provider command or second Plugin parser is introduced. The existing Python stdio
-entry remains a single-threaded launcher and monitors the native parent process
-through Linux pidfds. Native Codex recycles spawning threads, so binding bwrap's
-parent-death signal directly to those threads kills live MCP connections. The
-launcher gives bwrap a stable parent, retains its parent-death/PID namespace cleanup,
-and kills and reaps only that child when the native process exits. A pre-exec
-parent-death signal and expected-parent PID check close the reproduced fork-to-exec
-orphan window; bind libc before fork and keep this entry single-threaded. Missing
-pidfd support fails closed. This fixes the OS process lifetime boundary without adding a
-Core execution owner, retry or reconnect loop.
-Model/daemon launch variables are never credential sources. Hosted stdio requires
-enabled network; native HTTP requires its own qualified network and redirect behavior.
-Claude composes the existing MCP identity/observation profile with its workspace
-profile. Verify the complete native inventory before admitting tool identities;
-MCP allowlist patterns never grant local Bash or file authority. Only declared
-random bearer references enter native query env, with native Bash denial retained.
-With system packages, Claude uses its packaged shell-prefix dispatcher. Only the
-exact fixed Runtime stdio invocation bypasses the tool root; it immediately execs
-the existing isolated launcher. All other full command strings pass unchanged to
-the tool root. The native Bash sandbox and cwd receipt remain in their original
-order. Do not move wrapping into Bash input hooks or add a directory-state owner.
-Keep this native distinction in the adapter; Core and the common launcher do not
-select an engine. Per-server env cannot disable the native global prefix because
-Claude selects the executable before merging that env.
+The common daemon stdio entry resolves the installed declaration and launches its
+server under the same user permissions as the Harness. Unix replaces the helper
+process; Windows forwards native stdio within the owned process tree. Explicit
+initialized values override the selected declaration's variables. There is no
+Python sandbox launcher, mount policy, shell prefix or separate credential sandbox.
+Process groups and Windows Jobs own cancellation and descendant cleanup only.
+Claude composes MCP identity and observation with the same workspace profile;
+MiniMax keeps its existing supported transport qualification. A public capability
+advertisement must still match the installed engine's actual supported transport.
+
 Environment-origin literal HTTP headers remain rejected for the pinned Claude
 client because its interpolation and cross-origin forwarding change their meaning.
 MiniMax accepts environment stdio only. Its adapter reads the existing Session-private
@@ -699,18 +729,20 @@ never fabricate a delayed start event, guess normalized identities or add a regi
 of our own. Its unqualified HTTP transport remains rejected.
 These mechanisms alone do not establish public MCP support or full compatibility.
 
-Name, enabled/disabled/exact-domain restricted network, initial files, inline/referenced Skills, Plugins, workspace capability directories and env/setup/system/npm/Python are
+Name, initial files, inline/referenced Skills, Plugins, workspace capability directories and env/setup/npm/Python are
 implemented independently of remaining installation fields. Reject unsupported
 inputs rather than persisting them for silent
 omission; expand inline and template initialization together in separately qualified
 batches. Resource reads need only tenant authorization, not a live Runtime.
 See the [Template coverage and unresolved semantics](contracts/agents-api/environment-templates.md).
 
-SandboxProvider has five operations: Create, GetInfo, Renew, Kill and RunCommand.
-Use maintained provider SDKs and thin adapters. Hosted deployments select one deployment-wide Provider: E2B cloud, or Docker/microsandbox on administrator-owned nodes.
-Provider initialization creates the sandbox and starts its daemon/harness;
-RunCommand is for initialization only. Daily execution and Files use Runtime and
-native or bounded local capabilities. Docker's lack of a native renewable lease
+SandboxProvider owns Create, GetInfo, Renew and Kill, with placement and daemon
+bootstrap at the resource-management boundary. Use maintained provider SDKs and
+thin adapters. Hosted deployments select one deployment-wide Provider: E2B cloud,
+or Docker/microsandbox on administrator-owned nodes. Providers do not execute Core
+initialization commands. Initialization, daily execution and Files use the same
+daemon through typed Runtime operations and native or bounded local capabilities.
+Docker's lack of a native renewable lease
 does not remove service-owned hosted expiry and cleanup requirements.
 
 The official `openai_hosted` discriminator means hosting by this independent Core
@@ -786,7 +818,7 @@ inspection enforce the declared CPU/memory and exact image. E2B setup verifies t
 exact ready template build and matching CPU/memory through the pinned SDK before
 saving its encrypted account key, and records the build as read for the safe view;
 an omitted E2B `resources` adopts that build's CPU and memory. Loading a committed selection reconstructs its
-provider from the original credentials and receipts without repeating candidate
+provider from its owned generation, current committed credential and receipts without repeating candidate
 template validation; a template endpoint outage must not block cleanup of existing
 sandboxes. Creation and instance inspection still enforce the saved resources.
 E2B uses direct placement without a node. Node
@@ -795,9 +827,9 @@ OCI manifest digest, microsandbox image reference, Runtime and firmware hashes.
 These identities are distinct and cannot substitute for each other.
 
 Startup claims the stable installation identity and a new owner epoch before
-provider selection. The existing runtime manager loads one immutable generation.
+provider selection. The runtime manager retains generation-aware provider facades.
 Initial setup and replacement prepare and validate candidates before database
-writes. Rejected candidates preserve the active configuration and workers. A clean
+writes. Rejected candidates preserve the active configuration and workers. A node
 replacement uses the existing mutation gate, pauses manager admission, drains old
 calls and loops, then repeats the resource/generation guards in the commit
 transaction. A changed selection, its generation and retirement of old nodes and
@@ -816,40 +848,143 @@ addresses from the validated installation public URL, never inbound Host headers
 current selection from the live deployment API; there is no startup configuration
 read.
 
-Provider, resources and Runtime changes require maintenance, the current generation
-and verified zero retained or pending resources. They never change the Core
-address, which comes from the installation public URL. Maintenance prevents fresh hosted Sessions and allocations while
-retaining admitted work, known receipts, queries and explicit cleanup. Unreleased
-allocations include stopped compute, snapshots, uncertain operations and pending
-cleanup. Pending hosted Environments without allocations also block changes.
-Failed checks never authorize resource deletion. Explicitly resume after a successful
-change. Preserve historical allocation ownership and Session placement; never migrate
-an existing Session to another provider or recreate a released allocation.
+All sandbox writes require the observed generation, including initial POST at
+zero; reject stale state before provider preparation, reset or no-op checks, and
+repeat it under the committing row lock. Same-provider PUT advances the target
+without draining execution or retiring nodes, tokens or the owner epoch. Node
+providers prepare independently and keep their old qualified serving pin. A different backend, E2B team or unspecified old selection requires reset.
+Preserve historical allocation ownership and placement, never migrate a Session.
 
-Explicit administrator Session archive requires a Web-managed deployment in
-maintenance and its current generation. Keep Project scope and managed-hosted
-eligibility checks in the existing administrative Store transaction, alongside
-Environment expiry (preserving failure), cancellation requests, Runtime authority
-revocation and audit. The ordinary Worker and provider lifecycle own compute and
-snapshot release; archive must not call a provider in that transaction or delete
-the Session. Retain history and persisted Files/Artifacts. The archive GET reports
-actual resource disposition, not archive provenance or Turn finalization. Keep
-unknown cleanup blocking, never automatically retry the mutation, and never
-resume an archived Session or restore its unpersisted workspace.
+Persist immutable allocation and placement deployment generations, distinct from
+compute generations. Node allocations copy their placement; E2B binds at reservation.
+Keep superseded specification/build rows without credentials while current, owned by
+an unreleased allocation/placement, or pinned by any nonremoved node. A durable node
+serving pin survives offline state and zero resources. GC uses the deployment lock
+and bounded pages; reset clears pins only after release. Never downgrade facts needed
+for generation routing. Bind node readiness to exact generation, current connection
+and owner epoch. Promote a durable pin only for readiness of the then-current target
+under deployment serialization. Late superseded readiness cannot acquire a pin.
+Filter online/readiness/address/capacity before preferring the newest eligible pin;
+newest-full must not mask older-free. Route Create, restore and cleanup through the
+immutable allocation/placement generation. V1 keeps its qualified enrolled fallback.
+
+Use sparse v2 control batches of at most eight entries with no lifetime cap. Omitted
+facts never authorize deletion. Correlate whole retention grants to connection,
+epoch, sequence, generation and digest; recheck queued/inflight/helper references.
+Permanent generation flock files survive updates and GC. Before any helper starts,
+the installer durably binds the original inode to installation/generation/specification
+identity; Python and Go openers verify it after every restart and never adopt a
+replacement or missing record. Preparation plans stay distinct from write-once final
+provider configurations: pending-only entries may recover or collect under Core
+authority, never serve. Resolve Docker's supported local image ID before publication.
+Only transfer/checksum/provenance errors report runtime_download_failed; preserve
+other fixed causes without parsing native error text. Retained Runtime bytes and
+the console's exact-release HTTP allowlist must agree. See
+`contracts/agents-api/node-generation-protocol.md` for recovery, immutable artifacts
+and the conservative v1 legacy-helper retention boundary.
+Interrupted node collection keeps an exact private generation journal and immutable
+configuration. Restart treats it only as a candidate for a fresh correlated Core
+drop grant, never as preparation or serving readiness. Persist native cleanup
+before removing its executable and durable file cleanup before the dropped marker;
+CLI errors and unknown native ownership cannot establish absence. Docker daemon
+images are shared host content, so automatic node GC retains them; only the host
+administrator can establish whole-host authority to remove them. Microsandbox
+image GC remains scoped to the installation-private store. Fresh nodes persist
+verified original Runtime file ownership separately from the host program; collect
+only exact unreferenced Runtime paths, keeping program, identity, base configuration
+and manifests readable across interrupted cleanup and restart.
+
+Use one E2B classifier. Omitted key preserves the current key; identical selection
+with omitted key is a no-op. Explicit key submission, including identical bytes,
+verifies and increments generation. Check the candidate and retained builds, paginated
+team-owned template membership and every settled live receipt under the candidate key.
+Initial E2B selection must also belong to the submitted key's team. Before online
+replacement, verify the current exact template under the committed key, then under
+the candidate key: shared membership is the ownership anchor, including for legacy
+installations with no retained resources. The pinned SDK exposes team-owned template
+listing, not an authenticated team ID; never invent or persist an inferred team ID.
+Public readability cannot anchor ownership. A legacy selection outside the committed
+key's team, or a revoked committed key, requires reset without blaming the candidate
+key. Transport uncertainty remains unconfirmed. Keep the old key valid until the PUT
+returns 200; revoke it only afterward. Missing/unsettled receipts and
+unconfirmed reads reject. Fence credential commits against all provider calls and
+actual helper subprocess completion after cancellation, then reverify. Helper exit
+never settles unknown remote Create. Bounded failure keeps the original key and
+lifecycles. Resolve each allocation's immutable specification and current key in one
+snapshot; no stale-key cache, fallback to current spec, or provider-map unloading.
+Audit the committed change without secret fields.
+
+Project rollout and reset from the same database snapshot. Old retained resources
+alone never imply preparation or high-frequency polling. Rollout state is settled
+unless actual target preparation is active. Offline/unconfirmed nodes are unknown;
+only exact current connection/epoch/generation readiness is ready. A durable pin is
+not connectivity. Fixed diagnostics alone may explain failed preparation. Report
+preparing only from an actual target observation; an online v1 node can be
+update_required while its valid pin remains available for admission.
+
+Reset is durable execution state, advanced by the existing manager outside its
+counted work. Serialize start, escalation, cancel, setup, update and finalization
+through the mutation gate. Auto waits only for in-progress/waiting root/subagent
+Turns and pending file writes; queued work, idle and suspended Sessions can archive.
+Recheck idleness with Session then deployment locks; never invert that order during
+finalization. Keyset-page bounded work, bind candidates to the reset request time
+as well as generation, and persist the original absolute deadline and validated
+audit provenance. Cancellation cannot revive archived work. Auto's deadline
+escalates to force durably; self-hosted Sessions are excluded.
+
+Use one snapshot and timestamp for the held-resource partition: unreleased
+allocations plus pending hosted Environments without any allocation row. Cleanup
+has precedence, then busy/idle. Count deleted/expired receipts until release.
+Offline ownership comes from allocation or active placement node identity, with
+the existing 45-second connection/owner-epoch predicate; provider readiness is
+independent. Project every offline node and make its sum equal on_offline_nodes.
+No cleanup failure, offline state or empty read authorizes a synthetic release.
+
+At zero held resources, drain outside database transactions, recheck under the
+deployment lock, and atomically clear all provider policy, E2B credential/build
+metadata and specification, retire nodes/tokens, advance generation/owner epoch
+and audit completion. Publish a generation-bearing nil provider tombstone without
+fallible work after commit, preventing delayed loads from reviving the old provider.
+On a failed final write or interrupted drain, restore the committed provider using
+a bounded owner context before releasing the mutation gate; recovery failure keeps
+admission fenced and stops the owner. Ordinary migration resumes old Web-managed
+maintenance with reset null. Refuse downgrade during reset or for an unconfigured
+completed reset with generation above zero; never discard the generation.
+
+Explicit administrator Session archive requires a Web-managed deployment and its
+current generation, without a reset precondition. Keep Project scope and hosted
+eligibility checks in its Session-first transaction, alongside Environment expiry,
+cancellation, Runtime authority revocation and audit. Background reset reconstructs
+the actual Project scope from trusted records while retaining requester provenance.
+The ordinary provider lifecycle owns compute/snapshot release. Retain history and
+persisted Files/Artifacts; archived Sessions cannot resume unpersisted workspace.
+The archive GET reports resource disposition, not provenance or Turn finalization.
+
+Archive cancellation must not destroy a healthy receipt path before its terminal
+commit. Only the archive that first revokes a device may persist its exact
+`archive_cancel_turn_id`; ordinary revocation clears it, and repeated cleanup
+preserves rather than recreates it. The existing authenticated delivery can drain
+its cancellation for at most 20 seconds from the Turn's original
+`cancel_requested_at`. Track that delivery through Done, cancellation ACK and
+terminal commit, independently of subscription removal. Heartbeats and both normal
+and checkpoint cleanup use the same identity/deadline check; no new connection,
+input, file/MCP authority or lease renewal is granted. Do not hold a transaction or
+lifecycle gate waiting for the receipt. Lost peers, expiry and restart retain the
+ordinary failure/cleanup fallback, never a fabricated cancelled outcome. Preserve
+unknown Create ownership and reject schema downgrade with unsettled markers.
 
 Core rejects `AGENTS_API_MANAGED_RUNTIMES_FILE`; there is no file-managed startup
 path or embedded local node. An older file-managed database is not automatically
 adopted after its environment variable is removed. Settle and drain that deployment
 with its previous release and original backend, preserving business data, private
-receipts, identities and storage. This change provides no old-database conversion,
-force reset or automatic deletion. The supported current path is a database-managed
+receipts, identities and storage. The legacy file-managed path has no automatic adoption or force conversion. The supported current path is a database-managed
 deployment. Harness selection and public/self-hosted contracts remain unchanged.
 
 The paired console serves only matched, non-secret distribution artifacts for node
 installation. Never serve private installation files or arbitrary paths. Installation
 reads `GET /api/v1/sandbox-node/configuration` using an unconsumed enrollment token,
 or a retained node credential with `X-OAC-Node-ID`. Reads never consume enrollment;
-registered nodes can read their matching configuration during maintenance. Validate
+registered nodes can read their matching configuration during reset. Validate
 installation, generation, specification digest and release before writing node files,
 registering or reconnecting. Reject drift rather than overwriting retained identity
 or using local resource defaults. Registration consumes a token only after these
@@ -936,7 +1071,19 @@ existing allocation must agree with the placement. Never choose another node.
 E2B direct allocations use one serial lifecycle without a node identity.
 The coordinator stops accepting work and cancels and drains all node workers and
 direct callers before releasing the sole execution lease. Lease loss is global;
-ordinary provider failures stay within their node. Session locks, deployment
+ordinary provider failures stay within their node. A planned deployment drain or
+inventory retirement cancels lifecycle contexts synchronously between leased
+operations, using the existing lease gate with its five-second bound. Include
+an active manual reconcile's cancel function: an asynchronous `AfterFunc` alone
+can cancel a later leased query after the gate reopens. Never cancel an in-flight
+leased query merely to change deployment configuration. A failed cancellation
+fence synchronously closes manager admission and reports owner failure, even
+before its coordinator starts. Failed inventory retirement retains the original
+lifecycle identity and gate through owner shutdown; gate availability is not
+proof that cancellation succeeded. The drain barrier stays closed and cannot
+activate a replacement. Release the lease gate before waiting for provider
+settlement or lifecycle accounting. Ordinary caller deadlines and owner shutdown retain their
+existing cancellation and fail-closed lease-loss behavior. Session locks, deployment
 capacity transactions and revision/one-shot receipts remain authoritative, with
 no external operation holding a database lock.
 
@@ -953,16 +1100,17 @@ Do not add a startup adoption path to bypass the database-managed selection.
 Do not add node-level drain controls. Refuse node removal with pending allocations,
 instances, snapshots, unknown results or cleanup resources. Offline ownership is
 retained. Removing a node does not delete compute. Local and remote nodes share
-the same resource guard. Keep the deployment-wide maintenance and configuration
+the same resource guard. Keep the deployment-wide reset and configuration
 change guard. This boundary does not add cross-node Session
 migration, Core multi-active, autoscaling, Kubernetes or harness residency.
 
 The common
-`services/agents-api/internal/sandbox` contract owns the five base operations
-(Create, GetInfo, Renew, Kill, RunCommand) and the optional CheckpointProvider
+`services/agents-api/internal/sandbox` contract owns the four base operations
+(Create, GetInfo, Renew, Kill) and the optional CheckpointProvider
 capability. Core orchestration must not import an adapter or SDK. Exact compute
 identity, generation construction, inspection, full snapshot capture, restore,
-thaw, command execution and owned artifact cleanup use that common capability.
+thaw and owned artifact cleanup use that common capability. Initialization and
+execution use the authenticated Runtime peer.
 Provider-specific names and snapshot identities are opaque to Core. Self-hosted
 compute and providers without checkpoint support keep their existing behavior.
 
@@ -996,8 +1144,9 @@ root or subagent Turn, pending input/file operation or initialization remains,
 and real activity has been idle for the configured interval. For node-managed
 allocations, record the first root or child terminal transition in the same
 transaction using Core's database clock and the existing compute activity field.
-Native completion timestamps remain unchanged in public history but cannot drive
-idle admission across hosts; repeated terminal projections never reset that timer.
+For every Environment source, positive native completion timestamps remain
+unchanged in public history, even when host clock skew places them before Core's
+Turn creation time. They cannot drive idle admission across hosts; repeated terminal projections never reset that timer.
 Read activity together with the database observation time. Candidate filtering and
 the Session-locked phase recheck compare elapsed database time with the configured
 idle duration; callers must not supply a Core-wall-clock cutoff. Anchor the initial
@@ -1032,7 +1181,7 @@ a chain of old writable disks across suspension cycles. No Kubernetes, distribut
 scheduler or snapshot replication belongs in this V1 profile.
 
 Queued work and live Environment file access request wake. History and published
-artifact reads do not. Planned suspension uses private daemon wire 0.6.0 with an
+artifact reads do not. Planned suspension uses private daemon wire 0.8.0 with an
 Environment and suspension token; a PID/start-time fenced local control signal
 wakes the parked daemon, which reauthenticates before admitting new work. A
 transient disconnect before confirmation retries the same armed suspension with
@@ -1102,13 +1251,12 @@ continue bounded scans for late resources without issuing another Create. This
 conservative internal lifecycle does not define user-managed enrollment or prove
 complete upstream expiry/error semantics.
 
-Qualify the actual Docker/native sandbox before default cutover: real model
-execution, file access, owned cancellation, restart with retained native history
-and files, and rejection when required history is missing. Generated code and file
-tools must not read daemon/model credentials, foreign Session history or another
-tenant's workspace. Same-container placement, matching UID, mode bits, directory
-bindings and capability flags do not prove isolation. Retain failed probes and
-unverified limits; private functionality is not public hosted acceptance.
+Qualify the actual Runtime before cutover: execution, file access, owned
+cancellation, restart with retained history and files, and clear failure when
+required history is missing. Daemon tools run with the launching account's full
+permissions. Managed isolation is provided by the outer Environment. A user who
+installs on a host does not receive a sandbox or protection from their own tools.
+Keep failed probes and unverified platform combinations explicit.
 
 Before migration, archive existing edits and validation evidence. Reuse verified
 authorization, resource/lifecycle ownership and safe filesystem primitives as
@@ -1117,38 +1265,16 @@ mechanisms. Remove superseded unused code, configuration, tests, scripts and
 task-owned temporary resources as each replacement is accepted. Preserve necessary
 regressions, still-used official capabilities, product data and others' work.
 
-The opt-in Codex deployment selector `OAC_RUNTIME_CODEX_PERMISSION_PROFILE` chooses a
-native named profile at harness startup and on both new/resumed threads, omitting
-the legacy sandbox override. It is operator configuration, never a prompt option,
-and rejects remote, none and temporary read preparations. Native managed
-requirements own allowed profiles and deny-read enforcement. Keep the selector
-unset for existing deployments. Managed native shells disable shell snapshots,
-whose private files are inaccessible to tool execution; retain normal native shell
-startup without granting tools access to harness state.
-The [co-location qualification inputs](services/agents-api/deploy/codex/README.md)
-record the pinned native/Docker prerequisites and limits; this switch alone does
-not admit hosted Environments or authorize a workspace.
+All Harness adapters use bypass execution. Do not restore named Codex permission
+profiles, bubblewrap wrappers, native Claude sandbox settings or MiniMax
+SandboxManager branches. There is one execution path for every Environment origin.
+Resource paths are ordinary operator configuration, not a permission boundary.
 
-A managed Runtime's network policy is immutable deployment input, transferred
-through the provider-neutral bootstrap and checked against execution preparation.
-The shared policy includes enabled, disabled and an exact-host restricted allowlist.
-Core preserves public spelling/order/duplicates and only permits Template overrides
-that narrow authority. Adapters translate a normalized copy into native settings;
-Core and Docker never select native profile names. Every hosted execution peer
-must support `local_environment_network_policy` and receive the complete bound
-policy; missing policy never falls back to enabled or an older peer path. Read-only
-workspace access does not require execution network policy. A declaration alone
-does not qualify an image or admit public hosted creation.
-
-Codex restricted networking uses its native managed network requirements and proxy.
-Its adapter preserves the image's filesystem, approval and hook requirements and
-adds the frozen exact-host ceiling in Session-private state. The existing RPC
-client owns a bubblewrap child that mounts those requirements read-only and runs
-the stock native app-server in a PID namespace; teardown retains the same owner.
-Preparation regenerates the non-secret requirements from the frozen policy. Keep
-the file with Session state so cleanup cannot race a running child's mount.
-Claude and MiniMax translate the same policy into their native sandbox allowlists.
-These translations do not add a Core network service or model/tool loop.
+The daemon does not enforce disabled or restricted network policies. Such a
+combination must be rejected unless its outer Environment implementation provides
+and qualifies the requested behavior. Do not advertise daemon-level network
+isolation or silently run a restricted request with unrestricted semantics.
+The normal self-hosted combination uses the host's existing network access.
 
 A dedicated local Runtime uses one Environment-scoped device credential and an
 immutable binding to that Environment's Session. It is excluded from general
@@ -1163,8 +1289,7 @@ freezes the Environment, Session and workspace root;
 requests cannot supply a replacement root. The V1 path uses only the exact local
 Environment reference. Use the same preparation/start lifecycle for native execution and the
 existing bounded workspace controls for directory access. Local idle directory
-reads use the existing filesystem helper directly, with no model credentials or
-temporary harness. These private capabilities alone do not authorize public requests or establish
+reads use the common Go filesystem implementation without a temporary Harness. These private capabilities alone do not authorize public requests or establish
 Provider lifecycle. Self-hosted enrollment supplies the exact local binding.
 Core rechecks the persisted Environment/device binding for preparation and active
 reads; capability discovery cannot select or authorize a general device for this
@@ -1282,21 +1407,18 @@ capability advertisement alone does not qualify an operator's deployment.
 Exporter component checks do not establish public Artifact compatibility.
 
 Local inline file delivery uses the same authenticated daemon connection and exact
-Environment/Session binding. The optional startup-owned `OAC_RUNTIME_WRITE_HELPER`
-and `OAC_RUNTIME_STAGING` enable only the bounded installer primitive; they do
-not grant public feature admission. Require a canonical executable outside the
-Environment parent, canonical sibling workspace/staging directories on one mount,
-and verified native tool denial of staging and its ancestors. Native credentials
-and history remain outside that parent. Mode bits and path checks alone do not
-qualify this layout. The read-only deployment needs neither writer setting.
+Environment/Session binding. All platforms use the daemon's Go implementation
+for bounded file reads, directory listing, file creation and output export.
+Files operations require no external helper executable or staging directory.
+The Files API keeps workspace-relative paths and no-overwrite creation semantics;
+it does not restrict native Harness tools' host permissions.
 
 Transfer a complete bounded body in acknowledged 64 KiB frames before invoking
-the existing installer, verify the declared digest, and run no model for upload.
+the native file writer, verify the declared digest, and run no model for upload.
 Keep the private 50 MiB transfer bound distinct from the official 5 MiB decoded
 inline bound, which the API checks before any Runtime work. Files.create uses the
-installer's explicit create mode: parents are created without following links and
-an existing path is never replaced. Initial Session files and Skills keep the
-installer's replace mode; do not change one caller's mode for another.
+native writer's no-overwrite operation. Initial Session files retain their separate
+atomic replacement behavior; do not change one caller's semantics for another.
 The dedicated Runtime excludes execution while receiving or applying a write;
 malformed, incomplete or expired transfers cannot reach the installer. Exact
 commit/rejection receipts release the mutation owner. Missing or ambiguous
@@ -1320,17 +1442,19 @@ failure when the authorized workspace cannot be reached; it never grants public
 admission merely because an adapter advertises a capability.
 
 Use distinct authorization for callers, devices and environment connections. A
-co-located harness must not expose broader application credentials or other tenants'
-secrets to generated code. Directory bindings and process identities do not provide
-filesystem isolation. Preserve or demonstrably restore native history across
+managed outer Environment must exclude broader application credentials and other
+tenants' secrets. The daemon does not hide its own state from same-user tools.
+Directory bindings and process identities do not provide filesystem isolation.
+Preserve or demonstrably restore native history across
 compute replacement; never silently move a bound Session or replay unknown work.
 Self-hosted compute/files remain caller-owned, with explicit cleanup separate from
 Session deletion. The full Environment implementation remains pending; follow the
 [pinned contract and acceptance sequence](contracts/agents-api/environments.md)
 and the [two-engine placement prerequisites](contracts/agents-api/workspace-placement.md).
-For co-location, qualify both deployment isolation and native tool restrictions.
-Bash sandbox settings alone do not establish file-tool or whole-harness isolation.
-Never enable an environment profile before those boundaries are verified.
+For co-location, qualify the outer deployment boundary and the shared Runtime
+lifecycle. Native tools use the starting account's permissions; do not claim a
+daemon or harness sandbox. Host operators choose their own outer isolation.
+Never enable an execution combination whose required outer behavior is unverified.
 
 The internal Store creates one Environment with an environment-bearing Session in
 its creation transaction. The Session upsert selects the retry winner; retries
@@ -1345,8 +1469,9 @@ the Session row/cursor in the same transaction, without borrowing subsequent
 activity or Turn state. Initial state is `pending`; authenticated connection observations follow
 the lifecycle rules below.
 Public creation supports `self_hosted` on the three enabled native profiles when
-the daemon gateway is configured. V1 requires `/workspace` and empty/default
-capability directories. Supported non-deferred functions keep their engine-specific
+the daemon gateway is configured. The workspace is a clean absolute host path matching the bound Runtime root;
+`/workspace` denotes that root through the existing logical mapping. Optional
+capability directories are clean absolute host-local selections. Supported non-deferred functions keep their engine-specific
 validation and native callback bridge. Enrollment binds the dedicated Runtime;
 Session output uses the owned Environment association. Public Files reuse the exact
 local workspace; populated self-hosted installation metadata remains unsupported.
@@ -1485,8 +1610,9 @@ rotation/revocation and digest-only storage. They grant connection authority, ne
 Session API access. No raw-token import or secret read-back is added.
 
 Enrollment atomically creates or recovers one dedicated device and immutable Session
-binding under the Session lock. The V1 workspace is `/workspace`; nonempty
-self-hosted capability directories remain unsupported. No `runtime_allocation` is
+binding under the Session lock. The frozen workspace and capability directory selection come from the Session
+configuration and must match the local binding. Runtime snapshots declared local
+Skill or Plugin directories before creating the native executor. No `runtime_allocation` is
 created for user-owned compute. A retry cannot replace a device, change its bound
 key or adopt another native history. Gateway authentication and dispatch recheck
 current key authority; rotation/revocation and deletion deny further use.
@@ -1794,23 +1920,21 @@ install facts live in tool-written `state.json`. State format 2 uses an `oac-` C
 project; config.json's independent schema format stays 1. The operator command is
 `oac` (`oac_cli.py`, packaged as `oac.pyz`), with default installation directory
 `~/.oac/core`, private `~/.oac`, generated `x-oac` annotations and `.oac.lock`.
-Only `install.sh --convert` reads pre-rename state. Its `rename.py` coordinator first
-validates the source, target, bundle and generated files. A stopped old Core may be
-started from its own files for authenticated drain checks; refusal restores only
-services the probe started and reports any failed restoration. Require maintenance,
-zero unreleased allocations and pending work, and no registered nodes. One explicit
-confirmation covers legacy config-layout conversion and the rename. Never delete a
-target volume or copy container without matching the recorded conversion ownership;
-copy the stopped PostgreSQL volume, retain the old volume, and carry the atomic
-journal across the default-directory move. Preserve ports, secrets, installation
-identity and stored history. Resume only with the recorded bundle. Docker and
-microsandbox replace the Runtime through the existing guarded PUT and resume
-admission; E2B stays in maintenance for its rebuilt template. Node and self-hosted
-installations are outside this converter.
+The project has no historical installation compatibility or in-place version upgrade
+contract. Install only into an empty directory, or repair the exact same source
+revision. Refuse old formats, conversion journals and different revisions before
+installation mutation; retain their data and direct operators to reinstall separately.
+The installer and every mutating `oac` command share the stable `.oac.lock` inode.
+The installer owns this lock across creation, payload/native/launcher repair and
+apply, invoking the already-locked apply implementation without nested locking.
+Never unlink or replace the lock, including after an interrupted fresh install.
+Current-version interrupted apply and rotation retain their existing recovery path.
+The packaged `oac.pyz` entrypoint embeds the build source revision and checks it
+against the existing `state.json.source_commit`; this adds no installation state
+format. Node `--update` is refused; runtime generation operations are unchanged.
  Core process settings use `OAC_*`, Web settings use `OAC_WEB_*`, and shared Go
 logging uses `OAC_LOG_*`. Retired settings fail startup even when empty or when
-the new name is also set; report every matching name without values. Only the
-explicit installer conversion reads pre-rename files. Core and operator executables
+the new name is also set; report every matching name without values. No supported installation entrypoint converts pre-rename files. Core and operator executables
 are `oac-core`, `oac-core-migrate`, `oac-core-device` and
 `oac-core-environment-key`; Web is `oac-web`, and the Core-host E2B helper is
 `oac-e2b-provider` under `/opt/oac/e2b` in the image.
@@ -1827,16 +1951,16 @@ retained); a node cannot supply or overwrite those limits. Downloaded specificat
 copies remain validated against the existing database-owned resources/Runtime
 contract.
 
+The E2B template builder assigns traversable modes only to synthetic public archive
+ancestors. Runtime file and directory permissions, private build contexts, key inputs
+and output umask remain unchanged, including when invoked under umask 077.
+
 The installer packages Core and the Web console together,
 with independent `--core-only` and `--web-only` modes. `site/` is the public static
 landing, separate from `apps/web`; it must not create an onboarding prerequisite,
-call a model, or claim complete protocol compatibility. The root README starts with
-the three newcomer steps (install, sign in and issue a key, add a node), each linking
-to `docs/getting-started/`: installation, nodes, self-hosted executors, operations and
-the application developer quickstart. `docs/configuration.md` is the single settings
-reference; building distributions and running Core alone live in `docs/maintainers.md`.
-Use Web's page and action names in docs, and `OPENAI_BASE_URL` and `OPENAI_API_KEY` for
-application examples.
+call a model, or claim complete protocol compatibility. Use Web's page and action names in user docs, and `OPENAI_BASE_URL` and
+`OPENAI_API_KEY` for application examples. The [documentation ownership](#documentation-ownership)
+map defines the authored sources.
 
 A distribution carries a fixed list of docs (`BUNDLED_DOCS` in
 `scripts/core-distribution-manifest.py`). The build keeps relative links between
@@ -1879,8 +2003,11 @@ private temporary files, verify before atomic promotion, and reuse only verified
 cache entries or exact image identities. Core's default image must not acquire
 execution-only payloads. Python zipapps bundle the shared resolver with each
 remote bootstrap; the console publishes only fixed non-secret files and declared
-artifact names. Release automation builds artifacts and may create an unpublished
-draft, but cannot claim real execution qualification or public availability.
+artifact names. Candidate build automation creates artifacts and may create an
+unpublished draft; a successful build is not real execution qualification. A
+separate existing-host batch controller may publish that draft automatically only
+after directly supervised real qualification and verified batch landing. Repository
+visibility remains internal and independent of Release publication.
 Manual builds use the legal `build-<full source SHA>` release tag; tag-triggered
 builds use the actual `v*` tag. The manifest download base and draft tag must match,
 while artifact filenames and source provenance retain the full source SHA.
@@ -1893,6 +2020,70 @@ image containing a private test CA or model credential as a release input.
 Repository visibility is independent of publication. Do not add repository
 credentials to installed node/Runtime configuration to bypass download access.
 
+`scripts/promote-qualified-release.py` requires an explicit full candidate source
+SHA, binds it to the archive manifests and matching `build-<SHA>` tag, and uses
+existing local gh authentication and SSH. It uploads/downloads the complete
+matching thin/offline/Runtime asset set and verifies archive members and asset
+hashes. The separate qualification package is supplied by the maintainer with an
+explicit reviewed manifest SHA256. Its complete file inventory, ordered Python
+commands, bounded stage timeouts and private path/resource configuration are
+verified before any Release mutation and again by the remote supervisor. Candidate
+assets cannot select or replace this execution package. Keep host-specific
+acceptance scripts, usernames and credential paths outside this public repository;
+never put credential values in either manifest.
+
+The reviewed adapter receives a fresh canonical UUID and exact inventory over the
+authenticated command channel. It directly supervises fresh-install,
+current-lifecycle, managed-native-smoke, diagnostics-observations-smoke and
+node-runtime-smoke in that order. This batch uses one fresh container installation,
+one completed managed Session, read-only diagnostics for that Session, and one
+current Runtime Session on one new node. It does not rerun the full multi-host,
+generation or GC matrix. Every child must exit successfully and
+return only its own passed check, the current controller identity and its observed
+owned resources. Resources and the previous result flow between live children;
+a supplied pass file, skipped check or old report cannot release the candidate.
+Verify package and candidate bytes again after each stage. The small shared
+`qualification_control.py` is pinned to the reviewed tooling commit and private
+package. A live SSH stdin channel carries the request then heartbeats; EOF, timeout,
+SIGTERM or SIGHUP stops later work. Each local stage or remote worker has one
+foreground process group and a waiting owner outside that group. The owner cleans
+the group on success, nonzero exit, timeout and cancellation, including foreground
+descendants orphaned by an inner timeout or SIGKILL. Nested foreground commands
+inherit the group; only explicitly recorded background resources may detach.
+Those retained background resources are outside foreground cleanup. Private nested
+workers use the same channel.
+Already-issued writes may have unknown outcomes: retain intents/resources and do
+not replay or claim rollback. Control tests exercise
+short-lived fixture children only and never establish live qualification.
+
+The caller supplies the independently reviewed promotion-tooling commit. Its
+changes from the candidate may only affect the exact promotion files enumerated
+in the controller, including CONTRIBUTING, docs/maintainers and the current-batch
+node-generation protocol wording correction; the Makefile
+exception permits only registration of the controller and control-channel tests. Main must contain the
+candidate source and have the reviewed tooling commit's tree. This permits normal
+merge commit identity changes and release-only documentation updates without
+rebuilding or relabeling the original candidate. The candidate's bundled docs and
+source archive retain source 48 (CONTRIBUTING and the node-generation protocol
+are present through the source archive, not as direct bundled docs); new release instructions live in the tooling
+commit. Product changes or a different main tree block promotion of the old
+candidate. Never infer batch membership from all open PRs or automatically merge
+them in the publication command.
+
+Use one controller invocation for the batch. After successful qualification it
+waits in the same process, within the explicit merge-wait budget, for the exact
+reviewed batch tree to reach main. An ancestor main waits; conflicting main changes
+fail immediately. Cancellation or expiration retains evidence and cannot turn a
+saved result into resume authority. It verifies unchanged draft identity,
+target, tag and downloaded bytes immediately before publication. After the final
+download it rechecks main/tree/tag and the same draft ID, then updates that verified
+Release ID directly rather than resolving the tag again. It checks the
+published bytes afterward. Conflicting assets are never overwritten. An interrupted
+run is reconciled before another invocation; stored qualification output is evidence,
+not a resumable permission to publish. Preserve its isolated local/remote evidence
+and installation resources. No runner, background service, new GitHub secret or
+repository-visibility change is required by this finite batch path.
+
 Executor credentials are issued by the operator with the Core key, through Web or
 a Core-key script, under
 `/core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials`
@@ -1901,24 +2092,35 @@ Environment of that Project whose Session exists; anything else is 404. The
 Project's principal is the credential's execution principal, its scope stays
 daemon enrollment and connection for that one Environment, and issue, rotate and
 revoke each record an administrator audit entry in the write's transaction without
-the secret. Project API keys cannot issue them. Self-hosted installation reuses
-Docker Runtime isolation, owns no sandbox node or Core allocation, and retains
-user-owned native history after uncertain launches. Report started, connected and real execution success separately.
-Web's install command carries no secret: the installer reads the credential at a
-hidden terminal prompt and verifies against the console's
-`self_hosted_installer_sha256`. On a permanent rejection the self-hosted daemon
-parks (one message, no requests, exit 0 on SIGTERM) rather than exiting into
-Docker's `unless-stopped` restart loop. Rerunning the installer with the same key
-rotated replaces it in the same stopped container through the launcher's
-`replace-credential`, which checks the container's labels, name, volumes and
-private directories; never relaunch or adopt history to recover a credential.
+the secret. Project API keys cannot issue them. Native self-hosted installation runs the daemon on Linux, macOS or Windows with
+its starting account's permissions. It owns no sandbox node or Core allocation,
+adds no isolation and retains user-owned native history after uncertain launches.
+Report started, connected and real execution success separately.
+Native installation uses `oac-daemon install` and `start` with an explicit
+credential-file path and the same `OAC_RUNTIME_HOME` for lifecycle commands. It is
+current-version only and does not adopt an older container installation. Rotation
+replaces the configured credential file for the same key and restarts the daemon;
+never create a replacement Session history to recover a credential. The console's
+older container-installer command remains a distinct packaged workflow, not the
+native installation interface. Report connection and actual execution separately.
+Core-key executor credential lists expose a required connection observation with
+never_enrolled, connected or disconnected status, immutable bound key identity,
+enrollment time and last authenticated heartbeat time. Read credential metadata
+and binding facts in a closed read-only snapshot, then reuse runtimeenrollment's
+current authority and actual gateway peer checks. Recheck executor and device
+authority after reading the peer; rotation, revocation or Environment retirement
+must not inherit a former key's connected state. No gateway means not connected,
+never an authentication bypass. Known authority loss is disconnected; storage
+errors remain errors. Keep digests/device IDs internal and public /v1 unchanged.
+Connection timestamps are history, not execution/native/model readiness.
+
 Self-hosted installation confirms connection through the private daemon transport
 using only its restricted executor credential. The read checks the exact live
 Environment/key binding and current authenticated connection; it never enrolls,
 allocates, wakes a sandbox or grants project resource access. It is an `/api/v1`
 machine route that reaches Core directly, never through the console. Bounded
-polling and reruns retain the original container and history; timeout is a
-diagnostic failure, not permission to relaunch. The installation public URL
+polling retains the original Runtime identity and history; timeout is a
+diagnostic failure, not permission to replay initialization or replace history. The installation public URL
 (`public_url` in the installation's `config.json`, seeded by `--public-url`, and
 `OAC_PUBLIC_URL` for Core) is the one origin for
 applications, nodes, sandbox guests and self-hosted executors, and also the console
@@ -1944,7 +2146,7 @@ else with `--web-only`; `docker` prints its weaker isolation and needs a y/N
 confirmation or `--accept-docker-risks` before anything is created) is a one-time
 install action: once the services are healthy, the
 installer POSTs `/core/v1/sandbox/deployment` as Web's setup would, and never on a
-repair or conversion. It is not written to `config.json`; PostgreSQL owns the
+repair. It is not written to `config.json`; PostgreSQL owns the
 selection. E2B needs a non-loopback HTTPS `public_url`, `--e2b-api-key-file` and
 `--e2b-template`, and is refused before anything is installed. A loopback Docker or
 microsandbox selection is saved, but no node can serve it until `public_url` is
@@ -2007,13 +2209,11 @@ uninstall with the previous release before adding it again. The machine
 configuration route rejects `X-Parsar-Node-ID` with `400 invalid_request`; only
 `X-OAC-Node-ID` identifies a retained node credential.
 
-Self-hosted installations use `oac-selfhost` and `~/.oac/self-hosted/<environment-id>`.
-The installer refuses an existing `~/.parsar/self-hosted/<environment-id>` for the
-same Environment, even with a custom new install directory. Old executors keep
-running with their own image and history; operators explicitly stop and remove
-them before replacing them. New installation never adopts their native history.
-Credential replacement for a new installer-owned executor retains its existing
-container and ownership checks.
+User-managed hosts use the native daemon installer on Linux, macOS and Windows.
+It does not select a supplier or create compute resources. The retired Docker
+self-hosted installer/launcher and console payload are not retained as fallback.
+Existing environments, credentials, workspaces and native history are never
+automatically deleted or adopted by a new installation.
 
 One Runtime image contains the existing daemon, shared helpers and three native
 harness packages. Their differences remain in the adapters. Core keeps exclusive
@@ -2037,9 +2237,11 @@ TLS reverse proxy routes `/v1` (applications) and `/api/v1` (nodes and Runtime
 daemons, with their own credentials) directly to Core and everything else,
 including `/core/v1`, to Web. Operator scripts call `/core/v1` on Core's loopback
 port.
-Nodes and Core come from one distribution; older nodes using the removed
-`/core/v1/sandbox` node paths cannot connect and are replaced through the drained
-upgrade and re-enrollment workflow.
+Nodes and Core come from one distribution. Older nodes using the removed
+`/core/v1/sandbox` paths are unsupported; preserve their installation and data and
+use a separate fresh installation. There is no drained in-place upgrade or
+historical re-enrollment procedure. Current-version Runtime generation rollout
+retains its separate resource lifecycle.
 
 The Web manager offers no manual Core key entry outside sign-in, and Web refuses
 to start without its Core key file. It holds no Project API key and never calls
@@ -2139,9 +2341,7 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
 
 - `internal/agentdaemon/gateway` is the shared daemon connection implementation.
   Its persistence interfaces use `internal/agentdaemon/device`, never product Store
-  types. Product adapters live in `server/internal/agentdaemon`. Keep protocol
-  frames in `internal/agentdaemon/proto` until the contracts directory migration.
-  Store aliases preserve existing callers during this transition.
+  types. Shared protocol frames and validators live in `internal/agentdaemon/proto`.
 - Session deletion uses a durable `sessions.deleted_at` marker. Public deletion
   accepts only a durably idle or failed Session without required actions: no
   queued, in-progress or waiting root Turn and no pending input reservation, the
@@ -2180,8 +2380,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   the column while deleted records exist, preventing public resurrection.
 - `services/agents-api` owns its SQL schema, sqlc queries and embedded goose
   migrations. `OAC_DATABASE_URL` is required; never fall back to the product
-  database URL. Its first persistence slice stores tenant-scoped Sessions with a
-  stable engine and idempotent creation. It does not switch production execution.
+  database URL. It stores tenant-scoped Sessions with a stable engine and durable
+  creation retry identity.
 - Reusable Agents have their own tenant-scoped `agents` records, independent of
   Session snapshots, engine bindings and product Agent definitions. The Store
   persists caller-validated non-secret configuration and metadata without applying
@@ -2427,6 +2627,26 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   retries return committed state without replay. No Turn-level overrides or provider catalog is
   included. Public input/null semantics and examples live in
   `contracts/agents-api/model-execution.md`.
+- Deployment-default observations use a private UUID generated on every PUT,
+  including identical replacements. Read its ciphertext/revision together and freeze
+  the pair only at new Session creation; retries and historical Sessions never gain
+  or replace revision metadata. After a successful root terminal commit, one
+  independent pool operation has at most one second to update the matching current
+  revision. SQL verifies tenant, root Turn and committed outcome; only completed
+  Turns and fixed native provider failures with authoritative `engine_failed` qualify.
+  Never observe cancelled work, Core/runtime errors or input-policy classifications.
+  The metadata-only transaction sets server statement/lock timeouts within the
+  remaining client budget and issues one UPDATE, so a client timeout cannot leave
+  an indefinitely waiting statement. The update locks only the default and samples
+  DB receipt time after the lock.
+  Errors throttle for 30 seconds regardless of code; ordinary successes throttle
+  for 30 seconds, with one immediate recovery write after each accepted error.
+  An unchanged revision has at most three effective writes in any half-open
+  30-second interval of nondecreasing DB time. Clock rollback may suppress ordinary
+  writes; private recovery state permits only one recovery without clamping time.
+  Observations never change `updated_at`, readiness or execution truth. They can be
+  lost or stay stale indefinitely without another eligible Turn; there is no queue,
+  retry, probe, history backfill or provider text in the safe fields.
 - Session execution-configuration reads use a separate immutable safe projection,
   written with provenance in the same creation transaction as Session resources.
   Read no credential ciphertext and never recompute sources from current Agents
@@ -2531,7 +2751,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   immutable configuration snapshot. Inline and historical creation identities include
   the resolved configuration; new saved references use the separate caller intent.
   Session metadata updates replace only metadata under the authenticated tenant:
-  omission is a read, null/empty clears, and a nonempty object replaces all pairs.
+  a supplied metadata field is required, null/empty clears, and a nonempty object
+  replaces all pairs.
   Keep execution state, timestamps and the original creation request hash unchanged;
   creation retries return the current resource without restoring its old metadata.
   Public schema validation belongs to the API; the Store validates JSON structure.
@@ -2543,7 +2764,7 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   Preserve the existing tenant-owned cursor and creation-time/ID ordering rules.
   Hosted empty-filter, mismatched-filter cursor and exact error semantics remain
   unverified. Other resource lists do not accept this parameter.
-- `make sqlc-generate` and the drift gate cover both services. Run
+- `make sqlc-generate` and the drift gate cover this service. Run
   `make check-agents-api` with `OAC_TEST_DATABASE_URL` pointing to a
   dedicated `oac_*_tests` database for Session integration tests.
   CI provides a separate PostgreSQL service. Migration immutability and ordering
@@ -2941,16 +3162,15 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   Item's Session position under the Session lock, preserving observation order
   for equal timestamps. Allocate a separate zero-based `output_index` per Turn;
   inputs do not consume output indexes. Updates and retries retain both values.
-  Existing indexed history keeps its pre-upgrade deterministic order; missing
-  original ordering cannot be reconstructed. Cursors are scoped to the authenticated Session.
+  Persisted indexed history keeps its deterministic order; missing original
+  ordering cannot be reconstructed. Cursors are scoped to the authenticated Session.
   Terminal Turns expose unfinished Items as `incomplete`, preserving completed
   message/tool states independently of the Turn outcome.
 - Public history reads use the persisted index; the private pre-Items journal
-  backfill is retired. Migration 15 rejects unprepared historical Turns before
-  removing the obsolete indexing marker. Prepare them with release `906069e`
-  before upgrading, following `services/agents-api/README.md`. The migration
-  preserves indexed Item payloads, positions, output indexes and source journals;
-  never mark unprepared history indexed by hand or replay engine execution.
+  backfill is retired. Migration 15 and its historical validation remain evidence,
+  not a supported upgrade procedure. An old installation is unsupported and must
+  be retained separately from a fresh installation. Never mark unprepared history
+  indexed by hand or replay engine execution to convert it.
 - Project only the declared public Item variants; native adapter metadata is not
   a response schema. Preserve structured tool JSON without float conversion.
   Completion text replaces accumulated deltas. Item merging must not mutate the
@@ -2979,7 +3199,8 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   A creation retry returns the existing Session without re-admitting initial work,
   including after terminal or later Turns. Omitted/null input is permitted only
   for non-streaming hosted creation and self-hosted creation.
-  Creation streaming uses the shared live path above; non-text messages remain a gap.
+  Creation streaming uses the shared live path above. Image support requires the
+  qualification in [the message-input contract](contracts/agents-api/message-input.md).
 - Enabling daemon transport with `OAC_PUBLIC_URL` also starts a bounded execution worker. Select
   only connected, capable devices owned by the authenticated tenant; bind once and
   preserve native continuity. Metadata cannot select a device. Offline work stays
@@ -2989,8 +3210,12 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   every Session transaction: binding, claim/reconciliation, journal/Items/Usage,
   function callbacks/application receipts and terminal/native continuity. Serialize
   these short transactions and lease pings; execution transactions have a five-second
-  deadline including gate and Session-lock waits. Never hold a transaction across
-  daemon/model work, reconnect the writer or fall back to the pool after lease loss.
+  deadline including gate and Session-lock waits. Sandbox reset snapshots bound the
+  deployment relation explicitly to its legal singleton row before resource joins.
+  Keep this cardinality visible even on fresh databases without statistics: inflated
+  join estimates can trigger expensive JIT compilation inside the lease deadline.
+  Never hold a transaction across daemon/model work, reconnect the writer or fall
+  back to the pool after lease loss.
   The original Store handles public admission and device/auth maintenance on pooled
   connections. Execution reads may also use the pool; a read grants no write authority.
   At startup, reconcile previously claimed work as failed, preserve queued inputs
@@ -3061,7 +3286,7 @@ remain separate. Runtime advertisements alone never enable public operations.
 Shared dispatch checks capability combinations, not a whitelist of engine names.
 Harness onboarding does not require feature equality. Verify common lifecycle
 obligations and use the same public assertions for each declared operation,
-retaining native isolation tests where appropriate. Optional native differences
+qualifying outer isolation where the deployment requires it. Optional native differences
 remain independently prioritized capability/protocol work, not onboarding blockers.
 Keep the complete pinned public protocol target and accepted functionality intact.
 Never equate accepted parameters with applied native behavior.
@@ -3098,36 +3323,43 @@ process and wait for its exit before settling the Turn as non-reusable. Common
 Runtime recovery then loads the exact owned native history in a new Executor. Do not infer history IDs or qualify hosted execution from this text
 profile. See [deployment and acceptance](services/agents-api/deploy/mcode/README.md).
 
+MiniMax companion readiness uses private protocol 2; old companions are rejected
+even when the upstream version matches. Cancellation retires the executor and
+settles its native workers and detached Bash groups before acknowledgement;
+later work recovers the same native history in a new owner without replay.
+
 The MiniMax workspace profile builds one CLI from the fixed upstream source and
-lockfile through the existing companion packaging path, and isolates native
-workspace tools behind its standard MCP client. The process and native Session
+lockfile through the existing companion packaging path, and connects native
+workspace tools through its standard MCP client. The process and native Session
 share one private control directory; public workspace files cannot configure that
 process or become privileged project instructions. A trusted adapter-owned bridge
-runs the original six tool implementations in the upstream Linux sandbox, with no
-unsandboxed fallback. Keep native history bound to the control directory and Files/
-Artifacts bound to the public workspace. Core and shared file helpers remain engine
+runs the original six tool implementations with the launching user's ordinary
+permissions. It adds no inner sandbox on any platform. Keep native history bound
+to the control directory and Files/Artifacts bound to the public workspace. Core and shared file helpers remain engine
 neutral. This internal MCP transport does not admit public MCP configuration.
 Record the upstream revision, native admission patch hashes and worker-source
 provenance. The bounded patch checks the shared descendant-task limit inside the
 existing native SQLite admission transaction before start, without another
 scheduler. ACP initialization must acknowledge the applied limit before input.
-The native tool catalog applies the protected workspace policy to every child,
-not only the root's configured profile. Only the Session's authorized internal
+The native tool catalog selects the same admitted workspace tools for every child,
+not only the root's configured profile; this is tool selection, not filesystem
+isolation. Only the Session's authorized internal
 workspace MCP entry crosses the native child selector; this does not grant
-external MCP access or bypass the native profile's read/write restrictions.
-Initialization must acknowledge that protected tool policy before input as well.
-Subagent reads use the Session-private protected native database. Multi-agent
+external MCP access. Initialization must acknowledge the admitted tool inventory
+before input as well. Subagent reads use the Session's native database; the daemon
+does not protect it from other tools running as the same user. Multi-agent
 workspace execution installs only the existing authorized workspace MCP entry in
 that private native configuration so children inherit the same tools; public MCP
 and Environment-origin MCP combinations remain separately qualified. Complete
 [workspace acceptance](contracts/agents-api/mcode-workspace-v1.md) before enabling
 hosted execution. The standalone companion uses its own npm lock; `make check`
 runs its lifecycle tests and script checks, while its exact-source Linux build and
-Docker qualification (including `native.test.mjs` under both network policies)
-are required when the companion changes.
+native qualification for the actual supported platform and outer deployment
+are required when the companion changes. Historical tests of both inner network
+policies do not qualify the current bypass implementation.
 
-Claude hosted functions compose the existing SDK function bridge with the native
-workspace sandbox. Only declared function tools and the verified native tool
+Claude hosted functions compose the existing SDK function bridge with the common
+workspace execution profile. Only declared function tools and the verified native tool
 inventory are available. The bundle advertises this combination separately from
 basic workspace execution; function preparations require that verified combination.
 Service-origin hosted MCP remains unqualified; Environment Plugin declarations
@@ -3137,38 +3369,23 @@ credential, history, subagent or network authority.
 ### Claude dedicated Docker Runtime
 
 Build the pinned SDK bundle with `scripts/build-claude-sdk-runtime.sh`, then use
-`scripts/build-claude-runtime.sh` with the existing shared workspace helper build.
-See [deployment and engine onboarding](services/agents-api/deploy/claude/README.md).
-The helper executables retain their historical Codex names; their local directory,
-write and export operations are shared and do not launch an engine.
+`scripts/build-claude-runtime.sh`. Native self-hosted installations use the same
+bundle and daemon protocol. See [engine setup](services/agents-api/deploy/claude/README.md).
+The shared local binding selects the actual workspace. SDK history, home and
+scratch remain under `OAC_RUNTIME_HOME/runtime/claude-sdk` for session ownership,
+without restricting tools. Authentication remains under `OAC_RUNTIME_HOME/daemon`.
+The daemon requires neither nested sandbox privileges nor host security changes.
 
-`OAC_RUNTIME_CLAUDE_SDK_WORKSPACE=managed` requires the shared dedicated local binding,
-canonical workspace and its same-inode `/workspace` mount, and explicit immutable
-network policy. Native history, home and scratch live separately under
-`OAC_RUNTIME_HOME/runtime/claude-sdk`; daemon authentication stays under
-`OAC_RUNTIME_HOME/daemon`. The trusted image and protected staging directory
-remain outside writable workspace roots. No product state or native user profile
-is imported. The separate unbound `environment:none` profile keeps its behavior.
-
-The Docker operator option `nested_sandbox` is false by default. The qualified
-Claude image requires it: Docker supplies an init process and permits nested procfs
-mounting by removing its outer `/proc` masks/read-only submounts. `/sys/firmware`
-and powercap remain masked; the root and sysfs mounts remain read-only, capabilities
-remain dropped, and the existing seccomp/no-new-privileges policy remains enabled.
-Do not enable privileged mode, weaken the native sandbox, mount host process state,
-or apply host-global policy changes. This is an image deployment prerequisite,
-not a public API option or an engine-name branch in the Provider.
-
-The SDK adapter advertises `local_runtime_v1` only for its Linux bridge contract.
-Registration combines that contract with the verified operator binding. Core uses
-an explicit accepted engine profile independently of advertisements. This profile
-supports native Bash/Read/Edit, preparation, shared Files/Artifacts, cancellation
-and same-history continuation. The separately advertised `workspace_functions`
-combination supports declared public functions with text results. Service-origin
-HTTP MCP remains unqualified here; its existing `none` support is retained.
-Environment Plugin MCP follows the separately qualified transport path above.
-Native Bash network access uses the harness's HTTP proxy; no alternate networking
-or tool loop is implemented by Core.
+The `local_runtime_v2` capability identifies the current workspace and direct MCP
+launcher contract. Reject earlier workspace bundles; matching SDK versions alone
+do not establish adapter compatibility.
+The adapter advertises `local_runtime_v2` after checking the installed bridge and
+native binary. Windows additionally needs Git Bash for its Bash tool. Registration
+combines that check with the local binding; Core consumes the same readiness
+contract on every platform. The profile supports Bash/Read/Edit, preparation,
+shared Files/Artifacts, cancellation and history continuation. Other capabilities
+remain subject to their actual engine qualification; bypass execution does not
+silently qualify a new MCP or function combination.
 
 Recovery uses the SDK's history APIs. An explicitly supplied native identity must
 exist. If Core requires existing history without having recorded an identity, the
@@ -3221,7 +3438,7 @@ features, not new Core lifecycle or public protocol variants.
 The current qualified path is Claude SDK, `environment:none` or Core-managed
 Docker `openai_hosted`, medium verbosity, single Agent, with optional ordinary
 function tools and text results. The workspace uses its existing preparation and
-native sandbox with only the SDK's configured `StructuredOutput` tool added to
+bypass execution profile with the SDK's configured `StructuredOutput` tool added to
 inventory and permission checks. Frozen schemas reach preparation before the
 input handoff; Start cannot replace them. Skills, Plugins, capability directories,
 HTTP MCP, Subagent/tool-discovery combinations and schemas without an explicit
@@ -3244,426 +3461,16 @@ qualification limits are recorded in [the coverage note](contracts/agents-api/st
 
 ### Claude SDK adapter foundation
 
-`packages/claude-sdk-adapter` privately owns the pinned official TypeScript SDK
-and native message translation. The Go `claudesdk.NewExecutorFactory` uses the shared
-owned process runner and emits the existing daemon delta/error/Done frames.
-The SDK owns the model loop. Its narrow stdio protocol carries Executor preparation and identified Turn starts,
-text deltas, function calls/results/receipts, active input/receipts, usage snapshots
-and terminal result/error plus settlement; native translation stays inside the adapter.
-With `observe_messages`, it also emits the existing neutral `output_message`
-start/completion snapshots and tags deltas with the native Messages API message
-ID, not the SDK event UUID. Text blocks in one native message share that identity.
-The SDK's per-block assistant snapshots replace draft block text; only native
-`message_stop` completes the message, without replaying its text as another delta.
-Thinking/tool-only messages produce no text Items; interrupted messages retain
-their streamed partial text. No phase is inferred from the final result.
-Turn-owned native work and output draining precede reuse. Executor close releases
-the SDK Query and native process. The private `turn_settled` frame requires
-`confirmed` independently of `reusable`: confirmed native Turn/cancellation
-settlement, confirmed resource cleanup, and reuse eligibility are separate facts.
-Unknown or nonempty interrupt receipts and unsettled input/function/tool work
-remain unconfirmed even after successful teardown. Go rejects cancellation and
-AwaitSettlement when native confirmation is missing or false, or its own receipt
-ledger remains unsettled. A confirmed Turn may be non-reusable after cleanup;
-that state alone does not turn a verified cancellation into an error.
-Confirmed native cancellation may settle unanswered function calls after result
-admission closes and callbacks drain. A submitted function result still requires
-its native application receipt, including when the MCP request aborts.
-
-`claudesdk.Config.Workspace` is a private, trusted operator binding for one
-qualified placement. It enables native Bash/Read/Edit and declared host functions
-in the existing SDK loop. The entire factory must already run inside an outer mount/process boundary
-that excludes application, daemon and other-tenant credentials and host policy.
-The factory does not create that boundary. The dedicated Docker profile below
-selects this binding at startup; cwd and request options cannot select its policy.
-The workspace, managed history, runtime home, scratch and protected secret roots
-must be pre-existing canonical, separate directories. Runtime code and dependency
-search paths must remain outside those roots and be read-only in the placement.
-The complete packaged runtime directory, including `node_modules`, must not
-overlap any bound root. Its bridge uses the packaged `dist/main.js` layout.
-Node, the bridge entrypoint and its readiness companion must use canonical file
-paths. Dependency aliases outside mutable roots are resolved before use in PATH;
-aliases within mutable roots are rejected even if their current target is safe.
-The operator owns allocation, exclusive use and retention; a binding is not
-per-Session authorization, a tenant boundary or an idle Files owner.
-
-For this profile, `Config.Env` replaces inheritance for both readiness and
-execution, selecting only supported provider/proxy variables. The adapter fixes
-HOME/history/scratch, native enforcement flags and tool inventory; the bridge
-request contains variable names, never credential values. Native Bash uses the
-strict sandbox with no fallback or weaker isolation. Separate native file-tool
-permissions and a session tool hook restrict Read/Edit to the bound workspace
-and deny protected roots; background/unsandboxed Bash requests are rejected.
-The deployment must retain these controls, including the SDK-owned hook.
-External MCP and remote-environment combinations remain rejected in this private
-profile until separately qualified. The existing `none` profile retains its
-behavior. Packaged `workspace_tools` establishes bridge support only, not host
-isolation or a public capability. The dedicated Runtime integration composes
-public preparation, shared placement quotas, command Items and Files ownership.
-`TestLiveClaudeWorkspaceFactory` is explicit real-provider acceptance inside a
-qualified placement, including effects, cancellation and same-history continuation.
-
-The private bridge accepts `executor_prepare` without model input. It freezes
-validated configuration and resume identity, checks required history, and retains
-one native process and SDK Query across Turns. Preparation requires initialization
-and acknowledgement of required hooks while the input iterator remains empty.
-An `executor_ready` receipt permits later `turn_start` messages containing only
-Turn identity and ordered input; configuration replacement and concurrent starts
-are rejected. Every Turn event carries its originating `turn_id`. Native Session
-identity and actual tool inventory are checked before `input_ready`.
-
-Each Turn ends with a result/error and `turn_settled`, independently of process
-exit. The outer input iterator remains open for later Turns. `turn_cancel` invokes
-the native interrupt control for that exact Turn. Unconfirmed input, native child
-work or queue state invalidates the Executor and requires close before replacement.
-EOF, owner signals and invalid control input close owned resources. Preparation
-may write native metadata and perform startup traffic; readiness does not prove
-provider authentication, complete sandbox health or placement authorization.
-
-`claudesdk.NewExecutorFactory` binds this bridge to `agent.Executor`. Direct-call
-and read-only preparation wrappers delegate to the same implementation. Runtime
-execution uses the Executor registry for both none and workspace configurations.
-Its owner context spans all Turns; a Turn's caller cannot replace fixed resources.
-A failed preparation returns its Executor when cleanup remains unconfirmed.
-Installed runtime checks are cached by package/file identity, while capability
-and request validation still run for each Executor configuration.
-
-The optional private `agent.WorkspaceReader` on this Executor and its delegated wrappers
-requires the packaged `workspace_read` feature. It sends bounded relative
-paths to that same SDK Query's native `readFile` control. Only the adapter combines
-the path with the frozen workspace root; callers cannot replace the placement.
-The pinned native read handler awaits file-handle close before its successful
-base64 response. The adapter validates bytes and truncation, bounds each result
-to 1 MiB and each request to 8 KiB, and admits one read at a time. Its continuous
-bridge output consumer retains read receipts during preparation and across Turns.
-Caller cancellation detaches observation without cancelling the Run or discarding
-an admitted waiter; its original deadline still applies. Owner closure stops
-admission. Native null, malformed receipts, timeout and interrupted delivery remain
-uncertain and stop the owner; local reap is not a successful read settlement.
-The SDK's nullable result catches all native/control errors, so it cannot distinguish
-missing files from denial or transport failure. This does not provide a public
-Files endpoint, snapshot consistency, placement registration or idle owner policy.
-The qualified live workspace fixture also checks binary, empty and bounded reads
-before input and during real execution, plus effects before cancellation and reads
-on fresh-process history continuation.
-
-The optional private `agent.WorkspaceDirectoryLister` requires the Linux-only
-`workspace_directory` bridge feature on the same Executor.
-The pinned SDK has no directory-enumeration control; its fuzzy file suggestions are
-not an inventory. This narrow adapter operation therefore reads metadata inside the
-already qualified co-located mount/process boundary. It pins the configured workspace
-root and opens each relative directory component with `O_DIRECTORY | O_NOFOLLOW`,
-using `/proc/self/fd` paths anchored to held descriptors. It rejects directory symlink
-traversal; `lstat` reports a symlink entry itself without following its target.
-The fixed workspace policy requires canonical, disjoint protected roots and excludes
-dynamic permission replacement and remote-workspace fallback. It does not implement
-an additional permission engine or authorize an unqualified placement.
-
-Directory requests are bounded to 8 KiB and 1,000 immediate entries, with explicit
-truncation, literal names, kinds, and sizes only for regular files. They do not promise
-ordering, snapshots, recursion, or public pagination. Missing and permission errors
-are returned only from distinguishable filesystem outcomes; unknown results stop the
-owner. Each operation closes its directory and intermediate descriptors before a
-successful receipt; the root descriptor remains owned until bridge release.
-Caller cancellation, Turn transitions and owner shutdown retain the existing workspace
-read settlement rules. This adapter gap fill alone does not enable public Claude Files; the dedicated
-Runtime integration supplies public placement and ownership.
-
-With `ObserveToolObservations`, private workspace execution requires the packaged
-`workspace_command_observations` feature and emits the existing neutral command
-snapshots. Match root, current-query native Bash call/result identities after input;
-ignore historical replay, synthetic and child work. Preserve exact command text and
-the native per-call textual result, including native rendering or truncation. This
-is final native output, not incremental stdout/stderr or reconstructed interleaving.
-Native error results are failed; unambiguous structured interruption is incomplete.
-Missing results close as incomplete after the observation drain; query cancellation
-does not overwrite an already observed native failure. Do not infer an
-exit code from rendered text or supply cwd/duration without qualified native fields.
-Preparation alone emits no command. Cold continuation must not reissue historical
-observations. This private translation does not enable public workspace admission,
-Read/Edit Items or Files ownership.
-
-The private adapter also accepts typed anonymous HTTP and static-bearer HTTPS MCP
-declarations on the trusted `environment:none` harness host. The packaged readiness
-report must include `mcp_http_tools`; discovery advertises that feature only when
-present, and execution
-rechecks the installed bundle before dispatching an MCP request. An unchanged SDK
-version alone cannot qualify an older bridge. Authenticated private requests also
-require the packaged `mcp_http_bearer_auth` feature at discovery and dispatch.
-The daemon generates a separate environment reference for each server and launch;
-only those references enter the bridge request and native SDK configuration.
-The native HTTP client expands them from its owned process environment. Literal
-bearers must never enter SDK MCP headers because that configuration enters argv.
-Readiness probes receive no per-request bearer environment. Token validation is
-shared with the Codex adapter; credential storage remains an opaque-string contract.
-Public Claude MCP admission reuses the shared resolver, immutable Session snapshots
-and neutral Item/event projection.
-The API checks the supported profile before persistence, during device selection
-and again before claiming execution; a missing runtime capability leaves work queued.
-
-MCP queries use the SDK's main-thread Agent definition to restrict model-visible
-tools, in addition to empty built-ins, strict MCP configuration, empty setting
-sources and default-deny permissions. Permission allowlists alone do not restrict
-the native model inventory. Null selects all tools from a declared server; an empty
-list selects none. Host functions compose with those selections. Native server
-status supplies original tool identities; map their normalized native aliases while
-preserving the original names in observations. Native status deduplicates aliases,
-so it does not prove a complete original server inventory. A native PreToolUse hook
-waits for inventory verification before admitting root calls and denies unverified,
-mismatched or cancelled calls. The native Agent restriction controls model-visible
-tools; inventory verification is not a barrier before the model request.
-Anonymous HTTP declarations explicitly set an empty Authorization header to disable
-native OAuth and automatic credential injection. Preserve that header; do not erase
-native history or credentials to enforce this boundary. Servers that reject a blank
-Authorization header, normalized name collisions and inventory changes during a
-query require separate validation; this profile covers static inventories.
-Private SDK status/control objects can contain expanded authentication headers.
-Read only connection and tool identity fields; never retain, log or publish raw
-status/configuration or control responses. Diagnostic projections must whitelist
-safe fields. This does not permit filtering actual model/tool output to hide a leak.
-The bounded adapter profile currently requires connected servers, reserves the
-`functions` label, accepts alphanumeric/underscore/hyphen server labels and
-alphanumeric/underscore/hyphen/dot selected tool names, and excludes remote
-environments. Required startup is separately qualified by `mcp_http_required`.
-All HTTP MCP queries use native SDK startup and an empty input iterator to
-confirm initialization hooks. Required declarations additionally check connected
-server status before the initial prompt is released exactly once. Pending, failed,
-missing or ambiguous required status rejects before input; native startup timeouts are retained without
-an adapter retry loop. Normal system/init still verifies Session identity and the
-complete inventory before input readiness/tool authority. Optional servers retain
-their existing inventory checks without a new pre-input connection requirement.
-A Runtime must advertise the concrete required-initialization capability; there
-is no fallback to an older execution path.
-
-Public Claude static-bearer HTTPS MCP reuses the shared
-Vault attachment, frozen selection and scoped decryption path. Selection and final
-preclaim require the existing bearer capability; shared authentication dispatch
-uses capability/placement checks rather than a Codex-name restriction. Missing keys
-or failed lookup/decryption never fall back to anonymous execution; an attached
-Vault with no matching credential may remain anonymous. These are execution limits,
-not saved-Agent schema restrictions or changes to the official protocol.
-
-Root assistant tool calls and live root user results produce the existing neutral
-MCP observations. Correlate actual Session/call identities; exclude replay,
-synthetic and subagent work and keep host function receipts separate. Preserve
-the exact native `tool_use_result` when one result is unambiguous, otherwise the
-per-call result content. Native errors remain observed native errors. The SDK can
-replace annotated MCP content with rendered structuredContent and flatten MCP
-errors; these observations do not claim original MCP envelope fidelity or hosted
-output parity. Do not reconstruct lost fields or infer output from model prose.
-Unfinished observed calls become incomplete on shutdown, without claiming that
-remote tool effects were cancelled. Rich content, native truncation and asynchronous
-MCP task results remain unverified.
-
-Daemon `connect` optionally registers this factory as `claude_sdk` when the
-operator sets `OAC_RUNTIME_CLAUDE_SDK_ENTRYPOINT` to the absolute packaged `dist/main.js`.
-`OAC_RUNTIME_CLAUDE_SDK_NODE` selects Node (default: `node` on PATH). Discovery resolves
-Node once and checks that exact configuration before pairing; the SDK's bounded
-runtime check is independent of legacy CLI version probes. A ready SDK alone is
-sufficient to start the daemon. No configuration means no SDK probe or descriptor;
-failed readiness reports an unavailable descriptor with a rejecting factory.
-Runtime checks establish local readiness, not provider authentication.
-
-SDK state lives under `paths.ProfileDir(profile)/runtime/claude-sdk`, independently
-of the replaceable runtime bundle. Both the entrypoint and managed state root must
-be absolute. Background re-execution inherits operator configuration; it does not
-persist provider credentials in pairing profiles. Product `claude_code` remains
-unchanged. Product registration explicitly opts existing engines into
-`WorkspaceAuthoring`; the authoring registry wraps only that opt-in. SDK registration
-bypasses product capability-download, skill-upload and workspace-authoring wrappers.
-It does not accept caller-supplied environment variables or business write authority.
-
-The SDK descriptor advertises the validated daemon subset, including durable
-Turns/input receipts, text observations, function tools, raw usage and restrictive
-execution controls. It does not advertise permissions, product authoring, legacy
-raw tool Items, general web-search control or text-verbosity levels. Router admission
-for `environment:none` uses the available engine capability, not an engine name.
-The independent API selects new Session engines through `OAC_DEFAULT_HARNESS`
-(`codex` by default, `claude_sdk` or `mcode`); existing Sessions keep their stored engine.
-This remains the deployment default; the optional Core harness extension selects
-an enabled engine for one saved or inline Agent configuration. API admission,
-device selection and the final preclaim check share the execution service's narrow
-engine policy without importing native adapters. Selected engines require the common
-durable execution capabilities. Codex retains its general search/verbosity checks;
-Claude uses its restrictive profile without claiming those general capabilities.
-Idle and initial-input Session creation qualify the resolved configuration before
-persistence; saved Agent resources remain independent of engine restrictions.
-Claude additionally requires medium verbosity and explicit object-root function
-schemas. Function-result batches normalize through the existing shared parser. Claude accepts
-text results and, on `none` and Core-managed Docker `openai_hosted`, successful
-ordered inline PNG/JPEG results. Unqualified placements, failed image results and
-invalid/remote references reject before any batch write, preserving pending calls
-and retry identity. Public qualification receives the full neutral result so
-success-dependent limitations remain in the profile. Image-bearing delivery alone
-requires Runtime function-result image support; text results and function
-declarations do not acquire that requirement. These are implementation limits, not changes to the upstream contract.
-Do not bypass them by dropping fields, changing model identity or fabricating usage.
-Operators may configure the daemon provider environment or the deployment default
-model provider for `claude_sdk` (HTTPS `base_url` and a write-only key), which Core
-freezes in the Session's encrypted snapshot and delivers as the adapter-owned
-`model_provider`; it never enters public Session configuration. The adapter exclusively selects the
-provider environment and removes credentials from native tool environments. Product `claude_code` and product execution are unchanged.
-The `none` public profile accepts only
-text, explicit model/system instructions, managed state, exact native resume and
-declared functions with ordered text or successful inline PNG/JPEG results, and the HTTP MCP subset
-described above. It rejects unsupported request
-options and disables built-in tools and undeclared MCP discovery.
-`DisableExecutionEnvironment` and `DisableSubagents` are accepted assertions about
-the single-Agent restrictive profile. Omission does not enable built-in tools.
-Explicit Subagent observation enables only its qualified native delegation tools,
-with admission before start and verified child identity before workspace authority.
-Public function/MCP combinations remain unqualified with Subagents. Single-Agent
-new and resumed queries use the SDK's empty built-in tool set, explicit function MCP
-configuration and allowlist, strict MCP configuration and empty user/project/local
-setting sources. Without HTTP MCP declarations, native initialization and real
-provider request inventories must contain only the declared host functions. Managed operator policy may further
-restrict execution; it must not widen the profile. This limits model tool access,
-not native state files or filesystem access by an explicitly supplied host function;
-it is not sandbox/file isolation. The private factory accepts typed execution
-controls only for disabled search and medium text verbosity. Search remains excluded
-by the native tool inventory; medium retains the SDK's default text generation,
-without adding instructions or changing caller input. The pinned SDK has no native
-verbosity-level option: low/high and enabled search remain explicit implementation
-gaps. Missing/invalid fields in a supplied control block fail before native setup;
-omitting the block keeps the same restrictive profile. Public engine admission is
-qualified separately by the API policy described above.
-Use the SDK's history lookup before explicit resume; never fall back to a new
-Session. Native files remain device-affine under a caller-selected managed
-runtime directory. The launch configuration supplies trusted provider environment;
-request options cannot supply environment variables or business write authority.
-Omitted, null and empty `system_prompt` map to empty SDK instructions only at this
-adapter boundary; null model values and unsupported options remain rejected.
-
-The internal SDK function-server helper uses the maintained MCP server's public
-request handlers and standard Tool/CallToolResult types. It snapshots definitions
-and forwards JSON Schema without a JSON Schema-to-Zod conversion; supplied tools
-are always loaded. Native call identity comes from the pinned harness's
-`claudecode/toolUseId` MCP metadata, independently of request IDs, names or arrival
-order. Missing identities and undeclared tools fail before invoking the host.
-Return content/error fields unchanged over MCP and forward its per-request abort
-signal. The private Go factory connects declared functions through this helper and
-reuses the daemon function-call/result interface and opt-in neutral observations.
-The native function-server registry must contain exactly those functions. SDK allowlisting admits
-only these host callbacks; the host still owns result decisions and any business
-permission checks. It grants no runtime-token business authority.
-
-Function results remain pending after stdin/MCP delivery. A matching live, root
-native user tool_result confirms application only when its Session/call identity,
-error flag and ordered content match the submission. Text matches exactly; each
-submitted image position must remain a valid native base64 image. Native resizing
-or re-encoding may change image bytes. This acknowledges incorporation into native
-history, not byte/pixel fidelity or completed provider consumption. Public Items
-retain the original caller content; real image-dependent model responses separately
-qualify usability. Ignore replayed, synthetic and
-subagent messages. Native error text joins the submitted text parts with newlines;
-neutral observations retain their original order and separate failure status.
-Missing/mismatched receipts fail the execution; do not replay unknown delivery.
-Result submission waits at most ten seconds for a receipt and cancels uncertain
-execution on timeout. Invalid or unsupported image results fail before consuming
-a pending call. Function state belongs to one live Run and ends with it; the
-existing router owns receipt retry/conflict handling. This does not establish
-crash recovery or exactly-once effects. Public schemas outside MCP's object-root
-contract, failed image results and remote image references remain admission/execution gaps.
-
-Each SDK result supplies one native usage snapshot, including reported failures.
-`Usage.Raw.claude_sdk_result` holds the latest; queries with multiple native results
-also retain all snapshots in order under `claude_sdk_results`. Main-loop `usage`
-is per native turn, while query-pipeline `modelUsage` and estimated `total_cost_usd`
-are cumulative within the query. Retain subtype/error provenance and earlier
-snapshots even when a later failure reports zero counters. Reuse the latest full
-snapshot set in Usage and Done; never sum cumulative measurements. Each Executor owns one SDK query, including cold resume. Raw snapshots explicitly
-identify per-native-turn usage versus query-cumulative model usage and cost. A new
-Turn has a fresh snapshot list, but query totals may include earlier Turns; never
-represent those totals as consumption by the current Turn. Missing native results do not imply zero consumption. SDK estimates stay
-in raw evidence, outside the billed cost field; do not select an arbitrary model
-or invent missing public token breakdowns. The API does not parse native counters.
-Precise public usage projection, unreported costs and crash/partial accounting
-remain gaps; the native snapshot alone is not complete protocol Usage compatibility.
-
-Active text uses the SDK's `AsyncIterable<SDKUserMessage>` input, with a fresh
-native UUID mapped to each daemon input ID. A native query may fold text into its
-current native turn or queue another; one daemon Run can therefore contain several
-native turns. Never promise Codex's same-native-turn semantics. Writes, queued
-notifications and user-message echoes do not confirm consumption. Only matching
-root assistant/partial/result `user_message_uuids` (or the singular fallback)
-confirm applied input. Typed mid-turn folds may appear only on the native result.
-Preserve that receipt even when the result reports failure. Check pending functions
-after the query drains: the SDK may dispatch later-turn callbacks before the
-earlier result handler finishes.
-Keep Turn input admission open until every submitted input has a consuming result,
-even when an earlier result reports an empty native queue. Close admission before
-releasing final receipt waiters. The outer SDK iterator remains open across Turns.
-Cancellation resolves unconfirmed pending receipts as unknown and interrupts the
-exact native Turn. Successful Cancel requires confirmed Turn settlement; process
-exit alone cannot establish a successful cancellation. Reuse also requires an
-empty confirmed native queue and settled child work. Otherwise close the Executor.
-The settled CancellationOutcome retains verified native identity, partial text
-and observed Usage; a requested resume identity alone is not evidence. Caller
-wait expiry reports failure/unknown while cleanup retains ownership. Output
-backpressure cannot turn missing native facts into confirmed settlement. Closed
-Turn output precedes successful AwaitSettlement; the settled outcome remains
-readable when connection loss prevents publication.
-A receipt timeout after a full write preserves the process and pending identity
-without redelivery; a blocked write is cancelled and released.
-The private adapter permits one input awaiting consumption and at most 63 extra
-inputs per Run, preserving the native 64-UUID receipt bound. Durable receipt opt-in
-separates bounded writes from native consumption waits; calls without it retain
-the router's ten-second deadline. Larger input capacity and interrupted-input
-recovery remain separate work. Daemon registration alone does not establish public acceptance.
-
-Public text/function execution, active input, pending-call cancellation and cold
-continuation are accepted for the registered restrictive profile. Environment
-provisioning, broader tools/verbosity, complete public Usage, failed image results and
-process-loss recovery remain gaps. Managed installation and release publication
-remain separate tasks. `make check-cli` also builds
-and tests the SDK package, including native output draining; CI selects that check
-for changes to the package. Live adapter
-acceptance is opt-in and must use a real provider with private credentials.
+The [Claude SDK adapter guide](packages/claude-sdk-adapter/README.md#bridge-and-native-lifecycle)
+owns the private bridge, native configuration, observation translation and
+SDK-specific settlement rules. Use the common Executor/Turn interfaces and the
+same Runtime path as every other harness.
 
 ### Private Claude SDK runtime artifact
 
-`make build-claude-sdk-runtime` exports the compiled bridge and pinned production
-SDK/MCP dependencies, including the native package for the build host, into a
-platform/architecture/libc-specific `.tar.gz` and SHA256 file under
-`${OAC_DEV_HOME:-$HOME/.oac}/build/claude-sdk-runtime`. `CLAUDE_SDK_BUILD_DIR`
-may select another absolute output directory. The production dependency closure
-requires Node20 or newer; Node22 is the tested version. Node is operator-supplied
-and is not bundled; the bundle is independent of product sources, services and databases.
-It does not add Node or SDK assets to the Agents API binaries/image.
-
-The build validates source manifests with the repository-pinned pnpm frozen
-install and compiles into fresh managed staging, never exporting incremental
-checkout output. It then uses modern `pnpm deploy` with command-scoped workspace injection
-and its dedicated frozen lock. The adapter has no workspace dependencies; keep
-that boundary explicit. Do not enable injection globally or replace this with a
-custom dependency copier. Export only compiled `dist` and production dependencies;
-retain their package metadata, lockfile and licenses. Check dependency links stay
-inside the export, pinned SDK/MCP/native versions, native `--version`, and bridge
-startup before publishing the archive. Startup with stdin EOF is an import check,
-not model execution acceptance. `make check-cli` includes this artifact check.
-
-Extract the archive into a fresh managed runtime directory on a matching host
-and use its absolute `dist/main.js` as the private factory entrypoint. Validate
-relocation and real provider cancellation/continuation before accepting an
-artifact. Linux x64/glibc with Node22 is the currently exercised platform;
-other hosts require their own native acceptance. Do not reuse a bundle across
-platforms or libc variants. Automatic Node installation, managed activation and
-release publication remain separate work. Operator-configured daemon discovery/registration is supported as
-specified above.
-
-The exported `dist/runtime_check.js` companion is the local readiness contract.
-It checks Node20+, installed SDK/MCP/native versions against the package manifest,
-contained dependency resolution, native startup, and the exact `dist/main.js` bridge
-with stdin EOF. It emits one versioned JSON report without calling a model or
-creating Session state. The artifact check reuses this companion and separately
-checks all exported links, the lockfile and source pins. `claudesdk.CheckRuntime`
-uses the same operator-supplied Node, entrypoint and environment as execution,
-with shared process-group ownership, bounded output and a 15-second deadline
-plus bounded cleanup. Both native and bridge probes have five-second limits.
-Return unavailable on failed or malformed probes; never forward native diagnostics
-or treat local readiness as provider authentication, public capability acceptance
-or filesystem isolation. Automatic installation remains separate.
-
+The [package artifact contract](packages/claude-sdk-adapter/README.md#runtime-artifact)
+owns build isolation, dependency export, readiness and relocation checks.
+Keep the adapter artifact independent of the Core binary and product sources.
 
 ### Harness selection and Agent defaults
 
@@ -3682,20 +3489,75 @@ of the engine. Session creation fixes a node through automatic placement; retain
 Transient model options are partitioned by engine and must not expose another
 engine's credentials. Do not infer an engine from a model name or template.
 
-Parsar Agents save default model, harness extension and a typed, non-confidential
-`config.environment` selector. The Agent form requires an explicit harness before
-saving; existing records without one remain unset in read-only views. The Agent
-list shows the configured environment type and harness in both table and compact
-layouts. The environment selector is product configuration;
-it becomes the official Session `environment`, never part of the protocol Agent.
-Only a template reference or supported environment selector is stored, not live
-container identity or initialization secrets. An explicitly chosen conversation
-environment retains its existing override behavior. Otherwise the first message
-uses the Agent defaults. Creating an Agent or opening an empty chat performs no
-Core Session or container creation. One conversation/Agent binding freezes the
-request on first execution; later messages and observer retries reuse it. Separate
-conversations get independent Sessions and environments. Edits affect future
-Sessions only. Keep the existing product navigation and direct empty-chat composer.
+### Shared Runtime capability preparation
+
+Resource management retains provider placement, capacity, allocation and Environment
+create/renew/reclaim operations. The authenticated Runtime connection carries
+initialization, capability preparation and executor operations; it does not implicitly
+allocate or destroy compute. Connection loss, executor idle close and Turn cancellation preserve
+the workspace and installed snapshot. Resource reclamation coordinates with active
+work through its existing owner.
+
+Core freezes resource versions, metadata and local source selections. Managed
+initialization keeps its existing order: initial files, tool configuration,
+Skill/Plugin bundle import, packages and setup commands, then directory snapshot
+finalization. Every step uses the same daemon and `runtime_prepare` exchange.
+Providers only place, create, bootstrap, inspect, renew and reclaim resources; they
+do not execute Core initialization commands. The common runner uses only neutral
+Environment/Session identity and a Runtime peer, with no Provider, deployment or OS
+branch. Harness differences belong to native adapters. Package installation and
+setup use the host network; the daemon does not introduce a network sandbox.
+A missing authenticated Runtime connection waits before capability initialization
+is claimed; an operation whose effect is unknown is not replayed. Self-hosted
+capability directories remain in immutable Environment configuration and never
+create a managed initialization row or allocation.
+
+The private `runtime_prepare`/`runtime_prepare_result` exchange carries typed
+initial files, configure/npm/python/setup operations, inert Skill/Plugin
+archives and finalization selections, with canonical Session and Environment
+identities. Files and setup working directories use logical `/workspace` addresses;
+setup commands are explicit typed input, while executable selection and physical
+destinations remain Runtime-owned. Ordered 64 KiB chunks and SHA-256 receipts
+bound each file or archive to 50 MiB, each control frame to 1 MiB and each connection
+to one transfer. Initialization and finalization headers carry no file data. Begin,
+chunk and commit are never retried;
+rejected, failed and unknown effects remain distinct. Runtime owns transfer and
+filesystem work through settlement, including disconnect or cancellation.
+
+The source-selection protocol accepts portable absolute Unix, Windows drive and
+UNC paths without consulting Core's filesystem. Runtime interprets and authorizes
+local paths. Linux, Windows and macOS use the same preparation implementation,
+parser and installed manifest. Runtime paths are chosen by the operator and never
+by a transfer request. Installation and package directories default under
+`OAC_RUNTIME_HOME`; packaged images can select their existing directories through
+explicit Runtime configuration. The manifest binds Session/Environment identities
+and the ordered source-selection digest. A completion receipt prevents a deleted
+snapshot from being mistaken for first preparation, while filesystem locking
+prevents concurrent installation. Invalid, partial or foreign snapshots fail
+without deleting data or silently reinstalling. Reconnection loads installed
+contents without rereading sources; a new Session captures a fresh snapshot.
+
+The daemon runs as its launching account and never uses sudo or elevates its
+permissions. Only user-directory dependencies are installed during preparation.
+System dependencies belong in managed image/template builds or must be installed
+by the self-hosted user. `packages.system` is rejected explicitly, including in
+templates; it is not ignored or translated into a privileged operation.
+
+Synchronous executor admission validates the frozen descriptor only. The admitted
+asynchronous preparation owner ensures capabilities are ready before invoking the
+native factory, including an empty inventory. Resolved Skill paths and MCP declarations
+remain Runtime-only fields; engine adapters consume this common result. Reused
+Session executors retain their original configuration. Files reads retain their
+separate authorization and do not require capability or native execution readiness.
+
+Self-hosted public input remains `workspace_directory` and optional
+`capability_directories`; it does not accept managed archive fields. Its public
+installation arrays describe API-managed uploads and stay empty for local directories.
+MCP environment variables must come from explicit immutable Runtime tool configuration;
+missing variables never fall back to daemon credentials or ambient process variables.
+No project-version upgrade or historical manifest compatibility is introduced.
+These implementation rules do not establish new real-deployment acceptance;
+historical evidence remains limited to its recorded binaries and inputs.
 
 ### API-key write provenance
 
@@ -3721,12 +3583,12 @@ rejects renamed settings before any subcommand and reports replacements without
 values; the separate Parsar product integration settings remain unchanged.
 Environment `env` reserves every `OAC_` name. Provider ownership labels use
 `io.oac.*`, and E2B metadata uses `oac_*`; neither accepts old labels as a fallback.
-Before upgrading, use the previous release to drain every hosted allocation,
-including suspended compute and cleanup still awaiting confirmation. Migration
-000078 atomically checks the drain and rewrites the saved microsandbox reference
-to `oac-runtime@sha256:`; its rollback has the same drain requirement. Session
-history and recorded node identities are never rewritten. Replace old E2B
-templates with this release's template builder before resuming admission.
+Historical Runtime and project-version upgrades are not supported. Preserve older
+installations, Runtime files, provider resources and Session history; install the
+current release separately. Use this release's template builder for new E2B
+templates. Landed migration files and historical acceptance evidence remain intact
+as repository history; they do not establish a supported upgrade procedure. Normal
+current-version database initialization still uses the ordinary migration runner.
 
 The dormant Pi adapter retains its `parsar` provider slug because the separate
 Parsar product pins model selections to that external identity. This is a product
@@ -3749,7 +3611,8 @@ Go module and source directory paths, npm and Cargo package identities, public
 unchanged. Persisted credential encryption domains and native-session resume keys
 also remain stable so existing data can be decrypted and Sessions can resume.
 Conversion inputs, retirement diagnostics and historical evidence must still name
-the identifiers they reject or migrate; current examples use the new names.
+the identifiers they reject; historical migration files retain their original
+identifiers as evidence, while current examples use the new names.
 
 
 Core administration error details are scoped by the `/core/v1` router writer mark,
@@ -3759,3 +3622,63 @@ code. Include only safe Core-owned facts; never pass submitted values, secrets,
 native text or provider bodies. Invalid/empty details are omitted. Preserve the
 public and machine error serializers, observer callbacks and streaming interfaces.
 The Core client ignores malformed optional details and never retries a mutation.
+
+Core operation validators preserve the original error text, sentinel identity,
+and validation precedence. Package-owned typed errors carry fixed field metadata;
+only the marked Core error mapper translates it to operation codes and safe
+bounds/catalog details. Preserve Project/key rune limits and node byte limits
+separately. Keep sandbox validation metadata through its existing store wrapper
+without changing transaction or provider authority. Public Session provider
+validation remains byte-compatible; cover it with handler-level golden responses.
+
+Root Session/Turn diagnostics are Core-key reads from one committed database
+snapshot, reusing public status projection and precedence. Keep their finite
+failure catalog separate from private outcome text. Persist safe provisioning
+details in the existing failure transaction; never reconstruct historical details
+from reason strings. Item settlement belongs to the existing Session lock and
+terminal transaction: event/input receipt for normal terminal projections, one
+post-lock database wall-clock sample for forced incomplete Items. Preserve
+historical terminal nulls and public native completion times. See the
+[diagnostics contract](contracts/agents-api/session-diagnostics.md).
+
+## Native daemon and Harness installation
+
+`oac-daemon install` owns interactive selection and CLI-only installation through
+one options/validation path. No installation-options file input is supported.
+Persisted installation state and explicitly supplied credential/tool-variable
+files serve runtime operation, not a second installer configuration language.
+The release bundles pinned Node/npm, native Harnesses and required adapter assets;
+registration lives in CLI and native activation/readiness in each adapter's optional
+`agent.Installation` descriptor. Core never selects native paths or OS-specific
+installation steps. See [native installation](docs/self-hosted-native.md).
+An installed daemon discovers and registers only the adapter kinds named by its
+verified installation manifest. The host PATH stays available to tools; its other
+Harness executables and activation variables cannot extend that installation.
+Direct `connect` rejects an installation manifest and directs the operator to
+`start`; unmanaged image bootstrap remains available without that manifest.
+
+All mutations use the installation directory lock. Publish complete checksum-verified
+components from staging, then commit configuration after native readiness passes.
+Re-running with the same connection settings adds selected Harnesses and validates
+existing contents. Never overwrite, upgrade, auto-repair or migrate installed
+components. Missing, modified, wrong-platform or incompatible content is an explicit
+error. A partial addition must preserve the old configuration and allow reuse of
+complete components; it must not remove previous files or data.
+
+Installers run as the current user in writable directories. Native subprocess
+diagnostics must not expose sensitive parameters or environment values. Adapter
+readiness checks receive the installer cancellation context and must reap owned
+processes before returning after interruption. Readiness,
+authenticated connection and model configuration are separate reported facts.
+Starting execution must not download or install Harnesses. Ordinary stop/reconnect
+must preserve capability snapshots and native Session state.
+
+`scripts/build-native-installer.mjs` packages native inputs, validates pins/startup
+and hashes every component file. It uses contained regular files and rejects
+escaping links. Claude's dedicated frozen `pnpm deploy` export is reified with
+the hoisted linker for this distribution before contained links are flattened;
+the original standalone Claude archive contract remains unchanged. The native
+installer workflow builds and tests on Linux, macOS and Windows, including actual
+installation, addition/reuse, missing arguments and unsupported Windows MiniMax.
+Native CI startup checks do not replace real model execution evidence or claim
+manual Windows acceptance. Heavy builds belong on remote servers or CI.

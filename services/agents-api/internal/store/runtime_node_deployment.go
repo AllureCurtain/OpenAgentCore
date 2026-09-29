@@ -48,7 +48,7 @@ func configureRuntimeManager(ctx context.Context, q *sqlc.Queries, previous sqlc
 			if err != nil {
 				return err
 			}
-			if resources.Allocations != 0 || resources.Pending != 0 || !previous.Maintenance || !selected.Maintenance {
+			if resources.Allocations != 0 || resources.Pending != 0 || !previous.AdmissionPaused || !selected.AdmissionPaused {
 				return fmt.Errorf("local sandbox node identity changed: restore its original state directory; replacement requires maintenance and no retained resources")
 			}
 		}

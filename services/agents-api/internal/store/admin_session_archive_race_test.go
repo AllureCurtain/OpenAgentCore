@@ -30,7 +30,6 @@ func TestManagedSessionArchiveReleasesPendingNodePlacement(t *testing.T) {
 	}
 	onlineManagerNode(t, s, nodeID)
 	tenant, session := managedArchiveSession(t, s, managerSessionInput(uuid.NewString()))
-	archiveMaintenance(t, w, installation, true)
 	result, err := w.ArchiveManagedSession(adminDeleteContext(t.Context(), tenant, uuid.NewString()), tenant, session.ID, 1)
 	if err != nil || result.State != "released" {
 		t.Fatal(result, err)
@@ -45,11 +44,9 @@ func TestManagedSessionArchiveReleasesPendingNodePlacement(t *testing.T) {
 }
 
 func TestManagedSessionArchiveOrdersConcurrentInput(t *testing.T) {
-	s, w, installation := managedArchiveFixture(t)
+	s, w, _ := managedArchiveFixture(t)
 	for range 8 {
-		archiveMaintenance(t, w, installation, false)
 		tenant, session := managedArchiveSession(t, s, managerSessionInput(uuid.NewString()))
-		archiveMaintenance(t, w, installation, true)
 		start := make(chan struct{})
 		var wg sync.WaitGroup
 		wg.Add(2)

@@ -57,7 +57,7 @@ func testLiveClaudeWorkspace(t *testing.T, explicitPreparation bool) {
 	}
 	config := Config{Node: placement.Node, Entrypoint: placement.Entrypoint, StateDir: filepath.Join(root, "state"),
 		Workspace: &WorkspaceConfig{Directory: filepath.Join(root, "workspace"), HomeDir: filepath.Join(root, "home"),
-			ScratchDir: scratch, ProtectedDirs: []string{filepath.Dir(placement.KeyFile)}, DependencyPath: placement.DependencyPath},
+			ScratchDir: scratch},
 		Env: []string{"ANTHROPIC_BASE_URL=https://api.minimax.cn/anthropic", "ANTHROPIC_API_KEY=", "ANTHROPIC_AUTH_TOKEN=" + strings.TrimSpace(string(key)),
 			"CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1", "ANTHROPIC_DEFAULT_SONNET_MODEL=MiniMax-M3", "ANTHROPIC_DEFAULT_OPUS_MODEL=MiniMax-M3", "ANTHROPIC_DEFAULT_HAIKU_MODEL=MiniMax-M3"}}
 	if placement.Proxy != "" {

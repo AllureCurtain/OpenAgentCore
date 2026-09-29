@@ -120,10 +120,10 @@ func TestAllRangesAndBoundedRetention(t *testing.T) {
 }
 func TestJobResultsAndConcurrentReads(t *testing.T) {
 	s, _, now := fixtureService(t)
-	s.record(Sample{At: now, Healthy: true, Maintenance: ptr(true)})
+	s.record(Sample{At: now, Healthy: true})
 	s.ReportJob("audit_cleanup", now, ptr(int64(12)), ptr(int64(0)), nil)
 	got, _ := s.Read(t.Context(), "1h")
-	if got.Service.Status != "maintenance" || *got.Jobs[3].Processed != 12 {
+	if got.Service.Status != "running" || *got.Jobs[3].Processed != 12 {
 		t.Fatal(got.Service, got.Jobs)
 	}
 	s.ReportJob("audit_cleanup", now, ptr(int64(2)), ptr(int64(1)), errors.New("failure"))

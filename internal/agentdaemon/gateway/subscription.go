@@ -11,12 +11,11 @@ import (
 var ErrSubscriberOverflow = errors.New("execution subscriber buffer overflow")
 
 type Subscription struct {
-	Events  <-chan proto.Envelope
-	ch      chan proto.Envelope
-	mu      sync.Mutex
-	err     error
-	closed  bool
-	durable bool
+	Events <-chan proto.Envelope
+	ch     chan proto.Envelope
+	mu     sync.Mutex
+	err    error
+	closed bool
 }
 
 func (s *Subscription) Err() error {
@@ -32,30 +31,14 @@ func (s *Subscription) closeLocked(err error) {
 	}
 }
 
-// Subscribe retains the product's best-effort stream behavior.
-func (s *Session) Subscribe(runID string) (<-chan proto.Envelope, error) {
-	sub, err := s.subscribe(runID, false)
-	if err != nil {
-		return nil, err
-	}
-	return sub.Events, nil
-}
-
-// SubscribeDurable fails the subscription on overflow instead of losing events silently.
+// SubscribeDurable reports transport loss and overflow separately from native
+// execution events. Callers must inspect Err after Events closes.
 func (s *Session) SubscribeDurable(runID string) (*Subscription, error) {
-	return s.subscribe(runID, true)
-}
-
-func (s *Session) subscribe(runID string, durable bool) (*Subscription, error) {
 	if runID == "" {
 		return nil, fmt.Errorf("agentdaemon gateway: Subscribe requires non-empty runID")
 	}
-	capacity := 32
-	if durable {
-		capacity = 256
-	}
-	ch := make(chan proto.Envelope, capacity)
-	sub := &Subscription{Events: ch, ch: ch, durable: durable}
+	ch := make(chan proto.Envelope, 256)
+	sub := &Subscription{Events: ch, ch: ch}
 	s.subsMu.Lock()
 	defer s.subsMu.Unlock()
 	if s.IsClosed() {
@@ -83,14 +66,11 @@ func (s *Session) Unsubscribe(runID string) {
 	s.reg.DetachRun(runID)
 }
 
-func (s *Session) closeSubscription(runID string, sub *Subscription, reason string) {
+func (s *Session) closeSubscription(sub *Subscription) {
 	sub.mu.Lock()
 	defer sub.mu.Unlock()
 	if sub.closed {
 		return
-	}
-	if !sub.durable {
-		s.deliverSynthetic(runID, sub.ch, reason)
 	}
 	sub.closeLocked(ErrSessionClosed)
 }
@@ -110,14 +90,7 @@ func (s *Session) dispatchToSubscriber(env proto.Envelope) {
 			sub.closeLocked(nil)
 		}
 	default:
-		if sub.durable {
-			sub.closeLocked(ErrSubscriberOverflow)
-		} else {
-			s.log("agentdaemon gateway: subscriber buffer full for run %s, dropping %s", env.ID, env.Type)
-			if env.Type == proto.TypeDone {
-				sub.closeLocked(nil)
-			}
-		}
+		sub.closeLocked(ErrSubscriberOverflow)
 	}
 	if sub.closed {
 		delete(s.subs, env.ID)

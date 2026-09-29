@@ -23,14 +23,17 @@ type DeploymentModelProviderStore interface {
 // HarnessModelProvider is a harness's deployment default model provider. It
 // never contains the API key, only whether one is configured.
 type HarnessModelProvider struct {
-	Object           string    `json:"object" enums:"core.model_provider" binding:"required"`
-	Harness          string    `json:"harness" enums:"claude_sdk,codex,mcode" binding:"required"`
-	Protocol         string    `json:"protocol" enums:"anthropic,responses" binding:"required"`
-	BaseURL          string    `json:"base_url" binding:"required"`
-	ContextWindow    int32     `json:"context_window,omitempty"`
-	MaxOutputTokens  int32     `json:"max_output_tokens,omitempty"`
-	APIKeyConfigured bool      `json:"api_key_configured" binding:"required"`
-	UpdatedAt        time.Time `json:"updated_at" binding:"required"`
+	Object           string     `json:"object" enums:"core.model_provider" binding:"required"`
+	Harness          string     `json:"harness" enums:"claude_sdk,codex,mcode" binding:"required"`
+	Protocol         string     `json:"protocol" enums:"anthropic,responses" binding:"required"`
+	BaseURL          string     `json:"base_url" binding:"required"`
+	ContextWindow    int32      `json:"context_window,omitempty"`
+	MaxOutputTokens  int32      `json:"max_output_tokens,omitempty"`
+	APIKeyConfigured bool       `json:"api_key_configured" binding:"required"`
+	LastUsedAt       *time.Time `json:"last_used_at" format:"date-time" extensions:"x-nullable" binding:"required"`
+	LastErrorCode    *string    `json:"last_error_code" extensions:"x-nullable" binding:"required" enums:"authentication_error,connection_failed,rate_limit_exceeded,usage_limit_exceeded,server_overloaded,server_error,resource_not_found,request_timeout,invalid_request"`
+	LastErrorAt      *time.Time `json:"last_error_at" format:"date-time" extensions:"x-nullable" binding:"required"`
+	UpdatedAt        time.Time  `json:"updated_at" binding:"required"`
 }
 
 // CoreHarness describes one harness this build supports. Enabled and default
@@ -53,7 +56,7 @@ func harnessModelProvider(value store.DeploymentModelProvider) *HarnessModelProv
 	return &HarnessModelProvider{Object: "core.model_provider", Harness: value.Harness,
 		Protocol: value.Provider.Protocol, BaseURL: value.Provider.BaseURL,
 		ContextWindow: value.Provider.ContextWindow, MaxOutputTokens: value.Provider.MaxOutputTokens,
-		APIKeyConfigured: value.Provider.APIKeyConfigured, UpdatedAt: value.UpdatedAt.UTC()}
+		APIKeyConfigured: value.Provider.APIKeyConfigured, UpdatedAt: value.UpdatedAt.UTC(), LastUsedAt: value.LastUsedAt, LastErrorCode: value.LastErrorCode, LastErrorAt: value.LastErrorAt}
 }
 
 // registerHarnessRoutes adds harness and deployment model provider management
@@ -107,7 +110,7 @@ func (h *Handler) listHarnesses(w http.ResponseWriter, r *http.Request, s Deploy
 }
 
 // @Summary Retrieve a harness's deployment default model provider
-// @Description Core key only. Returns the safe view; the key is never returned. 404 when the harness does not exist or has no deployment default.
+// @Description Core key only. Returns the safe view; the key is never returned. 404 when the harness does not exist or has no deployment default. Nullable last_used_at, last_error_code and last_error_at are best-effort observations of committed root Turns using this exact default revision; they do not establish current readiness and may remain stale indefinitely.
 // @Tags Deployment Model Providers
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -141,7 +144,7 @@ var harnessModelProviderShape = shape{kind: objectValue, members: []member{
 }}
 
 // @Summary Replace a harness's deployment default model provider
-// @Description Core key only. The body is the complete x_agents_core.model_provider bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, an upstream protocol (responses, anthropic or chat_completions), automatically adapted by Runtime to the selected harness and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions that resolve no Session or Agent bundle freeze this default into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key.
+// @Description Core key only. The body is the complete x_agents_core.model_provider bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, an upstream protocol (responses, anthropic or chat_completions), automatically adapted by Runtime to the selected harness and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions that resolve no Session or Agent bundle freeze this default into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key and resets last_used_at, last_error_code and last_error_at to null, including identical writes.
 // @Tags Deployment Model Providers
 // @Accept json
 // @Produce json
@@ -163,10 +166,13 @@ func (h *Handler) setHarnessModelProvider(w http.ResponseWriter, r *http.Request
 	var input v1.ModelProviderInput
 	// Neither message echoes submitted values, which may include the key.
 	if checkValue("model_provider", raw, harnessModelProviderShape) != nil || decodeInputObject(raw, &input, "protocol", "base_url", "api_key", "context_window", "max_output_tokens") != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request_error", "The body must be a complete model provider: protocol, base_url, api_key and optional nonnegative context_window and max_output_tokens.")
+		writeError(w, http.StatusBadRequest, "invalid_model_provider", "The body must be a complete model provider: protocol, base_url, api_key and optional nonnegative context_window and max_output_tokens.")
 		return
 	}
 	if err := input.ValidateHarness(harness); err != nil {
+		if writeCoreModelProviderError(w, err, harness) {
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_request_error", err.Error())
 		return
 	}

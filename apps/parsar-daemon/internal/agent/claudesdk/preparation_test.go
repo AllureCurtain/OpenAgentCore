@@ -68,7 +68,7 @@ func TestPreparationWaitsForReceiptAndRetainsConfiguration(t *testing.T) {
 	}
 	config.Env[0] = "ANTHROPIC_AUTH_TOKEN=changed"
 	config.Workspace.Directory = "/changed"
-	config.Workspace.ProtectedDirs[0] = "/changed"
+	config.Workspace.Directory = "/changed"
 	req.AgentOptions["model"] = "changed"
 	req.AgentSessionID = "changed"
 	out := make(chan proto.Envelope, 16)

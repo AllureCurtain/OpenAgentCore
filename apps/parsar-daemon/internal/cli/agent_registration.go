@@ -13,9 +13,15 @@ import (
 )
 
 func registerAgentKinds(registry *agent.Registry, agentCLIs agentCLIDiscovery, serverURL string) {
-	registerProductAgentKind(registry, agentCLIs.ClaudeCode, withSkillUploadServer(withCapabilityDownloads(claudecode.Factory, serverURL), serverURL))
-	registerProductAgentKind(registry, agentCLIs.OpenCode, withSkillUploadServer(withCapabilityDownloads(opencodeagent.Factory, serverURL), serverURL))
-	registerProductAgentKind(registry, agentCLIs.Codex, withSkillUploadServer(withCapabilityDownloads(codex.Factory, serverURL), serverURL))
+	registerProduct := func(info proto.SupportedAgentKind, factory agent.Factory) {
+		if agentCLIs.permits(info.Kind) {
+			registerProductAgentKind(registry, info, factory)
+		}
+	}
+
+	registerProduct(agentCLIs.ClaudeCode, withSkillUploadServer(withCapabilityDownloads(claudecode.Factory, serverURL), serverURL))
+	registerProduct(agentCLIs.OpenCode, withSkillUploadServer(withCapabilityDownloads(opencodeagent.Factory, serverURL), serverURL))
+	registerProduct(agentCLIs.Codex, withSkillUploadServer(withCapabilityDownloads(codex.Factory, serverURL), serverURL))
 	if agentCLIs.Codex.Available {
 		registry.RegisterExecutor("codex", withExecutorCapabilities(codex.NewExecutorFactory(), serverURL))
 	}
@@ -28,12 +34,12 @@ func registerAgentKinds(registry *agent.Registry, agentCLIs agentCLIDiscovery, s
 			return prepared, err
 		})
 	}
-	registerProductAgentKind(registry, agentCLIs.Pi, withSkillUploadServer(withCapabilityDownloads(pi.Factory, serverURL), serverURL))
+	registerProduct(agentCLIs.Pi, withSkillUploadServer(withCapabilityDownloads(pi.Factory, serverURL), serverURL))
 	if agentCLIs.MCodeWorkspace != nil {
 		registry.RegisterKind(agentCLIs.MCode, mcode.Factory)
 		registry.RegisterPreparation("mcode", true, mcode.NewPreparationFactory(*agentCLIs.MCodeWorkspace))
 	} else {
-		registerProductAgentKind(registry, agentCLIs.MCode, withSkillUploadServer(withCapabilityDownloads(mcode.Factory, serverURL), serverURL))
+		registerProduct(agentCLIs.MCode, withSkillUploadServer(withCapabilityDownloads(mcode.Factory, serverURL), serverURL))
 	}
 	if agentCLIs.MCode.Available {
 		registry.RegisterExecutor("mcode", withExecutorCapabilities(mcode.NewExecutorFactory(agentCLIs.MCodeWorkspace), serverURL))

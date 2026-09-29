@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"os"
-	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -13,6 +12,7 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/dispatch"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentcapabilities"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 )
 
@@ -73,20 +73,18 @@ const preparationSessionID = "22222222-2222-4222-8222-222222222222"
 
 func preparationWorkspace(t *testing.T) *localworkspace.Binding {
 	t.Helper()
-	helper := filepath.Join(t.TempDir(), "directory")
-	if err := os.WriteFile(helper, []byte("#!/bin/sh\nprintf '%s' '{\"version\":1,\"directory\":{\"entries\":[{\"name\":\"file\",\"kind\":\"file\",\"size_bytes\":3}],\"truncated\":true}}'\n"), 0o700); err != nil {
+	runtimeHome := t.TempDir()
+	if err := os.Chmod(runtimeHome, 0o700); err != nil {
 		t.Fatal(err)
 	}
 	for name, value := range map[string]string{
-		"OAC_RUNTIME_ENVIRONMENT_ID":   preparationEnvironmentID,
-		"OAC_RUNTIME_SESSION_ID":       preparationSessionID,
-		"OAC_RUNTIME_WORKSPACE":        t.TempDir(),
-		"OAC_RUNTIME_DIRECTORY_HELPER": helper,
-		"OAC_RUNTIME_NETWORK_ACCESS":   "enabled",
-		"OAC_RUNTIME_ALLOWED_DOMAINS":  "",
-		"OAC_RUNTIME_WRITE_HELPER":     "",
-		"OAC_RUNTIME_EXPORT_HELPER":    "",
-		"OAC_RUNTIME_STAGING":          "",
+		"OAC_RUNTIME_ENVIRONMENT_ID":       preparationEnvironmentID,
+		"OAC_RUNTIME_SESSION_ID":           preparationSessionID,
+		"OAC_RUNTIME_WORKSPACE":            t.TempDir(),
+		"OAC_RUNTIME_CAPABILITY_DIRECTORY": t.TempDir(),
+		"OAC_RUNTIME_HOME":                 runtimeHome,
+		"OAC_RUNTIME_NETWORK_ACCESS":       "enabled",
+		"OAC_RUNTIME_ALLOWED_DOMAINS":      "",
 	} {
 		t.Setenv(name, value)
 	}
@@ -112,7 +110,7 @@ func localPreparationHarness(t *testing.T) *harness {
 }
 
 func preparationRequest() proto.ExecutionPreparePayload {
-	return proto.ExecutionPreparePayload{SessionID: preparationSessionID, Configuration: proto.PromptRequestPayload{AgentKind: "prepared", AgentStateKey: "agents-api-" + preparationSessionID, StrictResume: true, ReleaseOnCompletion: true, LocalEnvironment: &proto.LocalEnvironment{ID: preparationEnvironmentID, NetworkAccess: "enabled"}}}
+	return proto.ExecutionPreparePayload{SessionID: preparationSessionID, Configuration: proto.PromptRequestPayload{AgentKind: "prepared", AgentStateKey: "agents-api-" + preparationSessionID, StrictResume: true, ReleaseOnCompletion: true, LocalEnvironment: &proto.LocalEnvironment{ID: preparationEnvironmentID, NetworkAccess: "enabled", WorkspaceDirectory: "/workspace", CapabilitySources: &agentcapabilities.Input{}}}}
 }
 
 func preparationRouter(t *testing.T, sender dispatch.Sender, timeout time.Duration, factory agent.PreparationFactory) *dispatch.Router {

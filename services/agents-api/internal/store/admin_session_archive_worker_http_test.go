@@ -34,7 +34,7 @@ func TestAdminSessionArchiveWorkerHTTPPostgres(t *testing.T) {
 	installation := uuid.NewString()
 	provider := &lifecycleProvider{resources: map[string]sandbox.Info{}}
 	providerConfig := func(setup store.SandboxSetup) *execution.RuntimeProvider {
-		return &execution.RuntimeProvider{InstallationID: setup.InstallationID, ProviderKind: setup.Provider, Generation: setup.Generation, Mode: setup.Mode, Maintenance: setup.Maintenance, CoreURL: "https://core.example/api/v1", BackendFingerprint: setup.BackendFingerprint, Provider: provider}
+		return &execution.RuntimeProvider{InstallationID: setup.InstallationID, ProviderKind: setup.Provider, Generation: setup.Generation, Mode: setup.Mode, AdmissionPaused: setup.AdmissionPaused, CoreURL: "https://core.example/api/v1", BackendFingerprint: setup.BackendFingerprint, Provider: provider}
 	}
 	configuration := execution.NewDeferredRuntimeProvider(installation, func(ctx context.Context) (*execution.RuntimeProvider, error) {
 		setup, err := s.GetSandboxSetup(ctx)
@@ -83,9 +83,6 @@ func TestAdminSessionArchiveWorkerHTTPPostgres(t *testing.T) {
 	}
 	input, err := s.SubmitMessage(t.Context(), project.TenantID, active.ID, "pending-turn", json.RawMessage(`{"text":"pending"}`))
 	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := worker.SetSandboxMaintenance(t.Context(), store.SandboxMaintenanceRequest{Maintenance: true, ExpectedGeneration: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.ArchiveManagedSession(ctx, project.TenantID, active.ID, 1); !errors.Is(err, store.ErrInvalidInput) {

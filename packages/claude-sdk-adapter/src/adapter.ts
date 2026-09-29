@@ -1,3 +1,4 @@
+import { NativeFailure } from "./native_failure.js";
 import { ExecutorTurns, type ExecutorEvent } from "./executor_protocol.js";
 import { StructuredOutput } from "./structured_output.js";
 import { toolSearchEnvironment } from "./tool_search.js";
@@ -34,11 +35,14 @@ export type Event =
   | { type: "usage"; session_id: string; result_id: string; usage: NativeUsage }
   | { type: "delta"; delta: string }
   | { type: "result"; session_id: string; text: string }
-  | { type: "error"; code: "invalid_request" | "history_unavailable" | "execution_failed" | "cancelled" };
+  | { type: "error"; code: "invalid_request" | "history_unavailable" | "execution_failed" | "cancelled"; engine_error_code?: string; session_id?: string; result_id?: string };
 
 export async function execute(request: Start | Prepare | ExecutorPrepare, emit: (event: Event) => Promise<void>, abort: AbortController, functions = new FunctionBridge(emit), inputs = new Inputs(immediateInput(request)), reads = new WorkspaceReads(emit, abort), directories = new WorkspaceDirectories(emit, abort), turns?: ExecutorTurns): Promise<void> {
  const ownerEmit=emit;
  if(turns) emit=event=>turns.emit(event);
+  const nativeFailure = new NativeFailure();
+  const nativeResultFailure = new Error("unsuccessful native result");
+  let classifiedFailure: { engine_error_code: string; session_id: string; result_id: string } | undefined;
   const definitions = (request.functions ?? []).map(tool => ({ name: tool.name, description: tool.description, inputSchema: tool.parameters, deferLoading: tool.defer_loading }));
   const names = definitions.map(tool => `mcp__functions__${tool.name}`);
   const allowed = [...names, ...(request.tool_search ? ["ToolSearch"] : [])];
@@ -166,6 +170,7 @@ export async function execute(request: Start | Prepare | ExecutorPrepare, emit: 
       // output or a consumed-input receipt, and has no authority over a Turn.
       if (isCommandLifecycle(message)) continue;
       if(turns && !turns.id && !(message.type==="system" && message.subtype==="init")) throw new Error("unbound native event");
+      const errorCode = nativeFailure.observe(message, nativeID, inputs.pendingInputIDs(message));
       subagents?.consume(message);
       structured?.consume(message, nativeID);
       await functions.consume(message, nativeID, turns?.cancelled);
@@ -192,7 +197,10 @@ export async function execute(request: Start | Prepare | ExecutorPrepare, emit: 
         resultIDs.add(message.uuid);
         await emit({ type: "usage", session_id: nativeID, result_id: message.uuid, usage: turns ? executorResultUsage(message) : resultUsage(message) });
         for (const event of inputs.consume(message)) await emit(event);
-        if ((message.subtype !== "success" || message.is_error) && !turns?.cancelled) throw new Error("unsuccessful native result");
+        if ((message.subtype !== "success" || message.is_error) && !turns?.cancelled) {
+          if (errorCode) classifiedFailure = { engine_error_code: errorCode, session_id: nativeID, result_id: message.uuid };
+          throw nativeResultFailure;
+        }
         if (structured && !turns?.cancelled) await emit(structured.complete(message));
         result = { type: "result", session_id: nativeID, text: message.subtype === "success" ? message.result : "" };
         if(turns?.cancelled && !inputs.complete) throw new Error("unconfirmed cancelled inputs");
@@ -213,19 +221,21 @@ export async function execute(request: Start | Prepare | ExecutorPrepare, emit: 
     functions.assertComplete();
     mcp?.assertComplete();
     commands?.assertComplete();
-  } catch {
+  } catch (error) {
+    if (error !== nativeResultFailure) classifiedFailure = undefined;
     failed = true;
   } finally {
     profile?.close();
     inputs.close();
     turns?.close();
     functions.close();
-    try { await directories.close(); } catch { failed = true; }
+    try { await directories.close(); } catch { failed = true; classifiedFailure = undefined; }
     await reads.close();
     stream?.close();
     warm?.close();
     abort.signal.removeEventListener("abort", closeInputs);
     const exits = await Promise.all(children);
+    if (!exits.length) classifiedFailure = undefined;
     await turns?.drain();
     if (!exits.length || exits.some(code => code !== 0)) failed = true;
     if (subagents && (!turns || turns.id) && abort.signal.aborted && exits.length === 1) {
@@ -237,14 +247,14 @@ export async function execute(request: Start | Prepare | ExecutorPrepare, emit: 
   }
   if(turns) {
     if(turns.id) {
-      await emit({type:"error",code: turns.cancelled && !cancellationFactsFailed ? "cancelled" : "execution_failed"});
+      await emit({type:"error",code: turns.cancelled && !cancellationFactsFailed ? "cancelled" : "execution_failed", ...(!turns.cancelled && !cancellationFactsFailed ? classifiedFailure : undefined)});
       await turns.settled(false, false, turns.cancelled ? "cancellation_unconfirmed" : "native_execution_unavailable");
     } else if(failed && !abort.signal.aborted) await ownerEmit({type:"error",code:"execution_failed"});
     return;
   }
   if (cancellationFactsFailed) await emit({ type: "error", code: "execution_failed" });
   else if (abort.signal.aborted) await emit({ type: "error", code: "cancelled" });
-  else if (failed || !result || !inputs.complete) await emit({ type: "error", code: "execution_failed" });
+  else if (failed || !result || !inputs.complete) await emit({ type: "error", code: "execution_failed", ...classifiedFailure });
   else await emit(result);
 }
 

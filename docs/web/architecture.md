@@ -74,7 +74,7 @@ route.
 
 Deployment sandbox management selects one provider at a time: E2B, Docker or
 microsandbox. E2B uses the deployment's provider integration; Docker and microsandbox
-use operator-managed machines. Provider setup, maintenance and node administration
+use operator-managed machines. Provider setup, reset and node administration
 belong to the existing sandbox management surface.
 
 An application's `self_hosted` Runtime, including one it provisions in its own E2B

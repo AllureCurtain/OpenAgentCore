@@ -3,36 +3,28 @@ title: "Self-hosted executors"
 description: "Connect a user-owned Runtime to its Environment with a restricted executor credential."
 ---
 
-A `self_hosted` Session runs on a machine the application owns, the executor host,
-instead of a node. The application creates the Session through `/v1`; the
-administrator issues an executor credential for it in Web; one command on the host
-starts a Runtime container that connects to Core. The Runtime is the same one nodes
-use: daemon, native harness and workspace.
+A `self_hosted` Session runs on a machine the application owns. The application
+creates the Session through `/v1`; the administrator issues an executor credential
+in Web or through `/core/v1`; the host runs `oac-daemon` with that credential.
+Linux, macOS and Windows use the same Runtime protocol. Core-managed Providers
+remain Linux-only.
 
-An executor credential works for one Session's environment only. It can't call the
-Agent API, the Core API or node enrollment.
+The daemon runs with its launching user's permissions and adds no inner
+filesystem, permission or network sandbox. Its tools may access that user's files
+and Runtime credentials. Managed isolation belongs to the outer Environment;
+self-hosted operators choose any outer isolation they need. See the
+[native installation guide](/self-hosted-native) for prerequisites, commands
+and supported platforms.
 
-## Before you start
-
-- **Core has an HTTPS public URL.** The Session's `remote_url` is
-  `wss://<public host>/api/v1/agent-daemon/ws`, and the installer connects only over
-  `wss://`. Web shows no command until Core has a reachable public URL.
-- **Web holds the installer and the Runtime files.** The command downloads the
-  installer, the Runtime launcher and the image from Core's public URL, which the
-  reverse proxy sends to Web (in a [split deployment](/install#split-deployment), to
-  the Web host); install from the offline bundle. A console without the self-hosted
-  installer shows no **Connect a host** section at all.
-- **The host** runs Linux amd64 with Python 3.9+, `curl`, `sha256sum` and the Docker
-  CLI, with Docker usable through `/var/run/docker.sock` by the non-root user that runs
-  the installer; the installer refuses root. It reaches the public URL over HTTPS.
-- **The Session carries its model provider**, in the request or saved on its Agent.
-  Default models never apply to self-hosted Sessions, and creating one without a
-  provider fails with 400 `model_provider_required`.
+An executor credential works for one Environment only. It cannot call the Agent
+API, Core API or node enrollment. Default model providers never apply to
+self-hosted Sessions: the request or Agent must carry its own model provider.
+Otherwise creation fails with 400 `model_provider_required`.
 
 ## Connect a host
 
-1. **The application creates the Session**, with its Project API key and its own model
-   provider:
+1. Create an existing workspace on the executor host. The application creates a
+   Session using that host's absolute path and its own Project API key:
 
    ```python
    import os
@@ -40,7 +32,10 @@ Agent API, the Core API or node enrollment.
 
    client = OpenAI()  # reads OPENAI_BASE_URL and OPENAI_API_KEY
    session = client.beta.agents.sessions.create(
-       environment={"type": "self_hosted", "workspace_directory": "/workspace"},
+       environment={
+           "type": "self_hosted",
+           "workspace_directory": os.environ["EXECUTOR_WORKSPACE"],
+       },
        extra_body={
            "agent": {"model": os.environ["MODEL_NAME"], "x_agents_core": {"harness": "codex"}},
            "x_agents_core": {"model_provider": {
@@ -53,50 +48,61 @@ Agent API, the Core API or node enrollment.
    print(session.id, session.environment.id, session.environment.remote_url)
    ```
 
-2. **In Web**, open **Session log**, then the Session's page. In its
-   **Executor credentials** section, **Connect a host** shows a command in a
-   **Terminal** block; copy it and run it on the executor host:
+2. In Web, open **Session log**, then the Session's **Executor credentials**
+   section. Choose **Issue credential**, then **Download credential file**. Core
+   returns the credential only once; retain it privately before choosing **Done**.
+3. Extract the native distribution and run `oac-daemon install --interactive`
+   (or supply all options with `--non-interactive --harness`). Use the returned
+   remote URL, Environment ID, matching workspace and credential file path, then
+   start the installed `bin/oac-daemon`.
+   The [native guide](/self-hosted-native#install-and-start) has Linux/macOS and
+   PowerShell examples. No Docker installation is required for this native path.
 
-   ```sh
-   (umask 077; d=$(mktemp -d) || exit; trap 'rm -rf "$d"' EXIT
-   curl -fsS --max-time 30 --max-filesize 1048576 'https://core.example/node-install/self-hosted-install.pyz' -o "$d/install.pyz" &&
-   printf '%s  %s\n' '<installer-sha256>' "$d/install.pyz" | sha256sum -c --status &&
-   python3 "$d/install.pyz" --source-url 'https://core.example' --environment-id '<environment-id>' --remote 'wss://core.example/api/v1/agent-daemon/ws')
-   ```
+The console's **Connect a host** flow provides native installation guidance and
+the executor credential download. Obtain the matching native distribution before
+running its command. Core must be reachable from the host: `wss://` is required
+outside loopback, while a local Core can use a loopback `ws://` URL.
 
-   The command contains no secret. It downloads the installer from your console and
-   checks its SHA-256 before running it.
-3. **Issue the credential.** Select **Issue credential**. The **Executor credential**
-   dialog shows it once: choose **Copy credential**.
-4. **Paste it at the installer's hidden prompt** and press Enter. The prompt accepts the
-   compact or the pretty-printed credential and never echoes it. Then choose **Done** in
-   the dialog; after that the credential can't be shown again. Closing the dialog with
-   × keeps the credential on the page until you choose **Done**.
+A connected Environment proves only the machine connection. Send a Turn to check
+the selected harness and model. Core supplies the Session's model provider over
+this Environment's authenticated executor connection. The host's user and tools
+running with that user's permissions can access locally stored Runtime data.
 
-The installer downloads the Runtime from the console and checks it, starts a container
-named `oac-selfhost-<32 hex digits>`, and waits until Core confirms that the
-Environment is connected. The Session then runs its Turns there. Rerunning the same
-command resumes the same installation. It refuses, with "This installation belongs to
-another Environment or distribution", once Core runs another release or its public URL
-changed: the host's installation is tied to both. Moving an executor to a new release
-or address isn't supported yet. A fresh installation would start a new container
-without the old workspace and native history, so the Session can't continue there:
-stop the old container, create a new self-hosted Session and connect a host for it.
+## Local capability directories
 
-For automation without a terminal, choose **Download credential file**, which saves
-`executor-credential-<first 8 characters of the environment ID>.json`, make it private
-(`chmod 600`), and add `--credential-file /absolute/path/to/that-file.json` to the
-installer line. The path must not go through a symbolic link.
+A self-hosted Session may supply `capability_directories` alongside its workspace:
 
-The host keeps its state in `~/.oac/self-hosted/<environment-id>/`
-(`--install-dir` chooses another absolute directory). Keep it with the container's
-volumes: they hold the credential, workspace and native history. The Runtime's log is
-`docker logs <container>`. A connected Environment proves the connection, not that the
-model works; send the Session a Turn to test execution.
+```python
+environment = {
+    "type": "self_hosted",
+    "workspace_directory": os.environ["EXECUTOR_WORKSPACE"],
+    "capability_directories": [os.environ["EXECUTOR_CAPABILITIES"]],
+}
+```
 
-Core delivers the Session's model provider only over this Environment's executor
-connection. The host keeps it in the Runtime's harness home, where the model's tools
-and the Files API can't read it but the host's owner can.
+Core accepts absolute Unix, Windows drive and UNC source paths without checking
+its own filesystem. Runtime validates them using the executor host's path syntax.
+Populate these directories before first execution. They are ordinary paths visible
+to that process; naming a directory does not mount it or create a sandbox.
+Self-hosted public input accepts local directories, not managed Skill/Plugin
+archives or hosted Templates.
+
+Runtime snapshots sources before native execution and uses the same parser and
+`installed.json` format as managed bundles to supply Skills and Plugin MCP.
+The native installer defaults the snapshot destination to `capabilities` under
+`OAC_RUNTIME_HOME`; `--capability-directory` selects another local destination.
+It is an operator setting, not a public API write destination. Reconnect reuses
+installed contents even after source edits; a new Session captures its own
+configuration. A missing or inconsistent snapshot fails preparation rather than
+silently reinstalling. Local discovery does not create entries in the public
+API-managed installation arrays. Snapshot file modes do not isolate the snapshot
+from tools running as the same user.
+
+Closing an executor, cancelling a Turn or losing its connection preserves the
+snapshot and workspace. The compute owner remains responsible for explicit
+cleanup. [Historical qualification](https://github.com/MiniMax-AI/parsar-core/blob/0d546dfd38e1bdd754b0887442d7b358a73002a6/contracts/agents-api/user-managed-runtime-v1.md)
+records only its stated inputs and binaries; it does not qualify the current native
+platforms or local capability preparation.
 
 ## Rotate or revoke
 
@@ -105,25 +111,16 @@ and the Files API can't read it but the host's owner can.
 | **Rotate** | The credential gets a new secret; the old secret stops working at once. Rotating a revoked credential restores it |
 | **Revoke** | The credential stops working at once |
 
-After either, the Runtime disconnects and stops retrying: its log shows one message
-that names the fix, and the container keeps running without a restart loop. To
-reconnect the host:
+To reconnect a native installation, stop it with `oac-daemon stop`, rotate the same
+credential, replace the JSON at its configured credential-file path, and run
+`oac-daemon start`. Keep the same `OAC_RUNTIME_HOME` for every command. Issuing a
+new credential does not reconnect an Environment already bound to its first
+credential; rotate that credential instead. Do not run `install` again over the
+existing installation.
 
-1. **Rotate** the same credential in Web and copy the new secret.
-2. Rerun the same install command on the host and paste it.
-
-The installer puts the new credential into the same container, which reconnects with
-its workspace and history. Issuing a *new* credential doesn't reconnect an Environment
-that has already connected: it stays bound to its first credential, and the installer
-says to rotate that one.
-
-To remove the Runtime instead, stop its container:
-`docker --host unix:///var/run/docker.sock stop <container>`. Deleting the Session does
-not remove containers or volumes on the executor host.
-
-In an archived project, Web shows "This project is archived, so executor credentials
-can't be issued or rotated." Only **Revoke** remains; a host that already holds a
-credential keeps it when you rerun the command.
+Stopping the daemon keeps its workspace and native history. Deleting a Session
+does not remove host files. In an archived Project, credentials cannot be issued
+or rotated; revocation remains available.
 
 ## Without Web
 
@@ -143,27 +140,15 @@ key_id=$(python3 -c 'import uuid; print(uuid.uuid4())'); echo "credential ID: $k
 Rotate with `{"key_id":"…","rotate":true}` on the same route; revoke with
 `DELETE …/executor-credentials/<key_id>`. After an uncertain response, list the
 credentials with `GET` before trying again. The
-[credential contract](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/contracts/agents-api/environment-executor-credentials.md)
+[credential contract](https://github.com/MiniMax-AI/parsar-core/blob/0d546dfd38e1bdd754b0887442d7b358a73002a6/contracts/agents-api/environment-executor-credentials.md)
 has every rule and error.
 
+## Historical executor installations
 
-## Executors installed before the rename
+The native installer supports its current version only. It does not adopt or
+upgrade an older daemon or container installation. Preserve old files, containers
+and native history; use a fresh Runtime home and Session when moving versions.
+Historical container-installer instructions and qualification records describe
+those earlier artifacts, not acceptance of the current native daemon.
 
-An existing `parsar-selfhost-*` container keeps its own image, daemon and
-`~/.parsar/self-hosted/<environment-id>` directory. It can keep serving its
-Environment after Core is renamed; Core does not upgrade or manage this container.
-
-The new installer refuses when that exact Environment still has a directory under
-`~/.parsar/self-hosted`, including when a different `--install-dir` is supplied.
-Executors for other Environments are unaffected. To replace it, inspect the old
-installation's `started.json` to identify its container, stop and remove that
-exact container, and preserve any history you need before removing the old
-Environment's installation directory. Then rerun the new verified installer. It
-starts `oac-selfhost` with state under `~/.oac/self-hosted/<environment-id>`;
-it does not reuse the old executor's volumes or native history.
-
-Credential replacement for executors created by the new installer still updates
-and restarts the same owned container. The legacy refusal does not authorize
-adopting an old container to replace its credential.
-
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/75bf4484ba957344ae374354858bbdfe104f5c4f/docs/getting-started/self-hosted.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/0d546dfd38e1bdd754b0887442d7b358a73002a6/docs/getting-started/self-hosted.md)

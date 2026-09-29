@@ -8,6 +8,7 @@ import { formatDateTime, formatInteger, formatRelative, formatSpan, MISSING } fr
 import { nodeProviderDiagnostic, sandboxDiagnosticMessage } from "../../lib/sandbox-diagnostic";
 import { sandboxStateLabel } from "../../lib/sandbox-labels";
 import { DiagnosticTip } from "../fleet/DiagnosticTip";
+import { NodeRolloutStatus } from "./NodeRolloutStatus";
 import { phaseTiming } from "./allocation-phase";
 import { nodeState, NodeStatus, OldAddressHint, seconds } from "./NodeList";
 
@@ -36,11 +37,12 @@ function PhaseTime({ allocation, retentionSeconds, now }: { allocation: SandboxA
   return <td className="nodes-nowrap" title={formatDateTime(timing.since, locale)}>{text}</td>;
 }
 
-export function NodeDetail({ node, allocations, coreUrl, stale, suspension }: {
+export function NodeDetail({ node, allocations, coreUrl, targetGeneration, stale, suspension }: {
   node: SandboxNode;
   allocations: readonly SandboxAllocation[];
   /** The deployment's address; a node enrolled with another one is on an old address. */
   coreUrl: string;
+  targetGeneration?: number;
   stale: boolean;
   /** The deployment's idle suspension policy; only microsandbox has one. */
   suspension: SandboxDeployment["suspension"];
@@ -75,6 +77,9 @@ export function NodeDetail({ node, allocations, coreUrl, stale, suspension }: {
             {node.last_seen_at ? formatRelative(seconds(node.last_seen_at), now, locale) : t("Never")}
           </dd>
         </div>
+        <div><dt>{t("Target generation")}</dt><dd>{targetGeneration ?? MISSING}</dd></div>
+        <div><dt>{t("Target preparation")}</dt><dd><NodeRolloutStatus node={node} stale={stale} /></dd></div>
+        <div><dt>{t("Serving generation")}<HelpTip>{t("The saved serving generation is not proof that this node is online, ready or has free capacity.")}</HelpTip></dt><dd>{node.rollout.ready_generation ?? MISSING}</dd></div>
         <div><dt>{t("Added")}</dt><dd>{formatDateTime(seconds(node.created_at), locale)}</dd></div>
       </dl>
 
@@ -100,6 +105,7 @@ export function NodeDetail({ node, allocations, coreUrl, stale, suspension }: {
               <thead>
                 <tr>
                   <th scope="col">{t("Session")}</th>
+                  <th scope="col">{t("Configuration generation")}</th>
                   <th scope="col">{t("Recorded state")}</th>
                   <th scope="col">{t("Recorded compute")}</th>
                   {/* Only microsandbox changes compute phase; under Docker it is always disabled. */}
@@ -112,6 +118,7 @@ export function NodeDetail({ node, allocations, coreUrl, stale, suspension }: {
                 {own.map((allocation) => (
                   <tr key={allocation.id}>
                     <th scope="row"><CopyableId id={allocation.session_id} label={t("Session")} /></th>
+                    <td>{allocation.deployment_generation}</td>
                     <td>{sandboxStateLabel(allocation.state, shortLocale)}</td>
                     <td>{allocation.compute_phase ? sandboxStateLabel(allocation.compute_phase, shortLocale) : MISSING}</td>
                     {suspension ? <PhaseTime allocation={allocation} retentionSeconds={suspension.retention_seconds} now={now} /> : null}

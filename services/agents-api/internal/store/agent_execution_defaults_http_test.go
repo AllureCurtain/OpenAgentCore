@@ -27,10 +27,10 @@ func TestAgentExecutionDefaultsPublicSnapshotAndPrecedence(t *testing.T) {
 	}
 	deployment := &v1.ModelProviderInput{Protocol: "responses", BaseURL: "https://deployment.example/v1", APIKey: "deployment-canary"}
 	defaultsCalls := 0
-	handler, err := api.NewHandler(st, auth, "codex", api.WithHarnesses([]string{"codex", "claude_sdk", "mcode"}), api.WithHostedEnvironments(), api.WithExecution(st), api.WithModelProviderDefaults(func(context.Context, string) (*v1.ModelProviderInput, error) {
+	handler, err := api.NewHandler(st, auth, "codex", api.WithHarnesses([]string{"codex", "claude_sdk", "mcode"}), api.WithHostedEnvironments(), api.WithExecution(st), api.WithModelProviderDefaults(func(context.Context, string) (*store.DeploymentModelProviderSnapshot, error) {
 		defaultsCalls++
 		copy := *deployment
-		return &copy, nil
+		return &store.DeploymentModelProviderSnapshot{Provider: &copy, Revision: uuid.New()}, nil
 	}))
 	if err != nil {
 		t.Fatal(err)

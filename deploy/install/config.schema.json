@@ -13,7 +13,7 @@
     },
     "format": {
       "const": 1,
-      "description": "Configuration format. Only an upgrade changes it.",
+      "description": "Configuration format for this release. Fixed after installation.",
       "x-oac": {"setting": false, "changeable": false}
     },
     "mode": {

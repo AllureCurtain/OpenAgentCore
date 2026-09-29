@@ -1,4 +1,4 @@
-import type { InitializeSandboxDeployment, SandboxProvider, SandboxResources, SandboxRuntimeRelease, SandboxSpecification } from "@agents-core-web/agents-client";
+import { AgentCoreError, type InitializeSandboxDeployment, type UpdateSandboxDeployment, type SandboxProvider, type SandboxResources, type SandboxRuntimeRelease, type SandboxSpecification } from "@agents-core-web/agents-client";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
@@ -10,11 +10,13 @@ import { useTranslation } from "react-i18next";
 import { HelpTip } from "../../components/console-ui";
 import { Modal } from "../../components/Modal";
 import { CopyableId } from "../../components/list-ui";
+import { coreFieldError } from "../../lib/core-error";
 import { formatBytes } from "../../lib/format";
 import { installationQuery } from "../../lib/installation";
 import type { MessageKey } from "../../lib/locale-strings";
 import { sandboxConfigurationRejection } from "../../lib/sandbox-labels";
 import { defaultSandboxResources, distributionRuntime, savedSpecification, validSandboxResources } from "./deployment-specification";
+import { e2bKeyReady, e2bUpdateSelection } from "./sandbox-update";
 import { isRuntimeRelease, isRuntimeReleaseField, RUNTIME_RELEASE_FIELDS } from "./runtime-release";
 import "./sandbox-wizard.css";
 
@@ -70,29 +72,32 @@ function presetOf(provider: SandboxProvider, resources: SandboxResources): Prese
  * release comes from this console's distribution manifest when it serves one.
  * `current` pre-selects the saved choices when a deployment changes. Keeping
  * the backend keeps its saved size and Runtime; another backend starts from its
- * defaults and this console's Runtime. An E2B key must be entered again.
+ * defaults and this console's Runtime. E2B updates can retain the saved key.
  * Docker isolates less than microsandbox, so choosing it takes a confirmation,
  * once per wizard session; a saved Docker deployment has already made it.
  * Core's address is config.json's `public_url`: the review only shows it, and
  * a configuration Core rejects for it is explained here, where it was saved.
  */
-export function SandboxSetupWizard({ coreUrl, current, disabled, switching = false, onSubmit }: {
-  /** The deployment's read-only Core address. */
+type WizardProps = {
   coreUrl: string;
+  expectedGeneration: number;
   current?: { provider: SandboxProvider; specification?: SandboxSpecification; e2bTemplate?: string };
   disabled: boolean;
-  switching?: boolean;
-  onSubmit: (input: InitializeSandboxDeployment) => Promise<void>;
-}) {
-  const { t } = useTranslation("sandbox");
+} & ({ editing: true; onSubmit: (input: UpdateSandboxDeployment) => Promise<void> } |
+  { editing?: false; onSubmit: (input: InitializeSandboxDeployment) => Promise<void> });
+
+export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disabled, editing, onSubmit }: WizardProps) {
+  const { t, i18n } = useTranslation("sandbox");
+  const { t: tCommon } = useTranslation("common");
   const id = useId();
-  const [step, setStep] = useState<Step>("where");
+  const [step, setStep] = useState<Step>(editing ? current?.provider === "e2b" ? "e2b" : "size" : "where");
   const [where, setWhere] = useState<Where | null>(current ? (current.provider === "e2b" ? "direct" : "nodes") : null);
   const [provider, setProvider] = useState<SandboxProvider | null>(current?.provider ?? null);
   const saved = provider && current ? savedSpecification(provider, current.provider, current.specification) : null;
   const [resources, setResources] = useState<SandboxResources>(current?.specification?.resources ?? defaultSandboxResources("docker"));
   const [size, setSize] = useState<Size>(current?.specification ? presetOf(current.provider, current.specification.resources) ?? "current" : "standard");
   const [apiKey, setApiKey] = useState("");
+  const [replacementRequested, setReplacementRequested] = useState(false);
   const [template, setTemplate] = useState(current?.e2bTemplate ?? "");
   const [runtime, setRuntime] = useState<Partial<SandboxRuntimeRelease>>({});
   const [busy, setBusy] = useState(false);
@@ -101,6 +106,10 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
   const keepMicrosandbox = useRef<HTMLButtonElement>(null);
   // Core's reason for rejecting the saved configuration, such as E2B with a loopback public_url.
   const [rejection, setRejection] = useState<string | null>(null);
+  const [fieldRejection, setFieldRejection] = useState<unknown>(null);
+  const fieldError = (param: string) => coreFieldError(fieldRejection, param, tCommon);
+  const [resetRequired, setResetRequired] = useState(false);
+  const [addressRejected, setAddressRejected] = useState(false);
   const installation = useQuery(installationQuery);
   const address = coreUrl || installation.data?.public_url || null;
   const configuration = installation.data?.configuration ?? null;
@@ -112,14 +121,15 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
 
   const needsRuntime = provider === "docker" || provider === "microsandbox";
   const runtimeReady = !needsRuntime || isRuntimeRelease(release);
-  // Core keeps no key across a change: E2B always needs one.
-  const e2bReady = provider !== "e2b" || (apiKey.trim().length > 0 && validTemplate(template.trim()));
+  // Initial setup requires a key; an update may retain the committed key.
+  const keyReady = e2bKeyReady(Boolean(editing), replacementRequested, apiKey);
+  const e2bReady = provider !== "e2b" || (keyReady && validTemplate(template.trim()));
   // Core sizes E2B sandboxes from the template build, so E2B sends no resources.
   const sized = provider !== null && provider !== "e2b";
   const sizeReady = provider !== null && (!sized || validSandboxResources(provider, resources));
   const ready = provider !== null && runtimeReady && e2bReady && sizeReady && !disabled && !busy;
 
-  const order: Step[] = where === "direct" ? ["where", "e2b", "review"] : ["where", "backend", "size", "review"];
+  const order: Step[] = editing ? where === "direct" ? ["e2b", "review"] : ["size", "review"] : where === "direct" ? ["where", "e2b", "review"] : ["where", "backend", "size", "review"];
   const index = Math.max(0, order.indexOf(step === "advanced" ? "review" : step));
   const back = () => setStep(step === "advanced" ? "review" : order[Math.max(0, index - 1)]!);
 
@@ -145,19 +155,27 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
   async function save(event?: FormEvent) {
     event?.preventDefault();
     if (!ready || !provider) return;
-    setBusy(true); setRejection(null);
+    setBusy(true); setRejection(null); setFieldRejection(null);
     try {
-      await onSubmit({
-        provider,
+      const selection = {
+        provider, expected_generation: expectedGeneration,
         ...(sized ? { resources } : {}),
         ...(needsRuntime ? { runtime: release as SandboxRuntimeRelease } : {}),
-        ...(provider === "e2b" ? { e2b: { api_key: apiKey.trim(), template: template.trim() } } : {}),
-      });
+      };
+      if (editing) await onSubmit({ ...selection, ...(provider === "e2b" ? { e2b: e2bUpdateSelection(template, apiKey) } : {}) });
+      else await onSubmit({ ...selection, ...(provider === "e2b" ? { e2b: { api_key: apiKey.trim(), template: template.trim() } } : {}) });
     } catch (error) {
       // A configuration Core rejected is explained here; the page reports every other failure.
-      const reason = sandboxConfigurationRejection(error);
+      const reason = sandboxConfigurationRejection(error, i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en");
       if (reason === null) throw error;
       setRejection(reason);
+      setFieldRejection(error);
+      if (error instanceof AgentCoreError && error.param) {
+        if (["e2b.api_key", "e2b.template"].includes(error.param) && error.code !== "e2b_team_mismatch") setStep("e2b");
+        else if (error.param === "runtime" || error.param.startsWith("resources.")) setStep("advanced");
+      }
+      setResetRequired(error instanceof AgentCoreError && ["e2b_team_mismatch", "sandbox_reset_required"].includes(error.code ?? ""));
+      setAddressRejected(error instanceof AgentCoreError && error.code === "sandbox_configuration_error");
     } finally {
       setApiKey("");
       setBusy(false);
@@ -191,11 +209,11 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
     page = (
       <Question title={t("Connect E2B")}>
         <div className="wizard-fields">
-          <Field id={`${id}-key`} label={t("E2B API key")} help={t("The key is write-only: Core encrypts it and never shows it again.")}>
-            <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={(event) => setApiKey(event.target.value)} />
+          <Field id={`${id}-key`} error={fieldError("e2b.api_key")} label={t("E2B API key")} help={t(editing ? "Leave blank to keep the saved key. Any key you enter is verified as a replacement, even if unchanged." : "The key is write-only: Core encrypts it and never shows it again.")}>
+            <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={Boolean(fieldError("e2b.api_key"))} aria-describedby={fieldError("e2b.api_key") ? `${id}-key-error` : undefined} onChange={(event) => { setApiKey(event.target.value); setFieldRejection(null); setReplacementRequested(Boolean(event.target.value.trim())); }} />
           </Field>
-          <Field id={`${id}-template`} label={t("Template build")} help={t("The exact ready build, as template-id:build-uuid. A template alias alone is not enough. Each sandbox gets the build's CPU and memory.")} error={template && !validTemplate(template.trim()) ? t("Enter a template ID and build UUID separated by a colon.") : null}>
-            <input id={`${id}-template`} value={template} onChange={(event) => setTemplate(event.target.value)} placeholder="oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b" autoComplete="off" spellCheck={false} aria-invalid={Boolean(template && !validTemplate(template.trim()))} />
+          <Field id={`${id}-template`} label={t("Template build")} help={t("The exact ready build, as template-id:build-uuid. A template alias alone is not enough. Each sandbox gets the build's CPU and memory.")} error={fieldError("e2b.template") ?? (template && !validTemplate(template.trim()) ? t("Enter a template ID and build UUID separated by a colon.") : null)}>
+            <input id={`${id}-template`} value={template} onChange={(event) => { setTemplate(event.target.value); setFieldRejection(null); }} placeholder="oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b" autoComplete="off" spellCheck={false} aria-invalid={Boolean(fieldError("e2b.template") || (template && !validTemplate(template.trim())))} aria-describedby={`${id}-template-error`} />
           </Field>
         </div>
         <Nav onBack={back} onNext={() => setStep("review")} nextDisabled={!e2bReady} t={t} />
@@ -207,7 +225,7 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
     const kept = saved && provider && presetOf(provider, saved.resources) === null ? saved.resources : null;
     const disks = (value: SandboxResources) => (provider === "microsandbox" ? diskLabel(value) : undefined);
     page = (
-      <Question title={t("How big is each sandbox?")} help={t("Every sandbox of this deployment gets these limits. How many run at once on a machine is set per node.")}>
+      <Question title={t("How big is each sandbox?")} help={t("These limits apply to the selected configuration generation. Existing sandboxes keep their limits. Concurrency is set per node.")}>
         <div className={kept ? "wizard-choices wizard-choices-4" : "wizard-choices wizard-choices-3"}>
           {kept ? <Choice title={t("Current")} value={sizeLabel(kept)} detail={disks(kept)} selected={size === "current"} onClick={() => { setSize("current"); setResources(kept); setStep("review"); }} /> : null}
           {(Object.keys(options) as Preset[]).map((key) => (
@@ -234,9 +252,10 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
           <div><dt>{t("Sandboxes run on")}</dt><dd>{where === "direct" ? t("E2B cloud") : `${t("Own machines")} · ${provider === "docker" ? "Docker" : "microsandbox"}`}</dd></div>
           <div><dt>{t("Each sandbox")}</dt><dd>{sized ? sizeLabel(resources) : t("From the template build")}{provider === "microsandbox" ? <span className="wizard-review-sub">{diskLabel(resources)}</span> : null}</dd></div>
           {provider === "e2b" ? <div><dt>{t("Template build")}</dt><dd><code>{template || "—"}</code></dd></div> : null}
+          {provider === "e2b" && editing ? <div><dt>{t("E2B credential")}</dt><dd>{t(replacementRequested ? "Replace saved key" : "Keep saved key")}</dd></div> : null}
           {needsRuntime ? (
             <div>
-              <dt>{t("Runtime")}<HelpTip>{t("The Runtime release every node runs: the saved one while the backend stays the same, otherwise the one this console distributes.")}</HelpTip></dt>
+              <dt>{t("Runtime")}<HelpTip>{t("The target Runtime release. Existing sandboxes keep their owned release while nodes prepare the target.")}</HelpTip></dt>
               <dd>{runtimeReady ? <code>{release.source_commit!.slice(0, 12)}</code> : <span className="wizard-missing">{t("Runtime release needed")}<HelpTip>{t("This console serves no Runtime manifest. Enter the release under advanced settings.")}</HelpTip></span>}</dd>
             </div>
           ) : null}
@@ -252,7 +271,8 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
         {rejection ? (
           <div className="wizard-rejection" role="alert">
             <p>{rejection}</p>
-            {configuration ? (
+            {resetRequired ? <p>{t("Cancel editing to use Reset deployment. This change requires an explicit reset; the saved configuration is unchanged.")}</p> : null}
+            {addressRejected && configuration ? (
               <dl>
                 <div><dt>{t("Config file")}</dt><dd><CopyableId id={configuration.path} label={t("Copy path")} /></dd></div>
                 <div><dt>{t("Then run")}</dt><dd><CopyableId id={configuration.apply_command} label={t("Copy command")} /></dd></div>
@@ -260,11 +280,12 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
             ) : null}
           </div>
         ) : null}
-        {/* Every save attempt clears the E2B key, so a second one needs it entered again. */}
-        {provider === "e2b" && !apiKey.trim() ? (
+        {/* Initial setup needs the cleared key re-entered; updates may keep the saved key. */}
+        {provider === "e2b" && !keyReady ? (
           <p className="wizard-key-again">
             {t("Enter the E2B key again to save.")}
             <button className="wizard-link" type="button" onClick={() => setStep("e2b")}>{t("Enter the key")}</button>
+            {editing ? <button className="wizard-link" type="button" onClick={() => setReplacementRequested(false)}>{t("Keep saved key")}</button> : null}
           </p>
         ) : null}
         <button className="wizard-link" type="button" onClick={() => setStep("advanced")}>
@@ -273,7 +294,7 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
         <div className="wizard-nav">
           <button className="button ghost" type="button" onClick={back}><ArrowLeft size={14} aria-hidden="true" />{t("Back")}</button>
           <button className="button primary" type="button" disabled={!ready} onClick={() => void save()}>
-            {busy ? t("Saving…") : t(switching ? "Save and stay in maintenance" : "Save configuration")}<ArrowRight size={14} aria-hidden="true" />
+            {busy ? t("Saving…") : t("Save configuration")}<ArrowRight size={14} aria-hidden="true" />
           </button>
         </div>
       </Question>
@@ -285,30 +306,31 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
           {sized ? <fieldset className="wizard-group">
             <legend>{t("Each sandbox")}<HelpTip>{t("1–255 CPUs, 512–1048576 MiB of memory. microsandbox disks are at least 1024 MiB.")}</HelpTip></legend>
             <div className="wizard-grid">
-              <NumberField id={`${id}-cpus`} label={t("CPUs")} value={resources.cpus} onChange={(cpus) => { setSize("custom"); setResources({ ...resources, cpus }); }} />
-              <NumberField id={`${id}-memory`} label={t("Memory (MiB)")} value={resources.memory_mib} onChange={(memory_mib) => { setSize("custom"); setResources({ ...resources, memory_mib }); }} />
+              <NumberField error={fieldError("resources.cpus")} id={`${id}-cpus`} label={t("CPUs")} value={resources.cpus} onChange={(cpus) => { setSize("custom"); setResources({ ...resources, cpus }); setFieldRejection(null); }} />
+              <NumberField error={fieldError("resources.memory_mib")} id={`${id}-memory`} label={t("Memory (MiB)")} value={resources.memory_mib} onChange={(memory_mib) => { setSize("custom"); setResources({ ...resources, memory_mib }); setFieldRejection(null); }} />
               {provider === "microsandbox" ? <>
-                <NumberField id={`${id}-root`} label={t("Root disk (MiB)")} value={resources.root_disk_mib ?? 0} onChange={(root_disk_mib) => setResources({ ...resources, root_disk_mib })} />
-                <NumberField id={`${id}-data`} label={t("Data disk at /environment (MiB)")} value={resources.environment_disk_mib ?? 0} onChange={(environment_disk_mib) => setResources({ ...resources, environment_disk_mib })} />
+                <NumberField error={fieldError("resources.root_disk_mib")} id={`${id}-root`} label={t("Root disk (MiB)")} value={resources.root_disk_mib ?? 0} onChange={(root_disk_mib) => { setResources({ ...resources, root_disk_mib }); setFieldRejection(null); }} />
+                <NumberField error={fieldError("resources.environment_disk_mib")} id={`${id}-data`} label={t("Data disk at /environment (MiB)")} value={resources.environment_disk_mib ?? 0} onChange={(environment_disk_mib) => { setResources({ ...resources, environment_disk_mib }); setFieldRejection(null); }} />
               </> : null}
             </div>
           </fieldset> : null}
           {needsRuntime ? (
             <fieldset className="wizard-group">
               <legend>{t("Runtime release")}<HelpTip>{t("Filled in from this console's distribution when it serves one. Otherwise copy these from the distribution manifest that matches your nodes; image configuration IDs and manifest digests are different values.")}</HelpTip></legend>
+              {fieldError("runtime") ? <p id={`${id}-runtime-error`} className="field-error" role="alert">{fieldError("runtime")}</p> : null}
               {RUNTIME_RELEASE_FIELDS.map((field) => {
                 const value = release[field] ?? "";
                 return (
                   <Field key={field} id={`${id}-${field}`} label={t(releaseLabels[field])} error={value && !isRuntimeReleaseField(field, value) ? t("Check this value") : null}>
-                    <input id={`${id}-${field}`} value={value} spellCheck={false} autoComplete="off" onChange={(event) => setRuntime({ ...release, [field]: event.target.value.trim() })} />
+                    <input id={`${id}-${field}`} value={value} spellCheck={false} autoComplete="off" aria-invalid={Boolean(fieldError("runtime"))} aria-describedby={fieldError("runtime") ? `${id}-runtime-error` : undefined} onChange={(event) => { setRuntime({ ...release, [field]: event.target.value.trim() }); setFieldRejection(null); }} />
                   </Field>
                 );
               })}
             </fieldset>
           ) : null}
           {provider === "e2b" ? (
-            <Field id={`${id}-template-advanced`} label={t("Template build")} error={template && !validTemplate(template.trim()) ? t("Enter a template ID and build UUID separated by a colon.") : null}>
-              <input id={`${id}-template-advanced`} value={template} onChange={(event) => setTemplate(event.target.value)} autoComplete="off" spellCheck={false} />
+            <Field id={`${id}-template-advanced`} label={t("Template build")} error={fieldError("e2b.template") ?? (template && !validTemplate(template.trim()) ? t("Enter a template ID and build UUID separated by a colon.") : null)}>
+              <input id={`${id}-template-advanced`} value={template} onChange={(event) => { setTemplate(event.target.value); setFieldRejection(null); }} autoComplete="off" spellCheck={false} />
             </Field>
           ) : null}
           <div className="wizard-nav">
@@ -321,7 +343,7 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
   }
 
   return (
-    <section className="sandbox-wizard" aria-label={t(switching ? "Change the sandbox configuration" : "Set up hosted sandboxes")}>
+    <section className="sandbox-wizard" aria-label={t(editing ? "Change the sandbox configuration" : "Set up hosted sandboxes")}>
       {step !== "advanced" ? (
         <ol className="wizard-steps" aria-hidden="true">
           {order.map((entry, position) => <li key={entry} className={position === index ? "current" : position < index ? "done" : undefined} />)}
@@ -388,15 +410,15 @@ function Field({ id, label, help, error, children }: { id: string; label: string
     <div className="field wizard-field">
       <span className="field-label-row"><label htmlFor={id}>{label}</label>{help ? <HelpTip>{help}</HelpTip> : null}</span>
       {children}
-      {error ? <span className="field-error" role="alert">{error}</span> : null}
+      {error ? <span id={`${id}-error`} className="field-error" role="alert">{error}</span> : null}
     </div>
   );
 }
 
-function NumberField({ id, label, value, onChange }: { id: string; label: string; value: number; onChange: (value: number) => void }) {
+function NumberField({ id, label, value, onChange, error }: { error?: string | null; id: string; label: string; value: number; onChange: (value: number) => void }) {
   return (
-    <Field id={id} label={label}>
-      <input id={id} type="number" inputMode="numeric" min={1} step={1} value={Number.isFinite(value) ? value : ""} onChange={(event) => onChange(Number.parseInt(event.target.value, 10))} />
+    <Field id={id} label={label} error={error}>
+      <input id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} type="number" inputMode="numeric" min={1} step={1} value={Number.isFinite(value) ? value : ""} onChange={(event) => onChange(Number.parseInt(event.target.value, 10))} />
     </Field>
   );
 }

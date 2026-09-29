@@ -1204,7 +1204,12 @@ export interface ModelProviderView {
 }
 
 /** A harness's deployment default model provider in Core. The key is never returned. */
+export type ProviderObservationErrorCode = "authentication_error" | "connection_failed" | "rate_limit_exceeded" | "usage_limit_exceeded" | "server_overloaded" | "server_error" | "resource_not_found" | "request_timeout" | "invalid_request";
+
 export interface HarnessModelProvider extends ModelProviderView {
+  last_used_at: string | null;
+  last_error_code: ProviderObservationErrorCode | null;
+  last_error_at: string | null;
   object: "core.model_provider";
   harness: CoreHarnessKind;
   updated_at: string;

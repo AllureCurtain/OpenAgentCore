@@ -267,9 +267,6 @@ func (r *Router) indexPermissionFrame(s *sessionState, env proto.Envelope) {
 		}
 		requestID := strings.TrimSpace(p.RequestID)
 		if requestID == "" {
-			requestID = strings.TrimSpace(env.ID)
-		}
-		if requestID == "" {
 			return
 		}
 		r.mu.Lock()

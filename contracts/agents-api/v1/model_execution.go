@@ -1,12 +1,20 @@
 package v1
 
 import (
-	"errors"
 	"strings"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
 	"github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/builtin"
 )
+
+// ModelProviderError preserves the shared validation message while allowing Core
+// administration to identify a field. It contains no submitted values.
+type ModelProviderError struct {
+	Code, Param string
+	message     string
+}
+
+func (e *ModelProviderError) Error() string { return e.message }
 
 // SessionExecutionInput is a write-only execution extension, not a provider resource.
 type SessionExecutionInput struct {
@@ -27,19 +35,23 @@ func (p *ModelProviderInput) Validate() error {
 
 func (p *ModelProviderInput) validate(registry harnessconfig.Registry) error {
 	if p == nil {
-		return errors.New("model_provider is required")
+		return &ModelProviderError{Code: "invalid_model_provider", Param: "", message: "model_provider is required"}
 	}
 	if !validModelProviderBaseURL(p.BaseURL) {
-		return errors.New("model provider requires an HTTPS base_url without credentials, query or fragment")
+		return &ModelProviderError{Code: "model_provider_base_url_invalid", Param: "base_url", message: "model provider requires an HTTPS base_url without credentials, query or fragment"}
 	}
 	if !registry.SupportsProtocol(p.Protocol) {
-		return errors.New("unsupported model provider protocol")
+		return &ModelProviderError{Code: "model_provider_protocol_unsupported", Param: "protocol", message: "unsupported model provider protocol"}
 	}
 	if strings.TrimSpace(p.APIKey) == "" || len(p.APIKey) > 16384 || strings.ContainsAny(p.APIKey, "\x00\r\n") {
-		return errors.New("invalid model provider API key")
+		return &ModelProviderError{Code: "model_provider_api_key_invalid", Param: "api_key", message: "invalid model provider API key"}
 	}
 	if p.ContextWindow < 0 || p.MaxOutputTokens < 0 || (p.MaxOutputTokens > p.ContextWindow) {
-		return errors.New("invalid model token limits")
+		param := "max_output_tokens"
+		if p.ContextWindow < 0 {
+			param = "context_window"
+		}
+		return &ModelProviderError{Code: "model_provider_token_limits_invalid", Param: param, message: "invalid model token limits"}
 	}
 	return nil
 }
@@ -54,7 +66,18 @@ func (p *ModelProviderInput) ValidateHarnessWithRegistry(harness string, registr
 	if err := p.validate(registry); err != nil {
 		return err
 	}
-	return p.SafeView().ValidateHarnessWithRegistry(harness, registry)
+	configuration, _ := registry.Lookup(harness)
+	if err := configuration.ValidateProtocol(p.Protocol); err != nil {
+		return &ModelProviderError{Code: "model_provider_protocol_unsupported", Param: "protocol", message: err.Error()}
+	}
+	if err := configuration.Validate(p.Protocol, p.ContextWindow, p.MaxOutputTokens); err != nil {
+		param := "max_output_tokens"
+		if p.ContextWindow <= 0 {
+			param = "context_window"
+		}
+		return &ModelProviderError{Code: "model_provider_token_limits_invalid", Param: param, message: err.Error()}
+	}
+	return nil
 }
 
 func ValidateModelProtocol(protocol, harness string) error {

@@ -11,7 +11,7 @@ func TestRetiredRuntimeSettingsRejectBeforeEverySubcommand(t *testing.T) {
 	t.Setenv("PARSAR_UNKNOWN_RUNTIME_SETTING", "private-canary")
 	t.Setenv("PARSAR_CODEX_BIN", "")
 	t.Setenv("PARSAR_MCP_BEARER_EXAMPLE", "private-bearer")
-	for _, command := range []string{"version", "--help", "connect", "runtime-capabilities"} {
+	for _, command := range []string{"version", "--help", "connect", "runtime-mcp-exec"} {
 		stdout, stderr, err := runArgv(t, command)
 		if err == nil || stdout != "" || stderr != "" {
 			t.Fatalf("%s ran before retirement validation: %q %q %v", command, stdout, stderr, err)

@@ -51,6 +51,7 @@ type Router struct {
 	preparations        map[string]*preparationState
 	preparationRequests map[string]*preparationState
 	preparationTimeout  time.Duration
+	runtimePreparation *runtimePreparationTransfer
 	workspaceWrite      *workspaceUpload
 	workspaceExport     *workspaceExport
 	workspaceReads      map[string]struct{}
@@ -167,6 +168,8 @@ func (r *Router) Handle(ctx context.Context, env proto.Envelope) error {
 	ctx = adoptEnvelopeTrace(ctx, env)
 
 	switch env.Type {
+	case proto.TypeRuntimePrepare:
+		return r.handleRuntimePrepare(ctx, env)
 	case proto.TypeWorkspaceExport:
 		return r.handleWorkspaceExport(ctx, env)
 	case proto.TypeWorkspaceWrite:

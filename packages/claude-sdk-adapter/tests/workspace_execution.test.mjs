@@ -20,7 +20,7 @@ const dirs = Object.fromEntries(["workspace", "home", "state", "scratch", "deps"
 }));
 const mode = process.argv[1];
 const workspace = { home: dirs.home, state: dirs.state, scratch: dirs.scratch,
-  protected_dirs: [], dependency_path: dirs.deps, env_names: ["ANTHROPIC_API_KEY"] };
+    env_names: ["ANTHROPIC_API_KEY"] };
 const request = { type: "start", input: [{ content: [{ type: "input_text", text: "fixture" }] }], model: "fixture", system_prompt: "", cwd: dirs.workspace,
   workspace, ...(mode.startsWith("resume") ? { resume: "native" } : {}) };
 process.env.HOME = dirs.home;
@@ -40,14 +40,14 @@ globalThis.historyFixture = async (id, options) => {
 };
 globalThis.queryFixture = ({prompt, options}) => {
   calls.push("query");
-  assert.equal(options.env.UNSELECTED_CANARY, undefined);
+  assert.equal(options.env.UNSELECTED_CANARY, "must-not-inherit");
   assert.equal(options.env.ANTHROPIC_API_KEY, "fixture-secret");
   assert.equal(options.env.HOME, dirs.home);
   assert.deepEqual(options.tools, ["Bash", "Read", "Edit"]);
-  assert.equal(options.sandbox.failIfUnavailable, true);
+  assert.equal(options.sandbox.enabled, false);
   assert.equal(options.resume, request.resume);
   const child = options.spawnClaudeCodeProcess({ command: process.execPath, env: options.env, signal: abort.signal,
-    args: ["-e", "const assert=require('node:assert/strict');assert.equal(process.env.UNSELECTED_CANARY,undefined);assert.equal(process.env.ANTHROPIC_API_KEY,'fixture-secret');process.stdin.resume();process.stdin.on('end',()=>process.exit(0));"] });
+    args: ["-e", "const assert=require('node:assert/strict');assert.equal(process.env.UNSELECTED_CANARY,'must-not-inherit');assert.equal(process.env.ANTHROPIC_API_KEY,'fixture-secret');process.stdin.resume();process.stdin.on('end',()=>process.exit(0));"] });
   return { close() { child.stdin.end(); }, async *[Symbol.asyncIterator]() {
     const first = (await prompt[Symbol.asyncIterator]().next()).value;
     yield { type: "system", subtype: "init", session_id: "native", mcp_servers: mode === "extra-mcp" ? [{name:"other",status:"connected"}] : [],

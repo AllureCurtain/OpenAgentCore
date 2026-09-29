@@ -55,11 +55,12 @@ func NewFactory(config Config) agent.Factory {
 }
 
 type bridgeEvent struct {
-	TurnID    string `json:"turn_id"`
-	Reusable  *bool  `json:"reusable"`
-	Confirmed *bool  `json:"confirmed"`
-	Reason    string `json:"reason"`
-	Protocol  int    `json:"protocol"`
+	EngineErrorCode json.RawMessage `json:"engine_error_code"`
+	TurnID          string          `json:"turn_id"`
+	Reusable        *bool           `json:"reusable"`
+	Confirmed       *bool           `json:"confirmed"`
+	Reason          string          `json:"reason"`
+	Protocol        int             `json:"protocol"`
 
 	Fact        json.RawMessage             `json:"fact"`
 	InputID     string                      `json:"input_id"`
@@ -92,7 +93,7 @@ func launch(ctx context.Context, config Config, start startRequest, env []string
 	return &session{process: process, writeMu: &sync.Mutex{}, functions: functionState{calls: map[string]*pendingFunction{}}, settled: make(chan struct{})}, nil
 }
 
-func (s *session) drain(scanner *bridgeOutput, stderrDone <-chan struct{}, failure error) error {
+func (s *session) drain(scanner *bridgeOutput, stderrDone <-chan struct{}, failure error) (error, bool) {
 	for scanner.Scan() {
 	}
 	if scanner.Err() != nil {
@@ -102,10 +103,11 @@ func (s *session) drain(scanner *bridgeOutput, stderrDone <-chan struct{}, failu
 	<-stderrDone
 	s.stopWorkspaceReads()
 	s.stopWorkspaceDirectories()
-	if err := s.process.Wait(); err != nil && failure == nil {
+	waitErr := s.process.Wait()
+	if waitErr != nil && failure == nil {
 		failure = fmt.Errorf("claudesdk: SDK process failed")
 	}
-	return failure
+	return failure, scanner.Err() == nil && waitErr == nil
 }
 
 func bridgeFailure(code string) error {

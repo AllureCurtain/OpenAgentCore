@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentbundle"
+	"github.com/MiniMax-AI-Dev/parsar/internal/runtimefs"
 )
 
 // ReadTree stays inside an already-owned root and rejects aliases/special files.
@@ -72,7 +73,7 @@ func ReadTree(root *os.Root, name string, immutable bool) ([]agentbundle.File, e
 // writeTree only creates a fresh owned destination. Uncertain writes are never
 // retried here; the existing Core initialization owner decides cleanup.
 func writeTree(root *os.Root, name string, files []agentbundle.File) error {
-	if !validRelative(name) || root.MkdirAll(path.Dir(name), 0700) != nil || root.Mkdir(name, 0700) != nil {
+	if !validRelative(name) || makeDirectories(root, path.Dir(name)) != nil || root.Mkdir(name, 0700) != nil {
 		return ErrInvalid
 	}
 	directory, err := root.OpenRoot(name)
@@ -81,7 +82,7 @@ func writeTree(root *os.Root, name string, files []agentbundle.File) error {
 	}
 	defer directory.Close()
 	for _, file := range files {
-		if !validRelative(file.Path) || directory.MkdirAll(path.Dir(file.Path), 0700) != nil {
+		if !validRelative(file.Path) || makeDirectories(directory, path.Dir(file.Path)) != nil {
 			return ErrInvalid
 		}
 		mode := fs.FileMode(0400)
@@ -124,14 +125,33 @@ func writeFile(root *os.Root, name string, body []byte, mode fs.FileMode) error 
 }
 
 func syncDirectory(root *os.Root, name string) error {
-	file, err := root.Open(name)
+	directory, err := root.OpenRoot(name)
 	if err != nil {
 		return ErrInvalid
 	}
-	err = file.Sync()
-	closeErr := file.Close()
-	if err != nil || closeErr != nil {
+	defer directory.Close()
+	if runtimefs.SyncDirectory(directory) != nil {
 		return ErrInvalid
+	}
+	return nil
+}
+
+// Create only real directory parents. os.Root prevents escapes, while these
+// checks also reject aliases that remain inside the protected installation.
+func makeDirectories(root *os.Root, name string) error {
+	if name == "." {
+		return nil
+	}
+	current := ""
+	for _, component := range strings.Split(name, "/") {
+		current = path.Join(current, component)
+		if err := root.Mkdir(current, 0700); err != nil && !os.IsExist(err) {
+			return ErrInvalid
+		}
+		info, err := root.Lstat(current)
+		if err != nil || !info.IsDir() {
+			return ErrInvalid
+		}
 	}
 	return nil
 }

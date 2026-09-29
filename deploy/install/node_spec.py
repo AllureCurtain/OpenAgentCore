@@ -78,7 +78,7 @@ def validate(data, args):
     return data
 
 
-def fetch(args, token, retained, open_request, allow_enrollment=False):
+def fetch(args, token, retained, open_request, allow_enrollment=False, generation=None, allow_selection_change=False):
     headers = {"Authorization": "Bearer " + token}
     if retained is not None:
         try:
@@ -92,7 +92,8 @@ def fetch(args, token, retained, open_request, allow_enrollment=False):
             raise SpecificationError("Retained node identity differs or is invalid; preserve its state") from None
     elif not token:
         raise SpecificationError("A new node needs its one-time enrollment token on standard input (--enrollment-token-stdin); copy the command from Add node")
-    request = urllib.request.Request(args.core_url + "/api/v1/sandbox-node/configuration", headers=headers)
+    query = "?generation=" + str(generation) if generation is not None else ""
+    request = urllib.request.Request(args.core_url + "/api/v1/sandbox-node/configuration" + query, headers=headers)
     try:
         try:
             response = open_request(request)
@@ -117,7 +118,7 @@ def fetch(args, token, retained, open_request, allow_enrollment=False):
         if error.code == 404:
             raise SpecificationError("Core node configuration was not found (HTTP 404); route /api/v1 on the Core origin directly to Core, not to Web") from None
         if error.code == 409:
-            raise SpecificationError("Core refused node configuration (HTTP 409): the deployment is in maintenance or conflicts with this node's retained specification; inspect the deployment before retrying") from None
+            raise SpecificationError("Core refused node configuration (HTTP 409): the deployment is resetting or conflicts with this node's retained specification; inspect the deployment before retrying") from None
         raise SpecificationError("Core rejected the node configuration read (HTTP " + str(error.code) + "); verify the retained or enrollment credential") from None
     except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead):
         raise SpecificationError("Cannot reach Core node configuration; verify the Core origin and that the reverse proxy routes /api/v1 to Core") from None
@@ -126,9 +127,11 @@ def fetch(args, token, retained, open_request, allow_enrollment=False):
     if retained is not None:
         identity = retained["identity"]
         if (identity.get("provider") != data["provider"]
-                or identity.get("specification_digest") != data["specification_digest"]
-                or identity.get("deployment_generation") != data["generation"]):
+                or not allow_selection_change and (identity.get("specification_digest") != data["specification_digest"]
+                or identity.get("deployment_generation") != data["generation"])):
             raise SpecificationError("Retained node specification differs from Core; preserve its state and follow the deployment change procedure")
+    if generation is not None and data["generation"] != generation:
+        raise SpecificationError("Core returned a different generation")
     return data
 
 

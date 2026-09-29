@@ -15,7 +15,7 @@ import (
 )
 
 func environmentMCPFixture() proto.EnvironmentMCP {
-	return proto.EnvironmentMCP{PackageRoot: "plugins/fixture", Server: agentplugin.MCPServer{
+	return proto.EnvironmentMCP{InstallationRoot: "/private/runtime/capabilities", WorkspaceRoot: "/private/runtime/workspace", PackageRoot: "plugins/fixture", Server: agentplugin.MCPServer{
 		Name: "proof.server", Type: "stdio", Command: "never-exec-before-sandbox", Args: []string{"private-argument"},
 		EnvVars: []string{"USER_SELECTED"}, CWD: "resources",
 	}}
@@ -53,9 +53,10 @@ func TestEnvironmentMCPUsesFixedLauncherForNewAndLoadedSessions(t *testing.T) {
 				t.Fatal("environment MCP displaced workspace tools")
 			}
 			server := params.MCP[1]
-			if server.Name != "proof.server" || server.Command != "/usr/bin/python3" || server.Env == nil || len(server.Env) != 0 ||
-				!reflect.DeepEqual(server.Args, []string{"-I", "-S", "/usr/local/bin/oac-runtime-initialize", "stdio", "plugins/fixture", "proof.server"}) {
-				t.Fatal("ACP declaration bypassed the fixed isolated launcher")
+			executable, _ := os.Executable()
+			if server.Name != "proof.server" || server.Command != executable || server.Env == nil || len(server.Env) != 0 ||
+				!reflect.DeepEqual(server.Args, []string{"runtime-mcp-exec", "/private/runtime/capabilities", "plugins/fixture", "proof.server"}) {
+				t.Fatal("ACP declaration bypassed the shared Runtime launcher")
 			}
 			if (params.SessionID != "") != resume || strings.Contains(string(raw), "must-not") || strings.Contains(string(raw), "private-argument") {
 				t.Fatal("native attachment changed identity or exposed private inputs")

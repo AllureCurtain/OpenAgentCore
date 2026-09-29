@@ -1,0 +1,184 @@
+# Native self-hosted Runtime
+
+Use the same `oac-daemon` on a user-managed Linux, macOS or Windows machine.
+Physical machines, VMs and user-owned sandboxes use the same installer. Core does
+not create or reclaim these machines. Core-managed Docker, E2B and microsandbox
+Providers remain Linux-only and receive prebuilt Runtime images or templates.
+
+The daemon runs with its starting account's permissions, without an inner sandbox
+or privilege elevation. Tools can access whatever that account can access. Use an
+outer container or VM when isolation is required. Connection authentication,
+Project/Environment authorization, credential permissions, Files path validation,
+process cleanup and snapshot consistency still apply; they do not isolate tools
+from their own account. `disabled` and `restricted` network modes require an outer
+implementation that enforces them.
+
+## Platforms and prerequisites
+
+| Platform | Codex | Claude Code | MiniMax Code |
+| --- | --- | --- | --- |
+| Linux | Supported | Supported | Supported |
+| macOS | Supported | Supported | Supported |
+| Windows | Supported | Supported | Unsupported by the current adapter |
+
+Use a distribution built for the machine's OS and architecture. Windows support
+is validated on a native CI runner; manual Windows machine acceptance is not yet
+recorded. Native Linux/macOS runs and native CI qualify the corresponding bundles.
+Supported does not mean every model provider or optional native feature works in
+every combination. Session capabilities are checked by the existing Harness contract.
+
+The distribution contains Node 22.22.0/npm and the selected release's components:
+Codex 0.153.4, Claude Agent SDK 0.3.269 with native Claude Code 2.1.269 and the
+project's adapter, and the patched MiniMax Code 0.4.12 companion on Unix. Arbitrary
+official CLI installations are not adopted. They remain untouched while the
+installer creates its private, verified copy. Compatible components from this
+same installation are reused after checking their version, contents and startup.
+
+Claude on Windows requires Git Bash. Bash is also needed for Runtime setup and
+MiniMax tools. Node/npm and MiniMax's ripgrep are included; Python/pip, when needed
+by a Session's capability dependencies, must be available. Missing system
+components are reported. Install those through the host's normal administration
+process; the daemon never runs apt, sudo or an elevation command.
+
+## Obtain a distribution
+
+Before a public release exists, build a native package with the repository's
+`native-installer` workflow and download its artifact for the target platform.
+Extract the archive before running the executable. The workflow publishes CI
+artifacts, not a production release or an automatic update channel.
+
+For a local release build, use `scripts/build-native-installer.mjs --daemon PATH
+--node DIR --codex DIR --claude DIR --minimax DIR --output ABS`. Select the
+components to include; omit MiniMax on Windows. Build on the target OS, using
+the existing pinned native artifacts. The builder verifies native startup and
+creates `bundle.json`, `oac-daemon` (or `.exe`) and `components/`.
+`bundle.json` describes release files and checksums. It does not accept user
+installation options, connection settings or credentials.
+
+The Claude source is the existing compiled adapter export from modern
+`pnpm deploy`. Reify its dedicated frozen lock with
+`pnpm install --prod --frozen-lockfile --config.node-linker=hoisted --ignore-scripts`
+in a fresh export before packaging. This preserves dependency resolution when
+the builder converts contained links to regular files. MiniMax must be built
+from the pinned source with this revision's patches and native dependencies;
+copying a Linux companion onto macOS does not produce a macOS distribution.
+
+## Install and start
+
+Create a `self_hosted` Session with its model provider and an existing absolute
+`workspace_directory` on the executor host. Save its `environment.id` and
+unchanged `environment.remote_url`. Have the administrator issue an
+[executor credential](getting-started/self-hosted.md#without-web) and save the JSON
+as a private file. It contains `key_id`, `environment_id` and `executor_token`.
+Pass the file path, never the token. Use `wss://` outside loopback; `ws://` is
+accepted only for a loopback Core. The workspace must match the Session.
+
+From the extracted distribution, interactive installation asks for Harnesses
+(comma-separated, multiple selections allowed), installation directory, workspace
+and connection settings. Existing command-line values also work with the prompts:
+
+```sh
+./oac-daemon install --interactive
+```
+
+Noninteractive installation accepts command-line arguments only and never waits
+for input. On Linux or macOS:
+
+```sh
+mkdir -p "$HOME/agent-workspace"
+chmod 600 "$HOME/executor-credential.json"
+./oac-daemon install --non-interactive \
+  --harness codex,claude,minimax \
+  --install-dir "$HOME/.oac/runtime-example" \
+  --remote 'wss://core.example/api/v1/agent-daemon/ws' \
+  --environment-id '11111111-2222-4333-8444-555555555555' \
+  --workspace "$HOME/agent-workspace" \
+  --credential-file "$HOME/executor-credential.json"
+"$HOME/.oac/runtime-example/bin/oac-daemon" start
+```
+
+On Windows, use native absolute paths in PowerShell:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\agent-workspace" | Out-Null
+.\oac-daemon.exe install --non-interactive `
+  --harness codex,claude `
+  --install-dir "$HOME\.oac\runtime-example" `
+  --remote 'wss://core.example/api/v1/agent-daemon/ws' `
+  --environment-id '11111111-2222-4333-8444-555555555555' `
+  --workspace "$HOME\agent-workspace" `
+  --credential-file "$HOME\executor-credential.json"
+& "$HOME\.oac\runtime-example\bin\oac-daemon.exe" start
+```
+
+Replace the URL and UUID with the Session's values. Keep the credential file in
+the account's private storage. The installer does not print credential contents
+or pass them in the background daemon's arguments.
+
+| Option | Meaning |
+| --- | --- |
+| `--harness` | Comma-separated `codex`, `claude`, `minimax`; unsupported combinations fail |
+| `--install-dir ABS` | User-writable installation; defaults to `OAC_RUNTIME_HOME`, then `~/.oac` |
+| `--bundle-dir ABS` | Extracted release directory; defaults beside the executable |
+| `--remote`, `--environment-id`, `--workspace`, `--credential-file` | Required connection inputs, equally available in both modes |
+| `--capability-directory ABS` | Capability snapshot destination, default `capabilities` under the installation |
+| `--tool-env-file ABS` | Optional JSON object of string-valued tool/MCP variables, not installation options |
+
+Installation reports three independent facts: local installation readiness,
+connection not yet checked, and model configuration not yet checked. It does not
+start a daemon, provision a machine, configure a model or create an OS service.
+`start --foreground` runs under an operator's preferred service manager.
+
+## Add Harnesses and operate the installation
+
+Run the original distribution's install command again with identical connection
+options and the Harnesses to add. The installer retains already selected Harnesses,
+checks compatible existing contents and adds only missing components. No default
+deletion, replacement or upgrade occurs. All installation writes use one lock.
+A component is published only after its copy passes checksum verification;
+interrupted additions can reuse complete components on the next run. Installation
+settings are committed only after all selected Harnesses pass readiness checks.
+
+The installed `bin/oac-daemon` locates its own installation. Use that executable
+for `start`, `status`, `logs -n 100`, `logs -f` and `stop`. Direct `connect` is
+rejected for an installed Runtime; `start` validates its components and selection. An explicit
+`OAC_RUNTIME_HOME` overrides this location; keep it consistent if set. If adding a
+Harness while the daemon is running, restart it to refresh Harness discovery.
+`status` reports local profile/PID-file information only. Check **Host connection**
+in Core or the Environment connection API for authenticated connection state.
+
+A connected Environment proves machine authentication, not model availability.
+Configure the model provider through the existing Session/Agent mechanism and
+send a Turn to verify execution. Rotate a credential by stopping the daemon,
+replacing the JSON at the configured path with the rotated credential for the
+same `key_id`, and starting again. Revocation blocks the old credential.
+
+An incompatible daemon version, component version or modified installation is
+an explicit error. Use a separate installation directory; there is no old-version
+upgrade, migration or automatic repair. Preserve previous files and history.
+Stopping a daemon, cancelling a Turn or deleting a Session never removes the
+user's machine, workspace, native history or capability snapshot.
+
+## Common preparation and execution
+
+After authenticated connection every Runtime follows the same flow: Harness
+availability, workspace and capability preparation, fixed `installed.json`, then
+execution, cancellation and recovery. Provider image contents and self-hosted
+`capability_directories` enter the same parser and installation result. Adapters
+receive Skill paths, Plugin results and MCP declarations from that snapshot.
+Reconnect reuses it; new Sessions capture new configuration. Preparation or
+recovery errors never trigger silent reinstall, replay or replacement native Sessions.
+
+Runtime initialization/package directories default to `initialization` and
+`packages` under the installation. Managed images use their own storage layout
+through `OAC_RUNTIME_INITIALIZATION_DIRECTORY` and `OAC_RUNTIME_PACKAGE_DIRECTORY`;
+this does not change the preparation protocol or account permissions. npm and
+Python dependencies use user-writable prefix/target directories. Setup uses Bash,
+including Git Bash on Windows. Supplying `packages.system` in configuration is
+rejected even when empty or null; managed images/templates must include system
+dependencies before launch. Official API read responses retain the required
+`system: []` field, which does not imply support for installing system packages.
+
+On Windows, stdio MCP commands named npm or npx (including explicit .cmd
+paths) run through the selected installation's JavaScript entrypoint with Node.
+Other batch wrappers require an explicit cmd.exe command and its arguments.

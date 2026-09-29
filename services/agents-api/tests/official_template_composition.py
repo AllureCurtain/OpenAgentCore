@@ -20,8 +20,8 @@ def main():
     assert distribution.version == pin["sdk_version"]
     assert json.loads(distribution.read_text("direct_url.json"))["vcs_info"]["commit_id"] == pin["commit"]
     marker = settings["canary"]
-    packages = {"python": ["packaging==25.0"], "npm": ["semver@7.7.2"], "system": ["jq"]}
-    populated_packages = {"python": ["idna==3.10"], "npm": [], "system": ["jq"]}
+    packages = {"python": ["packaging==25.0"], "npm": ["semver@7.7.2"]}
+    populated_packages = {"python": ["idna==3.10"], "npm": []}
     sessions, rejected_keys, templates, files = {}, [], [], []
     succeeded = False
 
@@ -54,15 +54,16 @@ def main():
             safe(response)
             return response
 
-        def rejected(body, status, *, token=None):
+        def rejected(body, status, *, token=None, param=None):
             key = secrets.token_hex(20)
             rejected_keys.append(key)
             response = request(body, key=key, token=token)
             assert response.status_code == status, (status, response.status_code, response.text)
-            assert response.json()["error"]["param"] is None
+            assert response.json()["error"]["param"] == param
             return response.json()
 
         def projection(client, session_id, expected_files, expected_packages):
+            expected_packages = {**expected_packages, "system": []}
             response = client.beta.agents.sessions.with_raw_response.retrieve(session_id)
             assert response.status_code == 200
             safe(response.http_response)
@@ -106,6 +107,7 @@ def main():
             assert created.status_code == 201
             safe(created.http_response)
             template_snapshot = created.parse().to_dict()
+            assert template_snapshot["packages"] == {**packages, "system": []}
             base = {"agent": {"model": "composition-fixture"},
                     "environment": {"type": "openai_hosted", "environment_template_id": template_id}}
             default_files = [
@@ -124,7 +126,7 @@ def main():
                                "files": populated_files, "packages": {"python": ["idna==3.10"], "npm": []}}, selected_files, populated_packages),
                 ("empty", {"env": {}, "setup_commands": [], "files": [], "packages": {}}, [], packages),
                 ("null", {"env": None, "setup_commands": None, "files": None, "packages": None}, default_files, packages),
-                ("nested-null", {"packages": {"python": None, "npm": None, "system": None}}, default_files, packages),
+                ("nested-null", {"packages": {"python": None, "npm": None}}, default_files, packages),
             ]
             for label, overrides, expected_files, expected_packages in rows:
                 body = {**base, "environment": {**base["environment"], **overrides}}
@@ -139,6 +141,14 @@ def main():
                     retry_body, retry_key, frozen = body, key, projected
             assert api.retrieve(template_id).to_dict() == template_snapshot
 
+            for system in (None, [], ["jq"]):
+                invalid = {**base, "environment": {**base["environment"], "packages": {"system": system}}}
+                rejected(invalid, 400, param="packages.system")
+                response = raw.post(settings["base"] + "/v1/agents/environments/templates",
+                                    json={"packages": {"system": system}}, headers=headers)
+                safe(response)
+                assert response.status_code == 400, response.text
+                assert response.json()["error"]["param"] == "packages.system"
             denied = rejected(base, 404, token=settings["foreign"])
             missing = copy.deepcopy(base)
             missing["environment"]["environment_template_id"] = "00000000-0000-0000-0000-000000000001"

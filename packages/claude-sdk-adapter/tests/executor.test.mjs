@@ -47,6 +47,11 @@ globalThis.startupFixture=async({options})=>{
       {type:'content_block_stop',index:0},{type:'message_stop'}
      ])yield {type:'stream_event',parent_tool_use_id:null,session_id:'native',event};
     }
+    if(process.argv[1]==='classified'){
+     yield {type:'assistant',uuid:'assistant-error',session_id:'native',user_message_uuids:[user.uuid],parent_tool_use_id:null,error:'authentication_failed',message:{content:[]}};
+     yield {type:'result',uuid:'error-result',session_id:'native',user_message_uuids:[user.uuid],subtype:'error_during_execution',is_error:true,usage:{input_tokens:1,output_tokens:1},modelUsage:{},total_cost_usd:0};
+     continue;
+    }
     if(text==='hold') await Promise.race([new Promise(resolve=>{interrupt=resolve}),exited]);
     if(options.abortController.signal.aborted)return;
     yield {type:'result',uuid:'result-'+number,session_id:'native',user_message_uuids:[user.uuid],subtype:'success',is_error:false,result:'answer-'+number,usage:{input_tokens:1,output_tokens:1},modelUsage:{fixture:{inputTokens:number,outputTokens:number,costUSD:number/100}},total_cost_usd:number/100};
@@ -151,6 +156,21 @@ for(const mode of ["no-hook-report","false-hook-report"])test("none Executor wit
  assert.equal(events.find(event=>event.type==="turn_settled").confirmed,true);
  assert.equal(events.find(event=>event.type==="turn_settled").reusable,true);
  child.stdin.end();assert.deepEqual(await closed,{code:0,signal:null});
+});
+
+
+test("executor retains a classified native result without confirming failed settlement",{timeout:10000},async t=>{
+ const {events,wait,start}=await launch(t,"classified");
+ start("failed-turn","answer");
+ await wait(()=>events.some(event=>event.type==="turn_settled"));
+ const failure=events.find(event=>event.type==="error");
+ assert.equal(failure.turn_id,"failed-turn");
+ assert.equal(failure.engine_error_code,"authentication_error");
+ assert.equal(failure.session_id,"native");
+ assert.equal(failure.result_id,"error-result");
+ const settled=events.find(event=>event.type==="turn_settled");
+ assert.equal(settled.confirmed,false);
+ assert.equal(settled.reusable,false);
 });
 
 for (const mode of ["pending-function-result", "pending-function-terminal", "pending-function-unknown"]) test(`unanswered function cancellation ${mode} retains native confirmation requirements`, {timeout:10000}, async t => {

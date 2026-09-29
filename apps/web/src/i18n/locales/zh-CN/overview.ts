@@ -1,4 +1,11 @@
 export const overview = {
+  reset: {
+    title: "沙箱重置进行中",
+    auto: "等待 Session 结束和资源清理",
+    force: "强制重置 · 正在清理资源",
+    body: "Core 正在清空托管沙箱后端。重置结束前无法启动新的托管 Session，自托管 Session 不受影响。",
+    view: "查看重置",
+  },
   title: "概览",
   description: "这套 OpenAgentCore 部署在所有项目下的健康、容量、用量与故障。",
   gettingStarted: {
@@ -98,7 +105,6 @@ export const overview = {
   coreStatus: {
     checking: "检查中",
     running: "运行中",
-    maintenance: "维护中",
     unreachable: "无法访问",
   },
   nodeHealth: {
@@ -107,6 +113,10 @@ export const overview = {
     offline: "离线",
   },
   fleet: {
+    servingGeneration: "保留的服务代次",
+    servingGenerationHelp: "Core 为该节点保留的配置代次。仅凭此记录不能确认当前连接、可用容量或目标配置就绪。",
+    previousGeneration: "资源清单读取于配置代次 {{observed}}，当前目标为 {{target}}。这里保留的是较早的观测。",
+    targetPreparation: "目标配置",
     title: "机群",
     cloudHelp: "Core 与它在 E2B 云端持有的沙箱。选择 Core 或 E2B 可查看摘要。",
     help: "Core 与各沙箱节点的连接：实线为在线，虚线为离线。节点上的数字是活跃沙箱 / 上限。点击 Core 或节点查看概况。",

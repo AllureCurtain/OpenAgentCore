@@ -64,7 +64,7 @@ func templateFromRow(row templateMetadataRow, err error) (EnvironmentTemplate, e
 	if row.Name.Valid {
 		result.Name = &row.Name.String
 	}
-	if json.Unmarshal(row.Files, &result.Files) != nil || json.Unmarshal(row.Packages, &result.Packages) != nil || json.Unmarshal(row.Skills, &result.Skills) != nil || json.Unmarshal(row.Plugins, &result.Plugins) != nil {
+	if json.Unmarshal(row.Files, &result.Files) != nil || decodeSetupJSON(row.Packages, &result.Packages) != nil || json.Unmarshal(row.Skills, &result.Skills) != nil || json.Unmarshal(row.Plugins, &result.Plugins) != nil {
 		return EnvironmentTemplate{}, ErrInvalidInput
 	}
 	return result, nil

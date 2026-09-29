@@ -15,8 +15,12 @@ file operations continue through Core and daemon, not E2B commands or files.
 
 ## Accepted scope
 
-Recorded on 2026-09-22 against source candidate `8f0cd2530d7b58cb7fb3ea124a1fc43dacecca36`.
-Documentation-only follow-up commits do not change the accepted binaries.
+Historical qualification recorded on 2026-09-22 against source candidate `8f0cd2530d7b58cb7fb3ea124a1fc43dacecca36`.
+These records qualify only those binaries and tested inputs. Later implementation
+changes, including shared Runtime capability preparation and native-platform
+support, require separate acceptance. The current daemon has no inner sandbox;
+private-file denial and namespace probes below describe the former tested
+implementation, not current tool permissions or an installation requirement.
 
 | Deployment | Codex | Claude Code | MiniMax Code |
 | --- | --- | --- | --- |
@@ -97,8 +101,12 @@ or a saved Agent, frozen and delivered over the same daemon transport; see
 [model execution](model-execution.md). Deployment default model providers never
 reach self-hosted executors.
 
-The public self-hosted profile accepts `/workspace` and empty capability
-directories. Service-origin HTTP MCP on self-hosted remains explicitly rejected;
+The historical runs above used `/workspace` and empty capability directories.
+Current self-hosted input accepts a canonical absolute workspace and optional local
+capability directories, prepared through the
+[shared Runtime snapshot](environments.md#runtime-capability-preparation). That added
+scope is not qualified by these earlier runs. Service-origin HTTP MCP on self-hosted
+remains explicitly rejected;
 none-environment HTTP MCP and separately qualified hosted Plugin MCP keep their own
 scope. Environment Templates remain hosted-only. Unspecified upstream defaults,
 errors, lifecycle edge cases and broader resource semantics remain in the protocol

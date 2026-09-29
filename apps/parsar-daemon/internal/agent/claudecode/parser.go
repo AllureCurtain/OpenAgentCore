@@ -19,11 +19,7 @@ type pendingRecorder interface {
 }
 
 // askRecorder is the slice of pendingAskTable the parser needs.
-// Mirrors pendingRecorder so tests can substitute a fake. Record covers
-// the tool_use path (toolUseID), RecordControl covers the
-// control_request path (ccRequestID).
 type askRecorder interface {
-	Record(askID, toolUseID string, questions []proto.PromptForUserChoiceQuestion)
 	RecordControl(askID, ccRequestID string, questions []proto.PromptForUserChoiceQuestion)
 }
 

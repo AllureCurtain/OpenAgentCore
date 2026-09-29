@@ -19,8 +19,9 @@ var ErrSandboxDeploymentConflict = errors.New("sandbox deployment is already con
 
 type SandboxDeploymentSetupRequest struct {
 	sandbox.DeploymentSpec
-	Provider string                   `json:"provider"`
-	E2B      *SandboxE2BConfiguration `json:"e2b,omitempty"`
+	ExpectedGeneration uint64                   `json:"expected_generation"`
+	Provider           string                   `json:"provider"`
+	E2B                *SandboxE2BConfiguration `json:"e2b,omitempty"`
 }
 
 // SandboxSetup is the immutable configuration selected by the deployment admin.
@@ -30,7 +31,7 @@ type SandboxSetup struct {
 	InstallationID, Provider, BackendFingerprint string
 	Generation                                   uint64
 	Mode                                         string
-	Maintenance                                  bool
+	AdmissionPaused                              bool
 	E2B                                          *SandboxE2BConfiguration
 	IdleSeconds, RetentionSeconds                int64
 }
@@ -42,10 +43,14 @@ func (s *Store) GetSandboxSetup(ctx context.Context) (SandboxSetup, error) {
 	if err != nil {
 		return SandboxSetup{}, err
 	}
+	return s.sandboxSetup(d)
+}
+
+func (s *Store) sandboxSetup(d sqlc.RuntimeDeployment) (SandboxSetup, error) {
 	if !d.WebManaged {
 		return SandboxSetup{}, ErrSandboxDeploymentConflict
 	}
-	result := SandboxSetup{InstallationID: runtimeUUID(d.InstallationID), Provider: d.ProviderKind, BackendFingerprint: d.BackendFingerprint, IdleSeconds: d.IdleSeconds, RetentionSeconds: d.RetentionSeconds, Generation: uint64(d.Generation), Mode: d.Mode, Maintenance: d.Maintenance}
+	result := SandboxSetup{InstallationID: runtimeUUID(d.InstallationID), Provider: d.ProviderKind, BackendFingerprint: d.BackendFingerprint, IdleSeconds: d.IdleSeconds, RetentionSeconds: d.RetentionSeconds, Generation: uint64(d.Generation), Mode: d.Mode, AdmissionPaused: d.AdmissionPaused}
 	if err := json.Unmarshal(d.Specification, &result.Specification); err != nil {
 		return SandboxSetup{}, err
 	}
@@ -151,7 +156,7 @@ func LoopbackOrigin(value string) bool {
 }
 
 func runtimeDeploymentView(d sqlc.RuntimeDeployment, publicURL string) RuntimeDeploymentView {
-	result := RuntimeDeploymentView{InstallationID: runtimeUUID(d.InstallationID), Provider: d.ProviderKind, CoreURL: publicURL, Maintenance: d.Maintenance, OwnerEpoch: uint64(d.OwnerEpoch), Generation: uint64(d.Generation), Mode: d.Mode}
+	result := RuntimeDeploymentView{InstallationID: runtimeUUID(d.InstallationID), Provider: d.ProviderKind, CoreURL: publicURL, OwnerEpoch: uint64(d.OwnerEpoch), Generation: uint64(d.Generation), Mode: d.Mode}
 	if len(d.Specification) > 0 && string(d.Specification) != "{}" {
 		var spec sandbox.DeploymentSpec
 		if json.Unmarshal(d.Specification, &spec) == nil {

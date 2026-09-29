@@ -5,12 +5,13 @@ import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { ConsolePopover } from "../../components/console-popover";
-import { StatusDot, type Tone } from "../../components/console-ui";
+import { HelpTip, StatusDot, type Tone } from "../../components/console-ui";
 import { formatBytes, formatDateTime, formatDuration, formatInteger, formatRelative, MISSING } from "../../lib/format";
 import { nodeProviderDiagnostic } from "../../lib/sandbox-diagnostic";
 import { DiagnosticTip } from "../fleet/DiagnosticTip";
 import { nodeHealth, suspendedSandboxes, type NodeHealth } from "../fleet/fleet-model";
 import { coreMetricsQuery } from "../metrics/metrics-queries";
+import { NodeRolloutStatus } from "../sandbox/NodeRolloutStatus";
 import { seconds } from "../sandbox/NodeList";
 
 /** Row pitch of the node columns, in pixels. */
@@ -50,7 +51,7 @@ export function FleetTopology({ nodes, cloud, coreLabel, coreTone, stale, onOpen
   onOpenBackend?: () => void;
   coreLabel: string;
   coreTone: Tone;
-  /** The last refresh failed: keep the picture, stop implying live traffic. */
+  /** Older generation or failed refresh: retain observations without implying live traffic. */
   stale: boolean;
   onOpenNode: (node: SandboxNode) => void;
   onOpenSandboxMetrics: () => void;
@@ -161,7 +162,7 @@ export function FleetTopology({ nodes, cloud, coreLabel, coreTone, stale, onOpen
               <button className="text-action" type="button" onClick={() => onOpenNode(node)}>{t("fleet.openNode")}</button>
             </>}
           >
-            <NodeGlance node={node} health={health} />
+            <NodeGlance node={node} health={health} stale={stale} />
           </ConsolePopover>
         );
       })}
@@ -178,7 +179,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** A node at a glance: reachability (with the reason a degraded provider is not ready), sandbox slots and what the node has left. */
-function NodeGlance({ node, health }: { node: SandboxNode; health: NodeHealth }) {
+function NodeGlance({ node, health, stale }: { node: SandboxNode; health: NodeHealth; stale: boolean }) {
   const { t, i18n } = useTranslation("overview");
   const locale = i18n.resolvedLanguage;
   const now = Math.floor(Date.now() / 1000);
@@ -193,6 +194,8 @@ function NodeGlance({ node, health }: { node: SandboxNode; health: NodeHealth })
           {diagnostic ? <DiagnosticTip code={diagnostic} /> : null}
         </span>
       </Fact>
+      <Fact label={t("fleet.targetPreparation")}><NodeRolloutStatus node={node} stale={stale} /></Fact>
+      <Fact label={t("fleet.servingGeneration")}><span className="status-with-help">{node.rollout.ready_generation ?? MISSING}<HelpTip>{t("fleet.servingGenerationHelp")}</HelpTip></span></Fact>
       <Fact label={t("fleet.facts.lastSeen")}><span title={seen === null ? undefined : formatDateTime(seen, locale)}>{seen === null ? t("fleet.facts.never") : formatRelative(seen, now, locale)}</span></Fact>
       <Fact label={t("fleet.facts.active")}>{count(node.active)}<span className="kpi-unit">/ {count(node.max_active)}</span></Fact>
       {node.provider === "microsandbox" ? <Fact label={t("fleet.facts.suspended")}>{count(suspendedSandboxes(node))}</Fact> : null}

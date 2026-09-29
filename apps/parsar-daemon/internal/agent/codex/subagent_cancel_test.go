@@ -21,7 +21,7 @@ func TestSubagentCancelDeadlineRetainsOwnerAndRetry(t *testing.T) {
 	f.mu.Lock()
 	f.interruptGate = gate
 	f.mu.Unlock()
-	s.emitDone("frozen", nil)
+	s.emitDoneAt("frozen", nil, nil)
 	for range 4 {
 		select {
 		case e := <-out:
@@ -91,7 +91,7 @@ func TestSubagentCancelRetainsActualObservationFailure(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(f.home, "sessions", "root.jsonl"), []byte("invalid\n"), 0600); err != nil {
 					t.Fatal(err)
 				}
-				s.emitDone("frozen", nil)
+				s.emitDoneAt("frozen", nil, nil)
 			}
 			select {
 			case <-s.subagents.done:

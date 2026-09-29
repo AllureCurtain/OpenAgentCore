@@ -127,52 +127,6 @@ def drained(root, config, state, legacy, problems):
     return deployment, project_ids
 
 
-class Probe:
-    """Start only a stopped old Core's dependencies, and undo those starts on refusal."""
-    def __init__(self, root, config, state, legacy, run, out):
-        self.root, self.config, self.state = root, config, state
-        self.run, self.out = run, out
-        self.compose = root / ("compose.json" if legacy else "generated/compose.json")
-        self.started, self.native_started = [], False
-
-    def start(self):
-        if self.state["mode"] == "web-only" or oac_cli.http(oac_cli.core_base(self.config) + "/healthz")[0] == 200:
-            return
-        self.out("Starting the old Core with its existing files to inspect the conversion preconditions.")
-        result = self.run(["docker", "ps", "--filter", "label=com.docker.compose.project=" + self.state["project"],
-                           "--format", '{{.Label "com.docker.compose.service"}}'], capture_output=True, text=True)
-        running = result.stdout.split()
-        native = native_service.is_native(self.state)
-        # Explicit services and --no-deps avoid running even the old migration job.
-        for name in (["database"] if native else ["database", "core"]):
-            if name not in running:
-                self.started.append(name)  # Include a start whose response is lost.
-                self.run(["docker", "compose", "-f", str(self.compose), "up", "--detach", "--wait", "--no-recreate", "--no-deps", name])
-        if native:
-            unit = convert.legacy_unit_name(self.state)
-            result = self.run(["systemctl", "--user", "is-active", "--quiet", unit], check=False,
-                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            if result.returncode:
-                self.native_started = True
-                self.run(["systemctl", "--user", "start", unit])
-        if oac_cli.wait_status(oac_cli.core_base(self.config) + "/healthz") is None:
-            raise RenameError("The old Core did not become healthy with its existing files")
-
-    def restore(self):
-        failures = []
-        if self.native_started:
-            try:
-                self.run(["systemctl", "--user", "stop", convert.legacy_unit_name(self.state)])
-            except (OSError, subprocess.SubprocessError):
-                failures.append("native Core")
-        if self.started:
-            try:
-                self.run(["docker", "compose", "-f", str(self.compose), "stop", *reversed(self.started)])
-            except (OSError, subprocess.SubprocessError):
-                failures.append("old " + ", ".join(self.started))
-        return failures
-
-
 def volume(run, name):
     result = run(["docker", "volume", "inspect", name], capture_output=True, text=True, check=False)
     if result.returncode:
@@ -294,7 +248,6 @@ def preflight(root, target, manifest, public_url, run):
             problems.append(str(error))
     if state and state["mode"] != "web-only" and not problems:
         try:
-            room(run, state)
             target_volume = "oac-" + state["project"][7:] + "_database"
             if volume(run, target_volume) is not None:
                 problems.append("The target volume already exists without a conversion journal: " + target_volume)
@@ -389,31 +342,61 @@ def replace_runtime(root, config, state, manifest):
     provider = before.get("provider")
     if current.get("provider") != provider:
         raise RenameError("The deployment provider changed during conversion; inspect it before continuing")
+    generation = current.get("generation")
+    if type(generation) is not int or type(before.get("generation")) is not int:
+        raise RenameError("Core returned an invalid deployment generation")
+    def checked(view, expected_generation):
+        if (view.get("installation_id") != state["installation_id"] or view.get("provider") != provider
+                or view.get("generation") != expected_generation or "reset" not in view or view["reset"] is not None
+                or view.get("resources") != {"allocations": 0, "pending": 0}):
+            raise RenameError("The deployment changed during conversion; inspect its identity, reset and resources")
+    checked(current, generation)
     if provider in ("docker", "microsandbox"):
         desired = {"provider": provider, "resources": before["specification"]["resources"], "runtime": node_spec.release(manifest)}
-        specification = current.get("specification") or {}
-        matches = all(specification.get(key) == desired[key] for key in ("resources", "runtime"))
-        if not matches:
-            if current.get("generation") != before["generation"] or current.get("maintenance") is not True:
-                raise RenameError("The deployment changed during conversion; keep maintenance enabled and inspect it")
-            current = sandbox_setup.request(core, key, "PUT", "deployment", dict(desired, expected_generation=current["generation"]))
-        if current.get("maintenance"):
-            current = sandbox_setup.request(core, key, "PATCH", "deployment/maintenance",
-                                            {"expected_generation": current["generation"], "maintenance": False})
-        record["deployment_generation"] = current["generation"]
+        expected_specification = {key: desired[key] for key in ("resources", "runtime")}
+        matches = current.get("specification") == expected_specification
+        # Migration 78 rewrites only this historical input prefix, without a
+        # generation change. Compare against that exact, expected source state.
+        migrated_source = json.loads(json.dumps(before["specification"]))
+        source_runtime = migrated_source.get("runtime") or {}
+        reference = source_runtime.get("microsandbox_ref", "")
+        if reference.startswith("parsar-core-runtime@"):
+            source_runtime["microsandbox_ref"] = "oac-runtime@" + reference.split("@", 1)[1]
+        if matches:
+            # A lost PUT response is reconciled through exact state, not replayed.
+            if generation not in (before["generation"], before["generation"] + 1):
+                raise RenameError("The deployment generation changed during conversion")
+        else:
+            if generation != before["generation"] or current.get("specification") != migrated_source:
+                raise RenameError("The deployment specification changed during conversion; inspect it before continuing")
+            response = sandbox_setup.request(core, key, "PUT", "deployment", dict(desired, expected_generation=generation))
+            checked(response, generation + 1)
+            if response.get("specification") != expected_specification:
+                raise RenameError("Core did not confirm the exact bundle Runtime specification")
+            generation += 1
+        current = sandbox_setup.request(core, key, "GET", "deployment")
+        checked(current, generation)
+        if current.get("specification") != expected_specification:
+            raise RenameError("Core did not confirm the exact bundle Runtime specification")
+        record["deployment_generation"] = generation
     elif provider == "e2b":
-        if current.get("maintenance") is not True:
-            raise RenameError("E2B must stay in maintenance until its template is rebuilt")
-        print("E2B remains in maintenance. Rebuild the template with this release's build-template.py, replace it in Web, then resume admission.")
-    elif current.get("generation") != before.get("generation"):
+        refuse_e2b(before)
+    elif generation != before.get("generation"):
         raise RenameError("The deployment generation changed during conversion")
     save(root, state)
+
+
+def refuse_e2b(deployment):
+    if deployment and deployment.get("provider") == "e2b":
+        raise RenameError("E2B rename conversion is not supported by this release: the old template cannot safely resume admission. "
+                          "Keep the previous release until the Core-owned E2B upgrade transition is available; no conversion was performed.")
 
 
 def execute(root, target, state, plan, manifest, load_images, run, finish, bundle):
     record = state["renamed_from"]
     if record["source_bundle"] != manifest["source_commit"]:
         raise RenameError("Finish the conversion with bundle " + record["source_bundle"])
+    refuse_e2b(record.get("deployment"))
     if state["installation_id"] != record["installation_id"] or state["source_commit"] not in (record["source_commit"], record["source_bundle"]):
         raise RenameError("Installation or source identity differs from the recorded conversion")
     if state.get("format") == 1 and (state["project"] != record["project"] or state["images"] != record["images"]):
@@ -512,23 +495,33 @@ def _convert_installation(root, bundle, manifest, load_images, public_url, yes, 
             except oac_cli.OacError:
                 pass
         refuse(problems)
-    probe = Probe(root, config, state, bool(plan), run, print)
-    try:
-        probe.start()
-        if plan:
-            _, updated, _ = convert.preflight(root, manifest, state["images"], public_url, run)
-            problems += updated.problems
-            config, plan = updated.config, updated
-        deployment, ids = (None, None) if state["mode"] == "web-only" else drained(root, config, state, bool(plan), problems)
-        if problems:
-            refuse(problems)
-        confirm(root, target, state, plan, yes, print)
-    except BaseException:
-        failed = probe.restore()
-        if failed:
-            raise RenameError("No installation conversion was performed, but the preflight could not restore the prior stopped state of "
-                              + ", ".join(failed) + ". Inspect the old services before retrying.") from None
-        raise
+    if state["mode"] != "web-only":
+        # Provider state lives in Core, not installer files. Never start an
+        # unknown provider to discover whether its conversion is supported.
+        try:
+            previous = api(root, config, bool(plan), "sandbox/deployment")
+        except RenameError:
+            raise RenameError("The previous Core must already be running and readable before conversion. "
+                              "Start it with the previous release's command, verify its Core key, then rerun --convert. "
+                              "No conversion was performed.") from None
+        refuse_e2b(previous)
+    if plan:
+        _, updated, _ = convert.preflight(root, manifest, state["images"], public_url, run)
+        problems += updated.problems
+        config, plan = updated.config, updated
+    deployment, ids = (None, None) if state["mode"] == "web-only" else drained(root, config, state, bool(plan), problems)
+    refuse_e2b(deployment)
+    if problems:
+        refuse(problems)
+    if state["mode"] != "web-only":
+        # Measuring space creates a temporary container, even with read-only
+        # mounts. Only do it after readable-provider and drain checks permit
+        # conversion; unsupported E2B and unreadable Core must create nothing.
+        try:
+            room(run, state)
+        except RenameError as error:
+            refuse([str(error)])
+    confirm(root, target, state, plan, yes, print)
     record = {"install_dir": str(root), "target_dir": str(target), "project": state["project"],
               "installation_id": state["installation_id"], "source_commit": state["source_commit"], "source_bundle": manifest["source_commit"], "at": oac_cli.now(),
               "volume_copied": False, "finished": False, "images": state["images"], "deployment": deployment, "projects": ids,

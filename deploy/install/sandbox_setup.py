@@ -112,4 +112,9 @@ def initialize(root, config, state, request_body):
         return current
     if provider:
         raise SandboxSetupError(f"Core already uses {NAMES.get(provider, provider)} sandboxes")
-    return request(core, key, "POST", "deployment", request_body)
+    generation = current.get("generation")
+    if type(generation) is not int or generation < 0:
+        raise SandboxSetupError("Core returned an invalid deployment generation")
+    if current.get("reset") is not None:
+        raise SandboxSetupError("Core is resetting its sandbox deployment")
+    return request(core, key, "POST", "deployment", dict(request_body, expected_generation=generation))

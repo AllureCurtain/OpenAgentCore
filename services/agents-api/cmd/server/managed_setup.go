@@ -23,14 +23,39 @@ import (
 type managedSetup struct {
 	store interface {
 		GetSandboxSetup(context.Context) (store.SandboxSetup, error)
-		ResolveRuntimeNode(context.Context, string, string) (string, error)
+		ResolveRuntimeGeneration(context.Context, sandbox.Reference) (string, uint64, error)
 	}
 	hub            *node.Hub
 	installationID string
 	// publicURL is OAC_PUBLIC_URL; every sandbox reaches Core through it.
 	publicURL string
-	selected  atomic.Pointer[execution.RuntimeProvider]
+	selected  atomic.Pointer[managedSelection]
+	e2bCalls  e2b.CallFence
 }
+
+// Empty selections retain their generation so a delayed provider load cannot
+// republish a backend retired by reset.
+type managedSelection struct {
+	Generation uint64
+	Config     *execution.RuntimeProvider
+}
+
+func (s *managedSetup) publishSelection(generation uint64, config *execution.RuntimeProvider) *execution.RuntimeProvider {
+	next := &managedSelection{Generation: generation, Config: config}
+	for {
+		current := s.selected.Load()
+		if current != nil && current.Generation >= generation {
+			return current.Config
+		}
+		if s.selected.CompareAndSwap(current, next) {
+			return config
+		}
+	}
+}
+func (s *managedSetup) publish(config *execution.RuntimeProvider) {
+	s.publishSelection(config.Generation, config)
+}
+func (s *managedSetup) publishUnconfigured(generation uint64) { s.publishSelection(generation, nil) }
 
 func (s *managedSetup) load(ctx context.Context) (*execution.RuntimeProvider, error) {
 	setup, err := s.store.GetSandboxSetup(ctx)
@@ -41,27 +66,20 @@ func (s *managedSetup) load(ctx context.Context) (*execution.RuntimeProvider, er
 		return nil, errors.New("sandbox installation does not match setup")
 	}
 	if setup.Provider == "" {
-		return nil, nil
+		return s.publishSelection(setup.Generation, nil), nil
 	}
-	if selected := s.selected.Load(); selected != nil && selected.Generation == setup.Generation {
-		return selected, nil
+	if selected := s.selected.Load(); selected != nil && selected.Generation >= setup.Generation {
+		return selected.Config, nil
 	}
 	candidate, err := s.configuration(setup)
+	if err == nil {
+		candidate, err = s.routeGenerations(candidate, setup)
+	}
 	if err != nil {
 		log.Warn(ctx, "Hosted provider is unavailable; administrator recovery remains available", "provider", setup.Provider, "error", err)
 		return nil, fmt.Errorf("%w: %v", execution.ErrExecutionUnavailable, err)
 	}
-	// A slower read cannot replace a generation that committed while this
-	// configuration was loading. Publication performs no external work.
-	for {
-		selected := s.selected.Load()
-		if selected != nil && selected.Generation >= setup.Generation {
-			return selected, nil
-		}
-		if s.selected.CompareAndSwap(selected, candidate.Config) {
-			return candidate.Config, nil
-		}
-	}
+	return s.publishSelection(setup.Generation, candidate.Config), nil
 }
 
 func (s *managedSetup) prepare(ctx context.Context, setup store.SandboxSetup) (execution.PreparedRuntimeDeployment, error) {
@@ -76,10 +94,13 @@ func (s *managedSetup) prepare(ctx context.Context, setup store.SandboxSetup) (e
 	if provider, ok := candidate.Config.Provider.(*e2b.Provider); ok {
 		build, err := provider.ValidateDeployment(ctx)
 		if err != nil {
-			if errors.Is(err, sandbox.ErrInvalid) {
-				return execution.PreparedRuntimeDeployment{}, &store.SandboxConfigurationError{Message: "E2B configuration was rejected; select a ready fixed template build whose CPU and memory match the deployment specification"}
+			if errors.Is(err, e2b.ErrCredentialInvalid) || errors.Is(err, e2b.ErrTeamMismatch) {
+				return execution.PreparedRuntimeDeployment{}, err
 			}
-			return execution.PreparedRuntimeDeployment{}, fmt.Errorf("%w: E2B validation could not be confirmed; verify the helper, credential, network and fixed template build before retrying", execution.ErrExecutionUnavailable)
+			if errors.Is(err, sandbox.ErrInvalid) {
+				return execution.PreparedRuntimeDeployment{}, e2b.ErrTemplateInvalid
+			}
+			return execution.PreparedRuntimeDeployment{}, e2b.ErrRequestUnconfirmed
 		}
 		if setup.Specification.Resources == (sandbox.Resources{}) {
 			// Omitted E2B resources take the validated build's CPU and memory.
@@ -97,7 +118,7 @@ func (s *managedSetup) prepare(ctx context.Context, setup store.SandboxSetup) (e
 			candidate.E2BTemplateBuild.RootDiskMiB = &disk
 		}
 	}
-	return candidate, nil
+	return s.routeGenerations(candidate, setup)
 }
 
 // Loading an already committed selection must retain provider access to its
@@ -110,18 +131,18 @@ func (s *managedSetup) configuration(setup store.SandboxSetup) (execution.Prepar
 	if err != nil {
 		return execution.PreparedRuntimeDeployment{}, fmt.Errorf("%w: %v", execution.ErrExecutionUnavailable, err)
 	}
-	selected := &execution.RuntimeProvider{InstallationID: setup.InstallationID, ProviderKind: setup.Provider, Generation: setup.Generation, Mode: setup.Mode, Maintenance: setup.Maintenance,
+	selected := &execution.RuntimeProvider{InstallationID: setup.InstallationID, ProviderKind: setup.Provider, Generation: setup.Generation, Mode: setup.Mode, AdmissionPaused: setup.AdmissionPaused,
 		CoreURL: s.publicURL + "/api/v1", BackendFingerprint: setup.BackendFingerprint, Provider: provider}
-	if setup.Provider == "microsandbox" {
+	if _, supportsCheckpoint := provider.(sandbox.CheckpointProvider); supportsCheckpoint {
 		selected.Suspension = &execution.RuntimeSuspensionPolicy{IdleTimeout: time.Duration(setup.IdleSeconds) * time.Second,
 			Retention: time.Duration(setup.RetentionSeconds) * time.Second, MaxActive: 4, MaxRetained: 16}
 	}
-	return execution.PreparedRuntimeDeployment{Config: selected, Publish: s.selected.Store}, nil
+	return execution.PreparedRuntimeDeployment{Config: selected, Publish: s.publish}, nil
 }
 
 func (s *managedSetup) ObservationProviderType() string {
-	if selected := s.selected.Load(); selected != nil {
-		return selected.ProviderKind
+	if selected := s.selected.Load(); selected != nil && selected.Config != nil {
+		return selected.Config.ProviderKind
 	}
 	return ""
 }
@@ -155,15 +176,13 @@ func (s *managedSetup) Observe(ctx context.Context, target runtimeobs.Target) (r
 	return source.Observe(ctx, target)
 }
 
-func (s *managedSetup) provider(setup store.SandboxSetup) (sandbox.Provider, error) {
+func (s *managedSetup) provider(setup store.SandboxSetup) (sandbox.SandboxProvider, error) {
 	switch setup.Provider {
 	case "docker", "microsandbox":
 		if s.hub == nil {
 			return nil, errors.New("sandbox node transport is unavailable")
 		}
-		return s.hub.Provider(setup.Provider, func(ctx context.Context, ref sandbox.Reference) (string, error) {
-			return s.store.ResolveRuntimeNode(ctx, ref.TenantID, ref.EnvironmentID)
-		}), nil
+		return s.hub.GenerationProvider(setup.Provider, s.store.ResolveRuntimeGeneration), nil
 	case "e2b":
 		if setup.E2B == nil {
 			return nil, errors.New("E2B deployment configuration is unavailable")
@@ -178,8 +197,8 @@ func (s *managedSetup) provider(setup store.SandboxSetup) (sandbox.Provider, err
 		if setup.Specification.Resources != (sandbox.Resources{}) {
 			resources = &setup.Specification.Resources
 		}
-		provider, err := e2b.New(e2b.Config{Binary: binary, StateDir: os.Getenv("OAC_E2B_STATE_DIR"),
-			Resources: resources, InstallationID: setup.InstallationID, APIKey: setup.E2B.APIKey, Template: setup.E2B.Template, TimeoutSeconds: 3600})
+		provider, err := e2b.NewWithCaller(e2b.Config{Binary: binary, StateDir: os.Getenv("OAC_E2B_STATE_DIR"),
+			Resources: resources, InstallationID: setup.InstallationID, APIKey: setup.E2B.APIKey, Template: setup.E2B.Template, TimeoutSeconds: 3600}, &e2b.ProcessCaller{Fence: &s.e2bCalls})
 		if err != nil {
 			return nil, errors.New("E2B provider cannot load; check the installed helper and private state directory")
 		}

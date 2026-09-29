@@ -74,7 +74,7 @@ func TestSandboxLocalNodeRemovalExplainsDeploymentBinding(t *testing.T) {
 	request := httptest.NewRequest(http.MethodDelete, "/core/v1/sandbox/nodes/local", nil)
 	response := httptest.NewRecorder()
 	writeStoreError(response, request, store.ErrRuntimeLocalNodeConfigured)
-	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "runtime_local_node_configured") || !strings.Contains(response.Body.String(), "maintenance") {
+	if response.Code != http.StatusConflict || !strings.Contains(response.Body.String(), "runtime_local_node_configured") || !strings.Contains(response.Body.String(), "previous release") {
 		t.Fatal(response.Code, response.Body.String())
 	}
 }

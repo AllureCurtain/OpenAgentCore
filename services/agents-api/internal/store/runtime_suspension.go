@@ -57,7 +57,7 @@ func (s *Store) SetRuntimeCompute(ctx context.Context, owner RuntimeAllocation, 
 			}
 		}
 		if row.ComputePhase == "suspended" && phase == "restoring" {
-			if err := reserveRuntimeRestore(ctx, q, row.NodeID); err != nil {
+			if err := reserveRuntimeRestore(ctx, q, row.NodeID, row.DeploymentGeneration); err != nil {
 				return sqlc.RuntimeAllocation{}, err
 			}
 		}

@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"os/signal"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
@@ -64,10 +62,18 @@ func runConnect(ctx *runContext, args []string) error {
 		remote         = fs.String("remote", "", "self-hosted Environment remote_url, unchanged")
 		environment    = fs.String("environment-id", "", "self-hosted Environment ID")
 		credentialFile = fs.String("credential-file", "", "absolute path to protected executor credential JSON")
-		selfHosted     = fs.Bool("self-hosted-install", false, "started by the self-hosted installer: a rejection names its rerun as the fix")
 	)
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("connect: parse flags: %w", err)
+	}
+	installation, err := nativeInstallationPath()
+	if err != nil {
+		return err
+	}
+	if _, err = os.Lstat(installation); err == nil {
+		return errors.New("connect: this Runtime has a native installation; use oac-daemon start to validate its installed Harnesses")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return errors.New("connect: cannot inspect native installation; use oac-daemon start")
 	}
 	// Hydrate inline pairing inputs from env in BOTH parent and the
 	// re-execed background child. Server-spawned sandboxes pass the
@@ -80,11 +86,13 @@ func runConnect(ctx *runContext, args []string) error {
 	if err := paths.ValidateProfile(*profile); err != nil {
 		return fmt.Errorf("connect: %w", err)
 	}
-	if *remote != "" || *environment != "" || *credentialFile != "" || *selfHosted {
+	if *remote != "" || *environment != "" || *credentialFile != "" {
 		if *serverURL != "" || *token != "" || *deviceName != "" || fs.NArg() != 0 {
 			return errors.New("connect: Environment enrollment cannot use pairing options or positional arguments")
 		}
-		return runEnvironmentConnect(ctx, *profile, *background, *remote, *environment, *credentialFile, *selfHosted)
+		connectCtx, stop := daemonize.NotifyContext(context.Background())
+		defer stop()
+		return runEnvironmentConnect(connectCtx, ctx, *profile, *background, *remote, *environment, *credentialFile)
 	}
 
 	inlinePair := strings.TrimSpace(*serverURL) != "" || strings.TrimSpace(*token) != ""
@@ -115,12 +123,12 @@ func runConnect(ctx *runContext, args []string) error {
 			argv = scrubInlineConnectArgs(os.Args)
 			extraEnv = inlineConnectEnv(*serverURL, *token, *deviceName)
 		}
-		return spawnBackground(ctx, *profile, argv, extraEnv)
+		return spawnBackground(context.Background(), ctx, *profile, argv, extraEnv)
 	}
 
 	// Self-check before pairing/loading credentials so a machine with
 	// no supported agent CLI fails before consuming a one-shot token.
-	agentCLIs, err := preflightAgentCLIs(ctx, *profile)
+	agentCLIs, err := preflightAgentCLIs(context.Background(), ctx, *profile)
 	if err != nil {
 		return err
 	}
@@ -201,7 +209,7 @@ func resolveConnectProfile(profile, serverURL, token, deviceName string) (auth.P
 // returns after printing the child PID; child re-enters runConnect
 // with BackgroundSentinelEnv set so the same mainLoop runs in either
 // mode.
-func spawnBackground(rc *runContext, profile string, argv []string, extraEnv []string) error {
+func spawnBackground(ctx context.Context, rc *runContext, profile string, argv []string, extraEnv []string) error {
 	logPath, err := paths.LogFile(profile)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
@@ -223,6 +231,9 @@ func spawnBackground(rc *runContext, profile string, argv []string, extraEnv []s
 		return fmt.Errorf("connect: %w", err)
 	}
 
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	pid, err := daemonize.Spawn(argv, daemonize.ReExecOptions{
 		LogPath:  logPath,
 		PIDPath:  pidPath,
@@ -232,6 +243,12 @@ func spawnBackground(rc *runContext, profile string, argv []string, extraEnv []s
 		return fmt.Errorf("connect: spawn background: %w", err)
 	}
 
+	if err := ctx.Err(); err != nil {
+		if stopErr := daemonize.StopPIDFile(pidPath, killTimeout); stopErr != nil {
+			return fmt.Errorf("connect: interrupted startup cleanup: %w", stopErr)
+		}
+		return err
+	}
 	fmt.Fprintf(rc.stdout, "oac-daemon: backgrounded (pid=%d)\n", pid)
 	fmt.Fprintf(rc.stdout, "  logs : %s\n", logPath)
 	fmt.Fprintf(rc.stdout, "  pid  : %s\n", pidPath)
@@ -244,10 +261,10 @@ func spawnBackground(rc *runContext, profile string, argv []string, extraEnv []s
 // unblocks the read pump and any in-flight Send so the daemon exits
 // without orphaning agent subprocesses.
 func mainLoop(rc *runContext, profile string, prof auth.Profile, agentCLIs agentCLIDiscovery) error {
-	return mainLoopRemote(rc, profile, prof, agentCLIs, "")
+	return mainLoopRemote(context.Background(), rc, profile, prof, agentCLIs, "")
 }
 
-func mainLoopRemote(rc *runContext, profile string, prof auth.Profile, agentCLIs agentCLIDiscovery, remote string) error {
+func mainLoopRemote(parent context.Context, rc *runContext, profile string, prof auth.Profile, agentCLIs agentCLIDiscovery, remote string) error {
 	// Route through obs/log so daemon log lines pick up the same
 	// trace_id / span_id auto-injection as the server side — when the
 	// daemon adopts an envelope's trace, every log call under that ctx
@@ -259,21 +276,8 @@ func mainLoopRemote(rc *runContext, profile string, prof auth.Profile, agentCLIs
 		Out:    rc.stderr,
 	})
 
-	rootCtx, cancel := context.WithCancel(context.Background())
+	rootCtx, cancel := daemonize.NotifyContext(parent)
 	defer cancel()
-
-	// Honour SIGINT / SIGTERM as graceful shutdown.
-	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		select {
-		case sig := <-sigCh:
-			obslog.Bg().Info("received signal, shutting down", "signal", sig.String())
-			cancel()
-		case <-rootCtx.Done():
-		}
-		signal.Stop(sigCh)
-	}()
 
 	bootCtx, bootCancel := context.WithTimeout(rootCtx, bootstrapTimeout)
 	var boot *transport.BootstrapResponse
@@ -309,7 +313,7 @@ func mainLoopRemote(rc *runContext, profile string, prof auth.Profile, agentCLIs
 			DeviceID:   boot.DeviceID,
 			Credential: prof.RunnerCredential,
 			// DaemonVersion is the WIRE-PROTOCOL version, not the build
-			// tag. proto.VersionCompatible is a strict major.minor
+			// tag. proto.VersionCompatible requires an exact version
 			// match against proto.Version. Build-tag reporting goes
 			// in heartbeat's DaemonVersion field.
 			DaemonVersion: proto.Version,
@@ -420,7 +424,6 @@ func pumpConn(parentCtx context.Context, conn *transport.Conn, registry *agent.R
 			Timestamp:           time.Now().Unix(),
 			ActiveRequests:      router.ActiveRuns(),
 			DaemonVersion:       Version,
-			ClaudeAvailable:     agentCLIs.ClaudeCode.Available, // legacy server compatibility
 			SupportedAgentKinds: kinds,
 		}
 	}, obslog.Bg().With("component", "heartbeat"))

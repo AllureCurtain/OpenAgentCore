@@ -106,7 +106,7 @@ export const system = {
     size: "{{count}} CPU · {{memory}}", size_one: "{{count}} CPU · {{memory}}", size_other: "{{count}} CPUs · {{memory}}",
     disks: "Root disk {{root}} · data disk {{data}} at /environment",
     runtime: "Runtime",
-    runtimeHelp: "The Runtime release every node runs; nodes accept no other.",
+    runtimeHelp: "The target Runtime release. Existing sandboxes keep their owned release while nodes prepare the target.",
     e2bTemplate: "E2B template",
     templateBuild: "Template build",
     templateBuildHelp: "The fixed E2B build every sandbox starts from, as Core read it when the selection was saved. Each sandbox gets its CPU, memory and disk.",
@@ -116,8 +116,6 @@ export const system = {
     suspendAfterHelp: "A sandbox idle this long after its Session's last Turn is suspended into a snapshot on its node. The Session's next Turn resumes it.",
     keepSuspended: "Keep suspended for",
     keepSuspendedHelp: "How long a suspended sandbox's snapshot is kept on its node.",
-    maintenance: "Maintenance",
-    maintenanceHelp: "While on, no new sandboxes are placed.",
   },
   values: {
     on: "On",

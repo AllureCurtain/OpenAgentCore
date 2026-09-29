@@ -78,7 +78,7 @@ func (r *Router) handleExecutionPrepare(ctx context.Context, env proto.Envelope)
 		r.mu.Unlock()
 		return ErrRouterClosed
 	}
-	if (r.workspaceWrite != nil || r.workspaceExport != nil) && !req.WorkspaceReadOnly {
+	if r.runtimePreparation != nil || ((r.workspaceWrite != nil || r.workspaceExport != nil) && !req.WorkspaceReadOnly) {
 		r.mu.Unlock()
 		return r.rejectPreparation(env, "resource_unavailable")
 	}

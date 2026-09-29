@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"os"
-	"os/exec"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
+	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent/clirunner"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 )
 
@@ -165,19 +165,15 @@ func TestExecutorStartErrorsRetainExactOwnership(t *testing.T) {
 }
 
 func TestExecutorCloseRetainsPlanUntilReaped(t *testing.T) {
-	cmd := exec.Command(os.Args[0], "-test.run=^TestJSONRPCClientFakeCodexProcess$", "--")
-	cmd.Env = append(os.Environ(), "CODEX_RPC_FAKE_PROCESS=1", "GORACE=atexit_sleep_ms=0")
-	stdin, err := cmd.StdinPipe()
+	process, err := clirunner.Start(clirunner.StartOptions{Parent: t.Context(), Binary: os.Args[0], Args: []string{"-test.run=^TestJSONRPCClientFakeCodexProcess$", "--"}, Env: append(os.Environ(), "CODEX_RPC_FAKE_PROCESS=1", "GORACE=atexit_sleep_ms=0"), NeedStdin: true, OwnProcessGroup: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
 	rpc := NewJSONRPCClient(JSONRPCConfig{})
-	rpc.cmd, rpc.stdin, rpc.alive = cmd, stdin, true
+	rpc.process, rpc.cmd, rpc.stdin, rpc.alive = process, process.Cmd, process.Stdin, true
+
 	var reap sync.Once
-	t.Cleanup(func() { _ = cmd.Process.Kill(); reap.Do(rpc.waitChild) })
+	t.Cleanup(func() { process.Cancel(); reap.Do(rpc.waitChild) })
 	_, cancel := context.WithCancel(t.Context())
 	var cleaned atomic.Bool
 	e := &Executor{prepared: &Prepared{session: &Session{rpc: rpc, cancelFn: cancel}, plan: SessionPlan{Cleanup: func() { cleaned.Store(true) }}}}

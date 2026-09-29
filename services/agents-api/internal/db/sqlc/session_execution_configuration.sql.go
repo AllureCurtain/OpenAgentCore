@@ -44,16 +44,17 @@ func (q *Queries) GetSessionExecutionConfiguration(ctx context.Context, arg GetS
 }
 
 const saveSessionExecutionConfiguration = `-- name: SaveSessionExecutionConfiguration :exec
-INSERT INTO session_execution_configuration(session_id, configuration)
-VALUES ($1, $2)
+INSERT INTO session_execution_configuration(session_id, configuration, deployment_provider_revision)
+VALUES ($1, $2, $3)
 `
 
 type SaveSessionExecutionConfigurationParams struct {
-	SessionID     pgtype.UUID `json:"session_id"`
-	Configuration []byte      `json:"configuration"`
+	SessionID                  pgtype.UUID `json:"session_id"`
+	Configuration              []byte      `json:"configuration"`
+	DeploymentProviderRevision pgtype.UUID `json:"deployment_provider_revision"`
 }
 
 func (q *Queries) SaveSessionExecutionConfiguration(ctx context.Context, arg SaveSessionExecutionConfigurationParams) error {
-	_, err := q.db.Exec(ctx, saveSessionExecutionConfiguration, arg.SessionID, arg.Configuration)
+	_, err := q.db.Exec(ctx, saveSessionExecutionConfiguration, arg.SessionID, arg.Configuration, arg.DeploymentProviderRevision)
 	return err
 }

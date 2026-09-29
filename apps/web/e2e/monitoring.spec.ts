@@ -6,7 +6,6 @@ import { archiveProject, expectManagementBoundary, openConsole } from "./console
 test.afterEach(async ({ request }) => expectManagementBoundary(request));
 
 /** The self-hosted installer digest the fixture console reports. */
-const SELF_HOSTED_INSTALLER_SHA256 = "5e1f".repeat(16);
 
 test("shows the deployment's health on Overview and each monitor page", async ({ page, request }) => {
   await openConsole(page, request, "overview");
@@ -25,7 +24,7 @@ test("shows the deployment's health on Overview and each monitor page", async ({
   await page.getByRole("button", { name: "Sandbox metrics" }).click();
   await expect(page.getByRole("table").first()).toContainText("core-01");
   // A degraded node names why its provider is not ready.
-  await expect(page.getByRole("button", { name: "Docker limits unsupported" })).toBeVisible();
+  await expect(page.locator(".status-with-help").filter({ hasText: /^Provider not ready/ }).getByRole("button", { name: "Docker limits unsupported", exact: true })).toBeVisible();
 });
 
 test("opens a Session's conversation from the Session log, read-only", async ({ page, request }) => {
@@ -37,7 +36,7 @@ test("opens a Session's conversation from the Session log, read-only", async ({ 
 });
 
 test("keeps a failed Session's reason in sight in the Session log and on its page", async ({ page, request }) => {
-  const reasons = /Sandbox allocation failed: node unavailable\.|Model provider returned 429 Too Many Requests\.|Tool call timed out after 300 s\./;
+  const reasons = /Execution could not complete\. No specific cause was reported\./;
   await page.setViewportSize({ width: 1280, height: 800 });
   await openConsole(page, request, "sessions");
   await page.getByRole("radio", { name: /^Failed/ }).click();
@@ -81,22 +80,21 @@ test("shows a self-hosted Session's install command, issues its credential once,
 
   // Connect a host: the exact install command, which carries no secret.
   const install = section.getByRole("region", { name: "Connect a host" });
-  await expect(install.getByLabel("Executor install command").locator("pre")).toHaveText(`(umask 077; d=$(mktemp -d) || exit; trap 'rm -rf "$d"' EXIT
-curl -fsS --max-time 30 --max-filesize 1048576 'https://core.example.com/node-install/self-hosted-install.pyz' -o "$d/install.pyz" &&
-printf '%s  %s\\n' '${SELF_HOSTED_INSTALLER_SHA256}' "$d/install.pyz" | sha256sum -c --status &&
-python3 "$d/install.pyz" --source-url 'https://core.example.com' --environment-id '${environmentId}' --remote 'wss://core.example.com/api/v1/agent-daemon/ws')`);
-  await expect(install.getByRole("list", { name: "Host requirements" })).toContainText("HTTPS access to https://core.example.com");
+  await expect(install.getByLabel("Executor install command").locator("pre")).toHaveText(`./oac-daemon install --interactive --remote 'wss://core.example.com/api/v1/agent-daemon/ws' --environment-id '${environmentId}' --workspace '/srv/work'`);
+  await expect(install.getByRole("link")).toHaveAttribute("href", /docs\/self-hosted-native.md$/);
+  await install.getByRole("combobox", { name: "Host platform" }).click();
+  await page.getByRole("option", { name: "Windows · PowerShell" }).click();
+  await expect(install.locator("pre")).toContainText(".\\oac-daemon.exe install --interactive");
+  await install.screenshot({ path: test.info().outputPath("native-host.png") });
 
   await section.getByRole("button", { name: "Issue credential" }).click();
   const issued = page.getByRole("dialog", { name: "Executor credential" });
   await expect(issued).toContainText("shown only once");
-  // The command comes with it, so it can be run before the credential is pasted and the dialog closed.
-  await expect(issued).toContainText("Run this command on the host first, then paste the credential below at its prompt and press Done.");
-  await expect(issued.getByLabel("Executor install command")).toContainText("self-hosted-install.pyz");
-  // One line of JSON to paste at the installer's hidden prompt; the file is for automation.
-  await expect(issued.getByRole("button", { name: "Copy credential" })).toHaveClass(/\bprimary\b/);
+  await expect(issued).toContainText("Download and privately save the credential file before choosing Done.");
+  await expect(issued.getByLabel("Executor install command")).toHaveCount(0);
+  await expect(issued.getByRole("button", { name: "Download credential file" })).toHaveClass(/\bprimary\b/);
   await expect(issued.getByLabel("Executor credential file")).toHaveText(new RegExp(`^\\{"key_id":"[0-9a-f-]{36}","environment_id":"${environmentId}","executor_token":"exec_fixture_\\d+"\\}$`));
-  await expect(issued).toContainText("run chmod 600 <file> and add --credential-file <absolute path> to the python3 line; the path must not go through a symlink");
+  await expect(issued).toContainText("Enter its absolute path during interactive installation, or use --credential-file <absolute path>");
   const download = page.waitForEvent("download");
   await issued.getByRole("button", { name: "Download credential file" }).click();
   expect((await download).suggestedFilename()).toMatch(/^executor-credential-[0-9a-f]{8}\.json$/);
@@ -122,7 +120,7 @@ python3 "$d/install.pyz" --source-url 'https://core.example.com' --environment-i
   await credentials.getByRole("button", { name: /^Restore credential / }).click();
   const rotation = page.getByRole("dialog", { name: "Restore credential?" });
   await expect(rotation).toContainText("generating a new secret for the same credential");
-  await expect(rotation).toContainText("rerun the Connect a host command there and paste the new credential at its prompt");
+  await expect(rotation).toContainText("Run the installed daemon’s stop command, replace the configured credential file on the host, then run start to reconnect.");
   await rotation.getByRole("button", { name: "Restore" }).click();
   const restored = page.getByRole("dialog", { name: "Executor credential" });
   await expect(restored.getByLabel("Executor credential file")).toContainText("exec_fixture_2");
@@ -140,25 +138,22 @@ python3 "$d/install.pyz" --source-url 'https://core.example.com' --environment-i
   await expect(credentials.getByRole("button", { name: /^Rotate credential / })).toHaveCount(0);
   await expect(credentials.getByRole("button", { name: /^Revoke credential / })).toBeVisible();
   // The command stays; the note says the host still needs a credential.
-  await expect(install).toContainText("It asks for a credential, which this archived project can't issue or rotate");
+  await expect(install).toContainText("Installation requires an existing credential file");
 });
 
-test("explains instead of giving the install command when Core's public address is loopback", async ({ page, request }) => {
+test("offers the native command for a loopback Core", async ({ page, request }) => {
   await openConsole(page, request, "sessions", { installation: "local" });
   await page.getByRole("row").filter({ hasText: "Self-hosted" }).first().getByRole("button", { name: /^Open Session / }).click();
   const install = page.getByRole("region", { name: "Connect a host" });
-  await expect(install).toContainText("Core's public address http://127.0.0.1:8091 is reachable only on the Core machine");
-  await expect(install.locator("pre")).toHaveCount(0);
+  await expect(install.locator("pre")).toContainText("ws://127.0.0.1:8091/api/v1/agent-daemon/ws");
 });
 
-test("hides Connect a host when the console does not serve the self-hosted installer", async ({ page, request }) => {
-  const config = page.waitForResponse((response) => new URL(response.url()).pathname === "/console/config");
+test("offers native installation without console installer assets", async ({ page, request }) => {
   await openConsole(page, request, "sessions", { installers: "none" });
   await page.getByRole("row").filter({ hasText: "Self-hosted" }).first().getByRole("button", { name: /^Open Session / }).click();
   const section = page.getByRole("region", { name: "Executor credentials" });
   await expect(section).toContainText("No executor credentials yet");
-  await config;
-  await expect(section.getByRole("region", { name: "Connect a host" })).toHaveCount(0);
+  await expect(section.getByRole("region", { name: "Connect a host" })).toContainText("install --interactive");
   await expect(section.getByRole("button", { name: "Issue credential" })).toBeVisible();
 });
 
@@ -182,11 +177,11 @@ test("issues a new executor credential after the unanswered one was rotated from
   await page.unroute("**/executor-credentials");
 
   // The page's refresh lists it; the administrator rotates it from its row.
-  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.getByRole("button", { name: "Refresh", exact: true }).first().click();
   const credentials = section.getByRole("table", { name: "Executor credentials" });
   await credentials.getByRole("button", { name: /^Rotate credential / }).click();
   // Rotating an active credential disconnects its host until the command is rerun with the new one.
-  await expect(page.getByRole("dialog", { name: "Rotate credential?" })).toContainText("The host's executor disconnects and won't retry until you rerun the Connect a host command");
+  await expect(page.getByRole("dialog", { name: "Rotate credential?" })).toContainText("The host disconnects. Run the installed daemon’s stop command, replace its configured credential file, then run start.");
   await page.getByRole("dialog", { name: "Rotate credential?" }).getByRole("button", { name: "Rotate" }).click();
   await page.getByRole("dialog", { name: "Executor credential" }).getByRole("button", { name: "Done" }).click();
 
@@ -222,6 +217,7 @@ test("shows E2B's cloud instead of machines", async ({ page, request }) => {
   await expect(page.getByRole("button", { name: "Add node" })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: "Node", exact: true })).toHaveCount(0);
 
-  await page.getByRole("navigation").getByRole("button", { name: "Sandbox backend" }).click();
-  await expect(page.getByRole("heading", { name: "Sandbox backend", level: 1 })).toBeVisible();
+  await page.getByRole("navigation").getByRole("button", { name: "Nodes", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Nodes", level: 1 })).toBeVisible();
+  await expect(page.getByText("E2B runs sandboxes in its cloud. There are no nodes to manage.")).toBeVisible();
 });

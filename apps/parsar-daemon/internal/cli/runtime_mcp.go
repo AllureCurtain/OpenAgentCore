@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -20,13 +21,12 @@ type mcpInvocation struct {
 	env     []string
 }
 
-// runRuntimeMCP executes only inside the packaged initializer's sandbox. It
-// never consumes MCP stdin, opens a daemon connection or owns a child process.
+// runRuntimeMCP forwards stdio to the selected installed MCP server.
 func runRuntimeMCP(_ *runContext, args []string) error {
-	if len(args) != 2 {
+	if len(args) != 3 || args[0] == "/" || agentcapabilities.ValidateLocalDirectories([]string{args[0]}) != nil {
 		return errRuntimeMCP
 	}
-	root, err := os.OpenRoot(agentcapabilities.Directory)
+	root, err := os.OpenRoot(args[0])
 	if err != nil {
 		return errRuntimeMCP
 	}
@@ -35,18 +35,21 @@ func runRuntimeMCP(_ *runContext, args []string) error {
 	if err != nil {
 		return errRuntimeMCP
 	}
-	values, err := localworkspace.ReadToolEnvironment()
+	values, err := localworkspace.ReadOptionalToolEnvironment()
 	if err != nil {
 		return errRuntimeMCP
 	}
-	invocation, err := resolveMCPInvocation(manifest, args[0], args[1], values)
+	invocation, err := resolveMCPInvocation(manifest, args[0], args[1], args[2], values)
 	if err != nil {
 		return errRuntimeMCP
 	}
 	return execRuntimeMCP(invocation)
 }
 
-func resolveMCPInvocation(manifest agentcapabilities.Manifest, pkg, name string, values map[string]string) (mcpInvocation, error) {
+func resolveMCPInvocation(manifest agentcapabilities.Manifest, installationRoot, pkg, name string, values map[string]string) (mcpInvocation, error) {
+	if installationRoot == "/" || agentcapabilities.ValidateLocalDirectories([]string{installationRoot}) != nil {
+		return mcpInvocation{}, errRuntimeMCP
+	}
 	for _, installed := range manifest.MCP {
 		server := installed.Server
 		if installed.PackageRoot != pkg || server.Name != name {
@@ -55,24 +58,26 @@ func resolveMCPInvocation(manifest agentcapabilities.Manifest, pkg, name string,
 		if server.Type != "stdio" {
 			return mcpInvocation{}, errRuntimeMCP
 		}
-		// Defaults locate installed dependencies. Other user values require an
-		// explicit env_vars declaration; the native launcher's env is never read.
-		env := map[string]string{
-			"PATH":       "/environment/packages/npm/bin:/environment/packages/python/bin:/usr/local/bin:/usr/bin:/bin",
-			"PYTHONPATH": "/environment/packages/python",
-			"HOME":       "/tmp",
-			"LANG":       "C.UTF-8",
+		// MCP runs under the same user environment as the daemon. Explicit
+		// capability variables override inherited values.
+		env := map[string]string{}
+		for _, entry := range os.Environ() {
+			key, value, ok := strings.Cut(entry, "=")
+			if ok {
+				env[mcpEnvironmentKey(key)] = value
+			}
 		}
+
 		for _, key := range server.EnvVars {
 			value, exists := values[key]
 			if !exists || strings.ContainsRune(value, 0) {
 				return mcpInvocation{}, errRuntimeMCP
 			}
-			env[key] = value
+			env[mcpEnvironmentKey(key)] = value
 		}
 		cwd := server.CWD
 		if !filepath.IsAbs(cwd) {
-			cwd = filepath.Join(agentcapabilities.Directory, installed.PackageRoot, cwd)
+			cwd = filepath.Join(installationRoot, installed.PackageRoot, cwd)
 		}
 		result := mcpInvocation{command: server.Command, args: append([]string{server.Command}, server.Args...), cwd: cwd}
 		for key, value := range env {
@@ -82,4 +87,27 @@ func resolveMCPInvocation(manifest agentcapabilities.Manifest, pkg, name string,
 		return result, nil
 	}
 	return mcpInvocation{}, errRuntimeMCP
+}
+
+func mcpEnvironmentKey(key string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToUpper(key)
+	}
+	return key
+}
+
+// This command is a dedicated MCP launcher process. Apply its final environment
+// before executable lookup so PATH and npm selection agree on every platform.
+func configureMCPProcess(invocation mcpInvocation) error {
+	if os.Chdir(invocation.cwd) != nil {
+		return errRuntimeMCP
+	}
+	os.Clearenv()
+	for _, entry := range invocation.env {
+		key, value, _ := strings.Cut(entry, "=")
+		if os.Setenv(key, value) != nil {
+			return errRuntimeMCP
+		}
+	}
+	return nil
 }

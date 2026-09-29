@@ -28,7 +28,7 @@ func TestBootstrapAddressFollowsAuthenticatedAllocation(t *testing.T) {
 	const publicURL = "wss://private-proxy.example/api/v1/agent-daemon/ws"
 	local := &managedNodes{runtime: &execution.RuntimeProvider{LocalNodeID: "local-node", CoreURL: "http://host.microsandbox.internal:8091/api/v1"}}
 	remote := &managedNodes{setup: &managedSetup{store: &setupStore{value: store.SandboxSetup{Provider: "docker", Generation: 1}}}}
-	remote.setup.selected.Store(&execution.RuntimeProvider{CoreURL: "https://selected-node-entry.example/api/v1", Generation: 1})
+	remote.setup.publish(&execution.RuntimeProvider{CoreURL: "https://selected-node-entry.example/api/v1", Generation: 1})
 	zero := &managedNodes{setup: &managedSetup{}}
 	for _, tc := range []struct {
 		name, node, want string

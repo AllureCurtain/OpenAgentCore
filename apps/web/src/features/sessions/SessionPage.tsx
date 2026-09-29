@@ -15,6 +15,7 @@ import { collections } from "../../lib/queries";
 import { forgetDeleted } from "../resources/detail-queries";
 import { ExecutorCredentialsSection } from "./ExecutorCredentialsSection";
 import { SessionDeleteDialog, type SessionDeleteTarget } from "./SessionDeleteDialog";
+import { DiagnosticScope } from "./session-diagnostics";
 import { sessionKey } from "./session-queries";
 import { isSessionActive, turnAnchorId } from "./session-history";
 import { environmentKind, isDeletable } from "./session-log";
@@ -81,6 +82,7 @@ export function SessionPage() {
   const refresh = () => {
     setRefreshToken((value) => value + 1);
     history.refresh();
+    if (projectId && sessionId) void queryClient.invalidateQueries({ queryKey: [...sessionKey(projectId, sessionId), "diagnostics"] });
     if (projectId && sessionId) void queryClient.invalidateQueries({ queryKey: [...sessionKey(projectId, sessionId), "executor-credentials"] });
   };
   const time = loadedAt ? formatClock(loadedAt, locale) : MISSING;
@@ -116,15 +118,15 @@ export function SessionPage() {
     const waiting = waitingFor(session);
     const metadata = Object.entries(session.metadata).filter(([key]) => key !== "title");
     const harness = session.agent.x_agents_core?.harness;
-    const environment = session.environment as { type: string; id?: unknown; remote_url?: unknown };
+    const environment = session.environment as { type: string; id?: unknown; remote_url?: unknown; workspace_directory?: unknown };
     body = (
-      <>
+      <DiagnosticScope.Provider value={{ projectId, sessionId: session.id }}>
         {history.gone ? <p className="coverage-note coverage-note-error" role="alert">{t("detail.gone", { time })}</p> : null}
         <dl className="resource-facts session-facts" aria-label={t("detail.facts")}>
           <div><dt>{t("detail.id")}</dt><dd><CopyableId id={session.id} /></dd></div>
           <div><dt>{t("detail.project")}</dt><dd><ProjectName project={project} /></dd></div>
           <div><dt>{t("detail.creator")}</dt><dd><CreatorCell creator={creators.creatorOf(projectId, session.id)} /></dd></div>
-          <div><dt>{t("detail.status")}</dt><dd><SessionStatus session={session} /></dd></div>
+          <div><dt>{t("detail.status")}</dt><dd><SessionStatus projectId={projectId} session={session} /></dd></div>
           <div>
             <dt>{t("detail.agent")}</dt>
             <dd className="session-fact-stack">
@@ -168,7 +170,7 @@ export function SessionPage() {
           <Kpi label={t("kpi.reasoning")} value={formatInteger(usage?.output_tokens_details.reasoning_tokens, locale)} />
         </KpiStrip>
         {environment.type === "self_hosted" && typeof environment.id === "string" ? (
-          <ExecutorCredentialsSection key={environment.id} projectId={projectId} sessionId={session.id} environmentId={environment.id} remoteUrl={typeof environment.remote_url === "string" ? environment.remote_url : ""} />
+          <ExecutorCredentialsSection key={environment.id} projectId={projectId} sessionId={session.id} environmentId={environment.id} remoteUrl={typeof environment.remote_url === "string" ? environment.remote_url : ""} workspaceDirectory={typeof environment.workspace_directory === "string" ? environment.workspace_directory : ""} />
         ) : null}
         <Section
           headingId="session-history-heading"
@@ -223,7 +225,7 @@ export function SessionPage() {
             refreshToken={refreshToken}
           />
         ) : null}
-      </>
+      </DiagnosticScope.Provider>
     );
   }
 

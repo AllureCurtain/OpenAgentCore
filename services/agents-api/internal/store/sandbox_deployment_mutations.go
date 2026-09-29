@@ -22,9 +22,10 @@ var ErrSandboxCredentialUnavailable = errors.New("sandbox credential encryption 
 // APIKey is internal configuration. HTTP requests use a write-only DTO.
 // TemplateBuild is set only by Core after it validates the candidate.
 type SandboxE2BConfiguration struct {
-	APIKey        string                   `json:"-"`
-	Template      string                   `json:"template"`
-	TemplateBuild *SandboxE2BTemplateBuild `json:"-"`
+	ReplaceCredential bool                     `json:"-"`
+	APIKey            string                   `json:"-"`
+	Template          string                   `json:"template"`
+	TemplateBuild     *SandboxE2BTemplateBuild `json:"-"`
 }
 
 // SandboxE2BTemplateBuild is the fixed build as read by the validation that
@@ -38,10 +39,6 @@ type SandboxDeploymentUpdateRequest struct {
 	SandboxDeploymentSetupRequest
 	ExpectedGeneration uint64 `json:"expected_generation"`
 }
-type SandboxMaintenanceRequest struct {
-	Maintenance        bool   `json:"maintenance"`
-	ExpectedGeneration uint64 `json:"expected_generation"`
-}
 
 // E2BResourcesPending reports an E2B selection that omitted resources. Core
 // fills them from the validated template build before any write.
@@ -52,10 +49,10 @@ func E2BResourcesPending(input SandboxDeploymentSetupRequest) bool {
 func validateSandboxSelection(input SandboxDeploymentSetupRequest) error {
 	if E2BResourcesPending(input) {
 		if input.Runtime != nil {
-			return &SandboxConfigurationError{Message: "invalid sandbox configuration: E2B Runtime is selected by its immutable template build"}
+			return sandboxConfigurationError(&sandbox.ValidationError{Param: "runtime", Message: "invalid sandbox configuration: E2B Runtime is selected by its immutable template build"})
 		}
 	} else if err := input.DeploymentSpec.Validate(input.Provider); err != nil {
-		return &SandboxConfigurationError{Message: err.Error()}
+		return sandboxConfigurationError(err)
 	}
 	switch input.Provider {
 	case "docker", "microsandbox":
@@ -109,7 +106,7 @@ func (s *Store) sandboxSelectionEqual(d sqlc.RuntimeDeployment, input SandboxDep
 func (s *Store) saveSandboxSelection(ctx context.Context, q *sqlc.Queries, d sqlc.RuntimeDeployment, input SandboxDeploymentSetupRequest) error {
 	// Only a complete specification is stored, including derived E2B resources.
 	if err := input.DeploymentSpec.Validate(input.Provider); err != nil {
-		return &SandboxConfigurationError{Message: err.Error()}
+		return sandboxConfigurationError(err)
 	}
 	if d.Generation == math.MaxInt64 {
 		return ErrSandboxDeploymentConflict
@@ -183,7 +180,13 @@ func (s *Store) InitializeSandboxDeployment(ctx context.Context, installationID 
 		if err != nil {
 			return err
 		}
-		if !d.WebManaged || d.InstallationID != id {
+		if err := checkSandboxGeneration(d, installationID, input.ExpectedGeneration); err != nil {
+			return err
+		}
+		if d.ResetClear.Valid {
+			return ErrSandboxResetInProgress
+		}
+		if d.InstallationID != id {
 			return ErrSandboxDeploymentConflict
 		}
 		if d.ProviderKind != "" {
@@ -207,7 +210,7 @@ func (s *Store) InitializeSandboxDeployment(ctx context.Context, installationID 
 }
 
 // CheckSandboxDeploymentSwitch is a preliminary check only. The mutation repeats
-// it after execution has drained; no database lock spans provider work.
+// it in the committing transaction; no database lock spans provider work.
 func (s *Store) CheckSandboxDeploymentSwitch(ctx context.Context, installation string, input SandboxDeploymentUpdateRequest) error {
 	if s.executionLease == nil {
 		return ErrInvalidInput
@@ -227,16 +230,19 @@ func (s *Store) CheckSandboxDeploymentSwitch(ctx context.Context, installation s
 	})
 }
 func checkSandboxSwitch(ctx context.Context, q *sqlc.Queries, d sqlc.RuntimeDeployment, installation string, input SandboxDeploymentUpdateRequest) error {
-	if !d.WebManaged || runtimeUUID(d.InstallationID) != installation || d.ProviderKind == "" || !d.Maintenance || uint64(d.Generation) != input.ExpectedGeneration {
-		return ErrSandboxDeploymentConflict
-	}
-	resources, err := q.CountRuntimeDeploymentResources(ctx)
-	if err != nil {
+	if err := checkSandboxGeneration(d, installation, input.ExpectedGeneration); err != nil {
 		return err
 	}
-	if resources.Allocations != 0 || resources.Pending != 0 {
-		return ErrSandboxDeploymentConflict
+	if d.ResetClear.Valid {
+		return ErrSandboxResetInProgress
 	}
+	if d.ProviderKind == "" {
+		return ErrSandboxNotConfigured
+	}
+	if d.ProviderKind != input.Provider || unspecifiedNodeDeployment(d) {
+		return &SandboxResetRequiredError{CurrentProvider: d.ProviderKind, RequestedProvider: input.Provider}
+	}
+
 	return nil
 }
 
@@ -263,18 +269,24 @@ func (s *Store) UpdateSandboxDeployment(ctx context.Context, installation string
 		if err != nil {
 			return err
 		}
-		if !equal {
+		if !equal || input.E2B != nil && input.E2B.ReplaceCredential {
+			if err := q.RetainSandboxGeneration(ctx); err != nil {
+				return err
+			}
 			if err := s.saveSandboxSelection(ctx, q, d, input.SandboxDeploymentSetupRequest); err != nil {
 				return err
 			}
-			if err := q.RetireSandboxNodes(ctx); err != nil {
+			if err := q.CollectSandboxGenerations(ctx); err != nil {
 				return err
 			}
-			if err := q.RetireSandboxEnrollments(ctx); err != nil {
-				return err
-			}
-			if err := q.AdvanceSandboxOwnerEpoch(ctx); err != nil {
-				return err
+			{
+				action := "change"
+				if input.E2B != nil && input.E2B.ReplaceCredential {
+					action = "replace_credential"
+				}
+				if err := recordDeploymentMutation(ctx, q, action, "sandbox_deployment", installation); err != nil {
+					return err
+				}
 			}
 		} else if err := recordTemplateBuild(ctx, q, input.SandboxDeploymentSetupRequest); err != nil {
 			return err
@@ -285,28 +297,22 @@ func (s *Store) UpdateSandboxDeployment(ctx context.Context, installation string
 	return result, err
 }
 
-// The Worker verifies activation before calling this with maintenance=false.
-func (s *Store) SetSandboxMaintenance(ctx context.Context, installation string, input SandboxMaintenanceRequest) (RuntimeDeploymentView, error) {
-	if s.executionLease == nil {
-		return RuntimeDeploymentView{}, ErrInvalidInput
-	}
-	ctx, cancel := context.WithTimeout(ctx, executionTransactionTimeout)
-	defer cancel()
-	var result RuntimeDeploymentView
-	err := s.executionLease.transaction(ctx, func(tx pgx.Tx) error {
-		q := s.queries.WithTx(tx)
-		d, err := q.LockRuntimeDeployment(ctx)
-		if err != nil {
+// CheckSandboxDeploymentSetup rejects stale/reset state before provider preparation;
+// InitializeSandboxDeployment repeats the check in its committing transaction.
+func (s *Store) CheckSandboxDeploymentSetup(ctx context.Context, installation string, input SandboxDeploymentSetupRequest) error {
+	return s.resetTransaction(ctx, func(ctx context.Context, q *sqlc.Queries, d sqlc.RuntimeDeployment) error {
+		if err := checkSandboxGeneration(d, installation, input.ExpectedGeneration); err != nil {
 			return err
 		}
-		if !d.WebManaged || runtimeUUID(d.InstallationID) != installation || d.ProviderKind == "" || uint64(d.Generation) != input.ExpectedGeneration {
-			return ErrSandboxDeploymentConflict
+		if d.ResetClear.Valid {
+			return ErrSandboxResetInProgress
 		}
-		if err := q.SetSandboxMaintenance(ctx, input.Maintenance); err != nil {
+		if err := validateSandboxSelection(input); err != nil {
 			return err
 		}
-		result, err = s.deploymentView(ctx, q)
-		return err
+		if d.ProviderKind != "" && (d.ProviderKind != input.Provider || unspecifiedNodeDeployment(d)) {
+			return &SandboxResetRequiredError{CurrentProvider: d.ProviderKind, RequestedProvider: input.Provider}
+		}
+		return nil
 	})
-	return result, err
 }

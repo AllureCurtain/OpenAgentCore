@@ -42,7 +42,7 @@ def validate_deployment(config, remaining):
         response = get_templates_template_id.sync_detailed(template_id=template, client=client,
                                                           next_token=cursor, limit=100)
         if response.status_code != 200 or not isinstance(response.parsed, TemplateWithBuilds):
-            raise Failure('invalid' if response.status_code in (400, 401, 403, 404, 422) else 'unconfirmed')
+            raise Failure('unauthorized' if response.status_code in (401, 403) else 'invalid' if response.status_code in (400, 404, 422) else 'unconfirmed')
         result = response.parsed
         if result.template_id != template:
             raise Failure('invalid')
@@ -142,3 +142,30 @@ def run(sandbox, command, remaining, user='runtime'):
         raise
     except Exception:
         raise Failure('command_unconfirmed') from None
+
+
+def verify_team_template(config, remaining):
+    """The pinned SDK's paginated team listing, not public template readability."""
+    from e2b.api.client.api.templates import get_v2_templates
+    from e2b.api.client.models.template import Template
+    wanted = config['Template'].split(':', 1)[0]
+    cursor, seen = UNSET, set()
+    for _ in range(100):
+        client = get_api_client(ConnectionConfig(api_key=config['APIKey'], retries=0,
+                                                debug=False, request_timeout=remaining()))
+        response = get_v2_templates.sync_detailed(client=client, next_token=cursor, limit=100)
+        if response.status_code in (401, 403):
+            raise Failure('unauthorized')
+        if response.status_code != 200 or not isinstance(response.parsed, list):
+            raise Failure('unconfirmed')
+        if len(response.parsed) > 100 or any(not isinstance(item, Template) for item in response.parsed):
+            raise Failure('unconfirmed')
+        if any(item.template_id == wanted for item in response.parsed):
+            return
+        cursor = response.headers.get('x-next-token')
+        if not cursor:
+            raise Failure('team_mismatch')
+        if len(cursor) > 4096 or cursor in seen:
+            raise Failure('unconfirmed')
+        seen.add(cursor)
+    raise Failure('unconfirmed')

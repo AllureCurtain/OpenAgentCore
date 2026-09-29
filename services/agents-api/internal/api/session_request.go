@@ -61,9 +61,15 @@ func (request decodedSessionRequest) validated() (sessionRequest, error) {
 		return input, store.ErrInvalidInput
 	}
 	var err error
-	input.initialization, err = decodeEnvironmentSetup(environmentFields)
-	if err != nil {
-		return input, err
+	var environmentType string
+	_ = json.Unmarshal(environmentFields["type"], &environmentType)
+	// Self-hosted paths are frozen in Environment.Configuration. They do not
+	// create managed initialization state or require a managed allocation.
+	if environmentType != "self_hosted" {
+		input.initialization, err = decodeEnvironmentSetup(environmentFields)
+		if err != nil {
+			return input, err
+		}
 	}
 	input.initialFiles, err = decodeInitialFiles(environmentFields["files"])
 	if err != nil {

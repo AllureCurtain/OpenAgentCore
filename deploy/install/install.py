@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Install one matched Core distribution, repair it, or convert an earlier installation.
+"""Install one matched Core distribution, repair it, without changing versions.
 
 A new installation's flags seed <install-dir>/config.json. Afterwards, edit that file
 and run <install-dir>/oac apply; rerunning this installer only repairs.
@@ -26,7 +26,6 @@ from urllib.parse import urlsplit
 import config_model
 import configuration
 from configuration import valid_core_origin
-import convert
 import rename
 import native_service
 import oac_cli
@@ -76,7 +75,7 @@ def verify_bundle(bundle):
     required = {"manifest.json", "install.sh", "install.py", "configuration.py", "config_model.py",
                 "config.schema.json", "oac_cli.py", "convert.py", "rename.py", "oac.pyz", "native_service.py",
                 "sandbox_setup.py", "standard-sizes.json", "node_spec.py", "node-install.pyz",
-                "self-hosted-install.pyz", "distribution.py", "runtime/seccomp.json"}
+                "distribution.py", "runtime/seccomp.json"}
     required.update(f"images/{name}.tar" for name in ("core", "web", "database"))
     required.update("native/bin/" + name for name in ("oac-core", "oac-core-migrate"))
     required.add("native/e2b/oac-e2b-provider")
@@ -144,14 +143,16 @@ def arguments(argv=None):
     parser.add_argument("--core-key-file", type=Path, help="Web-only: private file containing the existing Core's Core key")
     parser.add_argument("--config", type=Path, help="Seed a new installation's config.json from this file")
     parser.add_argument("--convert", action="store_true",
-                        help="Convert a pre-rename installation to OpenAgentCore and this release")
-    parser.add_argument("--yes", action="store_true", help="With --convert: do not ask for confirmation")
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--yes", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--admin-token-file", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--status", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--stop", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+    if args.convert or args.yes:
+        parser.error(oac_cli.UNSUPPORTED_VERSION)
     args.explicit_install_dir = args.install_dir is not None
-    args.install_dir = rename.choose_root(args.install_dir) if args.convert else (args.install_dir or Path.home() / ".oac/core")
+    args.install_dir = args.install_dir or Path.home() / ".oac/core"
     if args.admin_token_file:
         parser.error("--admin-token-file was renamed; use --core-key-file")
     if args.sandbox_provider is not None or args.provider is not None:
@@ -323,36 +324,118 @@ def prepare_node_payload(root, state, bundle, replace=False):
     if state["mode"] == "core-only":
         return
     destination = root / "node-payload"
-    # Public distribution files only. Never copy the private installation config.
-    names = ["node-install.pyz", "self-hosted-install.pyz", "manifest.json", "SHA256SUMS", "runtime/seccomp.json"]
-    manifest = json.loads((bundle / "manifest.json").read_text())
-    for logical in manifest.get("artifacts", {}):
-        entry = artifact(manifest, logical)
-        name = "artifacts/" + entry["filename"]
-        source = bundle / name
-        if source.exists():
-            if (source.is_symlink() or not source.is_file()
-                    or not source.resolve().is_relative_to(bundle.resolve())
-                    or source.stat().st_size != entry["size"] or digest(source) != entry["sha256"]):
-                raise InstallError("Offline artifact verification failed: " + logical)
-            names.append(name)
-    if replace and destination.is_dir() and not destination.is_symlink():
-        shutil.rmtree(destination)
-    for name in names:
-        source, target = bundle / name, destination / name
+    # Each release remains immutable and addressable while old nodes retain it.
+    # The only mutable publication is a small, atomically replaced active pointer.
+    def publish(source):
+        manifest = json.loads((source / "manifest.json").read_text())
+        revision = manifest.get("source_commit", "")
+        if not re.fullmatch(r"[0-9a-f]{40}", revision):
+            raise InstallError("Invalid node payload release identity")
+        metadata_names = ("node-install.pyz", "manifest.json", "SHA256SUMS", "runtime/seccomp.json")
+        names = list(metadata_names)
+        for logical in manifest.get("artifacts", {}):
+            entry = artifact(manifest, logical)
+            name = "artifacts/" + entry["filename"]
+            path = source / name
+            if path.exists():
+                if (path.is_symlink() or not path.is_file()
+                        or not path.resolve().is_relative_to(source.resolve())
+                        or path.stat().st_size != entry["size"] or digest(path) != entry["sha256"]):
+                    raise InstallError("Offline artifact verification failed: " + logical)
+                names.append(name)
+        target = destination / "releases" / revision
+        if target.is_symlink() or target.parent.is_symlink():
+            raise InstallError("Installed node payload differs; preserve it and inspect the distribution")
         target.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         if target.exists():
-            if target.is_symlink() or not target.is_file() or digest(target) != digest(source):
-                raise InstallError("Installed node payload differs; preserve it and inspect the distribution")
-        else:
-            descriptor, temporary = tempfile.mkstemp(prefix=".payload-", dir=target.parent)
+            # Validate the complete published metadata and every existing declared
+            # artifact before filling any absence. Existing bytes are immutable.
+            for name in metadata_names:
+                previous = target / name
+                if (previous.parent.is_symlink() or previous.is_symlink() or not previous.is_file()
+                        or digest(previous) != digest(source / name)):
+                    raise InstallError("Installed node payload differs; preserve it and inspect the distribution")
+            artifacts = target / "artifacts"
+            if artifacts.is_symlink() or artifacts.exists() and not artifacts.is_dir():
+                raise InstallError("Installed node artifact directory differs")
+            missing = []
+            for logical in manifest.get("artifacts", {}):
+                entry = artifact(manifest, logical)
+                name = "artifacts/" + entry["filename"]
+                previous = target / name
+                if previous.is_symlink() or previous.exists() and (not previous.is_file()
+                        or previous.stat().st_size != entry["size"] or digest(previous) != entry["sha256"]):
+                    raise InstallError("Installed node artifact differs; refusing repair")
+                if not previous.exists() and name in names:
+                    missing.append((name, entry))
+            if missing:
+                artifacts.mkdir(mode=0o700, exist_ok=True)
+                for name, entry in missing:
+                    descriptor, temporary = tempfile.mkstemp(prefix=".payload-", dir=artifacts)
+                    try:
+                        with os.fdopen(descriptor, "wb") as outgoing, (source / name).open("rb") as incoming:
+                            shutil.copyfileobj(incoming, outgoing)
+                            outgoing.flush()
+                            os.fsync(outgoing.fileno())
+                        if Path(temporary).stat().st_size != entry["size"] or digest(Path(temporary)) != entry["sha256"]:
+                            raise InstallError("Node artifact changed during repair")
+                        # Publish without replacing bytes introduced concurrently.
+                        os.link(temporary, target / name)
+                    finally:
+                        os.unlink(temporary)
+                for directory in (artifacts, target):
+                    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                    try:
+                        os.fsync(descriptor)
+                    finally:
+                        os.close(descriptor)
+            return revision
+        with tempfile.TemporaryDirectory(prefix=".payload-", dir=target.parent) as temporary:
+            stage = Path(temporary) / "release"
+            stage.mkdir(mode=0o700)
+            for name in names:
+                path = source / name
+                if path.is_symlink() or not path.is_file():
+                    raise InstallError("Invalid node payload source file")
+                copied = stage / name
+                copied.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+                with path.open("rb") as incoming, copied.open("xb") as outgoing:
+                    os.chmod(copied, 0o600)
+                    shutil.copyfileobj(incoming, outgoing)
+                    outgoing.flush()
+                    os.fsync(outgoing.fileno())
+            os.rename(stage, target)
+        return revision
+
+    if destination.is_symlink():
+        raise InstallError("Invalid node payload directory")
+    destination.mkdir(mode=0o700, exist_ok=True)
+    if (destination / "manifest.json").exists():
+        raise InstallError(oac_cli.UNSUPPORTED_VERSION)
+    revision = publish(bundle)
+    pointer = destination / "active.json"
+    if pointer.is_symlink():
+        raise InstallError("Invalid active node payload pointer")
+    if pointer.exists() and not replace:
+        if json.loads(pointer.read_text()) != {"source_commit": revision}:
+            raise InstallError("Installed node payload differs; preserve it and inspect the distribution")
+        return
+    descriptor, temporary = tempfile.mkstemp(prefix=".active-", dir=destination)
+    try:
+        with os.fdopen(descriptor, "w") as stream:
+            json.dump({"source_commit": revision}, stream)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, pointer)
+        descriptor = os.open(destination, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
             os.close(descriptor)
-            try:
-                shutil.copyfile(source, temporary)
-                os.replace(temporary, target)
-            finally:
-                if os.path.exists(temporary):
-                    os.unlink(temporary)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
 
 
 def install_oac(root, bundle):
@@ -374,7 +457,7 @@ def install_oac(root, bundle):
 
 
 def layout(root):
-    if not root.exists() or not any(root.iterdir()):
+    if not root.exists() or not any(path.name != ".oac.lock" for path in root.iterdir()):
         return "empty"
     config, legacy = (root / "config.json").exists(), (root / "installation.json").exists()
     if config and legacy:
@@ -421,44 +504,24 @@ def create(root, args, config, manifest, images):
     write(root / "config.json", json.dumps(config, indent=2) + "\n")
 
 
-def unfinished_conversion(state):
-    return any(bool(state.get(key)) and not state[key].get("finished") for key in ("converted_from", "renamed_from"))
-
-
 def finish(root, bundle, manifest, fresh=False, selection=None):
-    """Put the bundle's files in place, apply config.json and start the services.
-
-    A new installation then saves its sandbox selection; a repair or conversion never does.
-    """
+    """Repair and start this release while the installer holds the installation lock."""
     state = oac_cli.load_state(root)
-    converting = unfinished_conversion(state)
-    # A converted installation replaces the earlier release's binaries and payload once.
-    prepare_node_payload(root, state, bundle, converting)
-    native_service.prepare(root, state, bundle, converting)
+    prepare_node_payload(root, state, bundle)
+    native_service.prepare(root, state, bundle)
     install_oac(root, bundle)
-    retry = f"rerun ./install.sh {'--convert ' if converting else ''}--install-dir {root}"
+    retry = f"rerun ./install.sh --install-dir {root}"
     try:
-        renamed = state.get("renamed_from")
-        confirmed_url = None
-        if renamed and not renamed.get("finished"):
-            config = oac_cli.load_config(root)
-            if config["public_url"] != renamed["public_url"]:
-                raise InstallError("public_url changed during conversion; restore the recorded value and finish conversion first")
-            # The one conversion confirmation already approved this preserved URL.
-            # Normal apply must never read historical environment names.
-            if config["mode"] != "web-only":
-                confirmed_url = configuration.local_public_url(config)
-        oac_cli.apply(root, start=True, retry=retry, confirm_public_url_change=confirmed_url)
+        args = argparse.Namespace(dry_run=False, yes=False, confirm_public_url_change=None)
+        oac_cli._apply(root, args, False, True, sys.stdin.isatty(), print, retry=retry)
     except oac_cli.OacError as error:
         if not selection:
             raise
-        # A repair never selects a backend, so the --sandbox choice would otherwise be lost silently.
         raise oac_cli.OacError(f"{str(error).rstrip('.')}. The sandbox backend was not chosen; after the "
-                                     f"repair, choose it {choose_where(state['mode'])}") from None
+                              f"repair, choose it {choose_where(state['mode'])}") from None
     config = oac_cli.load_config(root)
     mode = config["mode"]
-    # An earlier-release Core has no /core/v1/installation (404); apply noted it and Web still works.
-    if mode == "web-only" and oac_cli.paired_core(root, config)[0] not in (200, 404):
+    if mode == "web-only" and oac_cli.paired_core(root, config)[0] != 200:
         raise InstallError("Core key authentication failed. Inspect secrets/core.key and web.core_url; no model was called")
     deployment = failure = None
     if selection:
@@ -466,10 +529,6 @@ def finish(root, bundle, manifest, fresh=False, selection=None):
             deployment = sandbox_setup.initialize(root, config, state, selection)
         except sandbox_setup.SandboxSetupError as error:
             failure = error
-    if converting and state.get("converted_from"):
-        state = oac_cli.load_state(root)
-        state["converted_from"] = dict(state["converted_from"], finished=True)
-        oac_cli.save_state(root, state)
     summary(root, config, fresh, selection, deployment)
     if failure:
         raise InstallError(f"{str(failure).rstrip('.')}. Services are installed and running; "
@@ -549,41 +608,62 @@ def main(argv=None):
     if root.is_symlink() or root.resolve() != root:
         raise InstallError("Installation directory must be canonical and not a symlink")
     bundle = Path(__file__).resolve().parent
-    kind = layout(root)
-    if args.convert:
-        if set(args.given) - {"convert", "yes", "public_url"}:
-            raise InstallError("--convert accepts only --install-dir, --yes and --public-url")
-        if kind not in ("legacy", "interrupted", "config", "missing-config"):
-            raise InstallError("--convert needs a pre-rename installation in --install-dir")
-        check_host()
-        manifest = verify_bundle(bundle)
-        state = rename.read_state(root) if (root / "state.json").exists() else convert.detect(root)
-        if native_service.is_native(state):
-            native_service.preflight(bundle, rename.destination(root))
-        rename.convert_installation(root, bundle, manifest, image_loader(manifest, bundle),
-                                   args.public_url, args.yes, run, finish)
-        return
-    if kind in ("legacy", "interrupted"):
-        raise InstallError(f"This installation predates config.json; run ./install.sh --convert --install-dir {root}")
+    manifest = verify_bundle(bundle)
+    # Refuse foreign state before even creating a lock; repeat under the lock to
+    # protect against another current installer finishing between these reads.
+    check_release(root, manifest)
     if not args.explicit_install_dir:
         old, _ = rename.defaults()
         if (old / "state.json").exists() or (old / "installation.json").exists():
-            raise InstallError("An installation made before the OpenAgentCore rename is at ~/.parsar/core. "
-                               "Convert it with ./install.sh --convert (it moves to ~/.oac/core), or pass "
-                               "--install-dir to install another one. Nothing was changed.")
+            raise InstallError(oac_cli.UNSUPPORTED_VERSION)
+    prepared = prepare_fresh(args) if layout(root) == "empty" else None
+    if root.parent == Path.home() / ".oac":
+        root.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with oac_cli.locked(root):
+        check_release(root, manifest)
+        install_locked(args, root, bundle, manifest, prepared)
+
+
+def check_release(root, manifest):
+    if (root / "installation.json").exists():
+        raise InstallError(oac_cli.UNSUPPORTED_VERSION)
+    if (root / "state.json").exists():
+        state = oac_cli.load_state(root)
+        if state.get("source_commit") != manifest["source_commit"]:
+            raise InstallError(oac_cli.UNSUPPORTED_VERSION)
+    if (root / "node-payload/manifest.json").exists():
+        raise InstallError(oac_cli.UNSUPPORTED_VERSION)
+
+
+def prepare_fresh(args):
+    document = seed_document(args)
+    choice = check_flags(args, document)
+    config = seed_config(args, document)
+    check_public_url(config, choice)
+    if config["mode"] == "web-only":
+        key = read_core_key_file(args.core_key_file)
+        if oac_cli.core_installation(config["web"]["core_url"], key)[0] == 404:
+            raise InstallError("The paired Core version is not supported; preserve its data and reinstall "
+                               "the current release separately. Nothing was changed.")
+    e2b = ({"api_key": read_private_file(args.e2b_api_key_file, "E2B API key file"), "template": args.e2b_template}
+           if choice == "e2b" else None)
+    if choice == "docker":
+        confirm_docker(args.accept_docker_risks)
+    return config, choice, e2b
+
+
+def install_locked(args, root, bundle, manifest, prepared):
+    kind = layout(root)
     if kind == "config":
         if args.given:
             raise InstallError(f"This installation is configured by {root / 'config.json'}. Edit it and run "
                                f"{root / 'oac'} apply; install.sh accepts only --install-dir to repair it")
-        state = rename.read_state(root)
-        if state.get("format") == 1 or unfinished_conversion(state):
-            raise InstallError(f"Run ./install.sh --convert --install-dir {root} to finish the OpenAgentCore conversion")
         state = oac_cli.load_state(root)
+        if state["mode"] == "web-only" and oac_cli.paired_core(root, oac_cli.load_config(root))[0] == 404:
+            raise InstallError("The paired Core version is not supported; preserve its data and reinstall "
+                               "the current release separately. Nothing was changed.")
         check_host()
-        manifest = verify_bundle(bundle)
-        if state["source_commit"] != manifest["source_commit"]:
-            raise InstallError("This installation runs another release; upgrading an installation arrives with "
-                               "oac upgrade")
         if native_service.is_native(state):
             native_service.preflight(bundle, root)
         images = image_loader(manifest, bundle)(list(state["images"]))
@@ -597,19 +677,10 @@ def main(argv=None):
                            "database belong to this installation, so keep the directory. Nothing was changed")
     if kind == "incomplete":
         raise InstallError(f"An earlier installation into {root} stopped before writing config.json and started no "
-                           "service. Remove the directory and install again")
+                           "service. Preserve the directory and reinstall into a new empty directory")
     if kind == "other":
         raise InstallError("Installation directory is not empty; refusing to overwrite existing state")
-    document = seed_document(args)
-    choice = check_flags(args, document)
-    config = seed_config(args, document)
-    check_public_url(config, choice)
-    if config["mode"] == "web-only":
-        read_core_key_file(args.core_key_file)
-    e2b = ({"api_key": read_private_file(args.e2b_api_key_file, "E2B API key file"), "template": args.e2b_template}
-           if choice == "e2b" else None)
-    if choice == "docker":
-        confirm_docker(args.accept_docker_risks)
+    config, choice, e2b = prepared
     check_host()
     manifest = verify_bundle(bundle)
     if config.get("native_core"):
@@ -626,7 +697,7 @@ def main(argv=None):
 if __name__ == "__main__":
     try:
         main()
-    except (InstallError, convert.ConvertError, oac_cli.OacError, config_model.ConfigError,
+    except (InstallError, oac_cli.OacError, config_model.ConfigError,
             sandbox_setup.SandboxSetupError, DistributionError, RuntimeError) as error:
         print(str(error), file=sys.stderr)
         sys.exit(1)

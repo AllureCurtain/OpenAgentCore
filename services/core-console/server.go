@@ -15,14 +15,13 @@ import (
 
 type console struct {
 	config
-	root                      *os.Root
-	nodePayload               *os.Root
-	nodeInstallerDigest       string
-	selfHostedInstallerDigest string
-	proxy                     *httputil.ReverseProxy
-	transport                 *http.Transport
-	host                      string
-	auth                      *consoleAuth
+	root                *os.Root
+	nodePayload         *os.Root
+	nodeInstallerDigest string
+	proxy               *httputil.ReverseProxy
+	transport           *http.Transport
+	host                string
+	auth                *consoleAuth
 }
 
 type consoleActorContextKey struct{}
@@ -49,9 +48,6 @@ func newConsole(c config) (*console, error) {
 			return nil, errors.New("cannot open node installation payload")
 		}
 		h.nodeInstallerDigest, err = installerDigest(h.nodePayload, "node-install.pyz")
-		if err == nil {
-			h.selfHostedInstallerDigest, err = installerDigest(h.nodePayload, "self-hosted-install.pyz")
-		}
 		if err != nil {
 			h.nodePayload.Close()
 			root.Close()

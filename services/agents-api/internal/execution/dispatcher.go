@@ -47,10 +47,12 @@ type Dispatcher struct {
 }
 
 type Result struct {
-	Done           proto.DonePayload `json:"done"`
-	ErrorCode      string            `json:"error_code,omitempty"`
-	Error          string            `json:"error,omitempty"`
-	AppliedThrough int64             `json:"applied_through"`
+	EngineErrorCode  string            `json:"engine_error_code,omitempty"`
+	EngineHTTPStatus *int              `json:"engine_http_status,omitempty"`
+	Done             proto.DonePayload `json:"done"`
+	ErrorCode        string            `json:"error_code,omitempty"`
+	Error            string            `json:"error,omitempty"`
+	AppliedThrough   int64             `json:"applied_through"`
 }
 
 // Run claims once before subscribing or sending. Uncertain deliveries are not replayed.
@@ -100,6 +102,11 @@ func (d *Dispatcher) Run(ctx context.Context, tenantID, sessionID, turnID string
 		return store.Turn{}, err
 	}
 	req.ConversationID, req.RunID, req.Input = sessionID, turnID, text
+	release, err := peer.TrackExecutionDelivery(req.RunID)
+	if err != nil {
+		return d.finishRun(tenantID, sessionID, turnID, snapshot.Agent.Model, Result{ErrorCode: "delivery_unknown", AppliedThrough: through}, store.TurnFailed)
+	}
+	defer release()
 	result, status := d.deliver(ctx, tenantID, sessionID, peer, req, through, prepared)
 	return d.finishRun(tenantID, sessionID, turnID, snapshot.Agent.Model, result, status)
 }
@@ -121,7 +128,10 @@ func (d *Dispatcher) finishRun(tenantID, sessionID, turnID, model string, result
 	if errors.Is(err, store.ErrUnappliedInputs) {
 		result.ErrorCode = "input_not_applied"
 		encoded, _ = json.Marshal(result)
-		return d.Store.CompleteExecution(finishCtx, tenantID, sessionID, turnID, store.TurnFailed, encoded, nativeID, result.AppliedThrough)
+		turn, err = d.Store.CompleteExecution(finishCtx, tenantID, sessionID, turnID, store.TurnFailed, encoded, nativeID, result.AppliedThrough)
+	}
+	if err == nil {
+		d.observeDeploymentProvider(tenantID, sessionID, turn)
 	}
 	return turn, err
 }

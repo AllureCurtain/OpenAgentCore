@@ -108,7 +108,7 @@ export const system: TranslationShape<typeof english> = {
     size: "{{count}} 核 · {{memory}}", size_one: "{{count}} 核 · {{memory}}", size_other: "{{count}} 核 · {{memory}}",
     disks: "根盘 {{root}} · 数据盘 {{data}}（/environment）",
     runtime: "Runtime",
-    runtimeHelp: "每个节点运行的 Runtime 版本；节点只接受这一个。",
+    runtimeHelp: "目标 Runtime 版本。节点准备目标配置时，已有沙箱保留其所属版本。",
     e2bTemplate: "E2B 模板",
     templateBuild: "模板构建",
     templateBuildHelp: "每个沙箱启动时使用的固定 E2B 构建，是保存选择时 Core 读到的信息。每个沙箱按它分配 CPU、内存和磁盘。",
@@ -118,8 +118,6 @@ export const system: TranslationShape<typeof english> = {
     suspendAfterHelp: "Session 的最后一个 Turn 结束后，沙箱空闲这么久就会被挂起为节点上的快照；Session 的下一个 Turn 会恢复它。",
     keepSuspended: "挂起后保留",
     keepSuspendedHelp: "挂起的沙箱快照在节点上保留的时长。",
-    maintenance: "维护模式",
-    maintenanceHelp: "开启时不再分配新沙箱。",
   },
   values: {
     on: "开启",

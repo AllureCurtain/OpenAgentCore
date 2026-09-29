@@ -1,4 +1,6 @@
 import { AgentCoreError, type SandboxNode, type SandboxProvider } from "@agents-core-web/agents-client";
+import i18n from "../i18n";
+import { knownCoreError } from "./core-error";
 import { translate, type Locale } from "./locale";
 import type { MessageKey } from "./locale-strings";
 
@@ -10,25 +12,15 @@ const states: Record<string, MessageKey> = {
 export function sandboxStateLabel(state: string, locale: Locale): string {
   return translate(locale, Object.hasOwn(states, state) ? states[state]! : "Unknown state");
 }
-/**
- * What to say about a failed sandbox request. A refusal (a 4xx other than 401
- * and a 408 timeout) is Core's to explain, so its message shows as sent: one
- * code, such as a 409 conflict, covers several reasons. Only codes with one
- * exact, stable meaning get the console's own words: an unconfigured console,
- * and a node that still holds sandboxes or is unavailable. An E2B configuration
- * whose reason the client withheld, since it may echo the key, is named as
- * refused without it.
- */
+/** Localized catalog errors first; unknown refusals retain Core’s message. */
 export function sandboxRequestError(error: unknown, locale: Locale): string {
+  const known = knownCoreError(error, i18n.getFixedT(locale === "zh" ? "zh-CN" : "en", "common"), "bytes");
+  if (known) return known;
   let key: MessageKey = "The sandbox request failed. Refresh to check the current state before trying again.";
   if (error instanceof AgentCoreError) {
     const refused = !sandboxWriteUncertain(error);
-    if (error.code === "sandbox_admin_not_configured") key = "Sandbox administration is not configured on this console.";
-    else if (error.status === 401) key = "Sign in to the console again to access sandbox management.";
-    else if (error.code === "sandbox_configuration_unconfirmed") { if (refused) key = "Core rejected the E2B configuration."; }
+    if (error.code === "sandbox_configuration_unconfirmed") { if (refused) key = "Core rejected the E2B configuration."; }
     else if (refused) {
-      if (error.code === "runtime_node_in_use") return translate(locale, "The node has active allocations or retained resources. Clear allocations, snapshots, reservations and pending cleanup before removal.");
-      if (error.code === "runtime_node_unavailable") return translate(locale, "The selected sandbox node is unavailable or has no capacity.");
       if (error.message) return error.message;
       key = "The sandbox request was rejected. Refresh to check the current state.";
     } else if (error.status >= 500) key = "The sandbox service is unavailable. Refresh to check the current state.";
@@ -53,7 +45,11 @@ export function sandboxWriteUncertain(error: unknown): boolean {
  * such as E2B with a loopback public_url; null for any other failure. Nothing
  * was saved, so the administrator corrects the cause and saves again.
  */
-export function sandboxConfigurationRejection(error: unknown): string | null {
+export function sandboxConfigurationRejection(error: unknown, locale: Locale = "en"): string | null {
+  if (error instanceof AgentCoreError && !sandboxWriteUncertain(error) && error.code) {
+    const known = knownCoreError(error, i18n.getFixedT(locale === "zh" ? "zh-CN" : "en", "common"));
+    if (known) return known;
+  }
   return error instanceof AgentCoreError && error.status === 409 && error.code === "sandbox_configuration_error" && error.message ? error.message : null;
 }
 

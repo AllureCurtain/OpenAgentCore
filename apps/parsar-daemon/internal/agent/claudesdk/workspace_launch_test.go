@@ -11,14 +11,14 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 )
 
-func TestWorkspaceLaunchAndReadinessExcludeParentEnvironment(t *testing.T) {
+func TestWorkspaceLaunchAndReadinessInheritsUserEnvironment(t *testing.T) {
 	config := workspaceFixture(t)
 	t.Setenv("OAC_TEST_PARENT_SECRET", "must-not-inherit")
 	t.Setenv("ANTHROPIC_API_KEY", "unselected")
 	// An owned process fixture verifies both real subprocess launch paths; it is
 	// not a native sandbox or provider acceptance test.
 	script := `#!/bin/sh
-test -z "${OAC_TEST_PARENT_SECRET+x}" || exit 21
+test "$OAC_TEST_PARENT_SECRET" = must-not-inherit || exit 21
 test -z "${ANTHROPIC_API_KEY+x}" || exit 22
 test "$ANTHROPIC_AUTH_TOKEN" = selected-provider-fixture || exit 23
 test "$TMPDIR" != "$CLAUDE_CONFIG_DIR/tmp" || exit 24
@@ -69,111 +69,5 @@ esac
 	}
 	if _, err := os.Stat(filepath.Join(config.StateDir, "unexpected-start")); !os.IsNotExist(err) {
 		t.Fatal("old packaged bridge started execution")
-	}
-}
-
-func TestWorkspaceRejectsMutableRuntimeAliasesBeforeReadiness(t *testing.T) {
-	for _, name := range []string{"node", "entrypoint", "scratch-entrypoint", "companion", "dependencies"} {
-		t.Run(name, func(t *testing.T) {
-			config := workspaceFixture(t)
-			marker := filepath.Join(config.Workspace.Directory, "unexpected-launch")
-			if err := os.WriteFile(config.Node, []byte("#!/bin/sh\nprintf started > '"+marker+"'\n"), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			link, target := "", ""
-			switch name {
-			case "node":
-				link, target = filepath.Join(config.Workspace.Directory, "node"), config.Node
-				config.Node = link
-			case "entrypoint", "scratch-entrypoint":
-				dir := config.Workspace.Directory
-				if name == "scratch-entrypoint" {
-					dir = config.Workspace.ScratchDir
-				}
-				link, target = filepath.Join(dir, "main.js"), config.Entrypoint
-				config.Entrypoint = link
-				if err := os.WriteFile(filepath.Join(dir, "runtime_check.js"), []byte("untrusted companion"), 0o700); err != nil {
-					t.Fatal(err)
-				}
-			case "companion":
-				link, target = filepath.Join(filepath.Dir(config.Entrypoint), "runtime_check.js"), filepath.Join(config.Workspace.Directory, "companion.js")
-				if err := os.Remove(link); err != nil {
-					t.Fatal(err)
-				}
-				if err := os.WriteFile(target, []byte("untrusted companion"), 0o700); err != nil {
-					t.Fatal(err)
-				}
-			case "dependencies":
-				link, target = filepath.Join(config.Workspace.Directory, "deps"), config.Workspace.DependencyPath
-				config.Workspace.DependencyPath = link
-			}
-			if err := os.Symlink(target, link); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := CheckRuntime(t.Context(), config); err == nil {
-				t.Fatal("mutable runtime alias passed readiness")
-			}
-			if _, err := os.Stat(marker); !os.IsNotExist(err) {
-				t.Fatal("invalid binding launched a credential-bearing child")
-			}
-		})
-	}
-}
-
-func TestWorkspaceUsesCanonicalDependencyPaths(t *testing.T) {
-	config := workspaceFixture(t)
-	canonical := config.Workspace.DependencyPath
-	alias := filepath.Join(filepath.Dir(config.StateDir), "dependency-alias")
-	if err := os.Symlink(canonical, alias); err != nil {
-		t.Fatal(err)
-	}
-	config.Workspace.DependencyPath = alias
-	start, env, err := prepare(config, workspaceRequest())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if start.Workspace.DependencyPath != canonical || env[0] != "PATH="+canonical {
-		t.Fatal("trusted launch retained a mutable dependency alias")
-	}
-}
-
-func TestWorkspaceRejectsPackagedRuntimeOverlapBeforeReadiness(t *testing.T) {
-	for _, name := range []string{"workspace", "state", "home", "scratch", "protected", "runtime-root", "runtime-parent", "unexpected-layout"} {
-		t.Run(name, func(t *testing.T) {
-			config := workspaceFixture(t)
-			marker := filepath.Join(filepath.Dir(config.StateDir), "unexpected-launch")
-			if err := os.WriteFile(config.Node, []byte("#!/bin/sh\nprintf started > '"+marker+"'\n"), 0o700); err != nil {
-				t.Fatal(err)
-			}
-			runtimeDir := filepath.Dir(filepath.Dir(config.Entrypoint))
-			dependencies := filepath.Join(runtimeDir, "node_modules")
-			switch name {
-			case "workspace":
-				config.Workspace.Directory = dependencies
-			case "state":
-				config.StateDir = dependencies
-			case "home":
-				config.Workspace.HomeDir = dependencies
-			case "scratch":
-				config.Workspace.ScratchDir = dependencies
-			case "protected":
-				config.Workspace.ProtectedDirs = []string{dependencies}
-			case "runtime-root":
-				config.Workspace.Directory = runtimeDir
-			case "runtime-parent":
-				config.Workspace.Directory = filepath.Dir(runtimeDir)
-			case "unexpected-layout":
-				config.Entrypoint = filepath.Join(filepath.Dir(config.Entrypoint), "other.js")
-				if err := os.WriteFile(config.Entrypoint, nil, 0o700); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if _, err := CheckRuntime(t.Context(), config); err == nil {
-				t.Fatal("invalid runtime binding passed readiness")
-			}
-			if _, err := os.Stat(marker); !os.IsNotExist(err) {
-				t.Fatal("invalid runtime binding launched a credential-bearing child")
-			}
-		})
 	}
 }

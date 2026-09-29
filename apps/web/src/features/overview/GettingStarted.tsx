@@ -28,14 +28,14 @@ import {
  * or it is hidden; Show Getting started in the sidebar opens it again. The
  * optional console tour opens from it.
  */
-export function GettingStarted({ fleet, sessions, localOnly, onRetryInstallation }: { fleet: FleetState; sessions: number | "failed" | null; localOnly: boolean | "failed" | undefined; onRetryInstallation: () => void }) {
+export function GettingStarted({ fleet, sessions, localOnly, sandboxReset, onRetryInstallation }: { sandboxReset: boolean | "failed" | undefined; fleet: FleetState; sessions: number | "failed" | null; localOnly: boolean | "failed" | undefined; onRetryInstallation: () => void }) {
   const { t } = useTranslation("overview");
   const { navigate } = useConsoleNavigation();
   const openTour = useConsoleTour();
   const projects = useQuery(projectsQuery);
   const harnesses = useQuery(harnessesQuery);
   const steps = gettingStartedSteps({
-    fleet, sessions, localOnly,
+    fleet, sessions, localOnly, sandboxReset,
     projects: projects.data ?? (projects.isError ? "failed" : undefined),
     harnesses: harnesses.data?.data ?? (harnesses.isError ? "failed" : undefined),
   });
@@ -113,13 +113,15 @@ export function GettingStarted({ fleet, sessions, localOnly, onRetryInstallation
 
   const done = states.filter((state) => state === "done").length;
   const sandbox = steps.sandboxes;
-  const sandboxAction = localOnly === "failed"
+  const sandboxAction = sandboxReset === true
+    ? { label: t("reset.view"), run: () => navigate("system", { id: "sandbox" }) }
+    : localOnly === "failed"
     ? { label: t("actions.retry", { ns: "common" }), run: onRetryInstallation }
     : sandbox.action === "setup"
-    ? { label: t("gettingStarted.sandboxes.setup"), run: () => navigate("nodes") }
+    ? { label: t("gettingStarted.sandboxes.setup"), run: () => navigate("system", { id: "sandbox" }) }
     : sandbox.action === "add-node"
       ? { label: t("gettingStarted.sandboxes.addNode"), run: () => navigate("nodes", {}, "add-node") }
-      : { label: t(sandbox.cloud ? "gettingStarted.sandboxes.backend" : "gettingStarted.sandboxes.nodes"), run: () => navigate("nodes") };
+      : { label: t(sandbox.cloud ? "gettingStarted.sandboxes.backend" : "gettingStarted.sandboxes.nodes"), run: () => sandbox.cloud ? navigate("system", { id: "sandbox" }) : navigate("nodes") };
   const keyProject = steps.key.project;
   const keyAction = keyProject
     ? { label: t("gettingStarted.key.issue"), run: () => navigate("projects", { id: keyProject.id }, "issue-key") }
@@ -145,7 +147,7 @@ export function GettingStarted({ fleet, sessions, localOnly, onRetryInstallation
         </div>
       </header>
       <ol className="getting-started-steps">
-        <Step index={1} state={sandbox.state} title={t("gettingStarted.sandboxes.title")} body={localOnly === "failed" ? t("gettingStarted.sandboxes.addressFailed") : localOnly ? t("gettingStarted.sandboxes.localOnly") : t(sandbox.cloud ? "gettingStarted.sandboxes.bodyCloud" : "gettingStarted.sandboxes.body")} action={sandboxAction} />
+        <Step index={1} state={sandbox.state} title={t("gettingStarted.sandboxes.title")} body={sandboxReset === true ? t("reset.body") : localOnly === "failed" ? t("gettingStarted.sandboxes.addressFailed") : localOnly ? t("gettingStarted.sandboxes.localOnly") : t(sandbox.cloud ? "gettingStarted.sandboxes.bodyCloud" : "gettingStarted.sandboxes.body")} action={sandboxAction} />
         <Step index={2} state={steps.model} title={t("gettingStarted.model.title")} body={t("gettingStarted.model.body")} action={{ label: t("gettingStarted.model.open"), run: () => navigate("system", {}, "default-model") }} />
         <Step index={3} state={steps.key.state} title={t("gettingStarted.key.title")} body={t("gettingStarted.key.body")} action={keyAction} />
         <Step index={4} state={steps.session.state} title={t("gettingStarted.session.title")} body={t("gettingStarted.session.body")} action={sessionAction} />

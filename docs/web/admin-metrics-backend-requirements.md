@@ -1,8 +1,9 @@
 # Administrator metrics: backend requirements
 
-Status: proposal for discussion with Core owners. Nothing in this document is
-implemented beyond the Web API routes it names as existing.
-[简体中文](admin-metrics-backend-requirements.zh-CN.md)
+Status reviewed 2026-09-28: P0 Agent/Tool aggregates (BE-8) remain unimplemented
+proposals. Core process metrics and node host history have landed through their
+own contracts, linked below. Other P1/P2 ideas are proposals, not an accepted
+implementation backlog or a statement that all observability is missing.
 
 The console is a management tool: Monitor (Overview, Agent metrics, Sandbox
 metrics, Session log) leads. It reads only the Web API (`/core/v1/**`,
@@ -28,7 +29,7 @@ the browser work.
 | --- | --- | --- |
 | Overview | `GET /summary` (per project: asset counts, Sessions by status, usage, coverage, last activity); `/core/v1/sandbox` deployment and nodes; each project's Session list for the 24-hour activity chart and the Sessions needing attention | Session lists stop once they pass the 24-hour window and have found every Session the summary counts as needing attention, at most 1,000 per project; projects idle since before the window are not read |
 | Agent metrics | `GET /summary` to skip idle projects; each project's Session list, then Turns and Items of the most recently active Sessions through the project's scope; `GET /summary?group_by=key` for usage by API key | 2,000 Sessions listed per project; 200 Sessions read per load, 10 Turn pages and 5 Item pages per Session, 15 s per Session and 45 s per load |
-| Sandbox metrics | `/core/v1/sandbox` nodes and allocations; `GET /core/v1/sandbox/runtime-observations` (every project); each hosted Session read by ID through its project; Runtime history per hosted Session | 100 hosted Sessions read per refresh; history covers at most 24 hosted Sessions; host figures are free memory/disk and CPU count only |
+| Sandbox metrics | `/core/v1/sandbox` nodes and allocations; `GET /core/v1/sandbox/runtime-observations` (every project); each hosted Session read by ID through its project; Runtime history per hosted Session | 100 hosted Sessions read per refresh; history covers at most 24 hosted Sessions; node host observations and history are available through the separate node-detail contract below |
 
 Consequences the console states in its help tips and warnings:
 
@@ -75,22 +76,14 @@ Per bucket and tool (`function` name, MCP `server_label` + name, shell command,
 web search, Subagent): calls, failures, and duration where the Item reports one.
 This replaces the Item fan-out.
 
-### P1 — Core process and host status
+### Delivered — Core process metrics
 
-The Overview shows Core itself beside its sandbox hosts. Core runs no
-sandboxes, so it has no slots; the operator asked for its CPU and memory
-instead. Nothing reports them, so the console shows the Web API's reachability
-and maintenance state and "Not reported" for CPU and memory.
-
-`GET /core/v1/core-status`
-
-- Core version and process uptime.
-- Process CPU utilization (ratio of one core, averaged over a short window) and
-  the host's CPU cores and utilization.
-- Process resident memory, host memory total and available.
-- Database reachability and connection-pool use.
-- `null` for any figure the platform cannot read (for example inside a
-  restricted container), never zero.
+`GET /core/v1/metrics?range=1h|6h|24h|7d` reports Core process CPU/RSS and
+limits, execution queue/slots, PostgreSQL and background-job measurements.
+See [Core metrics](../../contracts/agents-api/core-metrics.md) for exact units,
+nulls and retention. The earlier proposed `/core/v1/core-status` route was not
+adopted. Whole-host CPU is not a Core process metric; additional host fields are
+separate proposals rather than missing parts of BE-8.
 
 ### P1 — Session activity and attention
 
@@ -114,12 +107,13 @@ This is what hosted consoles call "requests" and "error rate". Store rollups in
 the existing PostgreSQL database with bounded retention, following the Runtime
 history pattern, with the optional OTLP exporter as a secondary sink.
 
-### P1 — Node utilization and history
+### Delivered — Node host observations and history
 
-- Extend `GET /core/v1/sandbox/nodes` with host CPU utilization, memory used and
-  total, disk used and total, node software version and process uptime.
-- `GET /core/v1/sandbox/nodes/{id}/history?start=&end=&step=` for active,
-  retained and reserved sandboxes and host utilization over time.
+`GET /core/v1/sandbox/nodes/{node_id}?range=1h|6h|24h` includes node host
+history. See [node host history](../../contracts/agents-api/node-host-history.md)
+for available fields, nulls, freshness and aggregation. The earlier proposed
+`/nodes/{id}/history` route was not adopted. Further list fields and allocation
+series require a separate agreed scope; they are not prerequisites for BE-8.
 
 ### P2 — Hosted Runtime rows with their Sessions
 

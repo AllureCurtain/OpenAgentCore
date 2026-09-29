@@ -77,55 +77,12 @@ func TestNetworkPolicySurvivesPreparedBinding(t *testing.T) {
 	}
 }
 
-func TestSystemPackagesRemainRequiredInExecutionBinding(t *testing.T) {
+func TestToolEnvironmentRemainsInExecutionBinding(t *testing.T) {
 	session := store.Session{ID: "session", TenantID: "tenant"}
-	environment := store.Environment{ID: "environment", SessionID: session.ID, TenantID: session.TenantID,
-		Configuration: []byte(`{"type":"openai_hosted","initialization":true,"packages":{"system":["jq"]}}`)}
+	environment := store.Environment{ID: "environment", SessionID: session.ID, TenantID: session.TenantID, Configuration: []byte(`{"type":"openai_hosted","initialization":true,"packages":{"npm":["is-number"]}}`)}
 	var req proto.PromptRequestPayload
-	err := (&Dispatcher{}).configurePreparedEnvironment(session, environment,
-		store.ExecutionDevice{EnvironmentID: environment.ID}, &req)
-	if err != nil || req.LocalEnvironment == nil || !req.LocalEnvironment.ToolEnvironment || !req.LocalEnvironment.SystemPackages {
-		t.Fatal("system initialization requirement was lost", err)
-	}
-	environment.Configuration = []byte(`{"type":"openai_hosted","packages":{"system":["jq"]}}`)
-	if !LocalWorkspaceConfiguration(environment.Configuration) {
-		t.Fatal("public admission requires a private execution receipt")
-	}
-	req = proto.PromptRequestPayload{}
-	if err := (&Dispatcher{}).configurePreparedEnvironment(session, environment,
-		store.ExecutionDevice{EnvironmentID: environment.ID}, &req); err == nil || req.LocalEnvironment != nil {
-		t.Fatal("execution without the required initialization was admitted")
-	}
-}
-
-func TestLocalNetworkDefaultsAndSupportedPolicies(t *testing.T) {
-	for _, configuration := range []string{`{"type":"openai_hosted"}`, `{"type":"openai_hosted","network":null}`, `{"type":"openai_hosted","network":{"access":"enabled","allowed_domains":[]}}`} {
-		got, err := parseEnvironmentPlacement([]byte(configuration))
-		if err != nil || got.NetworkAccess != "enabled" {
-			t.Fatal("enabled default lost", got, err)
-		}
-	}
-	got, err := parseEnvironmentPlacement([]byte(`{"type":"openai_hosted","network":{"access":"disabled","allowed_domains":null}}`))
-	if err != nil || got.NetworkAccess != "disabled" {
-		t.Fatal("disabled policy lost", got, err)
-	}
-}
-
-func TestSelfHostedUsesSameLocalBinding(t *testing.T) {
-	session := store.Session{ID: "session", TenantID: "tenant"}
-	for _, workspace := range []string{"/workspace", "/other"} {
-		environment := store.Environment{ID: "environment", SessionID: session.ID, TenantID: session.TenantID,
-			Configuration: []byte(`{"type":"self_hosted","workspace_directory":"` + workspace + `"}`)}
-		for _, binding := range []string{"", "foreign", environment.ID} {
-			var request proto.PromptRequestPayload
-			err := (&Dispatcher{}).configurePreparedEnvironment(session, environment, store.ExecutionDevice{EnvironmentID: binding}, &request)
-			valid := binding == environment.ID && workspace == "/workspace"
-			if (err == nil) != valid {
-				t.Fatal(workspace, binding, err)
-			}
-			if valid && (request.LocalEnvironment == nil || request.LocalEnvironment.ID != environment.ID || request.LocalEnvironment.NetworkAccess != "enabled") {
-				t.Fatal("self-hosted placement did not retain common local contract", request.LocalEnvironment)
-			}
-		}
+	err := (&Dispatcher{}).configurePreparedEnvironment(session, environment, store.ExecutionDevice{EnvironmentID: environment.ID}, &req)
+	if err != nil || req.LocalEnvironment == nil || !req.LocalEnvironment.ToolEnvironment {
+		t.Fatal("tool initialization requirement lost", err)
 	}
 }

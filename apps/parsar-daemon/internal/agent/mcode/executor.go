@@ -32,7 +32,6 @@ func NewExecutorFactory(config *WorkspaceConfig) agent.ExecutorFactory {
 	var frozen *WorkspaceConfig
 	if config != nil {
 		value := *config
-		value.ProtectedDirs = append([]string(nil), config.ProtectedDirs...)
 		value.AllowedDomains = append([]string(nil), config.AllowedDomains...)
 		frozen = &value
 	}
@@ -55,7 +54,11 @@ func NewExecutorFactory(config *WorkspaceConfig) agent.ExecutorFactory {
 		if err != nil {
 			return nil, err
 		}
-		return newExecutor(ctx, req, opts, binary)
+		resource, err := newExecutor(ctx, req, opts, binary)
+		if resource == nil {
+			return nil, err
+		}
+		return resource, err
 	}
 }
 

@@ -58,8 +58,10 @@ not a different contract or authority level. The documented extension remains se
   work merely because a connection closed.
 - Resume only the bound Session's native history. Missing, ambiguous or foreign
   history fails closed. Device identity is not native Session ownership.
-- Native tools and public Files operate on the same authorized workspace.
-  Generated code cannot access daemon/model credentials or foreign history.
+- Native tools and public Files use the same bound workspace. Public Files retains
+  tenant and path authorization. Native tools run with the starting account's
+  permissions; daemon/model credentials are not isolated from that same user.
+  Managed outer Environments must exclude other tenants' resources.
 - Emit verified measurements; absence of native usage detail is not a zero value.
   Explicit unsupported operations remain implementation gaps in protocol coverage.
 

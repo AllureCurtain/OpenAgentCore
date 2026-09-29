@@ -68,7 +68,6 @@ def prepare_runtime():
     # E2B finalization makes /usr/local world-writable after template commands.
     subprocess.run(['chown', '-R', 'root:root', '/usr/local'], check=True)
     subprocess.run(['chmod', '-R', 'go-w', '/usr/local'], check=True)
-    os.chmod('/usr/local/bin/oac-tool-root', 0o555)
     for protected in ['/usr/bin/envd', '/etc/inittab', '/etc/init.d/rcS']:
         if protected == '/etc/init.d/rcS' and not Path(protected).exists():
             continue

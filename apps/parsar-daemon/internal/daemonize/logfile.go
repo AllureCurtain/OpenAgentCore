@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"github.com/MiniMax-AI-Dev/parsar/internal/runtimefs"
 	"io"
 	"os"
 	"path/filepath"
@@ -137,11 +138,11 @@ func lastLinesOffset(f *os.File, n int) (int64, error) {
 // instead of "no such file".
 func EnsureLogFile(path string) error {
 	if dir := filepath.Dir(path); dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
+		if err := runtimefs.EnsurePrivateDir(dir); err != nil {
 			return fmt.Errorf("daemonize.EnsureLogFile: %w", err)
 		}
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	f, err := openPrivateLog(path)
 	if err != nil {
 		return fmt.Errorf("daemonize.EnsureLogFile: %w", err)
 	}
@@ -152,7 +153,7 @@ func EnsureLogFile(path string) error {
 // trailing newline if missing. Returns errors despite the name —
 // kept short because it's used in startup hot paths.
 func MustWriteLine(path string, line string) error {
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	f, err := openPrivateLog(path)
 	if err != nil {
 		return err
 	}
@@ -167,4 +168,13 @@ func MustWriteLine(path string, line string) error {
 		}
 	}
 	return bw.Flush()
+}
+
+func openPrivateLog(path string) (*os.File, error) {
+	root, err := os.OpenRoot(filepath.Dir(path))
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	return runtimefs.OpenPrivate(root, filepath.Base(path), os.O_APPEND|os.O_CREATE|os.O_WRONLY)
 }

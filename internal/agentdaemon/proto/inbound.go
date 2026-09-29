@@ -31,7 +31,7 @@ const (
 	TypeToolCall = "tool_call"
 
 	// TypePermissionRequest carries an agent's request for human
-	// approval. Envelope.ID = "perm_<8hex>" minted by the daemon.
+	// approval. Envelope.ID is the RunID; payload.request_id identifies the decision.
 	TypePermissionRequest = "permission_request"
 
 	// TypePermissionCancel signals the agent withdrew an earlier
@@ -43,7 +43,7 @@ const (
 	// answers from a closed list before the agent can continue. Used
 	// to intercept Claude Code's built-in AskUserQuestion tool so the
 	// daemon doesn't deadlock waiting for a tool_result no one will
-	// send. Envelope.ID = "ask_<8hex>" minted by the daemon.
+	// send. Envelope.ID is the RunID; payload.ask_id identifies the decision.
 	TypePromptForUserChoice = "prompt_for_user_choice"
 
 	// TypeInteractionDecisionAck confirms that the daemon-side agent
@@ -108,10 +108,8 @@ type ToolCallPayload struct {
 // approval. RequestID is the daemon-minted handle used to route a later
 // decision. It lives in the payload because Envelope.ID is the run ID used
 // by the server gateway to deliver the request to the active run subscriber.
-// Readers still accept legacy frames that omit RequestID and put the request
-// handle in Envelope.ID.
 type PermissionRequestPayload struct {
-	RequestID string         `json:"request_id,omitempty"`
+	RequestID string         `json:"request_id"`
 	Tool      string         `json:"tool"`
 	Title     string         `json:"title"`
 	Detail    string         `json:"detail,omitempty"`
@@ -161,41 +159,11 @@ type PromptForUserChoiceQuestion struct {
 // the originating Claude Code tool_use id; empty when the call came
 // through the control_request channel (CCRequestID then identifies the
 // daemon-side waiter instead but it doesn't ride on the wire).
-//
-// The legacy single-question fields (Question / Header / MultiSelect /
-// Options) stay on the wire so older server/db snapshots can still be
-// decoded. New code writes Questions; readers must call
-// EffectiveQuestions to get a unified view across both shapes.
 type PromptForUserChoicePayload struct {
 	AskID            string                        `json:"ask_id"`
-	Questions        []PromptForUserChoiceQuestion `json:"questions,omitempty"`
+	Questions        []PromptForUserChoiceQuestion `json:"questions"`
 	ToolUseID        string                        `json:"tool_use_id,omitempty"`
 	AutoResolutionMs *uint64                       `json:"auto_resolution_ms,omitempty"`
-
-	// Legacy single-question fields — read-only on the new path. Empty
-	// when Questions is populated.
-	Question    string                      `json:"question,omitempty"`
-	Header      string                      `json:"header,omitempty"`
-	MultiSelect bool                        `json:"multi_select,omitempty"`
-	Options     []PromptForUserChoiceOption `json:"options,omitempty"`
-}
-
-// EffectiveQuestions returns the question list a consumer should
-// render. Prefers the new Questions slice; falls back to the legacy
-// single-question fields so old payloads still work after a restart.
-func (p PromptForUserChoicePayload) EffectiveQuestions() []PromptForUserChoiceQuestion {
-	if len(p.Questions) > 0 {
-		return p.Questions
-	}
-	if p.Question == "" && len(p.Options) == 0 {
-		return nil
-	}
-	return []PromptForUserChoiceQuestion{{
-		Header:      p.Header,
-		Question:    p.Question,
-		MultiSelect: p.MultiSelect,
-		Options:     p.Options,
-	}}
 }
 
 // TokenUsage is a complete cumulative measurement for the current execution.
@@ -229,7 +197,9 @@ type UsagePayload struct {
 
 // ErrorPayload reports a prompt-level failure.
 type ErrorPayload struct {
-	Error string `json:"error"`
+	Error      string `json:"error"`
+	Code       string `json:"code,omitempty"`
+	HTTPStatus *int   `json:"http_status,omitempty"`
 }
 
 // DonePayload mirrors connector.PromptOutput shape. Redeclared (not
@@ -267,7 +237,6 @@ type AgentKindCapabilities struct {
 	ToolObservations               bool `json:"tool_observations,omitempty"`
 	EnvironmentNone                bool `json:"environment_none,omitempty"`
 	LocalEnvironment               bool `json:"local_environment,omitempty"`
-	LocalEnvironmentNetworkPolicy  bool `json:"local_environment_network_policy,omitempty"`
 	Preparation                    bool `json:"preparation,omitempty"`
 	WorkspaceReadPreparation       bool `json:"workspace_read_preparation,omitempty"`
 	WorkspaceOutputExport          bool `json:"workspace_output_export,omitempty"`
@@ -300,14 +269,11 @@ type SupportedAgentKind struct {
 	Capabilities AgentKindCapabilities `json:"capabilities,omitempty"`
 }
 
-// HeartbeatPayload is the daemon's liveness ping. supported_agent_kinds
-// is preferred over the legacy claude_available flag; old daemons may
-// still send only claude_available, and the server infers claude_code
-// support.
+// HeartbeatPayload advertises only explicit engine descriptors. Missing
+// supported_agent_kinds establishes no engine availability or capabilities.
 type HeartbeatPayload struct {
 	Timestamp           int64                `json:"ts"`
 	ActiveRequests      int                  `json:"active_requests"`
 	DaemonVersion       string               `json:"daemon_version,omitempty"`
-	ClaudeAvailable     bool                 `json:"claude_available,omitempty"`
 	SupportedAgentKinds []SupportedAgentKind `json:"supported_agent_kinds,omitempty"`
 }

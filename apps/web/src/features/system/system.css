@@ -153,6 +153,15 @@
   gap: 6px;
 }
 
+.system-model-observations {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--grid-line);
+}
+
 .system-model-facts {
   margin: 0;
 }

@@ -36,9 +36,10 @@ func TestLocalWorkspaceBindingNetworkAndRequiredHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	config.Workspace.PublicDirectory = alias
-	if _, _, err := prepare(config, req); err == nil {
-		t.Fatal("accepted mutable workspace alias")
+	if _, _, err := prepare(config, req); err != nil {
+		t.Fatal("same workspace alias rejected", err)
 	}
+
 }
 
 func TestRestrictedWorkspacePolicyUsesExactBoundAuthority(t *testing.T) {
@@ -47,9 +48,8 @@ func TestRestrictedWorkspacePolicyUsesExactBoundAuthority(t *testing.T) {
 	config.Workspace.AllowedDomains = []string{"Example.com", "api.example.com", "example.com"}
 	req := workspaceRequest()
 	req.LocalEnvironment = &proto.LocalEnvironment{ID: "environment", NetworkAccess: "restricted", AllowedDomains: []string{"api.example.com", "EXAMPLE.COM"}}
-	start, _, err := prepare(config, req)
-	if err != nil || !slices.Equal(start.Workspace.AllowedDomains, []string{"api.example.com", "example.com"}) {
-		t.Fatal("native policy lost exact bound domains", start, err)
+	if _, _, err := prepare(config, req); err == nil {
+		t.Fatal("Runtime must not promise inner network isolation")
 	}
 	for _, domains := range [][]string{{"example.com"}, {"example.org"}, nil} {
 		req.LocalEnvironment.AllowedDomains = domains

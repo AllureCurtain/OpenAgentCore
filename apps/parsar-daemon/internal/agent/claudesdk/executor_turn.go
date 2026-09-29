@@ -48,6 +48,8 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 	}
 	var content strings.Builder
 	var result *bridgeEvent
+	var classifiedFailure error
+	var engineCode, failedResultID string
 	var usage proto.Usage
 	var usageSession string
 	usageIDs := map[string]bool{}
@@ -147,6 +149,14 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 			usage = nextUsage
 			usageIDs[event.ResultID] = true
 			usageSession = event.SessionID
+			failedResultID = ""
+			var nativeResult struct {
+				Subtype string `json:"subtype"`
+				IsError bool   `json:"is_error"`
+			}
+			if json.Unmarshal(event.Usage, &nativeResult) == nil && (nativeResult.Subtype == "error_during_execution" || nativeResult.Subtype == "success" && nativeResult.IsError) {
+				failedResultID = event.ResultID
+			}
 			emit(proto.TypeUsage, proto.UsagePayload{Usage: usage})
 		case "result":
 			if !s.matchesInputSession(event.SessionID) || event.SessionID == "" || start.Resume != "" && event.SessionID != start.Resume || usageSession != "" && event.SessionID != usageSession || !s.functionsComplete(false) || !s.steeringComplete() || !mcp.complete() || !commands.complete() {
@@ -160,6 +170,13 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 		case "error":
 			cancelled = event.Code == "cancelled"
 			failure = bridgeFailure(event.Code)
+			if event.Code == "execution_failed" && event.SessionID != "" && s.matchesInputSession(event.SessionID) &&
+				event.SessionID == usageSession && event.ResultID != "" && event.ResultID == failedResultID {
+				var code string
+				_ = json.Unmarshal(event.EngineErrorCode, &code)
+				engineCode, _ = proto.NormalizeEngineFailure(code, nil)
+				classifiedFailure = failure
+			}
 			terminal = true
 		default:
 			failure = fmt.Errorf("claudesdk: unknown SDK bridge event")
@@ -206,7 +223,12 @@ func (s *session) runTurn(start startRequest, out chan<- proto.Envelope) {
 	}
 	close(s.settled)
 	if failure != nil {
-		emit(proto.TypeError, proto.ErrorPayload{Error: failure.Error()})
+		// A valid Turn boundary replaces the former process-exit boundary.
+		// A native diagnostic does not itself confirm cancellation or reuse.
+		if failure != classifiedFailure || !settlementReceived {
+			engineCode = ""
+		}
+		emit(proto.TypeError, proto.ErrorPayload{Error: failure.Error(), Code: engineCode})
 	}
 	emit(proto.TypeDone, s.outcome)
 	if outputLost {

@@ -1,43 +1,35 @@
-import { SandboxManager } from './dist/sandbox.mjs';
 import { spawn } from 'node:child_process';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { isIP } from 'node:net';
-import { dirname, join } from 'node:path';
+import { dirname, join, isAbsolute, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const here = dirname(fileURLToPath(import.meta.url));
 const profile = JSON.parse(readFileSync(process.argv[2], 'utf8'));
-if (profile.workspace !== process.argv[3] || profile.workspace !== '/workspace')
+if (!isAbsolute(profile.workspace) || normalize(profile.workspace) !== profile.workspace || (process.argv[3] && profile.workspace !== process.argv[3]))
   throw new Error('Workspace profile does not match execution binding');
-if (!['disabled','enabled','restricted'].includes(profile.network)) throw new Error('Invalid network policy');
+if (profile.network !== 'enabled') throw new Error('Invalid network policy');
 const domains=profile.allowedDomains??[];
 const hostname=/^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/i;
 if (!Array.isArray(domains) || (profile.network==='restricted'
  ? domains.length<1 || domains.length>100 || domains.some(host=>typeof host!=='string'||!hostname.test(host)||host.trim()!==host||isIP(host)!==0)
  : domains.length!==0)) throw new Error('Invalid network domains');
-const baseEnv = {PATH:'/usr/local/bin:/usr/bin:/bin',HOME:profile.scratch,TMPDIR:profile.scratch,LANG:'C.UTF-8'};
-if (profile.systemPackages) {
- if (!profile.toolEnvironment) throw new Error('System packages require initialized tool configuration');
- baseEnv.OAC_RUNTIME_TOOL_SCRATCH=profile.scratch;
+const baseEnv = {...process.env};
+if (profile.toolEnv !== undefined) {
+ if (!profile.toolEnv || typeof profile.toolEnv !== 'object' || Array.isArray(profile.toolEnv) || Object.values(profile.toolEnv).some(value=>typeof value!=='string')) throw new Error('Invalid tool environment');
+ Object.assign(baseEnv,profile.toolEnv);
 }
+if (profile.capabilityRoot && (typeof profile.capabilityRoot !== 'string' || !isAbsolute(profile.capabilityRoot) || normalize(profile.capabilityRoot) !== profile.capabilityRoot || profile.capabilityRoot === '/' || /[\\\x00-\x1f\x7f]/.test(profile.capabilityRoot))) throw new Error('Invalid capability root');
+if (profile.skills && !profile.capabilityRoot) throw new Error('Missing capability root');
 let child;
 let cancelled=false;
-const cancel=()=>{cancelled=true;child?.kill('SIGKILL');};
+const cancel=()=>{cancelled=true;child?.kill('SIGTERM');};
 process.on('SIGTERM',cancel);process.on('SIGINT',cancel);
 try {
  mkdirSync(profile.scratch,{recursive:true});
- await SandboxManager.initialize({
-  network:{allowedDomains:domains,deniedDomains:profile.network==='disabled'?['*']:[],allowAll:profile.network==='enabled',strictAllowlist:true,allowAllUnixSockets:false,allowLocalBinding:false},
-  filesystem:{denyRead:profile.protectedDirs,allowWrite:[profile.workspace,profile.scratch,...(profile.toolEnvironment ? ['/environment/packages'] : [])],denyWrite:[...(profile.skills ? ["/environment/initialization/capabilities"] : []),...(profile.systemPackages ? ['/environment/packages/system'] : [])]},
-  seccomp:{applyPath:join(here,'dist/vendor/seccomp/x64/apply-seccomp')},
- },undefined,false);
- const quote=s=>"'"+s.replaceAll("'","'\\''")+"'";
- const command=[process.execPath,join(here,'dist/worker.mjs'),profile.workspace,...(profile.toolEnvironment ? ['--tool-environment'] : []),...(profile.systemPackages ? ['--system-packages'] : [])].map(quote).join(' ');
- const wrapped=await SandboxManager.wrapWithSandbox(command,'/bin/bash',undefined,undefined,{baseEnv,sandboxTempDir:profile.scratch});
  if (cancelled) throw new Error('Cancelled before workspace tool start');
- child=spawn('/bin/bash',['-c','exec '+wrapped],{cwd:profile.workspace,env:baseEnv,stdio:['pipe','pipe','pipe']});
+ child=spawn(process.execPath,[join(here,'dist/worker.mjs'),profile.workspace],{cwd:profile.workspace,env:baseEnv,stdio:['pipe','pipe','pipe']});
  process.stdin.pipe(child.stdin);child.stdout.pipe(process.stdout);child.stderr.pipe(process.stderr);
  child.stdin.on('error',()=>cancel());
  const status=await new Promise((resolve,reject)=>{child.on('error',reject);child.on('close',resolve);});
  process.exitCode=cancelled?1:(status??1);
 } catch(error) {process.stderr.write(String(error)+'\n');process.exitCode=1;}
-finally {await SandboxManager.reset();}

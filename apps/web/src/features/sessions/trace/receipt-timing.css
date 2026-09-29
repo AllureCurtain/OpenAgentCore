@@ -1,0 +1,5 @@
+.trace-receipt-timing { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line); }
+.trace-detail-timing .trace-receipt-timing > p { margin: 0 0 12px; }
+.trace-receipt-item + .trace-receipt-item { margin-top: 16px; }
+.trace-receipt-item dl { display: grid; gap: 8px; margin: 8px 0 0; }
+.trace-receipt-item dl > div { display: grid; grid-template-columns: minmax(110px, 38%) minmax(0, 1fr); gap: 12px; }

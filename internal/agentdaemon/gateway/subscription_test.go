@@ -33,28 +33,6 @@ func TestDurableSubscriptionOverflowIsExplicitAndIsolated(t *testing.T) {
 	}
 }
 
-func TestProductSubscriptionRetainsBestEffortBuffer(t *testing.T) {
-	s := NewSession(newFakeConn(), "device", "tenant", proto.Version, NewRegistry(), nil)
-	defer s.Close("test finished")
-	events, _ := s.Subscribe("product")
-	for range 33 {
-		s.dispatchToSubscriber(proto.Envelope{ID: "product", Type: proto.TypeDelta})
-	}
-	if len(events) != 32 {
-		t.Fatal("product buffer changed")
-	}
-	for range 32 {
-		<-events
-	}
-	s.dispatchToSubscriber(proto.Envelope{ID: "product", Type: proto.TypeDone})
-	if event := <-events; event.Type != proto.TypeDone {
-		t.Fatal(event.Type)
-	}
-	if _, ok := <-events; ok {
-		t.Fatal("terminal stream not closed")
-	}
-}
-
 func TestSubscriptionCloseAndDispatchAreSerialized(t *testing.T) {
 	for range 100 {
 		s := NewSession(newFakeConn(), "device", "tenant", proto.Version, NewRegistry(), nil)

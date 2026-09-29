@@ -26,9 +26,12 @@ import { useConsoleNavigation } from "../../lib/console-navigation";
 import { formatClock, formatCompact, formatInteger, formatPercent, formatRelative, MISSING } from "../../lib/format";
 import { ProjectName, useProjects } from "../../lib/projects";
 import { capacitySummary, coreStatus, type CoreStatus } from "../fleet/fleet-model";
+import { FleetReadNotice, fleetObservationStale } from "../fleet/FleetReadNotice";
+import { SandboxResetNotice } from "../fleet/SandboxResetNotice";
 import { fleetSnapshot, useSandboxFleet, type FleetSnapshot, type FleetState } from "../fleet/use-sandbox-fleet";
 import { type InProject } from "../metrics/project-sessions";
 import { FleetTopology, TOPOLOGY_LIMIT, type CloudHost } from "./FleetTopology";
+import { SessionFailure } from "../sessions/session-diagnostics";
 import { useWaitingFor } from "../sessions/SessionStatus";
 import { GettingStarted } from "./GettingStarted";
 import { type OverviewData } from "./overview-loader";
@@ -53,7 +56,7 @@ export const OVERVIEW_REFRESH_MS = 30_000;
 const ATTENTION_LIMIT = 8;
 
 const serviceTone: Record<ServiceHealth, Tone> = { healthy: "ok", degraded: "warning", down: "danger", unknown: "pending" };
-const coreTone: Record<CoreStatus, Tone> = { checking: "pending", running: "ok", maintenance: "warning", unreachable: "danger" };
+const coreTone: Record<CoreStatus, Tone> = { checking: "pending", running: "ok", unreachable: "danger" };
 
 type LoadState =
   | { status: "loading"; data: OverviewData | null }
@@ -99,7 +102,7 @@ export function OverviewPage() {
   const projectsFailed = projectsState.state.status === "failed" || projectsState.refreshError !== null;
   const installation = useQuery(installationQuery);
   const { state, refresh, refreshing, failure } = useOverviewData(projects, projectsReady);
-  const { state: fleetState, refresh: refreshFleet } = useSandboxFleet();
+  const { state: fleetState, refresh: refreshFleet, deployment } = useSandboxFleet();
   const fleet = fleetSnapshot(fleetState);
   const data = projectsReady ? state.data : null;
   const refreshAll = () => { projectsState.refresh(); if (projectsReady) refresh(); refreshFleet(); void installation.refetch(); };
@@ -130,7 +133,7 @@ export function OverviewPage() {
     capacity,
     recentFailedSessions: failuresLastHour,
   });
-  const core = coreStatus({ webApiReachable: reachable, maintenance: fleet ? fleet.deployment.maintenance : null });
+  const core = coreStatus({ webApiReachable: reachable });
   const offline = capacity ? capacity.nodes - capacity.online : 0;
   const degraded = capacity ? capacity.online - capacity.available : 0;
   const serviceReason = reachable === false
@@ -171,9 +174,11 @@ export function OverviewPage() {
         actions={<RefreshButton refreshing={loading} updatedAt={updatedAt ? formatClock(updatedAt, locale) : null} onClick={refreshAll} />}
       />
       <PageBody>
+        <SandboxResetNotice deployment={deployment.data} failed={deployment.isError} onRetry={() => void deployment.refetch()} />
+        <FleetReadNotice state={fleetState} onRetry={refreshFleet} />
         <InstallationNotice installation={installation.data} />
         {installation.isError ? <ReadFailure onRetry={() => void installation.refetch()} partial={installation.data !== undefined} /> : null}
-        <GettingStarted fleet={fleetState} sessions={sessionCount} localOnly={installation.isError ? "failed" : installation.data?.local_only} onRetryInstallation={() => void installation.refetch()} />
+        <GettingStarted sandboxReset={deployment.isError ? "failed" : deployment.data ? deployment.data.reset !== null : undefined} fleet={fleetState} sessions={sessionCount} localOnly={installation.isError ? "failed" : installation.data?.local_only} onRetryInstallation={() => void installation.refetch()} />
         {(readFailed || summaryError !== null) && data !== null ? <ReadFailure onRetry={refreshAll} partial /> : null}
         <div className="overview-tiles" aria-label={t("kpi.label")}>
           <MetricTile
@@ -334,9 +339,9 @@ function FleetCard({ fleetState, core, localOnly }: { fleetState: FleetState; co
         </div>
         {fleetState.status === "ready" ? (
           !fleet?.deployment.provider
-            ? <button className="button outline" type="button" onClick={() => navigate("nodes")}>{t("fleet.setUp")}</button>
+            ? <button className="button outline" type="button" onClick={() => navigate("system", { id: "sandbox" })}>{t("fleet.setUp")}</button>
             : cloud || hosts.length
-              ? <button className="button outline" type="button" onClick={() => navigate("nodes")}>{cloud ? t("fleet.cloud.openBackend") : t("fleet.manageNodes")}</button>
+              ? <button className="button outline" type="button" onClick={() => cloud ? navigate("system", { id: "sandbox" }) : navigate("nodes")}>{cloud ? t("fleet.cloud.openBackend") : t("fleet.manageNodes")}</button>
               : <button className="button outline" type="button" onClick={() => navigate("nodes", {}, localOnly ? undefined : "add-node")}>{t(localOnly ? "fleet.manageNodes" : "fleet.addNode")}</button>
         ) : null}
       </header>
@@ -344,10 +349,10 @@ function FleetCard({ fleetState, core, localOnly }: { fleetState: FleetState; co
         <FleetTopology
           nodes={hosts}
           cloud={cloud}
-          onOpenBackend={() => navigate("nodes")}
+          onOpenBackend={() => navigate("system", { id: "sandbox" })}
           coreLabel={t(`coreStatus.${core}`)}
           coreTone={coreTone[core]}
-          stale={fleetState.status === "ready" && fleetState.error !== null}
+          stale={fleetObservationStale(fleetState)}
           onOpenNode={(node) => navigate("nodes", { id: node.id })}
           onOpenSandboxMetrics={() => navigate("sandbox-metrics")}
           onOpenCoreMetrics={() => navigate("core-metrics")}
@@ -496,7 +501,7 @@ function AttentionTable({ sessions, expected, unread, truncated, now, onOpen }: 
                 </th>
                 <td><ProjectName project={entry.project} /></td>
                 <td><StatusDot tone={failed ? "danger" : "neutral"} label={t(`sessions.${failed ? "failed" : "requires_action"}`)} /></td>
-                <td className="table-truncate" title={failed ? session.error ?? undefined : waitingFor(session).join(" · ")}>{failed ? session.error || t("attention.noError") : waitingFor(session).join(" · ")}</td>
+                <td className="table-truncate" onClick={(event) => event.stopPropagation()}>{failed ? <SessionFailure projectId={entry.project.id} session={session} truncate /> : waitingFor(session).join(" · ")}</td>
                 <td className="numeric">{formatRelative(session.last_active_at, now, locale)}</td>
               </tr>
             );

@@ -32,23 +32,27 @@ Native background
 execution, alternate agent types, worktree isolation and per-call model overrides
 are not admitted in this profile.
 
-Workspace children use Bash under the existing WorkspaceProfile hooks and native
-sandbox. They do not receive unrestricted private-file tools. The parent retains
-its existing workspace tool policy. Functions and MCP with subagents are not
-qualified combinations and are rejected explicitly. This does not affect the
-existing functions/MCP paths without subagents.
+Workspace children use native Bash with the same launching-user permissions as
+the parent. The daemon and adapter add no inner filesystem, permission or network
+sandbox. Workspace hooks retain their execution and event responsibilities, but
+are not a private-file boundary. Tools can access Runtime state that the host user
+can access. Managed isolation belongs to the outer Environment. Functions and MCP
+with subagents are not qualified combinations and are rejected explicitly; this
+does not affect existing functions/MCP paths without subagents. Claude on Windows
+requires Git Bash; native Windows validation remains pending.
 
-The adapter mechanism qualification uses real Kimi calls in the accepted Docker
-Runtime, including two child identities, their own histories, workspace writes,
-private credential/history/proc-read denial, strict concurrent admission and
-same-ID continuation from a new process. These checks are distinct from the
-Core public resource, pagination and isolation acceptance performed by the
-integration suite.
+The earlier adapter mechanism qualification is historical evidence for its tested
+Docker Runtime and binaries. It used real Kimi calls for two child identities,
+their histories, workspace writes, private credential/history/proc-read denial,
+strict concurrent admission and same-ID continuation from a new process. Its
+private-file denial results describe the former inner sandbox and are not current
+behavior. They do not qualify the current bypass execution or additional native
+platforms. Core public resource and pagination acceptance remain separate checks.
 
 Cancellation uses an adapter-owned effect receipt only after the existing query
 owner confirms native process exit. The fixed native history can end at a tool
 call without a cancellation result or timestamp. Each receipt is linked into
-the protected native history directory atomically, without overwriting an
+the native history directory atomically, without overwriting an
 earlier receipt, and records the child, own Turn, spawn call and confirmed effect
 time. Native records remain unchanged. Replay uses that same timestamp; it
 never obtains a new cancellation time by observing an unfinished history. Child

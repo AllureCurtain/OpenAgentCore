@@ -77,7 +77,7 @@ func hostedSessionEnvironment(environment store.Environment) (v1.SessionEnvironm
 	directories := append([]string{}, cfg.CapabilityDirectories...)
 	return v1.SessionEnvironment{ID: environment.ID, Type: cfg.Type, CapabilityDirectories: &directories,
 		Network:  &v1.EnvironmentNetwork{Access: cfg.Network.Access, AllowedDomains: append([]string{}, cfg.Network.AllowedDomains...)},
-		Packages: func() *v1.EnvironmentPackages { value := packageMetadata(cfg.Packages); return &value }(), Files: &files, Plugins: &cfg.Plugins, Skills: &cfg.Skills}, nil
+		Packages: func() *v1.EnvironmentPackagesResponse { value := packageMetadata(cfg.Packages); return &value }(), Files: &files, Plugins: &cfg.Plugins, Skills: &cfg.Skills}, nil
 }
 
 // WithHostedEnvironments enables admission only for an operator-composed,

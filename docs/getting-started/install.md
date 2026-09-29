@@ -13,7 +13,8 @@ add nodes. Applications call Core's API with those keys.
 6. [Add a node](nodes.md).
 
 These pages describe the current source. Every bundle carries the docs that match it
-under `docs/`; if you install an older bundle, follow those.
+under `docs/`. This private project supports fresh installation and repair of the
+same release; historical-version upgrades and conversion are unsupported.
 
 ## Prerequisites
 
@@ -122,7 +123,7 @@ and rerunning `install.sh` accepts no flag except `--install-dir`.
 | `--web-port PORT` | `8080` | Loopback port of Web. Seeds `ports.web` |
 | `--install-dir DIR` | `~/.oac/core` | Absolute installation directory. It must be empty or missing |
 | `--config FILE` | | Seed `config.json` from a prepared file instead of the setting flags above (`--public-url`, the mode flags, `--native-core`, ports, `--core-url`) |
-| `--convert`, `--yes` | | [Convert an installation](operations.md#convert-an-earlier-installation) made before the OpenAgentCore rename; `--yes` skips the confirmation |
+
 
 #### Sandbox backend
 
@@ -485,8 +486,8 @@ at Add node.
 **Show Getting started** in the sidebar brings it back.
 
 An existing pre-rename installation at `~/.parsar/core` blocks a new default install.
-Use `./install.sh --convert` after draining it with the old release, or explicitly
-choose another `--install-dir`. See [conversion and retained backups](operations.md#convert-an-earlier-installation).
+Historical conversion is not supported. Preserve the existing installation and explicitly
+choose another `--install-dir`. See [installation version policy](operations.md#installation-version-policy).
 
 ## What the installer creates
 
@@ -501,7 +502,7 @@ The installation directory, `~/.oac/core` by default, mode `0700`:
 | `secrets/database.password` | PostgreSQL password |
 | `state.json` | Format 2, installation ID, Compose project name, image IDs and source commit. Written by the tools only |
 | `generated/` | Files derived from `config.json`: `compose.json`, `core.env`, `core-key-digests.json`, `settings.json`, `config.schema.json`, and `runtime-history.json` or the native Core unit when used. `oac apply` rewrites them; don't edit them |
-| `node-payload/` | The node and self-hosted installers, the manifest and the node files that Web serves at `/node-install/` |
+| `node-payload/` | The managed node installer, the manifest and the node files that Web serves at `/node-install/` |
 | `state/e2b/` | Private E2B receipts |
 | `native/` | Core binaries, with `--native-core` only |
 
@@ -525,4 +526,4 @@ Rerunning `./install.sh` from the same bundle repairs an installation: it reload
 missing images, restores a missing `oac` command, copies node files newly placed in
 `artifacts/`, applies `config.json` and starts the services. It accepts only
 `--install-dir`. It refuses a bundle from another release; see
-[Upgrades](operations.md#upgrade-an-installation).
+[installation version policy](operations.md#installation-version-policy).

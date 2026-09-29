@@ -12,7 +12,7 @@ func TestMCPHTTPBearerDiscoveryExcludesUnconfiguredSDK(t *testing.T) {
 	t.Setenv(claudeSDKEntrypointEnv, "")
 	checks := unavailableCLIChecks()
 	checks.Codex = func(context.Context, string) (string, error) { return "codex 0.153.4", nil }
-	discovery, err := discoverAgentCLIs(&runContext{stdout: &strings.Builder{}, stderr: &strings.Builder{}}, "test", checks)
+	discovery, err := discoverAgentCLIs(t.Context(), &runContext{stdout: &strings.Builder{}, stderr: &strings.Builder{}}, "test", checks)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,7 +32,7 @@ func TestMCPRequiredDiscoveryRequiresPinnedNative(t *testing.T) {
 	for _, version := range []string{"codex-cli 0.153.4", "codex-cli 0.153.3", "codex-cli 0.154.0"} {
 		checks := unavailableCLIChecks()
 		checks.Codex = func(context.Context, string) (string, error) { return version, nil }
-		got, err := discoverAgentCLIs(&runContext{stdout: &strings.Builder{}, stderr: &strings.Builder{}}, "test", checks)
+		got, err := discoverAgentCLIs(t.Context(), &runContext{stdout: &strings.Builder{}, stderr: &strings.Builder{}}, "test", checks)
 		if err != nil {
 			t.Fatal(err)
 		}

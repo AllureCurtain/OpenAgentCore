@@ -99,13 +99,13 @@ if [[ "$(go env GOVERSION)" != "$required_go" ]]; then
   exit 1
 fi
 for file in install.sh install.py configuration.py config_model.py config.schema.json oac_cli.py convert.py rename.py \
-    native_service.py node_install.py node_spec.py sandbox_setup.py distribution.py self_hosted_install.py \
+    native_service.py node_install.py node_spec.py node_generations.py sandbox_setup.py distribution.py \
     model_provider_sessions.py; do
   cp "deploy/install/$file" "$bundle/$file"
 done
 # Web owns the Standard sandbox sizes; the installer's first deployment uses this copy.
 cp apps/web/src/features/sandbox/standard-sizes.json "$bundle/standard-sizes.json"
-python3 scripts/core-distribution-manifest.py bootstraps "$bundle" "$source_epoch"
+python3 scripts/core-distribution-manifest.py bootstraps "$bundle" "$source_epoch" "$revision"
 # The bundled docs (BUNDLED_DOCS); links that leave them point at this commit on GitHub.
 python3 scripts/core-distribution-manifest.py docs . "$bundle" "$revision"
 mkdir -p "$bundle/runtime"
@@ -154,11 +154,8 @@ cp -R apps/web/dist "$stage/web/dist"
 cp services/core-console/Dockerfile "$stage/web/Dockerfile"
 build_image web "$stage/web"
 
-export AGENTS_EXECUTOR_BUILD_DIR="$stage/helpers"
-scripts/build-agents-executor.sh
 CGO_ENABLED=0 go build -mod=readonly -trimpath -o "$stage/oac-daemon" ./apps/parsar-daemon/cmd/parsar-daemon
 cp "$stage/oac-daemon" "$bundle/native/bin/oac-daemon"
-CGO_ENABLED=0 go build -mod=readonly -trimpath -o "$bundle/native/bin/oac-selfhost" ./services/agents-api/cmd/runtime
 codex_image="${CORE_DISTRIBUTION_CODEX_IMAGE:-}"
 claude_image="${CORE_DISTRIBUTION_CLAUDE_IMAGE:-}"
 mcode_image="${CORE_DISTRIBUTION_MCODE_IMAGE:-}"
@@ -183,7 +180,7 @@ else
   mcode_image="$(cat "$stage/mcode.id")"
 fi
 for image in "$codex_image" "$claude_image" "$mcode_image"; do
-  python3 scripts/core-distribution-manifest.py verify-runtime "$image" "$stage/oac-daemon" "$stage/helpers" "$source_dir"
+  python3 scripts/core-distribution-manifest.py verify-runtime "$image" "$stage/oac-daemon" "$source_dir"
 done
 tag_suffix="${stage##*.}"
 for harness in codex claude mcode; do

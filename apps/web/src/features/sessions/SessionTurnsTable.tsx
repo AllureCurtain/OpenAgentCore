@@ -2,9 +2,10 @@ import type { AgentTurn, SessionItem } from "@agents-core-web/agents-client";
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { EmptyState, HelpTip, StatusDot, type Tone } from "../../components/console-ui";
+import { EmptyState, StatusDot, type Tone } from "../../components/console-ui";
 import { CopyableId } from "../../components/list-ui";
 import { formatDateTime, formatDuration, formatInteger, MISSING } from "../../lib/format";
+import { TurnFailure } from "./session-diagnostics";
 import { itemsPerTurn, turnAnchorId, turnDurationSeconds } from "./session-history";
 
 export const turnTone: Record<AgentTurn["status"], Tone> = {
@@ -61,8 +62,8 @@ export function SessionTurnsTable({ turns, items, failure = null }: { turns: rea
                   <td>
                     <span className="status-with-help">
                       <StatusDot tone={turnTone[turn.status] ?? "neutral"} label={t(`status.${turn.status}`)} />
-                      {turn.error ? <HelpTip label={t("turnTable.errorLabel")}>{turn.error.message}</HelpTip> : null}
                     </span>
+                    <TurnFailure turn={turn} />
                   </td>
                   <td className="session-nowrap">{turn.started_at === null ? MISSING : formatDateTime(turn.started_at, locale)}</td>
                   <td className="numeric">{formatDuration(turnDurationSeconds(turn, now))}</td>

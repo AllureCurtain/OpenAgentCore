@@ -1,24 +1,21 @@
-import { constants } from "node:fs";
-import { lstat, open, opendir, type FileHandle } from "node:fs/promises";
+import { join, isAbsolute } from "node:path";
+import { lstat, opendir, stat } from "node:fs/promises";
 
 export type WorkspaceDirectoryEntry = { name: string; kind: "file" | "directory" | "symlink" | "other"; size_bytes?: number };
 export type WorkspaceDirectoryEvent = { type: "workspace_directory"; id: string } & (
   { entries: WorkspaceDirectoryEntry[]; truncated: boolean } |
   { error: "invalid" | "busy" | "unavailable" | "uncertain" | "not_found" | "permission" }
 );
-const flags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW;
-const anchored = (handle: FileHandle) => `/proc/self/fd/${handle.fd}`;
-
 export class WorkspaceDirectories {
-  private root?: FileHandle;
+  private root?: string;
   private stopped = false;
   private pending?: Promise<void>;
 
   constructor(private readonly emit: (event: WorkspaceDirectoryEvent) => Promise<void>, private readonly abort: AbortController) {}
 
   async bind(root: string): Promise<void> {
-    if (process.platform !== "linux" || this.root || this.stopped) throw new Error("directory listing unavailable");
-    this.root = await open(root, flags);
+    if (this.root || this.stopped || !isAbsolute(root) || !(await stat(root)).isDirectory()) throw new Error("directory listing unavailable");
+    this.root = root;
   }
 
   submit(value: Record<string, unknown>): void {
@@ -49,15 +46,8 @@ export class WorkspaceDirectories {
   }
 
   private async enumerate(directory: string, maxEntries: number): Promise<{ entries: WorkspaceDirectoryEntry[]; truncated: boolean }> {
-    const handles: FileHandle[] = [];
-    try {
-      let parent = this.root!;
-      for (const component of directory === "" ? [] : directory.split("/")) {
-        parent = await open(`${anchored(parent)}/${component}`, flags);
-        handles.push(parent);
-      }
-      // Node supports byte names, but its opendir typings omit the buffer encoding.
-      const dir = await opendir(anchored(parent), { encoding: "buffer" as BufferEncoding });
+    const path = join(this.root!, ...directory.split("/"));
+    const dir = await opendir(path, { encoding: "buffer" as BufferEncoding });
       try {
         const entries: WorkspaceDirectoryEntry[] = [];
         while (true) {
@@ -69,22 +59,17 @@ export class WorkspaceDirectories {
           if (!Buffer.isBuffer(rawName)) throw new Error("invalid entry name");
           const name = rawName.toString("utf8");
           if (!Buffer.from(name).equals(rawName) || !name || /[\x00/]/.test(name) || name === "." || name === "..") throw new Error("unsupported entry name");
-          const stat = await lstat(`${anchored(parent)}/${name}`);
+          const stat = await lstat(join(path,name));
           const kind = stat.isFile() ? "file" : stat.isDirectory() ? "directory" : stat.isSymbolicLink() ? "symlink" : "other";
           if (kind === "file" && (!Number.isSafeInteger(stat.size) || stat.size < 0)) throw new Error("invalid file size");
           entries.push({ name, kind, ...(kind === "file" ? { size_bytes: stat.size } : {}) });
         }
       } finally { await dir.close(); }
-    } finally {
-      const closed = await Promise.allSettled(handles.reverse().map(handle => handle.close()));
-      if (closed.some(result => result.status === "rejected")) throw new Error("directory close failed");
-    }
   }
 
   async close(): Promise<void> {
     this.stopped = true;
     await this.pending;
-    await this.root?.close();
     this.root = undefined;
   }
 }

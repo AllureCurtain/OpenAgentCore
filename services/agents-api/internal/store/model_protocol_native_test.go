@@ -15,6 +15,7 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/device"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/api"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/execution"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 	"github.com/google/uuid"
 )
 
@@ -85,7 +86,10 @@ func TestNativeModelProtocolPublicExecution(t *testing.T) {
 	if err != nil {
 		t.Fatal("cannot create fixture authenticator")
 	}
-	handler, err := api.NewHandler(h.s, auth, options.Engine, api.WithExecution(worker), api.WithExecutionPolicy(h.d.Policy), api.WithModelProviderDefaults(func(context.Context, string) (*v1.ModelProviderInput, error) { return &options.Provider, nil }))
+	providerRevision := uuid.New()
+	handler, err := api.NewHandler(h.s, auth, options.Engine, api.WithExecution(worker), api.WithExecutionPolicy(h.d.Policy), api.WithModelProviderDefaults(func(context.Context, string) (*store.DeploymentModelProviderSnapshot, error) {
+		return &store.DeploymentModelProviderSnapshot{Provider: &options.Provider, Revision: providerRevision}, nil
+	}))
 	if err != nil {
 		t.Fatal("cannot create public API handler")
 	}

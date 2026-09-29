@@ -57,3 +57,13 @@ FROM environment_executor_credentials
 WHERE tenant_id = sqlc.arg(tenant_id) AND environment_id = sqlc.arg(environment_id)
     AND subject_kind = sqlc.arg(subject_kind) AND subject_id = sqlc.arg(subject_id)
 ORDER BY created_at, key_id;
+
+-- name: GetEnvironmentExecutorConnection :one
+SELECT d.id AS device_id, d.executor_key_id, d.created_at AS enrolled_at,
+    d.last_seen_at, a.credential_hash, e.status AS environment_status
+FROM environments e
+JOIN sessions s ON s.id = e.session_id
+LEFT JOIN devices d ON d.environment_id = e.id AND d.tenant_id = s.tenant_id
+LEFT JOIN runtime_device_authority a ON a.id = d.id
+WHERE e.id = sqlc.arg(environment_id) AND s.tenant_id = sqlc.arg(tenant_id)
+    AND s.deleted_at IS NULL AND s.configuration->'environment'->>'type' = 'self_hosted';

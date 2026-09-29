@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent/clirunner"
+
 	obslog "github.com/MiniMax-AI-Dev/parsar/internal/obs/log"
 )
 
@@ -79,10 +81,11 @@ type JSONRPCConfig struct {
 type JSONRPCClient struct {
 	cfg JSONRPCConfig
 
-	cmd    *exec.Cmd
-	stdin  io.WriteCloser
-	stdout io.ReadCloser
-	stderr io.ReadCloser
+	process *clirunner.Process
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	stdout  io.ReadCloser
+	stderr  io.ReadCloser
 
 	mu       sync.Mutex
 	alive    bool
@@ -95,7 +98,6 @@ type JSONRPCClient struct {
 	handlersMu        sync.RWMutex
 	notifHandlers     map[string][]NotificationHandler
 	serverReqHandlers map[string]ServerRequestHandler
-	anyNotifHandler   NotificationHandler
 
 	readers   sync.WaitGroup
 	closeOnce sync.Once
@@ -178,33 +180,17 @@ func (c *JSONRPCClient) Start(ctx context.Context, init InitializeParams) (Initi
 		args = append(args, "--disable", f)
 	}
 
-	cmd := exec.CommandContext(ctx, c.cfg.Binary, args...)
-	cmd.Dir = c.cfg.Cwd
-	if len(c.cfg.Env) > 0 {
-		cmd.Env = append([]string{}, c.cfg.Env...)
-	}
-
-	stdin, err := cmd.StdinPipe()
+	process, err := clirunner.Start(clirunner.StartOptions{
+		Parent: ctx, Binary: c.cfg.Binary, Args: args, Dir: c.cfg.Cwd, Env: c.cfg.Env,
+		NeedStdin: true, OwnProcessGroup: true, KillTimeout: 250 * time.Millisecond,
+	})
 	if err != nil {
-		return InitializeResult{}, fmt.Errorf("codex rpc: stdin pipe: %w", err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return InitializeResult{}, fmt.Errorf("codex rpc: stdout pipe: %w", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return InitializeResult{}, fmt.Errorf("codex rpc: stderr pipe: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
 		return InitializeResult{}, fmt.Errorf("codex rpc: spawn %q: %w", c.cfg.Binary, err)
 	}
-
-	c.cmd = cmd
-	c.stdin = stdin
-	c.stdout = stdout
-	c.stderr = stderr
 	c.mu.Lock()
+	c.process = process
+	c.cmd = process.Cmd
+	c.stdin, c.stdout, c.stderr = process.Stdin, process.Stdout, process.Stderr
 	c.alive = true
 	c.mu.Unlock()
 
@@ -274,14 +260,6 @@ func (c *JSONRPCClient) OnNotification(method string, h NotificationHandler) {
 	c.handlersMu.Lock()
 	defer c.handlersMu.Unlock()
 	c.notifHandlers[method] = append(c.notifHandlers[method], h)
-}
-
-// OnAnyNotification registers a fallback handler. Used by session.go for
-// debug logging of unmodeled methods.
-func (c *JSONRPCClient) OnAnyNotification(h NotificationHandler) {
-	c.handlersMu.Lock()
-	defer c.handlersMu.Unlock()
-	c.anyNotifHandler = h
 }
 
 // OnServerRequest registers h for inbound server requests with method.
@@ -417,23 +395,17 @@ func (c *JSONRPCClient) handleNotification(method string, rawFrame []byte) {
 	_ = json.Unmarshal(rawFrame, &env)
 	c.handlersMu.RLock()
 	handlers := append([]NotificationHandler{}, c.notifHandlers[method]...)
-	any := c.anyNotifHandler
-	if len(handlers) > 0 || any != nil {
+	if len(handlers) > 0 {
 		c.handlerWork.Add(1)
 	}
 	c.handlersMu.RUnlock()
-	if len(handlers) > 0 || any != nil {
-		defer c.handlerWork.Done()
-	}
-	if len(handlers) == 0 && any == nil {
+	if len(handlers) == 0 {
 		c.cfg.Logger.Debug("codex rpc unhandled notification", "tag", c.cfg.LogTag, "method", method)
 		return
 	}
+	defer c.handlerWork.Done()
 	for _, h := range handlers {
 		safeInvoke(h, env.Params, c.cfg.Logger, c.cfg.LogTag, "notification "+method)
-	}
-	if any != nil {
-		safeInvoke(any, env.Params, c.cfg.Logger, c.cfg.LogTag, "notification "+method)
 	}
 }
 
@@ -487,7 +459,10 @@ func (c *JSONRPCClient) pumpStderr() {
 
 func (c *JSONRPCClient) waitChild() {
 	defer close(c.doneCh)
-	err := c.cmd.Wait()
+	// The common owner reaps the leader and terminates its descendants independently.
+	// Drain complete RPC frames before Wait closes the owned output handles.
+	c.readers.Wait()
+	err := c.process.Wait()
 	c.mu.Lock()
 	c.alive = false
 	if c.cmd.ProcessState != nil {
@@ -545,7 +520,6 @@ func (c *JSONRPCClient) detachHandlers() {
 	c.handlersMu.Lock()
 	clear(c.notifHandlers)
 	clear(c.serverReqHandlers)
-	c.anyNotifHandler = nil
 	c.handlersMu.Unlock()
 	c.handlerWork.Wait()
 }

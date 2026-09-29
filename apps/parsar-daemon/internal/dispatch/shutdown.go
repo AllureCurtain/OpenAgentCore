@@ -43,6 +43,9 @@ func (r *Router) Shutdown(ctx context.Context) error {
 	}
 	if first {
 		r.closed = true
+		if r.runtimePreparation != nil {
+			r.runtimePreparation.cancel()
+		}
 		for _, states := range r.idle {
 			for state := range states {
 				state.retain = false
@@ -100,6 +103,9 @@ func (r *Router) runShutdownAttempt(attempt *shutdownAttempt, victims []sessionC
 
 	r.shutdownWG.Wait()
 	r.mu.Lock()
+	if r.runtimePreparation != nil && r.runtimePreparation.uncertain {
+		attempt.err = errors.Join(attempt.err, errors.New("dispatch: capability preparation remains uncertain"))
+	}
 	if r.workspaceWrite != nil && r.workspaceWrite.uncertain {
 		attempt.err = errors.Join(attempt.err, errors.New("dispatch: local workspace write remains uncertain"))
 	}
@@ -143,6 +149,9 @@ func (r *Router) handleDeviceShutdown(ctx context.Context, env proto.Envelope) e
 	if r.closed {
 		r.mu.Unlock()
 		return ErrRouterClosed
+	}
+	if r.runtimePreparation != nil {
+		r.runtimePreparation.cancel()
 	}
 	victims := make([]sessionCancellation, 0, len(r.sessions))
 	for _, state := range r.sessions {

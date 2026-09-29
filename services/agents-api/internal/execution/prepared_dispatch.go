@@ -109,6 +109,12 @@ func (d *Dispatcher) RunEnvironmentInput(ctx context.Context, tenantID, sessionI
 	req.RunID = run.Reservation.Receipts[0].TurnID
 	req.Input = messages
 	through := run.Reservation.Receipts[len(run.Reservation.Receipts)-1].Sequence
+	releaseDelivery, err := peer.TrackExecutionDelivery(req.RunID)
+	if err != nil {
+		run.Turn, err = d.finishRun(tenantID, sessionID, req.RunID, snapshot.Agent.Model, Result{ErrorCode: "delivery_unknown", AppliedThrough: through}, store.TurnFailed)
+		return run, err
+	}
+	defer releaseDelivery()
 	result, status := d.deliver(owner, tenantID, sessionID, peer, req, through, prepared)
 	result, status = d.captureCompletedArtifacts(owner, peer, session, environment, bound.Device, req.RunID, result, status)
 	run.Turn, err = d.finishRun(tenantID, sessionID, req.RunID, snapshot.Agent.Model, result, status)

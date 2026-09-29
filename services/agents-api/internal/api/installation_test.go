@@ -66,7 +66,12 @@ func TestInstallationSnapshotCannotCarryASensitiveValue(t *testing.T) {
 func TestDeploymentAddressIsNotInput(t *testing.T) {
 	project, _ := NewAuthenticator([]APIKey{callerBinding()})
 	admin, _ := NewDeploymentAuthenticator([]string{device.HashCredential("administrator")})
+	initializations := 0
 	initialize := func(_ context.Context, input store.SandboxDeploymentSetupRequest) (store.RuntimeDeploymentView, error) {
+		initializations++
+		if input.Provider != "e2b" || input.ExpectedGeneration != 0 {
+			t.Fatal("invalid selection reached initialization", input.Provider, input.ExpectedGeneration)
+		}
 		return store.RuntimeDeploymentView{}, store.ErrSandboxPublicURLUnreachable
 	}
 	update := func(context.Context, store.SandboxDeploymentUpdateRequest) (store.RuntimeDeploymentView, error) {
@@ -74,7 +79,7 @@ func TestDeploymentAddressIsNotInput(t *testing.T) {
 		return store.RuntimeDeploymentView{}, nil
 	}
 	h, err := NewHandler(&recordingStore{}, project, "codex", WithSandboxManager(&store.Store{}, admin),
-		WithSandboxDeploymentSetup(initialize), WithSandboxDeploymentChanges(update, nil))
+		WithSandboxDeploymentSetup(initialize), WithSandboxDeploymentChanges(update, nil, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,9 +87,9 @@ func TestDeploymentAddressIsNotInput(t *testing.T) {
 		method, body, code string
 		status             int
 	}{
-		{http.MethodPost, `{"provider":"docker","core_url":"https://core.example"}`, `"param":"core_url"`, http.StatusBadRequest},
+		{http.MethodPost, `{"provider":"docker","core_url":"https://core.example","expected_generation":0}`, `"param":"core_url"`, http.StatusBadRequest},
 		{http.MethodPut, `{"provider":"docker","core_url":"https://core.example","expected_generation":1}`, `"param":"core_url"`, http.StatusBadRequest},
-		{http.MethodPost, `{"provider":"e2b","e2b":{"api_key":"key","template":"runtime:build"}}`, `"code":"sandbox_configuration_error"`, http.StatusConflict},
+		{http.MethodPost, `{"provider":"e2b","expected_generation":0,"e2b":{"api_key":"key","template":"runtime:build"}}`, `"code":"sandbox_configuration_error"`, http.StatusConflict},
 	} {
 		request := httptest.NewRequest(test.method, "/core/v1/sandbox/deployment", strings.NewReader(test.body))
 		request.Header.Set("Authorization", "Bearer administrator")
@@ -94,5 +99,8 @@ func TestDeploymentAddressIsNotInput(t *testing.T) {
 		if result.Code != test.status || !strings.Contains(result.Body.String(), test.code) {
 			t.Fatal(test.method, result.Code, result.Body.String())
 		}
+	}
+	if initializations != 1 {
+		t.Fatal("address rejection did not isolate initialization", initializations)
 	}
 }

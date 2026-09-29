@@ -8,9 +8,11 @@ provider. Users manage
 local or E2B Runtime creation, renewal and destruction through the official SDK.
 
 All three harnesses reuse typed `LocalEnvironment`, existing preparation/start/
-cancel ownership and protected local Files/Artifacts. Native credentials and
-histories remain inaccessible to generated tools. Strict resume requires retained
-history; connectivity alone establishes neither readiness nor isolation. Current
+cancel ownership and authorized local Files/Artifacts. Native tools use the
+starting account's permissions and may access that account's Runtime credentials
+and history. The daemon adds no inner sandbox; managed isolation belongs to the
+outer Environment. Strict resume requires retained history; connectivity alone
+establishes neither readiness nor isolation. Current
 implementation is recorded in the [Environment profile](environments.md#initial-public-self-hosted-profile);
 [real qualification](user-managed-runtime-v1.md) identifies accepted deployments and limits.
 
@@ -23,8 +25,9 @@ hosted Template Plugin MCP retain their separate boundaries.
 ## Historical two-engine assessment
 
 The assessment below records the earlier topology and native prerequisites at its
-original scope. It is not current installation guidance or proof of the V1 daemon
-enrollment chain. Referenced retired package/probe sources remain in Git history.
+original scope. Its inner-sandbox prerequisites and denied private-file probes
+are historical only and must not be reinstated as current daemon requirements.
+It is not current installation guidance or proof of the current daemon chain. Referenced retired package/probe sources remain in Git history.
 
 ### Current implementation and missing prerequisites
 

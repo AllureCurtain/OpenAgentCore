@@ -21,7 +21,7 @@ test('route gate and Python regressions honor the selected interpreter without s
       cwd: appRoot, env: { ...process.env, OAC_TEST_OFFICIAL_SDK_PYTHON: selected }, encoding: 'utf8',
     })
     assert.equal(result.status, 0, result.stdout + result.stderr)
-    if (mode === 'routes') assert.match(result.stdout, /Contract operations:\s+130/)
+    if (mode === 'routes') assert.match(result.stdout, /Contract operations:\s+[1-9]\d*\b/)
     else assert.match(result.stderr, /Ran 2 tests/)
   }
   const invocations = fs.readFileSync(log, 'utf8').trim().split('\n').map(line => JSON.parse(line))

@@ -1,3 +1,7 @@
+import { sandboxNavigation as enSandboxNavigation } from "./locales/en/sandbox-navigation";
+import { sandboxNavigation as zhSandboxNavigation } from "./locales/zh-CN/sandbox-navigation";
+import { diagnostics as enDiagnostics } from "./locales/en/diagnostics";
+import { diagnostics as zhDiagnostics } from "./locales/zh-CN/diagnostics";
 import { common as enCommon } from "./locales/en/common";
 import { navigation as enNavigation } from "./locales/en/navigation";
 import { pages as enPages } from "./locales/en/pages";
@@ -56,12 +60,14 @@ export const resources = {
     files: enFiles,
     dashboard: enDashboard,
     sessions: enSessions,
+    diagnostics: enDiagnostics,
     overview: enOverview,
     metrics: enMetrics,
     skills: enSkills,
     keys: enKeys,
     system: enSystem,
     sandbox: enSandbox,
+    sandboxNavigation: enSandboxNavigation,
     firstRun: enFirstRun,
     onboarding: enOnboarding,
   },
@@ -75,12 +81,14 @@ export const resources = {
     files: zhCNFiles,
     dashboard: zhCNDashboard,
     sessions: zhCNSessions,
+    diagnostics: zhDiagnostics,
     overview: zhCNOverview,
     metrics: zhCNMetrics,
     skills: zhCNSkills,
     keys: zhCNKeys,
     system: zhCNSystem,
     sandbox: zhCNSandbox,
+    sandboxNavigation: zhSandboxNavigation,
     firstRun: zhCNFirstRun,
     onboarding: zhCNOnboarding,
   },

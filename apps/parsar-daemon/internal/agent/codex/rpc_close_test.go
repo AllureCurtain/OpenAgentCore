@@ -6,33 +6,26 @@ import (
 	"errors"
 	"io"
 	"os"
-	"os/exec"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent/clirunner"
 )
 
 func TestJSONRPCClientCloseCanRetryUnreapedChild(t *testing.T) {
-	cmd := exec.Command(os.Args[0], "-test.run=^TestJSONRPCClientFakeCodexProcess$", "--")
-	cmd.Env = append(os.Environ(), "CODEX_RPC_FAKE_PROCESS=1", "GORACE=atexit_sleep_ms=0")
-	stdin, err := cmd.StdinPipe()
+	process, err := clirunner.Start(clirunner.StartOptions{Parent: t.Context(), Binary: os.Args[0], Args: []string{"-test.run=^TestJSONRPCClientFakeCodexProcess$", "--"}, Env: append(os.Environ(), "CODEX_RPC_FAKE_PROCESS=1", "GORACE=atexit_sleep_ms=0"), NeedStdin: true, OwnProcessGroup: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
+	cmd, stdin, stdout := process.Cmd, process.Stdin, process.Stdout
 	client := NewJSONRPCClient(JSONRPCConfig{})
 	input := &countedCloseWriter{WriteCloser: stdin}
-	client.cmd, client.stdin, client.stdout, client.alive = cmd, input, stdout, true
+	client.process, client.cmd, client.stdin, client.stdout, client.alive = process, cmd, input, stdout, true
 	var reap sync.Once
 	t.Cleanup(func() {
-		_ = cmd.Process.Kill()
+		process.Cancel()
 		reap.Do(client.waitChild)
 	})
 	if _, err := io.WriteString(stdin, "{\"id\":\"close-test\"}\n"); err != nil {

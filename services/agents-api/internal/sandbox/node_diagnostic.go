@@ -6,6 +6,7 @@ import "errors"
 // first failed check. Only the fixed code crosses the node transport; the error
 // text and any wrapped detail, such as host paths or daemon messages, stay local.
 var (
+	ErrRuntimeDownloadFailed            = errors.New("Runtime preparation failed")
 	ErrDockerUnavailable                = errors.New("Docker daemon is unavailable")
 	ErrDockerLimitsUnsupported          = errors.New("Docker host does not enforce CPU and memory limits")
 	ErrRuntimeImageUnavailable          = errors.New("pinned Runtime image is unavailable")
@@ -16,11 +17,13 @@ var (
 
 // NodeProviderUnavailable reports every readiness failure without a fixed cause.
 const NodeProviderUnavailable = "provider_unavailable"
+const NodeRuntimeDownloadFailed = "runtime_download_failed"
 
 var nodeDiagnostics = []struct {
 	err  error
 	code string
 }{
+	{ErrRuntimeDownloadFailed, NodeRuntimeDownloadFailed},
 	{ErrDockerUnavailable, "docker_unavailable"},
 	{ErrDockerLimitsUnsupported, "docker_limits_unsupported"},
 	{ErrRuntimeImageUnavailable, "runtime_image_unavailable"},

@@ -350,6 +350,12 @@ func (d *Dispatcher) deliver(ctx context.Context, tenantID, sessionID string, pe
 
 func (r *Result) mergeObservation(env proto.Envelope) error {
 	switch env.Type {
+	case proto.TypeError:
+		var failure proto.ErrorPayload
+		if err := env.DecodePayload(&failure); err != nil {
+			return err
+		}
+		r.EngineErrorCode, r.EngineHTTPStatus = proto.NormalizeEngineFailure(failure.Code, failure.HTTPStatus)
 	case proto.TypeUsage:
 		return env.DecodePayload(&r.Done.Usage)
 	case proto.TypeDone:

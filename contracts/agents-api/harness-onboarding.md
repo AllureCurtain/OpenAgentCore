@@ -6,7 +6,8 @@ registration methods in one place. Implement one adapter for a native SDK or mac
 Runtime use the common contract; adding a harness should not add engine-name
 branches to public handlers, storage, scheduling or environment providers.
 
-The [harness contract](harnesses.md) defines observable behavior. The
+The [harness contract](harnesses.md) defines observable behavior. Start with the
+[developer guide](../../docs/development.md) for a working checkout; the
 [contributor guide](../../CONTRIBUTING.md#harness-qualification-and-onboarding)
 owns architecture and required checks. The pinned public Agents API in
 [upstream.json](upstream.json) is separate from the internal adapter protocol.
@@ -28,7 +29,7 @@ Runtime: Executor preparation, reuse, idle expiry, recovery
 | Component | Responsibility | Location |
 | --- | --- | --- |
 | Core | Public API, authority, durable state, scheduling and configuration snapshots | `services/agents-api` |
-| Runtime | Authenticated connection and common Executor/Turn lifecycle | `apps/parsar-daemon/internal/dispatch` |
+| Runtime | Authenticated connection, shared capability preparation and common Executor/Turn lifecycle | `apps/parsar-daemon/internal/dispatch` |
 | Adapter | Native configuration, resources, API calls, event translation and restrictions | `apps/parsar-daemon/internal/agent/<kind>` |
 | Harness | Native model/tool loop and history | Pinned SDK or executable |
 | Service profile | Pure validation of qualified operations and placements | `services/agents-api/internal/engine` |
@@ -37,12 +38,18 @@ Runtime: Executor preparation, reuse, idle expiry, recovery
 An Environment supplies execution resources. Managed Docker, E2B and user-managed
 machines differ in provisioning and connection; their connected Runtime uses this
 same contract. Operating-system support belongs in the implementation and its
-qualification. The current implementation is Linux; a platform-neutral interface
-alone does not qualify another platform. Resource management owns machine selection, allocation and Environment creation
-and reclamation. Executor close does not release that allocation or delete the
+qualification. The native daemon supports Linux, macOS and Windows; each adapter
+declares its qualified platform scope. Managed Providers remain Linux-only.
+A platform-neutral interface alone does not qualify a harness on another platform.
+See [native Runtime validation](../../docs/self-hosted-native.md) for the current
+acceptance limits. Resource management owns machine selection, allocation and
+Environment creation and reclamation. Executor close does not release that allocation or delete the
 workspace. Environment reclamation is an explicit resource-management action that
 coordinates with execution. Runtime connection, installed capability snapshot,
-Session Executor and Turn each have their own lifetime. Model providers supply
+Session Executor and Turn each have their own lifetime. Native factories receive
+capabilities only after the common Runtime has loaded its bound installed snapshot;
+see [capability preparation](environments.md#runtime-capability-preparation).
+Model providers supply
 model communication configuration, not Turn scheduling or native process ownership.
 
 ## Required adapter interfaces
@@ -194,9 +201,8 @@ it does not expand to match another harness's feature list.
 - Regression: existing qualified engines keep working. Run targeted tests during
   development, then `make check` and applicable real regressions. API changes
   require `make openapi`; query changes require `make sqlc-generate`.
-- Review: use a fresh independent Astra high reviewer for shared, lifecycle or
-  security changes. Supply requirements, criteria, boundaries, rules, repository
-  and baseline only. Resolve material findings; defer documented low-value work.
+- Review: follow the repository
+  [blind review workflow](../../CONTRIBUTING.md#workflow-and-quality).
 
 Record exact revisions, image/package versions, commands, results and limits.
 Keep keys in private operator files; never commit them or include them in logs or
@@ -216,7 +222,7 @@ not shipped and is not evidence for a real SDK or sandbox.
 Use the native adapters as implementation references after choosing a native API:
 
 - [Codex](../../apps/parsar-daemon/internal/agent/codex/executor.go): app-server transport.
-- [Claude](../../apps/parsar-daemon/internal/agent/claudesdk/executor.go): Go ownership and a [TypeScript SDK bridge](../../packages/claude-sdk-adapter).
+- [Claude](../../apps/parsar-daemon/internal/agent/claudesdk/executor.go): Go ownership and a [TypeScript SDK bridge](../../packages/claude-sdk-adapter/README.md).
 - [MiniMax](../../apps/parsar-daemon/internal/agent/mcode): ACP and native workspace companion.
 
 Start with the mandatory text lifecycle, then qualify optional operations using
@@ -232,3 +238,15 @@ the authenticated Run, then qualifies those facts with real execution. It does
 not add routes, storage branches or a harness-specific Core scheduler. Report
 unsupported native facts explicitly; completing a child task is not closing its
 Subagent. Native background work must remain owned through settlement and cancel.
+
+## Native installer participation
+
+An adapter may supply `agent.Installation` from `installation.go` in its own
+package: registered agent kind, pinned version, supported platforms, activation
+environment and a bounded
+readiness probe. Register it in `cli/native_harness.go` and add its pinned component
+to the native distribution builder. This optional contract does not change
+Executor/Turn semantics. Runtime owns checksums, copying, locks and additive
+installation; adapters own native layout and probes. Validate installation and
+actual execution on each advertised platform. Missing or incompatible native
+content must fail, never install itself during a Turn.

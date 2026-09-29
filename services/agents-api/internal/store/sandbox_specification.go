@@ -11,7 +11,16 @@ import (
 )
 
 // SandboxConfigurationError contains only validated, non-secret configuration diagnostics.
-type SandboxConfigurationError struct{ Message string }
+type SandboxConfigurationError struct {
+	Message    string
+	Validation *sandbox.ValidationError
+}
+
+func sandboxConfigurationError(err error) *SandboxConfigurationError {
+	var validation *sandbox.ValidationError
+	errors.As(err, &validation)
+	return &SandboxConfigurationError{Message: err.Error(), Validation: validation}
+}
 
 func (e *SandboxConfigurationError) Error() string { return e.Message }
 func (e *SandboxConfigurationError) Unwrap() error { return ErrInvalidInput }

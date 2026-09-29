@@ -41,29 +41,29 @@ func (s *Store) SettleRuntimeCreation(ctx context.Context, owner RuntimeAllocati
 // Cancellation requests do not prove existing native work has stopped. A live,
 // unexpired Environment fails with the generic provisioning reason.
 func (s *Store) RequestRuntimeCleanup(ctx context.Context, owner RuntimeAllocation) (RuntimeAllocation, error) {
-	return s.requestRuntimeCleanup(ctx, owner, provisioningFailureReason, false)
+	return s.requestRuntimeCleanup(ctx, owner, provisioningFailureReason, nil, false)
 }
 
 // FailRuntimeInitialization is RequestRuntimeCleanup after a confirmed failed
 // initialization step: the step's safe reason becomes the Session error. Deleted
 // Sessions, expired and already terminal Environments keep their existing outcome.
 func (s *Store) FailRuntimeInitialization(ctx context.Context, owner RuntimeAllocation, failure ProvisioningFailure) (RuntimeAllocation, error) {
-	return s.requestRuntimeCleanup(ctx, owner, failure.reason(), false)
+	return s.requestRuntimeCleanup(ctx, owner, failure.reason(), failure.detail(), false)
 }
 
 // ReleaseAbsentRuntimeCreation consumes provider proof that the original attempt
 // is settled and owns no resources. Authority revocation and release commit together.
 func (s *Store) ReleaseAbsentRuntimeCreation(ctx context.Context, owner RuntimeAllocation) (RuntimeAllocation, error) {
-	return s.requestRuntimeCleanup(ctx, owner, provisioningFailureReason, true)
+	return s.requestRuntimeCleanup(ctx, owner, provisioningFailureReason, nil, true)
 }
 
-func (s *Store) requestRuntimeCleanup(ctx context.Context, owner RuntimeAllocation, reason string, absent bool) (RuntimeAllocation, error) {
+func (s *Store) requestRuntimeCleanup(ctx context.Context, owner RuntimeAllocation, reason string, detail *ProvisioningFailureDetail, absent bool) (RuntimeAllocation, error) {
 	return s.mutateRuntimeAllocation(ctx, owner, false, func(ctx context.Context, q *sqlc.Queries, row sqlc.RuntimeAllocation) (sqlc.RuntimeAllocation, error) {
 		if row.State == "released" {
 			return row, nil
 		}
 		tenant, _ := parseID(owner.TenantID)
-		if _, err := q.RevokeDevice(ctx, sqlc.RevokeDeviceParams{TenantID: tenant, ID: row.DeviceID}); err != nil {
+		if _, err := q.RevokeRuntimeCleanupDevice(ctx, sqlc.RevokeRuntimeCleanupDeviceParams{TenantID: tenant, DeviceID: row.DeviceID}); err != nil {
 			return sqlc.RuntimeAllocation{}, err
 		}
 		current, err := q.GetRuntimeAllocation(ctx, sqlc.GetRuntimeAllocationParams{TenantID: tenant, EnvironmentID: row.EnvironmentID})
@@ -74,7 +74,7 @@ func (s *Store) requestRuntimeCleanup(ctx context.Context, owner RuntimeAllocati
 		if current.DeletedAt.Valid {
 			err = cancel()
 		} else {
-			err = terminateRuntimeEnvironment(ctx, q, current, reason, cancel)
+			err = terminateRuntimeEnvironment(ctx, q, current, reason, detail, cancel)
 		}
 		if err != nil {
 			return sqlc.RuntimeAllocation{}, err

@@ -152,7 +152,7 @@ paths:
       tags:
         - Deployment Model Providers
     get:
-      description: Core key only. Returns the safe view; the key is never returned. 404 when the harness does not exist or has no deployment default.
+      description: Core key only. Returns the safe view; the key is never returned. 404 when the harness does not exist or has no deployment default. Nullable last_used_at, last_error_code and last_error_at are best-effort observations of committed root Turns using this exact default revision; they do not establish current readiness and may remain stale indefinitely.
       parameters:
         - schema:
             type: string
@@ -195,7 +195,7 @@ paths:
       tags:
         - Deployment Model Providers
     put:
-      description: 'Core key only. The body is the complete x_agents_core.model_provider bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, an upstream protocol (responses, anthropic or chat_completions), automatically adapted by Runtime to the selected harness and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions that resolve no Session or Agent bundle freeze this default into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key.'
+      description: 'Core key only. The body is the complete x_agents_core.model_provider bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, an upstream protocol (responses, anthropic or chat_completions), automatically adapted by Runtime to the selected harness and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions that resolve no Session or Agent bundle freeze this default into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key and resets last_used_at, last_error_code and last_error_at to null, including identical writes.'
       parameters:
         - schema:
             type: string
@@ -878,7 +878,7 @@ paths:
         - Environment Templates
   /core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials:
     get:
-      description: Core key only. Returns metadata of the credentials restricted to this Environment, oldest first; secrets are never listed. The Environment must be a self_hosted Environment of the Project whose Session exists; otherwise 404.
+      description: Core key only. Returns metadata of the credentials restricted to this Environment, oldest first; secrets are never listed. Connection combines current credential authority and an open matching gateway peer; timestamps are historical observations, not readiness. Without a gateway it is never connected. The Environment must be a self_hosted Environment of the Project whose Session exists; otherwise 404.
       parameters:
         - schema:
             type: string
@@ -1696,7 +1696,7 @@ paths:
       tags:
         - Core Administration
     post:
-      description: Core key only. Requires maintenance and the current deployment generation. Permanently closes execution, requests cancellation and releases sandbox/snapshots through existing cleanup. Session history and persisted files/artifacts remain; unpersisted workspace contents are lost. A cleanup_pending response is not proof of resource release. Does not affect caller-managed Runtime.
+      description: Core key only. Requires the current deployment generation; no maintenance mode is required. Permanently closes execution, requests cancellation and releases sandbox/snapshots through existing cleanup. Session history and persisted files/artifacts remain; unpersisted workspace contents are lost. A cleanup_pending response is not proof of resource release. Does not affect caller-managed Runtime.
       parameters:
         - schema:
             type: string
@@ -2046,6 +2046,64 @@ paths:
       summary: Download immutable artifact bytes in a Project
       tags:
         - Artifacts
+  /core/v1/projects/{project_id}/sessions/{session_id}/diagnostics:
+    get:
+      description: Core key only. Safe failure categories from one committed snapshot; no native text or historical inference.
+      parameters:
+        - schema:
+            type: string
+          description: Project ID
+          in: path
+          name: project_id
+          required: true
+        - schema:
+            type: string
+          description: Session ID
+          in: path
+          name: session_id
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.SessionDiagnostics'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: Retrieve root Session diagnostics
+      tags:
+        - Sessions
   /core/v1/projects/{project_id}/sessions/{session_id}/execution-configuration:
     get:
       description: Core key only; the Project ID selects the target space and does not authenticate. Returns the committed model, harness and safe provider selection with recorded sources. This read never decrypts credentials, resolves current defaults or probes execution health. Deployment defaults frozen after they moved into Core show their safe view; older deployment selections remain redacted. Historical provenance and missing provider projections are explicitly unknown/unavailable.
@@ -2442,6 +2500,70 @@ paths:
       security:
         - DeploymentAdminAuth: []
       summary: Retrieve an execution Turn in a Project
+      tags:
+        - Turns
+  /core/v1/projects/{project_id}/sessions/{session_id}/turns/{turn_id}/diagnostics:
+    get:
+      description: Core key only. At most 1000 root Item receipt timings in public Item order. Receipt intervals are not native execution durations.
+      parameters:
+        - schema:
+            type: string
+          description: Project ID
+          in: path
+          name: project_id
+          required: true
+        - schema:
+            type: string
+          description: Session ID
+          in: path
+          name: session_id
+          required: true
+        - schema:
+            type: string
+          description: Root Turn ID
+          in: path
+          name: turn_id
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.TurnDiagnostics'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '404':
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: Retrieve root Turn diagnostics
       tags:
         - Turns
   /core/v1/projects/{project_id}/skills:
@@ -3257,7 +3379,7 @@ paths:
       tags:
         - Sandbox Manager
     post:
-      description: Selects a provider, enforced resource limits and pinned Runtime release. Core derives the deployment's core_url from the installation public URL and rejects a core_url member with 400. E2B returns 409 sandbox_configuration_error while the public URL is loopback. E2B credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory, returned in specification.resources. Exact retries return the existing selection; differing selections and file-managed deployments reject. This does not create compute or execute work.
+      description: Selects a provider, enforced resource limits and pinned Runtime release. Core derives the deployment's core_url from the installation public URL and rejects a core_url member with 400. E2B returns 409 sandbox_configuration_error while the public URL is loopback. E2B credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory, returned in specification.resources. Requires explicit expected_generation, including zero at first setup. Stale retries reject before provider validation. An identical selection at the current generation is a no-op; differing selections and file-managed deployments reject. This does not create compute or execute work.
       responses:
         '200':
           description: OK
@@ -3308,7 +3430,7 @@ paths:
         description: Deployment selection
         required: true
     put:
-      description: Requires maintenance, the current generation and verified cleanup of all old resources. Credentials are write-only. E2B may omit resources to adopt the validated template build's CPU and memory. A core_url member is rejected with 400; the address comes from the installation public URL. Historical records are retained; old node credentials and enrollments are retired. Explicitly resume after success. Never automatically retry an uncertain write.
+      description: 'Requires the observed generation, the same backend type and no active reset. E2B same-team changes apply online: allocations retain immutable generation and current credentials; omitted api_key preserves it, explicit submission including the same key verifies and advances generation. Other teams require explicit reset. Node providers retain the zero-resource guard and retire old nodes/tokens on change. Core rejects core_url input. Never automatically replay an uncertain write; rollout.state is the authoritative preparation polling signal.'
       responses:
         '200':
           description: OK
@@ -3348,7 +3470,7 @@ paths:
                 $ref: '#/components/schemas/api.CoreErrorResponse'
       security:
         - DeploymentAdminAuth: []
-      summary: Change a fully drained deployment's sandbox configuration
+      summary: Change the sandbox deployment configuration
       tags:
         - Sandbox Manager
       requestBody:
@@ -3358,9 +3480,16 @@ paths:
               $ref: '#/components/schemas/api.SandboxDeploymentChangeInput'
         description: Replacement deployment selection
         required: true
-  /core/v1/sandbox/deployment/maintenance:
-    patch:
-      description: Requires the current generation. Maintenance preserves execution, cleanup and history. Resume requires successfully activated provider configuration.
+  /core/v1/sandbox/deployment/reset:
+    delete:
+      description: Restores admission but never restores Sessions already archived. With no reset running this is an idempotent read, provided the generation still matches.
+      parameters:
+        - schema:
+            type: integer
+          description: Current deployment generation
+          in: query
+          name: expected_generation
+          required: true
       responses:
         '200':
           description: OK
@@ -3400,15 +3529,59 @@ paths:
                 $ref: '#/components/schemas/api.CoreErrorResponse'
       security:
         - DeploymentAdminAuth: []
-      summary: Pause or resume new hosted allocations
+      summary: Cancel a sandbox deployment reset
+      tags:
+        - Sandbox Manager
+    post:
+      description: Archives hosted Sessions and waits for confirmed provider cleanup, preserving history and Files/Artifacts. Auto waits for started or waiting Turns and file writes until the durable deadline; force cancels them. The same clear is idempotent; force escalates auto. Requires the current generation. Self-hosted Sessions are unchanged.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/store.RuntimeDeploymentView'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '409':
+          description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: Start or escalate a durable sandbox deployment reset
       tags:
         - Sandbox Manager
       requestBody:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/store.SandboxMaintenanceRequest'
-        description: Maintenance state
+              $ref: '#/components/schemas/store.SandboxResetRequest'
+        description: Reset mode and current deployment generation
         required: true
   /core/v1/sandbox/enrollment-tokens:
     post:
@@ -4181,6 +4354,43 @@ components:
         - data
         - object
       type: object
+    api.DiagnosticFailure:
+      properties:
+        code:
+          enum:
+            - harness_error
+            - model_provider_required
+            - runtime_unavailable
+            - runtime_disconnected
+            - runtime_preparation_failed
+            - execution_interrupted
+            - delivery_unconfirmed
+            - input_rejected
+            - executor_protocol_error
+            - core_storage_failed
+            - internal_error
+            - environment_connection_timeout
+            - environment_unavailable
+            - environment_provisioning_failed
+            - authentication_error
+            - rate_limit_exceeded
+            - usage_limit_exceeded
+            - server_overloaded
+            - server_error
+            - invalid_request
+            - resource_not_found
+            - request_timeout
+            - context_length_exceeded
+            - cyber_policy
+            - connection_failed
+          type: string
+        failed_at:
+          anyOf:
+            - type: string
+            - type: 'null'
+        params:
+          type: object
+      type: object
     api.EnvironmentExecutorCredentialRequest:
       properties:
         key_id:
@@ -4189,12 +4399,46 @@ components:
         rotate:
           type: boolean
       type: object
+    api.ExecutorConnection:
+      properties:
+        bound_key_id:
+          anyOf:
+            - format: uuid
+              type: string
+            - type: 'null'
+        enrolled_at:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: 'null'
+        last_seen_at:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: 'null'
+        status:
+          enum:
+            - never_enrolled
+            - connected
+            - disconnected
+          type: string
+      required:
+        - bound_key_id
+        - enrolled_at
+        - last_seen_at
+        - status
+      type: object
     api.ExecutorCredentialList:
       properties:
+        connection:
+          $ref: '#/components/schemas/api.ExecutorConnection'
         data:
           items:
             $ref: '#/components/schemas/store.ExecutorCredential'
           type: array
+      required:
+        - connection
+        - data
       type: object
     api.HarnessModelProvider:
       properties:
@@ -4210,6 +4454,30 @@ components:
             - codex
             - mcode
           type: string
+        last_error_at:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: 'null'
+        last_error_code:
+          anyOf:
+            - enum:
+                - authentication_error
+                - connection_failed
+                - rate_limit_exceeded
+                - usage_limit_exceeded
+                - server_overloaded
+                - server_error
+                - resource_not_found
+                - request_timeout
+                - invalid_request
+              type: string
+            - type: 'null'
+        last_used_at:
+          anyOf:
+            - format: date-time
+              type: string
+            - type: 'null'
         max_output_tokens:
           type: integer
         object:
@@ -4227,6 +4495,9 @@ components:
         - api_key_configured
         - base_url
         - harness
+        - last_error_at
+        - last_error_code
+        - last_used_at
         - object
         - protocol
         - updated_at
@@ -4312,6 +4583,21 @@ components:
             - type: 'null'
           description: Applied value; always null for a sensitive setting.
       type: object
+    api.ItemDiagnosticTiming:
+      properties:
+        completed_at:
+          anyOf:
+            - type: string
+            - type: 'null'
+        item_id:
+          type: string
+        observed_duration_ms:
+          anyOf:
+            - type: integer
+            - type: 'null'
+        started_at:
+          type: string
+      type: object
     api.ProjectAPIKeyRequest:
       properties:
         name:
@@ -4368,11 +4654,15 @@ components:
             them; Core then uses the validated template build's cpus and memory_mib.
         runtime:
           $ref: '#/components/schemas/sandbox.RuntimeRelease'
+      required:
+        - expected_generation
       type: object
     api.SandboxDeploymentInput:
       properties:
         e2b:
           $ref: '#/components/schemas/api.SandboxE2BInput'
+        expected_generation:
+          type: integer
         provider:
           type: string
         resources:
@@ -4383,6 +4673,8 @@ components:
             them; Core then uses the validated template build's cpus and memory_mib.
         runtime:
           $ref: '#/components/schemas/sandbox.RuntimeRelease'
+      required:
+        - expected_generation
       type: object
     api.SandboxE2BInput:
       properties:
@@ -4424,6 +4716,96 @@ components:
           items:
             $ref: '#/components/schemas/store.RuntimeNode'
           type: array
+      type: object
+    api.SessionDiagnosticFailure:
+      properties:
+        code:
+          enum:
+            - harness_error
+            - model_provider_required
+            - runtime_unavailable
+            - runtime_disconnected
+            - runtime_preparation_failed
+            - execution_interrupted
+            - delivery_unconfirmed
+            - input_rejected
+            - executor_protocol_error
+            - core_storage_failed
+            - internal_error
+            - environment_connection_timeout
+            - environment_unavailable
+            - environment_provisioning_failed
+            - authentication_error
+            - rate_limit_exceeded
+            - usage_limit_exceeded
+            - server_overloaded
+            - server_error
+            - invalid_request
+            - resource_not_found
+            - request_timeout
+            - context_length_exceeded
+            - cyber_policy
+            - connection_failed
+          type: string
+        failed_at:
+          anyOf:
+            - type: string
+            - type: 'null'
+        params:
+          type: object
+        source:
+          enum:
+            - turn
+            - environment
+            - environment_input
+          type: string
+        turn_id:
+          type: string
+      type: object
+    api.SessionDiagnostics:
+      properties:
+        failure:
+          anyOf:
+            - allOf:
+                - $ref: '#/components/schemas/api.SessionDiagnosticFailure'
+            - type: 'null'
+        object:
+          enum:
+            - core.session_diagnostics
+          type: string
+        session_id:
+          type: string
+        status:
+          enum:
+            - idle
+            - in_progress
+            - requires_action
+            - failed
+          type: string
+      type: object
+    api.TurnDiagnostics:
+      properties:
+        failure:
+          anyOf:
+            - allOf:
+                - $ref: '#/components/schemas/api.DiagnosticFailure'
+            - type: 'null'
+        items:
+          items:
+            $ref: '#/components/schemas/api.ItemDiagnosticTiming'
+          type: array
+        items_truncated:
+          type: boolean
+        object:
+          enum:
+            - core.turn_diagnostics
+          type: string
+        session_id:
+          type: string
+        status:
+          type: string
+        turn_id:
+          type: string
       type: object
     coremetrics.Database:
       properties:
@@ -4902,16 +5284,21 @@ components:
           type: integer
         installation_id:
           type: string
-        maintenance:
-          type: boolean
         mode:
           type: string
         owner_epoch:
           type: integer
         provider:
           type: string
+        reset:
+          anyOf:
+            - allOf:
+                - $ref: '#/components/schemas/store.SandboxResetView'
+            - type: 'null'
         resources:
           $ref: '#/components/schemas/store.SandboxDeploymentResources'
+        rollout:
+          $ref: '#/components/schemas/store.SandboxRollout'
         specification:
           $ref: '#/components/schemas/sandbox.DeploymentSpec'
         specification_digest:
@@ -4948,6 +5335,7 @@ components:
             - provider_unavailable
             - docker_unavailable
             - docker_limits_unsupported
+            - runtime_download_failed
             - runtime_image_unavailable
             - kvm_unavailable
             - microsandbox_artifacts_unavailable
@@ -4978,6 +5366,8 @@ components:
           type: integer
         retained:
           type: integer
+        rollout:
+          $ref: '#/components/schemas/store.SandboxNodeRollout'
         running:
           type: integer
         snapshots:
@@ -4994,6 +5384,8 @@ components:
           description: The time the allocation entered its current compute_phase, or null when unknown; an allocation that existed before Core recorded it reports null until its next phase change. For a suspended microsandbox allocation, this time plus the deployment's snapshot retention tells roughly when Core reclaims it.
         created_at:
           type: string
+        deployment_generation:
+          type: integer
         diagnostic:
           type: string
         environment_id:
@@ -5036,6 +5428,7 @@ components:
             - provider_unavailable
             - docker_unavailable
             - docker_limits_unsupported
+            - runtime_download_failed
             - runtime_image_unavailable
             - kvm_unavailable
             - microsandbox_artifacts_unavailable
@@ -5070,6 +5463,8 @@ components:
           type: integer
         retained:
           type: integer
+        rollout:
+          $ref: '#/components/schemas/store.SandboxNodeRollout'
         running:
           type: integer
         snapshots:
@@ -5140,12 +5535,120 @@ components:
             - $ref: '#/components/schemas/store.SandboxE2BTemplateBuildView'
           description: The fixed template build as Core read it when this selection was saved.
       type: object
-    store.SandboxMaintenanceRequest:
+    store.SandboxNodeRollout:
       properties:
-        expected_generation:
+        diagnostic:
+          enum:
+            - provider_unavailable
+            - docker_unavailable
+            - docker_limits_unsupported
+            - runtime_download_failed
+            - runtime_image_unavailable
+            - kvm_unavailable
+            - microsandbox_artifacts_unavailable
+            - capacity_insufficient
+          type: string
+        ready_generation:
+          anyOf:
+            - type: integer
+            - type: 'null'
+          description: Durable serving-generation pin; online and provider_ready still gate placement.
+        state:
+          description: Target preparation, independent of an old pin's serving readiness.
+          enum:
+            - ready
+            - preparing
+            - failed
+            - update_required
+            - unknown
+          type: string
+      type: object
+    store.SandboxResetOfflineNode:
+      properties:
+        name:
+          type: string
+        node_id:
+          type: string
+        resources:
           type: integer
-        maintenance:
-          type: boolean
+      type: object
+    store.SandboxResetRemaining:
+      properties:
+        busy:
+          type: integer
+        cleanup:
+          type: integer
+        idle:
+          type: integer
+        offline_nodes:
+          items:
+            $ref: '#/components/schemas/store.SandboxResetOfflineNode'
+          type: array
+        on_offline_nodes:
+          type: integer
+      type: object
+    store.SandboxResetRequest:
+      properties:
+        clear:
+          enum:
+            - auto
+            - force
+          type: string
+        deadline_seconds:
+          maximum: 86400
+          minimum: 300
+          type: integer
+        expected_generation:
+          minimum: 0
+          type: integer
+      required:
+        - clear
+        - expected_generation
+      type: object
+    store.SandboxResetView:
+      properties:
+        clear:
+          type: string
+        deadline_at:
+          anyOf:
+            - type: string
+            - type: 'null'
+        forced_at:
+          anyOf:
+            - type: string
+            - type: 'null'
+        remaining:
+          $ref: '#/components/schemas/store.SandboxResetRemaining'
+        requested_at:
+          type: string
+      type: object
+    store.SandboxRollout:
+      properties:
+        nodes:
+          anyOf:
+            - allOf:
+                - $ref: '#/components/schemas/store.SandboxRolloutNodes'
+            - type: 'null'
+        previous_generation_sandboxes:
+          type: integer
+        state:
+          enum:
+            - settled
+            - preparing
+          type: string
+      type: object
+    store.SandboxRolloutNodes:
+      properties:
+        failed:
+          type: integer
+        preparing:
+          type: integer
+        ready:
+          type: integer
+        unknown:
+          type: integer
+        update_required:
+          type: integer
       type: object
     store.SandboxSuspensionView:
       properties:
@@ -5376,7 +5879,7 @@ components:
         - access
         - allowed_domains
       type: object
-    v1.EnvironmentPackages:
+    v1.EnvironmentPackagesResponse:
       properties:
         npm:
           items:
@@ -5420,7 +5923,7 @@ components:
             - agent.environment.template
           type: string
         packages:
-          $ref: '#/components/schemas/v1.EnvironmentPackages'
+          $ref: '#/components/schemas/v1.EnvironmentPackagesResponse'
         plugins:
           items:
             type: object
@@ -6549,7 +7052,7 @@ components:
         network:
           $ref: '#/components/schemas/v1.EnvironmentNetwork'
         packages:
-          $ref: '#/components/schemas/v1.EnvironmentPackages'
+          $ref: '#/components/schemas/v1.EnvironmentPackagesResponse'
         plugins:
           items:
             type: object
