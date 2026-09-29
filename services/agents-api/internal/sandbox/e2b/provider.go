@@ -46,9 +46,88 @@ type Response struct {
 	Info            *sandbox.Info          `json:",omitempty"`
 	Command         *sandbox.CommandResult `json:",omitempty"`
 	ErrorCode       string
-	DeploymentValid bool           `json:",omitempty"`
-	TemplateBuild   *TemplateBuild `json:",omitempty"`
-	Observations    []Observation  `json:",omitempty"`
+	DeploymentValid bool              `json:",omitempty"`
+	TemplateBuild   *TemplateBuild    `json:",omitempty"`
+	Templates       []TemplateSummary `json:",omitempty"`
+	Builds          []ReadyBuild      `json:",omitempty"`
+	Observations    []Observation     `json:",omitempty"`
+}
+
+type TemplateSummary struct {
+	ID    string   `json:"id"`
+	Names []string `json:"names"`
+}
+type ReadyBuild struct {
+	ID        string `json:"id"`
+	CPUs      uint32 `json:"cpus"`
+	MemoryMiB uint32 `json:"memory_mib"`
+}
+
+// Discover uses the same pinned SDK helper without requiring a saved deployment.
+// Its credential is passed only to the helper on stdin.
+func Discover(ctx context.Context, caller Caller, binary, apiKey, apiURL, domain, template string) (Response, error) {
+	if caller == nil || !filepath.IsAbs(binary) || apiKey == "" || len(apiKey) > 4096 ||
+		strings.ContainsFunc(apiKey, func(r rune) bool { return unicode.IsSpace(r) || r == 0 }) {
+		return Response{}, sandbox.ErrInvalid
+	}
+	if _, _, err := NormalizeEndpoint(apiURL, domain); err != nil {
+		return Response{}, sandbox.ErrInvalid
+	}
+	operation := "list_templates"
+	if template != "" {
+		if len(template) > 128 {
+			return Response{}, sandbox.ErrInvalid
+		}
+		for _, r := range template {
+			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+				return Response{}, sandbox.ErrInvalid
+			}
+		}
+		operation = "list_builds"
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	deadline, _ := ctx.Deadline()
+	out, err := caller.Call(ctx, Request{Version: ProtocolVersion, Operation: operation, Config: Config{Binary: binary, APIKey: apiKey, APIURL: apiURL, Domain: domain, Template: template}, Deadline: deadline})
+	if err != nil || out.Version != ProtocolVersion {
+		return Response{}, sandbox.ErrComputeUnconfirmed
+	}
+	if out.ErrorCode == "invalid" {
+		return Response{}, sandbox.ErrInvalid
+	}
+	if out.ErrorCode != "" || out.Info != nil || out.Command != nil || out.TemplateBuild != nil || out.Observations != nil {
+		return Response{}, sandbox.ErrComputeUnconfirmed
+	}
+	if operation == "list_templates" {
+		if out.Templates == nil || out.Builds != nil || len(out.Templates) > 200 {
+			return Response{}, sandbox.ErrComputeUnconfirmed
+		}
+		for _, item := range out.Templates {
+			if item.ID == "" || len(item.ID) > 128 || len(item.Names) > 20 {
+				return Response{}, sandbox.ErrComputeUnconfirmed
+			}
+			for _, r := range item.ID {
+				if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_') {
+					return Response{}, sandbox.ErrComputeUnconfirmed
+				}
+			}
+			for _, name := range item.Names {
+				if len(name) > 128 {
+					return Response{}, sandbox.ErrComputeUnconfirmed
+				}
+			}
+		}
+	} else {
+		if out.Builds == nil || out.Templates != nil || len(out.Builds) > 200 {
+			return Response{}, sandbox.ErrComputeUnconfirmed
+		}
+		for _, item := range out.Builds {
+			if !validID(item.ID) || item.CPUs == 0 || item.MemoryMiB == 0 {
+				return Response{}, sandbox.ErrComputeUnconfirmed
+			}
+		}
+	}
+	return out, nil
 }
 
 // TemplateBuild is the fixed build as read by deployment validation.

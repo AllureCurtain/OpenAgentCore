@@ -53,6 +53,9 @@ export interface SandboxE2BTemplateBuild {
   status: string | null;
   resources: { cpus: number | null; memory_mib: number | null; root_disk_mib: number | null };
 }
+export interface SandboxE2BDiscoveryInput { api_key: string; api_url?: string; domain?: string }
+export interface SandboxE2BTemplate { id: string; names: string[] }
+export interface SandboxE2BReadyBuild { id: string; cpus: number; memory_mib: number }
 export interface SandboxNode {
   id: string;
   name: string;
@@ -250,6 +253,23 @@ export class SandboxAdminClient {
 
   constructor(options: CoreClientOptions = {}) {
     this.#core = new CoreRequester(options.baseUrl ?? "/core/v1/sandbox", options.token, options.fetch, invalidSandboxResponse);
+  }
+
+  async listE2BTemplates(input: SandboxE2BDiscoveryInput, options?: ReadOptions): Promise<SandboxE2BTemplate[]> {
+    const value = await this.#core.json("/e2b/templates", options, "POST", input);
+    if (!isRecord(value) || !onlyFields(value, new Set(["templates"])) || !Array.isArray(value.templates) || value.templates.length > 200) invalidSandboxResponse();
+    return value.templates.map((item) => {
+      if (!isRecord(item) || !onlyFields(item, new Set(["id", "names"])) || typeof item.id !== "string" || !Array.isArray(item.names) || !item.names.every((name) => typeof name === "string")) invalidSandboxResponse();
+      return { id: item.id, names: item.names };
+    });
+  }
+  async listE2BReadyBuilds(templateId: string, input: SandboxE2BDiscoveryInput, options?: ReadOptions): Promise<SandboxE2BReadyBuild[]> {
+    const value = await this.#core.json(`/e2b/templates/${encodeURIComponent(templateId)}/builds`, options, "POST", input);
+    if (!isRecord(value) || !onlyFields(value, new Set(["builds"])) || !Array.isArray(value.builds) || value.builds.length > 200) invalidSandboxResponse();
+    return value.builds.map((item) => {
+      if (!isRecord(item) || !onlyFields(item, new Set(["id", "cpus", "memory_mib"])) || typeof item.id !== "string" || !isNonnegativeInteger(item.cpus) || !isNonnegativeInteger(item.memory_mib)) invalidSandboxResponse();
+      return { id: item.id, cpus: item.cpus, memory_mib: item.memory_mib };
+    });
   }
 
   #json<T>(path: string, options?: ReadOptions, method?: string, body?: unknown): Promise<T> {

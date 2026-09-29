@@ -10,7 +10,8 @@ from packaging.version import Version
 
 from e2b.api.client_sync import get_api_client
 from e2b.api.client.api.sandboxes import get_sandboxes_metrics
-from e2b.api.client.api.templates import get_templates_template_id
+from e2b.api.client.api.templates import get_v2_templates, get_templates_template_id
+from e2b.api.client.models.template import Template
 from e2b.api.client.models.sandboxes_with_metrics import SandboxesWithMetrics
 from e2b.api.client.models.template_with_builds import TemplateWithBuilds
 from e2b.api.client.types import UNSET
@@ -19,6 +20,54 @@ from state import Failure
 
 SDK_VERSION = '2.51.0'
 MAX_OUTPUT = 1024 * 1024
+
+
+def list_templates(config, remaining):
+    cursor, seen, result = UNSET, set(), []
+    for _ in range(20):
+        client = get_api_client(ConnectionConfig(**sdk_options(config, remaining)))
+        response = get_v2_templates.sync_detailed(client=client, next_token=cursor, limit=100)
+        if response.status_code != 200 or not isinstance(response.parsed, list):
+            raise Failure('invalid' if response.status_code in (400, 401, 403, 422) else 'unconfirmed')
+        for item in response.parsed:
+            if not isinstance(item, Template) or not isinstance(item.template_id, str):
+                raise Failure('unconfirmed')
+            names = [name for name in item.names if isinstance(name, str) and len(name) <= 128][:20]
+            result.append({'id': item.template_id, 'names': names})
+        if len(result) > 200:
+            raise Failure('unconfirmed')
+        cursor = response.headers.get('x-next-token')
+        if not cursor:
+            return result
+        if len(cursor) > 4096 or cursor in seen:
+            raise Failure('unconfirmed')
+        seen.add(cursor)
+    raise Failure('unconfirmed')
+
+
+def list_builds(config, remaining):
+    template = config['Template']
+    cursor, seen, result = UNSET, set(), []
+    for _ in range(20):
+        client = get_api_client(ConnectionConfig(**sdk_options(config, remaining)))
+        response = get_templates_template_id.sync_detailed(template_id=template, client=client,
+                                                          next_token=cursor, limit=100)
+        if response.status_code != 200 or not isinstance(response.parsed, TemplateWithBuilds):
+            raise Failure('invalid' if response.status_code in (400, 401, 403, 404, 422) else 'unconfirmed')
+        if response.parsed.template_id != template:
+            raise Failure('unconfirmed')
+        for build in response.parsed.builds:
+            if build.status.value == 'ready' and type(build.cpu_count) is int and build.cpu_count > 0 and type(build.memory_mb) is int and build.memory_mb > 0:
+                result.append({'id': str(build.build_id), 'cpus': build.cpu_count, 'memory_mib': build.memory_mb})
+        if len(result) > 200:
+            raise Failure('unconfirmed')
+        cursor = response.headers.get('x-next-token')
+        if not cursor:
+            return result
+        if len(cursor) > 4096 or cursor in seen:
+            raise Failure('unconfirmed')
+        seen.add(cursor)
+    raise Failure('unconfirmed')
 
 
 def sdk_options(config, remaining):

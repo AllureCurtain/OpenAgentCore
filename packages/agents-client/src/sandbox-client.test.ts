@@ -108,6 +108,26 @@ describe("strict sandbox administration projections", () => {
 });
 
 describe("Core sandbox credential boundaries", () => {
+  it("uses Core-key routes for transient template discovery and projects safe fields", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(response({ templates: [{ id: "tpl_123", names: ["runtime"] }] }))
+      .mockResolvedValueOnce(response({ builds: [{ id: "00000000-0000-0000-0000-000000000001", cpus: 2, memory_mib: 2048 }] }));
+    const client = new SandboxAdminClient({ fetch });
+    const input = { api_key: "private-test-key", api_url: "https://sandbox.sandbase.ai", domain: "sandbox.sandbase.ai" };
+    expect(await client.listE2BTemplates(input)).toHaveLength(1);
+    expect(await client.listE2BReadyBuilds("tpl_123", input)).toHaveLength(1);
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(["/core/v1/sandbox/e2b/templates", "/core/v1/sandbox/e2b/templates/tpl_123/builds"]);
+    expect(fetch.mock.calls.every(([, init]) => init?.method === "POST" && !new Headers(init?.headers).has("Authorization") && String(init?.body).includes("private-test-key"))).toBe(true);
+  });
+
+  it("rejects extra fields in credentialed discovery responses", async () => {
+    const input = { api_key: "private-test-key" };
+    const templates = new SandboxAdminClient({ fetch: vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ templates: [], builds: [] })) });
+    const builds = new SandboxAdminClient({ fetch: vi.fn<typeof globalThis.fetch>().mockResolvedValue(response({ builds: [], templates: [] })) });
+    await expect(templates.listE2BTemplates(input)).rejects.toMatchObject({ code: "invalid_admin_response" });
+    await expect(builds.listE2BReadyBuilds("tpl_123", input)).rejects.toMatchObject({ code: "invalid_admin_response" });
+  });
+
   it("defaults to /core/v1/sandbox and is not a /v1 client", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => response({ data: [] }));
     const client = new SandboxAdminClient({ fetch });

@@ -3410,6 +3410,93 @@ paths:
               $ref: '#/components/schemas/store.SandboxMaintenanceRequest'
         description: Maintenance state
         required: true
+  /core/v1/sandbox/e2b/templates:
+    post:
+      description: Core key only. Uses a transient E2B credential and endpoint through the pinned SDK helper; returns safe template metadata. Does not save the credential or allocate compute.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.SandboxE2BDiscoveryResult'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: List templates visible to an E2B credential
+      tags:
+        - Sandbox Manager
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/api.SandboxE2BDiscoveryInput'
+        description: Transient E2B connection
+        required: true
+  /core/v1/sandbox/e2b/templates/{template_id}/builds:
+    post:
+      description: Core key only. Reads one template through the pinned SDK helper with a transient E2B credential. Returns ready builds only, without allocating compute.
+      parameters:
+        - schema:
+            type: string
+          description: Template ID
+          in: path
+          name: template_id
+          required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.SandboxE2BDiscoveryResult'
+        '400':
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/api.CoreErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: List ready builds for an E2B template
+      tags:
+        - Sandbox Manager
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/api.SandboxE2BDiscoveryInput'
+        description: Transient E2B connection
+        required: true
   /core/v1/sandbox/enrollment-tokens:
     post:
       description: Core key only. Does not grant project resource access. Responses contain only explicit safe fields.
@@ -4384,6 +4471,26 @@ components:
         runtime:
           $ref: '#/components/schemas/sandbox.RuntimeRelease'
       type: object
+    api.SandboxE2BDiscoveryInput:
+      properties:
+        api_key:
+          type: string
+        api_url:
+          type: string
+        domain:
+          type: string
+      type: object
+    api.SandboxE2BDiscoveryResult:
+      properties:
+        builds:
+          items:
+            $ref: '#/components/schemas/e2b.ReadyBuild'
+          type: array
+        templates:
+          items:
+            $ref: '#/components/schemas/e2b.TemplateSummary'
+          type: array
+      type: object
     api.SandboxE2BInput:
       properties:
         api_key:
@@ -4652,6 +4759,24 @@ components:
           $ref: '#/components/schemas/coremetrics.Range'
         service:
           $ref: '#/components/schemas/coremetrics.ServiceState'
+      type: object
+    e2b.ReadyBuild:
+      properties:
+        cpus:
+          type: integer
+        id:
+          type: string
+        memory_mib:
+          type: integer
+      type: object
+    e2b.TemplateSummary:
+      properties:
+        id:
+          type: string
+        names:
+          items:
+            type: string
+          type: array
       type: object
     sandbox.DeploymentSpec:
       properties:

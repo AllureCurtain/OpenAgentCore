@@ -23,7 +23,20 @@ for the operator workflow. Generated schemas cover the
 | `POST /core/v1/sandbox/deployment` | Core key | Select the initial provider, resources and Runtime |
 | `PUT /core/v1/sandbox/deployment` | Core key | Replace a fully drained selection while maintenance is enabled |
 | `PATCH /core/v1/sandbox/deployment/maintenance` | Core key | Pause or resume fresh hosted admission at the expected generation |
+| `POST /core/v1/sandbox/e2b/templates` | Core Web server or operator script with Core key | List up to 200 templates visible to a transient E2B credential |
+| `POST /core/v1/sandbox/e2b/templates/{template_id}/builds` | Core Web server or operator script with Core key | List up to 200 ready builds for one selected template |
 | `GET /api/v1/sandbox-node/configuration` | Enrollment token or retained node credential | Read the active node installation configuration without consuming enrollment |
+
+Template discovery posts `{ "api_key": "...", "api_url": "https://sandbox.sandbase.ai", "domain": "sandbox.sandbase.ai" }`.
+The official E2B endpoint may omit both endpoint fields. The first response is
+`{ "templates": [{ "id": "...", "names": ["..."] }] }`;
+the second is `{ "builds": [{ "id": "build-uuid", "cpus": 2, "memory_mib": 2048 }] }`.
+Both lists may be empty. The Core key authenticates the caller; the E2B key is
+used only for this request, is never stored by discovery, and is never returned.
+Discovery uses the pinned SDK helper and its `GET /v2/templates` operation,
+makes no allocation, and is capped at 200
+results. A limit or provider failure returns 503 with a generic message. The
+deployment write separately validates the selected exact ready build.
 
 The paired console injects the Core key server-side on every signed-in `/core/v1`
 request. The browser never receives that key. Node configuration
