@@ -25,8 +25,9 @@ See the [contributor guide](../CONTRIBUTING.md).
 
 The release base must serve the generated asset file names over HTTPS. Set
 `CORE_DISTRIBUTION_OFFLINE=1` to also produce the offline bundle; a build without a
-release base must select offline mode. Nodes always download their files from the
-console that generated their command, whatever release base the build recorded.
+release base must select offline mode. Nodes obtain bootstrap metadata from the
+console that generated their command. The console serves local artifacts or redirects
+missing ones to the pinned HTTPS release URL. Published assets download anonymously.
 
 A bundle carries a fixed set of docs (the build lists them). Links between them stay
 relative; every other relative link is rewritten to the same file on GitHub at the

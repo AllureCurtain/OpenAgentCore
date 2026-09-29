@@ -113,9 +113,9 @@ The [Core–Runtime protocol](docs/runtime-protocol.md) owns message order,
 identities, receipts and failure ownership. Shared types and validators live only
 in `internal/agentdaemon/proto`; change both peers together with an exact
 wire-version check. Do not add a parallel schema or historical wire fallback.
-Hosted and self-hosted peers use the same contract. The project is not public:
-change current callers and implementations together instead of maintaining
-historical compatibility layers, aliases or migrations.
+Hosted and self-hosted peers use the same contract. Change current callers and
+implementations together. Historical upgrades remain unsupported; do not add
+compatibility layers, aliases or migrations without an explicit upgrade contract.
 
 `make check-runtime-contract` is the focused shared-contract entry point. Its
 checks also run through `check-go` and `check-agents-api` in the required full gate.
@@ -2043,7 +2043,8 @@ artifact names. Candidate build automation creates artifacts and may create an
 unpublished draft; a successful build is not real execution qualification. A
 separate existing-host batch controller may publish that draft automatically only
 after directly supervised real qualification and verified batch landing. Repository
-visibility remains internal and independent of Release publication.
+visibility is public. Published release downloads are anonymous and must not
+require GitHub login or repository credentials.
 Manual builds use the legal `build-<full source SHA>` release tag; tag-triggered
 builds use the actual `v*` tag. The manifest download base and draft tag must match,
 while artifact filenames and source provenance retain the full source SHA.
