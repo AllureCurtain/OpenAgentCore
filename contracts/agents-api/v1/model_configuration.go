@@ -2,8 +2,8 @@ package v1
 
 import (
 	"encoding/json"
-	"strings"
 
+	"github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
 	"github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/builtin"
 )
 
@@ -49,7 +49,7 @@ func ResolvedHarnessConfig(raw json.RawMessage) json.RawMessage {
 // ValidateNativeModelConfiguration checks the resolved public execution inputs
 // through the same adapter validation used by deployment administration.
 func ValidateNativeModelConfiguration(harness, model string, raw json.RawMessage) error {
-	if strings.TrimSpace(model) == "" {
+	if _, err := harnessconfig.ValidateModel(model); err != nil {
 		return &ModelProviderError{Code: "model_configuration_model_invalid", Param: "model", message: "model must be a nonempty model identifier"}
 	}
 	return ValidateHarnessConfig(harness, raw)

@@ -8,8 +8,8 @@ behavior, public fields or adapter support. Existing fields below are reused own
 not a claim that every value already executes on every Harness.
 
 This is the canonical owner of the planned public model field vocabulary,
-resolution and application semantics. The planned adapter obligation is indexed
-in [agent/harness.go](../../apps/parsar-daemon/internal/agent/harness.go).
+resolution and application semantics. Future adapter support extends the existing shared contract in
+[internal/harnessconfig/harness.go](../../internal/harnessconfig/harness.go).
 Implementation must update the current API documentation and generated schemas
 together before advertising new fields.
 
@@ -161,31 +161,22 @@ Fields affecting tool handling, context accounting, reasoning state/signatures o
 
 ## 6. Required Harness contract
 
-The existing Executor/Turn lifecycle stays unchanged. agent/harness.go should require a registered model-planning contract alongside the factory:
+The existing shared contract in
+[internal/harnessconfig/harness.go](../../internal/harnessconfig/harness.go)
+remains the only model configuration contract. It already declares native
+protocols and parameter validation, prepares the current model/provider/native
+inputs, and is mandatory at Runtime registration. Core consumes that same
+declaration. The separate Executor/Turn lifecycle remains unchanged.
 
-~~~go
-// Sketch: names and exact package placement are provisional.
-type ModelConfigurationAdapter interface {
-    DescribeModelSupport() HarnessModelSupport
-
-    // Pure: no subprocess, credentials lookup or model input.
-    // The same implementation is used at admission and in Runtime.
-    PlanModelConfiguration(
-        config ResolvedModelConfiguration,
-        context ModelExecutionContext,
-    ) (AdapterModelPlan, error)
-}
-
-type AdapterModelPlan struct {
-    AppliedFields []ModelField
-    Requirements ModelRequirements
-    // Native options remain adapter-private; not another public config map.
-}
-~~~
+Implement future common fields by extending this contract's resolved input,
+support description and pure preparation together. Do not introduce a second
+adapter interface, registration hook or parallel configuration planner. Public
+wire types retain their existing owners; this design does not add those fields
+to current HTTP input or require placeholder types now.
 
 Mappings are ordinary tested pure functions within native adapters. Existing wire and adapter versions identify compatibility. Do not add mapping IDs, a mapping registry or a version/rules DSL.
 
-The shared planner combines native adapter support with model declarations. No Harness-name branches in Core, source-specific adapter flows or duplicate validators.
+When common fields are implemented, shared preparation combines native adapter support with model declarations. No Harness-name branches in Core, source-specific adapter flows or duplicate validators.
 
 The compiled plan must account for every resolved explicit non-clear field and every requested behavioral requirement. Missing or duplicate application is an error. Identity, model limits and model declarations retain their own typed handling.
 
@@ -284,7 +275,7 @@ These are planned shapes, not currently accepted requests. Both must reach ident
 
 ## 9. Delivery boundaries and acceptance
 
-1. Establish this field table, value semantics and ownership contract. Put the accepted mandatory contract in harness.go and link one public field owner document.
+1. Establish this field table, value semantics and ownership contract. Extend the existing shared harness.go contract and link one public field owner document.
 2. Introduce shared typed fragments and resolver; separate provider connection from model limits. Remove superseded aliases/duplicate inputs together. Update Web and public clients in the same change.
 3. The first implementation phase unifies existing reasoning, text, tools and images through the common planner, then qualifies per-call output budgets, temperature and top_p. Keep native adapter ownership and immutable Session behavior. Common fields are the normal input; native JSON remains only a vendor-specific escape hatch.
 4. Qualify sampling, per-call output ceilings and other common controls through each adapter's native interfaces. Explicitly reject fields or combinations those interfaces cannot express; do not add a model proxy, transport mapper or protocol conversion to expand support.

@@ -14,7 +14,7 @@ one canonical owner, listed below; update that owner when changing its contract.
 | API callers, credentials and route inventory | [API index](docs/api/README.md) |
 | Public wire types and qualified behavior | [Agents API contracts](contracts/agents-api/README.md), [pinned upstream](contracts/agents-api/upstream.json), and linked operation contracts |
 | Runtime messages, receipts and failure ownership | [Core–Runtime protocol](docs/runtime-protocol.md) and `internal/agentdaemon/proto` |
-| Harness interfaces and onboarding | [Harness onboarding](contracts/agents-api/harness-onboarding.md) and `agent/harness.go` |
+| Harness interfaces and onboarding | [Harness onboarding](contracts/agents-api/harness-onboarding.md) and `apps/parsar-daemon/internal/agent/harness.go` |
 | Provider interfaces and onboarding | [Sandbox Provider guide](docs/sandbox-provider.md) and `sandbox/sandbox_provider.go` |
 | Claude private bridge and Runtime artifact | [Claude SDK adapter](packages/claude-sdk-adapter/README.md) |
 | Operator installation and configuration | [Installation](docs/getting-started/install.md), [configuration](docs/configuration.md), [operations](docs/getting-started/operations.md) |
@@ -3372,9 +3372,11 @@ or containment of descendants that deliberately leave the group.
 
 ### Harness qualification and onboarding
 
-`apps/parsar-daemon/internal/agent/harness.go` is the single source entry point
+`apps/parsar-daemon/internal/agent/harness.go` owns the lifecycle entry point
 for Harness authors. Keep required lifecycle declarations, separate optional
-interfaces and the existing registration methods there. Operation result types,
+interfaces and the existing registration methods there. Model configuration has
+one shared contract in `internal/harnessconfig/harness.go`, referenced by that
+lifecycle entry point and consumed by Core without importing daemon internals. Operation result types,
 errors and Registry lookup/storage implementation may remain in focused files.
 Use the existing `proto.SupportedAgentKind` and `AgentKindCapabilities` schema;
 do not introduce a second capability descriptor or a combined optional interface.
@@ -3589,21 +3591,29 @@ Keep the adapter artifact independent of the Core binary and product sources.
 
 ### Harness model configuration
 
-The configuration preparation contract in `apps/parsar-daemon/internal/agent/harness.go`
-is mandatory for every Executor factory. Shared wire types live in
-`internal/agentdaemon/proto`; native model fields and their application are documented
-in [Harness onboarding](contracts/agents-api/harness-onboarding.md#native-model-configuration).
-Core and Runtime consume the same native protocol and parameter declarations in
-`internal/harnessconfig`; adapters configure direct native connections.
+`internal/harnessconfig/harness.go` is the sole authoring entry point for the
+model configuration contract: its declaration and pure preparation cover the
+current model, provider and native parameters. `RegisterKind` requires an explicit
+adapter-owned declaration; direct, preparation and Executor registrations all run
+that declaration's preparation before calling native code. Registry wrappers
+transfer the same declaration, never reconstruct it from a second support table.
+Core admission and support descriptions consume it too. JSON decoding, persistence
+and native rendering may remain in focused implementation files.
+Shared wire types remain in `internal/agentdaemon/proto`; current fields and
+application are documented in
+[Harness onboarding](contracts/agents-api/harness-onboarding.md#native-model-configuration).
+Adapters configure direct native connections. Claude's private bridge receives
+compiled native options and performs structural checks, not a second copy of
+the Go declaration's enum, budget or combination rules.
 Implemented public configuration sources and inheritance belong to
 [model execution](contracts/agents-api/model-execution.md).
 [Unified model configuration design](contracts/agents-api/model-configuration-design.md)
 is the canonical planned field/ownership contract. Extend Web defaults and the
-public API through the same types, resolver, validators and adapter planner;
+public API by extending the existing shared contract, types and resolver;
 source and authority may differ. Implement planned fields and qualify their
 native application before exposing them as accepted HTTP input. This design
 does not change current native configuration or require speculative Runtime
-scaffolding. The planned adapter obligations are indexed in `agent/harness.go`.
+scaffolding or a second configuration registration interface.
 
 ### Harness selection and Agent defaults
 

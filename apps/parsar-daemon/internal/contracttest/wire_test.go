@@ -2,6 +2,8 @@
 // using the production gateway, transport and dispatcher with a controlled adapter.
 package contracttest
 
+import "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
+
 import (
 	"context"
 	"errors"
@@ -84,7 +86,7 @@ func connectFixture(t *testing.T, factory agent.ExecutorFactory) *wireFixture {
 	}
 	kinds := agent.NewRegistry()
 	kinds.RegisterKind(proto.SupportedAgentKind{Kind: "contract", Available: true, Capabilities: proto.AgentKindCapabilities{EnvironmentNone: true}},
-		func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
+		harnessconfig.Configuration{}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
 			return nil, errors.New("prepared execution must not use prompt_request")
 		})
 	kinds.RegisterExecutor("contract", factory)

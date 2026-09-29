@@ -1,5 +1,7 @@
 package cli
 
+import "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
+
 import (
 	"context"
 	"errors"
@@ -113,7 +115,7 @@ func testDisconnectedPumpCleanup(t *testing.T, suspend bool) {
 	owner := &cleanupExecutor{retry: make(chan struct{}), confirm: make(chan struct{})}
 	registry := agent.NewRegistry()
 	registry.RegisterKind(proto.SupportedAgentKind{Kind: "cleanup", Available: true, Capabilities: proto.AgentKindCapabilities{EnvironmentNone: true}},
-		func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
+		harnessconfig.Configuration{}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
 			return nil, errors.New("unexpected legacy factory")
 		})
 	var factories atomic.Int32

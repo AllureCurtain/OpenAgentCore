@@ -1,5 +1,7 @@
 package dispatch_test
 
+import "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
+
 import (
 	"context"
 	"errors"
@@ -44,7 +46,7 @@ func TestShutdownCancelsCompletionErrorSend(t *testing.T) {
 	sender := &shutdownAllSendsBlockSender{entered: make(chan struct{}), terminal: make(chan context.Context, 1), rescue: make(chan struct{})}
 	registry := agent.NewRegistry()
 	var session *fakeSession
-	registry.Register("codex", func(ctx context.Context, req proto.PromptRequestPayload, out chan<- proto.Envelope) (agent.Session, error) {
+	registry.Register("codex", harnessconfig.Configuration{}, func(ctx context.Context, req proto.PromptRequestPayload, out chan<- proto.Envelope) (agent.Session, error) {
 		session = &fakeSession{out: out, closeOutOnCancel: true}
 		return &steeringSession{fakeSession: session, steer: func(context.Context, proto.PromptSteerPayload) error { return nil }}, nil
 	})

@@ -1,4 +1,3 @@
-import { parseHarnessConfig } from "./harness_config.js";
 import { NativeFailure } from "./native_failure.js";
 import { ExecutorTurns, type ExecutorEvent } from "./executor_protocol.js";
 import { StructuredOutput } from "./structured_output.js";
@@ -87,7 +86,8 @@ export async function execute(request: Start | Prepare | ExecutorPrepare, emit: 
   try {
     if (abort.signal.aborted) throw new Error("cancelled");
     const options: Options = {
-        ...parseHarnessConfig(request.harness_config),
+        ...(request.native_model_options?.effort !== undefined ? { effort: request.native_model_options.effort } : {}),
+        ...(request.native_model_options?.thinking !== undefined ? { thinking: request.native_model_options.thinking } : {}),
         cwd: request.cwd,
         env: request.tool_search ? toolSearchEnvironment(process.env, request.model) : workspace?.options.env ?? { ...process.env, ...(subagents ? { CLAUDE_CODE_DISABLE_BACKGROUND_TASKS: "1" } : {}) },
         model: request.model,

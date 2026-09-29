@@ -47,10 +47,18 @@ func ParseProvider(raw any) (Provider, error) {
 	return provider, nil
 }
 
-func (p Provider) Validate() error {
-	switch p.Protocol {
+// Valid is the single vocabulary of supported upstream protocol formats.
+func (p Protocol) Valid() bool {
+	switch p {
 	case Anthropic, Responses, ChatCompletions:
+		return true
 	default:
+		return false
+	}
+}
+
+func (p Provider) Validate() error {
+	if !p.Protocol.Valid() {
 		return ErrConfiguration
 	}
 	u, err := url.Parse(p.BaseURL)

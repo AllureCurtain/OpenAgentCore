@@ -1,5 +1,7 @@
 package dispatch
 
+import "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
+
 import (
 	"context"
 	"errors"
@@ -91,7 +93,7 @@ func TestPreparedDonePublishesAfterExecutorHandoff(t *testing.T) {
 			owner := &terminalHandoffExecutor{turns: make(chan *terminalHandoffTurn, 3)}
 			registry := agent.NewRegistry()
 			registry.RegisterKind(proto.SupportedAgentKind{Kind: "handoff", Available: true, Capabilities: proto.AgentKindCapabilities{EnvironmentNone: true}},
-				func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
+				harnessconfig.Configuration{}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
 					return nil, errors.New("legacy path forbidden")
 				})
 			var creates atomic.Int32
