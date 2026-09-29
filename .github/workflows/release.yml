@@ -32,7 +32,6 @@ jobs:
       ref: ${{ inputs.ref || github.sha }}
 
   build:
-    needs: check
     runs-on: ubuntu-22.04
     timeout-minutes: 120
     outputs:
@@ -65,9 +64,22 @@ jobs:
           df -h /
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/.ghcup
           df -h /
+      - name: Select shared Go caches
+        run: |
+          echo "GOCACHE=$HOME/.oac/cache/go-build" >> "$GITHUB_ENV"
+          echo "GOMODCACHE=$HOME/.oac/cache/go-mod" >> "$GITHUB_ENV"
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          cache: false
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.oac/cache/go-build
+            ~/.oac/cache/go-mod
+          key: core-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-${{ steps.source.outputs.revision }}
+          restore-keys: |
+            core-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
@@ -76,12 +88,6 @@ jobs:
           npm install --global pnpm@10.30.3
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config libssl-dev
-      - uses: actions/cache@v6
-        with:
-          path: |
-            ~/.oac/cache/go-build
-            ~/.oac/cache/go-mod
-          key: core-release-${{ runner.os }}-${{ hashFiles('go.sum') }}
       - name: Check release metadata and prepare pinned harnesses
         run: |
           PYTHONDONTWRITEBYTECODE=1 python3 scripts/core-distribution-manifest.test.py
@@ -114,7 +120,7 @@ jobs:
 
   release:
     if: github.event_name == 'push' || inputs.draft_release
-    needs: build
+    needs: [check, build]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
