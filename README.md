@@ -37,15 +37,14 @@ To execute on your own Linux, macOS or Windows machine, follow the
 
 ## How it fits together
 
-Core manages Sessions and execution state. Runtime prepares Skills and MCP tools,
-then runs the selected harness. Sandbox providers manage environments; model providers
-serve inference requests. Web is the administrator console.
+![OpenAgentCore architecture](docs/assets/architecture.png)
 
-```text
-Application → Core API → common daemon protocol → Runtime → Harness → Model Provider
-                  │
-                  └→ Sandbox Provider → create / bootstrap / reclaim Environment
-```
+Core exposes two APIs. Applications use the public **Agents API** (`/v1`), the same
+protocol as OpenAI's. Operators use the private **Core API** (`/core/v1`) through
+Web. Core manages Sessions and execution state. Runtime prepares Skills and MCP tools,
+then runs the selected harness. Sandbox providers manage environments; model providers
+serve inference requests. Each connection is a defined protocol, so any component
+can be replaced on its own.
 
 Managed Providers supply Linux environments. Self-hosted daemons run on Linux,
 macOS and Windows, subject to the selected Harness's

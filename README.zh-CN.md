@@ -35,14 +35,12 @@ curl -fsSL https://github.com/MiniMax-AI/parsar-core/releases/latest/download/in
 
 ## 组件关系
 
-Core 管理 Session 和执行状态；Runtime 准备 Skill 和 MCP 工具并运行所选引擎；
-沙箱供应商管理运行环境，模型供应商提供推理服务。Web 提供管理员控制台。
+![OpenAgentCore 架构](docs/assets/architecture.png)
 
-```text
-应用 → Core API → 统一 daemon 协议 → Runtime → Harness → 模型供应商
-          │
-          └→ Sandbox Provider → 创建 / 引导 / 回收 Environment
-```
+Core 对外提供两组 API：应用调用公开的 **Agents API**（`/v1`），与 OpenAI 协议一致；
+管理员通过 Web 调用私有的 **Core API**（`/core/v1`）。Core 管理 Session 和执行状态；
+Runtime 准备 Skill 和 MCP 工具并运行所选引擎；沙箱供应商管理运行环境，模型供应商提供推理服务。
+各部件之间都通过既定协议连接，任何一个都可以单独替换。
 
 托管 Provider 提供 Linux 环境；自托管 daemon 支持 Linux、macOS 和 Windows，
 具体组合见 [Harness 平台支持表](docs/self-hosted-native.md#platforms-and-prerequisites)。
