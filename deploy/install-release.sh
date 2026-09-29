@@ -109,6 +109,7 @@ def install(version, arguments):
         raise ReleaseError("Python 3.9+ is required")
     if platform.system() != "Linux" or platform.machine() not in ("x86_64", "amd64"):
         raise ReleaseError("Core installation currently requires Linux amd64")
+    print("==> Finding the " + ("latest stable release" if version == "latest" else "requested release") + "...", flush=True)
     tag, bundle, sums = select_release(version)
     print("Installing OpenAgentCore " + tag, flush=True)
     home = pathlib.Path.home() / ".oac"
@@ -125,7 +126,9 @@ def install(version, arguments):
             match = re.fullmatch(r"([0-9a-f]{64})  " + re.escape(bundle["name"]), expected)
             if not match:
                 raise ReleaseError("Invalid release checksum file")
+            print("==> Downloading the release archive (this may take a few minutes)...", flush=True)
             download(bundle, archive)
+            print("==> Verifying the archive checksum...", flush=True)
             digest = hashlib.sha256()
             with archive.open("rb") as source:
                 for chunk in iter(lambda: source.read(1024 * 1024), b""):
@@ -133,6 +136,7 @@ def install(version, arguments):
             if digest.hexdigest() != match[1]:
                 raise ReleaseError("Release checksum mismatch; installation was not started")
             stem = bundle["name"].removesuffix(".tar.gz")
+            print("==> Extracting the verified archive...", flush=True)
             root = extract(archive, extracted, stem)
             manifest = json.loads((root / "manifest.json").read_text())
             if manifest.get("source_commit") != ARCHIVE.fullmatch(bundle["name"])[1]:
@@ -142,6 +146,7 @@ def install(version, arguments):
         raise
     # Keep the verified extracted bundle for same-version repair.
     print("Verified bundle: " + str(root), flush=True)
+    print("==> Starting the bundled installer...", flush=True)
     return subprocess.call(["bash", str(root / "install.sh"), *arguments])
 
 

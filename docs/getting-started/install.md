@@ -83,6 +83,12 @@ them locally, then run the bundled `./install.sh`. This explicitly includes node
 Runtime files so Web can serve them without release access. The default online
 installation uses the smaller archive and leaves those downloads to the nodes.
 
+The installer prints each stage before it starts, including image preparation and
+service health checks. Its final summary groups access addresses, sign-in details,
+next steps and management commands. Colors are enabled only in a terminal; set
+`NO_COLOR=1` to disable them. Redirected output stays plain text. A failed step
+stops installation and never prints a successful completion message.
+
 The installer:
 
 1. checks the host and the bundle, and loads the Core, Web and PostgreSQL images;
