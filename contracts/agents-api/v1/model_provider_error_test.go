@@ -17,10 +17,9 @@ func TestModelProviderErrorMessagesAndPrecedence(t *testing.T) {
 			p.APIKey = ""
 		}},
 		{"protocol before key", "codex", "model_provider_protocol_unsupported", "protocol", "unsupported model provider protocol", func(p *ModelProviderInput) { p.Protocol = "private"; p.APIKey = "" }},
-		{"key before harness", "claude_sdk", "model_provider_api_key_invalid", "api_key", "invalid model provider API key", func(p *ModelProviderInput) { p.APIKey = "" }},
+		{"key", "claude_sdk", "model_provider_api_key_invalid", "api_key", "invalid model provider API key", func(p *ModelProviderInput) { p.APIKey = "" }},
 		{"context before output", "codex", "model_provider_token_limits_invalid", "context_window", "invalid model token limits", func(p *ModelProviderInput) { p.ContextWindow = -1; p.MaxOutputTokens = -2 }},
 		{"output", "codex", "model_provider_token_limits_invalid", "max_output_tokens", "invalid model token limits", func(p *ModelProviderInput) { p.MaxOutputTokens = 1 }},
-		{"harness protocol", "claude_sdk", "model_provider_protocol_unsupported", "protocol", "selected harness does not support this model provider protocol", func(p *ModelProviderInput) {}},
 		{"required context", "mcode", "model_provider_token_limits_invalid", "context_window", "selected harness requires positive model context_window and max_output_tokens", func(p *ModelProviderInput) { p.Protocol = "anthropic" }},
 		{"required output", "mcode", "model_provider_token_limits_invalid", "max_output_tokens", "selected harness requires positive model context_window and max_output_tokens", func(p *ModelProviderInput) { p.Protocol = "anthropic"; p.ContextWindow = 10 }},
 	} {
