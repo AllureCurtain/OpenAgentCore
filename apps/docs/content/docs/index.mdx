@@ -3,42 +3,41 @@ title: "OpenAgentCore documentation"
 description: "Install Core and Web, create a Project API key, and add execution capacity."
 ---
 
-Start with the path that matches your role. These pages are the canonical sources
-for the documentation website; generated site pages are not a second manual.
+OpenAgentCore runs AI agents on your own infrastructure behind the OpenAI Agents
+API. Pick the path that matches your role. New here? Read the
+[architecture overview](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/docs/architecture.md) first.
 
-## First installation and first task
+## Operators: install and run
 
-1. [Install Core and Web](/install), then sign in with the Core key.
-2. [Add managed execution capacity](/hosted-providers) or
-   [connect your own Runtime](/self-hosted-execution).
-3. Issue a Project API key and follow the [first Session walkthrough](/quickstart).
-4. Continue with the [user guide](/user-guide) for capabilities, files and recovery.
+1. [Install Core and Web](/install) and sign in.
+2. Add execution capacity: [managed nodes or E2B](/hosted-providers), or
+   [your own machine](/self-hosted-execution).
+3. Issue a Project API key and hand it to the application developer.
 
-## Operate a deployment
-
-| Guide | Use it for |
+| Guide | Covers |
 | --- | --- |
-| [Installation](/install) | Host prerequisites, release bundles, HTTPS and first sign-in |
-| [Configuration](/configure) | Installer configuration and database-owned settings |
-| [Nodes](/hosted-providers) | Managed capacity, readiness and removal |
-| [Self-hosted execution](/self-hosted-execution) | Connecting a user-owned machine to a Session |
-| [Native daemon](/self-hosted-native) | Platform support and local installation lifecycle |
-| [Operations](/troubleshooting) | Service lifecycle, backups, keys, repair and troubleshooting |
-| [Administrator console](/console) | Monitoring and managing Core through Web |
+| [Installation](/install) | Prerequisites, HTTPS, first sign-in, advanced options |
+| [Configuration](/configure) | `config.json`, default models, sandbox deployment |
+| [Nodes](/hosted-providers) | Adding, checking and removing managed nodes |
+| [Self-hosted execution](/self-hosted-execution) | Connecting your own machine to a Session |
+| [Native Runtime](/self-hosted-native) | Platforms, installing and operating `oac-daemon` |
+| [Operations](/troubleshooting) | Services, backups, keys, repair and troubleshooting |
+| [Web console](/console) | What the console shows and manages |
 
-## Build an application
+## Application developers: build on the API
 
-The [user guide](/user-guide) connects common tasks to their detailed contracts.
-The [API index](/public-api) identifies each caller and credential. Use the
-[coverage record](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/README.md) to check operation support
-and Harness differences before relying on an optional feature.
+| Guide | Covers |
+| --- | --- |
+| [Quickstart](/quickstart) | From a Project API key to a finished Session |
+| [User guide](/user-guide) | Common tasks: harness and model choice, follow-ups, capabilities, files, cancel |
+| [Agents API guide](/sessions) | Every resource, with SDK and HTTP examples |
+| [Examples](/examples) | Complete applications built on the API |
+| [API index](/public-api) | All three namespaces and their credentials |
 
-## Extend Core
+## Contributors: extend Core
 
-Start with the [developer guide](/development). It links the repository map,
-required checks and extension points for Harness adapters, Runtime implementations
-and Sandbox Providers. Architecture rules live in
-[CONTRIBUTING.md](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/CONTRIBUTING.md); distribution and release procedures live in
-[the maintainer guide](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/docs/maintainers.md).
+Start with the [developer guide](/development): repository map, local setup,
+and how to add a Sandbox Provider, a harness or a Runtime feature. Repository rules
+are in [CONTRIBUTING.md](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/CONTRIBUTING.md).
 
 [Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/docs/getting-started/README.md)

@@ -205,18 +205,20 @@ node's own files can't change its capacity, size or Runtime.
 
 ### Default models
 
-Each harness has at most one default model provider: `protocol`, HTTPS `base_url`,
-a write-only `api_key` and, for MiniMax Code, `context_window` and
-`max_output_tokens`. It is the same bundle as `x_agents_core.model_provider`. Core
-encrypts it with `secrets/credential.key` and never returns the key.
+Each harness has at most one default model configuration:
 
-New Core-hosted (`openai_hosted`) Sessions and Sessions without an environment
-(`none`) use it when neither the request nor the Agent carries a provider; each
-Session freezes the provider it starts with, so a later change affects only new
-Sessions. Self-hosted Sessions never use it. A hosted or self-hosted Session with no
-provider is refused with 400 `model_provider_required`. See
-[model providers](/quickstart#model-providers) and the
-[model execution contract](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/model-execution.md#deployment-defaults).
+- `model`: the provider's model ID;
+- `model_provider`: the same bundle as `x_agents_core.model_provider` (`protocol`,
+  HTTPS `base_url`, write-only `api_key`, and for MiniMax Code `context_window` and
+  `max_output_tokens`);
+- `harness_config`: optional native model parameters, `{}` by default.
+
+Core encrypts the key with `secrets/credential.key` and never returns it. Set it in
+Web or with `PUT /core/v1/harnesses/{harness}/model-configuration`.
+
+Which Sessions use the default, and in what order it applies, is in
+[Which model provider a Session uses](/user-guide#which-model-provider-a-session-uses).
+Full rules: [model execution](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/model-execution.md#deployment-defaults).
 
 The operator file `AGENTS_API_EXECUTION_OPTIONS_FILE` is retired; see
 [installation version policy](/troubleshooting#installation-version-policy).
