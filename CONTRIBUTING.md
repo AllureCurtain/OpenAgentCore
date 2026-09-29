@@ -10,6 +10,7 @@ one canonical owner, listed below; update that owner when changing its contract.
 | Subject | Canonical source |
 | --- | --- |
 | User concepts and authority | [Design principles](docs/design-principles.md) |
+| Architecture overview and diagrams (a map that links to the owners below) | [Architecture](docs/architecture.md) |
 | API callers, credentials and route inventory | [API index](docs/api/README.md) |
 | Public wire types and qualified behavior | [Agents API contracts](contracts/agents-api/README.md), [pinned upstream](contracts/agents-api/upstream.json), and linked operation contracts |
 | Runtime messages, receipts and failure ownership | [Core–Runtime protocol](docs/runtime-protocol.md) and `internal/agentdaemon/proto` |

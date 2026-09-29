@@ -53,6 +53,7 @@ daemon 使用启动账户的权限，隔离由外层沙箱负责。释放执行�
 | 入口 | 内容 |
 | --- | --- |
 | [文档目录](docs/getting-started/README.md) | 安装、使用和运维的阅读路径 |
+| [架构](docs/architecture.md) | 各组件、三组 API 与一个 Session 的完整流程 |
 | [使用指南](docs/user-guide.md) | Session、Skill/Plugin/MCP、文件、取消与恢复 |
 | [配置参考](docs/configuration.md) | 部署设置和模型配置 |
 | [API 参考](docs/api/README.md) | 应用、管理与机器接口 |
