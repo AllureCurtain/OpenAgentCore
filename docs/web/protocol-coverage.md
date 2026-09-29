@@ -134,10 +134,10 @@ each harness's default model and the sandbox deployment.
 | Operation | Route | Console use |
 | --- | --- | --- |
 | List harnesses | `GET /core/v1/harnesses` | System's Default model cards (each harness's read-only `enabled` and `default`, and its `model_provider` view without the key); the Overview's Getting started (a default model on the default harness, or on any enabled harness when none is default) |
-| Set or replace | `PUT /core/v1/harnesses/{harness}/model-provider` | **Set** or **Replace**: the complete provider with the write-only key, never prefilled and never retried; a 400 shows Core's message in the form, and a 503 `credential_storage_unavailable` says Core has no credential encryption key; then the list is read again |
-| Clear | `DELETE /core/v1/harnesses/{harness}/model-provider` | **Clear**, confirmed, then the list is read again |
+| Set or replace | `PUT /core/v1/harnesses/{harness}/model-configuration` | **Set** or **Replace**: the complete model configuration with its write-only provider key, never prefilled and never retried; a 400 shows Core's message in the form, and a 503 `credential_storage_unavailable` says Core has no credential encryption key; then the list is read again |
+| Clear | `DELETE /core/v1/harnesses/{harness}/model-configuration` | **Clear**, confirmed, then the list is read again |
 
-The single-provider read (`GET /core/v1/harnesses/{harness}/model-provider`) is not
+The single-provider read (`GET /core/v1/harnesses/{harness}/model-configuration`) is not
 consumed; the list carries each provider.
 
 ## Sandbox administration

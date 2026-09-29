@@ -59,7 +59,7 @@ func validateProcessConfiguration() error {
 		{"AGENTS_API_MANAGED_RUNTIMES_FILE", "is retired; configure deployment in Core and enroll a separate node"},
 		{"AGENTS_API_SANDBOX_NODE_STATE_DIR", "is retired; configure deployment in Core and enroll a separate node"},
 		{"AGENTS_API_SANDBOX_NODE_CORE_URL", "is retired; configure deployment in Core and enroll a separate node"},
-		{"AGENTS_API_EXECUTION_OPTIONS_FILE", "is retired; remove it and set deployment default model providers in Web (System) or with PUT /core/v1/harnesses/{harness}/model-provider"},
+		{"AGENTS_API_EXECUTION_OPTIONS_FILE", "is retired; remove it and set deployment default model providers in Web (System) or with PUT /core/v1/harnesses/{harness}/model-configuration"},
 	} {
 		if _, present := os.LookupEnv(setting[0]); present {
 			problems = append(problems, setting[0]+" "+setting[1])

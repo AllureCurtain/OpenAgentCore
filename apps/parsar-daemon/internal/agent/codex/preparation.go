@@ -87,6 +87,7 @@ func newPreparation(parent context.Context, req proto.PromptRequestPayload, cfg 
 	rpc := NewJSONRPCClient(rpcCfg)
 
 	s := &Session{
+		modelRoute:                plan.ModelRoute,
 		nativeHome:                nativeHomeFromPlan(plan),
 		functions:                 functions,
 		observeMessages:           req.ObserveMessages,

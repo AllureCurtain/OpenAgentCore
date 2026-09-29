@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/db/sqlc"
 )
 
@@ -72,7 +73,7 @@ func TestDeploymentObservationWinningLockIsClearedByPUT(t *testing.T) {
 	}
 	result := make(chan error, 1)
 	go func() {
-		_, err := f.s.SetDeploymentModelProvider(observationAdmin(t), "codex", *f.input.ModelProvider)
+		_, err := f.s.SetDeploymentModelProvider(observationAdmin(t), "codex", v1.ModelConfigurationInput{ModelProvider: *f.input.ModelProvider, Model: "fixture"})
 		result <- err
 	}()
 	deadline := time.Now().Add(time.Second)

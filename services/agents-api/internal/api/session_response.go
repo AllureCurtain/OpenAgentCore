@@ -19,7 +19,7 @@ func sessionResponse(session store.Session, executorURL string) (v1.Session, err
 		return v1.Session{}, errors.New("unsupported stored session configuration")
 	}
 	if cfg.Agent.XAgentsCore != nil && session.Engine != "" {
-		cfg.Agent.XAgentsCore = &v1.AgentsCore{Harness: session.Engine}
+		cfg.Agent.XAgentsCore = &v1.AgentsCore{Harness: session.Engine, HarnessConfig: cfg.Agent.XAgentsCore.HarnessConfig}
 	}
 	// The pinned Session AgentTool resource union excludes the tool_search
 	// input declaration. Retain it in saved Agents and frozen execution input.

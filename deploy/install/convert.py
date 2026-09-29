@@ -499,7 +499,7 @@ def map_environment(root, old, env, password, config, plan, known):
             known["config"].add(path.name)
         plan.notes.append(f"AGENTS_API_EXECUTION_OPTIONS_FILE is retired by this release and is not carried over. "
                           f"Hosted Sessions without a model provider of their own now need a deployment default: "
-                          f"set it per harness in Web (System) or with PUT /core/v1/harnesses/{{harness}}/model-provider. "
+                          f"set it per harness in Web (System) or with PUT /core/v1/harnesses/{{harness}}/model-configuration. "
                           f"{path or env['AGENTS_API_EXECUTION_OPTIONS_FILE']} is left in place; it may hold model keys, "
                           f"so delete it once the defaults are set.")
     log = config["log"]

@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
@@ -19,6 +20,7 @@ func (e *ModelProviderError) Error() string { return e.message }
 // SessionExecutionInput is a write-only execution extension, not a provider resource.
 type SessionExecutionInput struct {
 	ModelProvider *ModelProviderInput `json:"model_provider,omitempty"`
+	HarnessConfig json.RawMessage     `json:"harness_config,omitempty" swaggertype:"object"`
 }
 
 type ModelProviderInput struct {

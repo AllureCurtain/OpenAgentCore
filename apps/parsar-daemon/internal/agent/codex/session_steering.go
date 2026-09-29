@@ -38,6 +38,9 @@ func (s *Session) SteerWithReceipt(ctx context.Context, input proto.PromptSteerP
 }
 
 func (s *Session) steer(ctx context.Context, input proto.PromptSteerPayload, written func()) error {
+	if err := s.modelRoute.ValidateInput(input.Input); err != nil {
+		return err
+	}
 	if !s.beginOperation() {
 		return agent.ErrSteeringInactive
 	}

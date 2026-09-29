@@ -41,7 +41,7 @@ func newFinishObservationFixture(t *testing.T, maxConnections int32) finishObser
 	t.Cleanup(pool.Close)
 	admin := adminaudit.WithSource(t.Context(), adminaudit.Source{CredentialID: "fixture-admin", RequestID: uuid.NewString(), TraceID: uuid.NewString()})
 	provider := v1.ModelProviderInput{Protocol: "responses", BaseURL: "https://fixture.example/v1", APIKey: "fixture-only"}
-	if _, err = s.SetDeploymentModelProvider(admin, "codex", provider); err != nil {
+	if _, err = s.SetDeploymentModelProvider(admin, "codex", v1.ModelConfigurationInput{ModelProvider: provider, Model: "fixture"}); err != nil {
 		t.Fatal(err)
 	}
 	snapshot, err := s.DeploymentModelProvider(t.Context(), "codex")

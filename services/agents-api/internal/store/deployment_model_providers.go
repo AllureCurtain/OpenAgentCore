@@ -23,18 +23,20 @@ var ErrModelProviderRequired = errors.New("the Session has no model provider")
 type DeploymentModelProvider struct {
 	Harness       string
 	Provider      v1.ModelProviderView
+	Model         string
+	HarnessConfig json.RawMessage
 	UpdatedAt     time.Time
 	LastUsedAt    *time.Time
 	LastErrorCode *string
 	LastErrorAt   *time.Time
 }
 
-func deploymentModelProvider(harness, protocol, baseURL string, contextWindow, maxOutputTokens int32, updatedAt time.Time, lastUsedAt, lastErrorAt pgtype.Timestamptz, lastErrorCode pgtype.Text) DeploymentModelProvider {
+func deploymentModelProvider(harness, protocol, baseURL string, contextWindow, maxOutputTokens int32, model string, harnessConfig json.RawMessage, updatedAt time.Time, lastUsedAt, lastErrorAt pgtype.Timestamptz, lastErrorCode pgtype.Text) DeploymentModelProvider {
 	var code *string
 	if lastErrorCode.Valid {
 		code = &lastErrorCode.String
 	}
-	return DeploymentModelProvider{Harness: harness, UpdatedAt: updatedAt, LastUsedAt: resetTimestamp(lastUsedAt), LastErrorAt: resetTimestamp(lastErrorAt), LastErrorCode: code, Provider: v1.ModelProviderView{
+	return DeploymentModelProvider{Harness: harness, Model: model, HarnessConfig: harnessConfig, UpdatedAt: updatedAt, LastUsedAt: resetTimestamp(lastUsedAt), LastErrorAt: resetTimestamp(lastErrorAt), LastErrorCode: code, Provider: v1.ModelProviderView{
 		Protocol: protocol, BaseURL: baseURL, ContextWindow: contextWindow, MaxOutputTokens: maxOutputTokens, APIKeyConfigured: true,
 	}}
 }
@@ -47,18 +49,19 @@ func (s *Store) ListDeploymentModelProviders(ctx context.Context) ([]DeploymentM
 	}
 	result := make([]DeploymentModelProvider, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, deploymentModelProvider(row.Harness, row.Protocol, row.BaseUrl, row.ContextWindow, row.MaxOutputTokens, row.UpdatedAt.Time, row.LastUsedAt, row.LastErrorAt, row.LastErrorCode))
+		result = append(result, deploymentModelProvider(row.Harness, row.Protocol, row.BaseUrl, row.ContextWindow, row.MaxOutputTokens, row.Model, row.HarnessConfig, row.UpdatedAt.Time, row.LastUsedAt, row.LastErrorAt, row.LastErrorCode))
 	}
 	return result, nil
 }
 
 // SetDeploymentModelProvider replaces a harness's complete default bundle and
 // audits the write in the same transaction, without the key.
-func (s *Store) SetDeploymentModelProvider(ctx context.Context, harness string, provider v1.ModelProviderInput) (DeploymentModelProvider, error) {
-	if err := provider.ValidateHarness(harness); err != nil {
+func (s *Store) SetDeploymentModelProvider(ctx context.Context, harness string, configuration v1.ModelConfigurationInput) (DeploymentModelProvider, error) {
+	if err := configuration.ValidateHarness(harness); err != nil {
 		return DeploymentModelProvider{}, fmt.Errorf("%w: %s", ErrInvalidInput, err)
 	}
-	raw, err := json.Marshal(provider)
+	provider := configuration.ModelProvider
+	raw, err := json.Marshal(configuration)
 	if err != nil {
 		return DeploymentModelProvider{}, err
 	}
@@ -70,13 +73,13 @@ func (s *Store) SetDeploymentModelProvider(ctx context.Context, harness string, 
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := s.queries.WithTx(tx)
 		row, err := q.UpsertDeploymentModelProvider(ctx, sqlc.UpsertDeploymentModelProviderParams{
-			Harness: harness, Protocol: provider.Protocol, BaseUrl: provider.BaseURL,
+			Harness: harness, Protocol: provider.Protocol, BaseUrl: provider.BaseURL, Model: configuration.Model, HarnessConfig: v1.ResolvedHarnessConfig(configuration.HarnessConfig),
 			ContextWindow: provider.ContextWindow, MaxOutputTokens: provider.MaxOutputTokens, EncryptedConfig: encrypted, Revision: pgtype.UUID{Bytes: uuid.New(), Valid: true},
 		})
 		if err != nil {
 			return err
 		}
-		result = deploymentModelProvider(row.Harness, row.Protocol, row.BaseUrl, row.ContextWindow, row.MaxOutputTokens, row.UpdatedAt.Time, row.LastUsedAt, row.LastErrorAt, row.LastErrorCode)
+		result = deploymentModelProvider(row.Harness, row.Protocol, row.BaseUrl, row.ContextWindow, row.MaxOutputTokens, row.Model, row.HarnessConfig, row.UpdatedAt.Time, row.LastUsedAt, row.LastErrorAt, row.LastErrorCode)
 		return recordDeploymentMutation(ctx, q, "set", "deployment_model_provider", harness)
 	})
 	return result, err
@@ -109,16 +112,18 @@ func (s *Store) DeploymentModelProvider(ctx context.Context, harness string) (*D
 	if err != nil {
 		return nil, ErrCredentialStorageUnavailable
 	}
-	var provider v1.ModelProviderInput
-	if json.Unmarshal(raw, &provider) != nil || provider.ValidateHarness(harness) != nil {
+	var configuration v1.ModelConfigurationInput
+	if json.Unmarshal(raw, &configuration) != nil || configuration.ValidateHarness(harness) != nil {
 		return nil, ErrCredentialStorageUnavailable
 	}
-	return &DeploymentModelProviderSnapshot{Provider: &provider, Revision: uuid.UUID(snapshot.Revision.Bytes)}, nil
+	return &DeploymentModelProviderSnapshot{Provider: &configuration.ModelProvider, Model: configuration.Model, HarnessConfig: v1.ResolvedHarnessConfig(configuration.HarnessConfig), Revision: uuid.UUID(snapshot.Revision.Bytes)}, nil
 }
 
 // DeploymentModelProviderSnapshot pairs one decrypted bundle with its private
 // revision from the same database read. It never enters a public projection.
 type DeploymentModelProviderSnapshot struct {
-	Provider *v1.ModelProviderInput
-	Revision uuid.UUID `json:"-"`
+	Provider      *v1.ModelProviderInput
+	Model         string
+	HarnessConfig json.RawMessage
+	Revision      uuid.UUID `json:"-"`
 }

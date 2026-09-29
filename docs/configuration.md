@@ -131,7 +131,7 @@ Core API with the Core key.
 | E2B API key and template build | **System** → **Sandbox backend**: the setup wizard's **E2B cloud** | `/core/v1/sandbox/deployment` | The key is write-only and encrypted |
 | Nodes and their capacity | **Nodes**: **Add node**, **Edit node**, **Remove node** on a node's page (**Remove** in its list row) | `/core/v1/sandbox/enrollment-tokens`, `/core/v1/sandbox/nodes` | See [Node capacity](#node-capacity) and the [nodes guide](getting-started/nodes.md) |
 | Projects and API keys | **Projects and keys**: **Create project**, **Rename**, **Issue key**, **Revoke**, **Archive** | `/core/v1/projects` | Keys are shown once; Core stores digests |
-| Default model per harness | **System**: **Default model** | `/core/v1/harnesses/{harness}/model-provider` | See [Default models](#default-models) |
+| Default model per harness | **System**: **Default model** | `/core/v1/harnesses/{harness}/model-configuration` | See [Default models](#default-models) |
 | Executor credentials of a self-hosted Session | **Session log**, the Session's page: **Executor credentials** | `/core/v1/projects/{project_id}/environments/{environment_id}/executor-credentials` | See [self-hosted executors](getting-started/self-hosted.md) |
 
 Which harnesses are enabled, and the default one, are process settings

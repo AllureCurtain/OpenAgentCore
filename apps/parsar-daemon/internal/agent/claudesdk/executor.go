@@ -12,10 +12,12 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
+	harnessconfiguration "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/claudesdk"
 	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 )
 
 type executor struct {
+	modelRoute    modeltransport.Route
 	modelEndpoint *modeltransport.Endpoint
 	mu            sync.Mutex
 	base          *session
@@ -41,7 +43,7 @@ func NewExecutorFactory(config Config) agent.ExecutorFactory {
 		if req.RunID != "" || len(req.Input) != 0 || req.ConversationID != "" {
 			return nil, errors.New("claudesdk: Executor preparation cannot submit input")
 		}
-		options, endpoint, err := modeltransport.PrepareOptions(req.AgentOptions, modeltransport.Anthropic)
+		options, endpoint, err := modeltransport.PrepareRequestOptions(req, harnessconfiguration.Configuration().NativeProtocols()...)
 		if err != nil {
 			return nil, err
 		}
@@ -71,6 +73,9 @@ func NewExecutorFactory(config Config) agent.ExecutorFactory {
 		base.reads.supported = slices.Contains(info.Features, "workspace_read")
 		base.directories.supported = slices.Contains(info.Features, "workspace_directory")
 		e := &executor{modelEndpoint: endpoint, base: base, start: start, ready: make(chan error, 1), done: make(chan struct{}), nativeID: start.Resume}
+		if endpoint != nil {
+			e.modelRoute = endpoint.Route
+		}
 		transferred = true
 		go e.read()
 		if err = e.write(start); err == nil {
@@ -203,12 +208,15 @@ func (e *executor) StartTurn(ctx context.Context, run string, input proto.Messag
 	if strings.TrimSpace(run) == "" || input.Validate() != nil || out == nil || ctx.Err() != nil {
 		return nil, errors.New("claudesdk: Turn requires live context, identity, input and output")
 	}
+	if err := e.modelRoute.ValidateInput(input); err != nil {
+		return nil, err
+	}
 	e.mu.Lock()
 	if e.invalid || e.active != nil || e.base.process.Context().Err() != nil {
 		e.mu.Unlock()
 		return nil, errors.New("claudesdk: Executor is unavailable")
 	}
-	s := &session{owner: e, runID: run, process: e.base.process, writeMu: e.base.writeMu, frames: make(chan []byte, 64), functions: functionState{calls: map[string]*pendingFunction{}}, settled: make(chan struct{}), outputDone: make(chan struct{}), cancelOutput: make(chan struct{})}
+	s := &session{modelRoute: e.modelRoute, owner: e, runID: run, process: e.base.process, writeMu: e.base.writeMu, frames: make(chan []byte, 64), functions: functionState{calls: map[string]*pendingFunction{}}, settled: make(chan struct{}), outputDone: make(chan struct{}), cancelOutput: make(chan struct{})}
 	start := e.start
 	start.Resume = e.nativeID
 	e.active = s

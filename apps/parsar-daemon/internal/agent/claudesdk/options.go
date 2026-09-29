@@ -8,6 +8,7 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
+	harnessconfiguration "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/claudesdk"
 )
 
 type Config struct {
@@ -23,6 +24,7 @@ type subagentOptions struct {
 }
 
 type startRequest struct {
+	HarnessConfig    proto.HarnessConfig  `json:"harness_config,omitempty"`
 	ToolSearch       bool                 `json:"tool_search,omitempty"`
 	Subagents        *subagentOptions     `json:"subagents,omitempty"`
 	OutputFormat     *proto.OutputFormat  `json:"output_format,omitempty"`
@@ -57,6 +59,11 @@ func prepareConfiguration(config Config, req proto.PromptRequestPayload) (startR
 	fail := func(reason string) (startRequest, []string, error) {
 		return startRequest{}, nil, fmt.Errorf("claudesdk: %s", reason)
 	}
+	nativeConfig, err := harnessconfiguration.Configuration().PrepareHarnessConfig(req.AgentOptions)
+	if err != nil {
+		return startRequest{}, nil, err
+	}
+	start.HarnessConfig = nativeConfig
 	if req.WorkspaceAuthoring || req.ObserveTools {
 		return fail("requested capability is not available in the private SDK adapter")
 	}
@@ -105,6 +112,9 @@ func prepareConfiguration(config Config, req proto.PromptRequestPayload) (startR
 	}
 	var provider []string
 	for name, raw := range req.AgentOptions {
+		if name == "harness_config" {
+			continue
+		}
 		if name == "model_provider" {
 			var err error
 			provider, err = providerEnvironment(raw)

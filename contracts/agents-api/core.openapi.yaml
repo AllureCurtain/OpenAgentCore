@@ -221,10 +221,12 @@ definitions:
           - codex
           - mcode
         type: string
-      model_provider:
+      model_configuration:
         allOf:
-          - $ref: '#/definitions/api.HarnessModelProvider'
+          - $ref: '#/definitions/api.HarnessModelConfiguration'
         x-nullable: true
+      model_configuration_support:
+        $ref: '#/definitions/v1.ModelConfigurationSupport'
       object:
         enum:
           - core.harness
@@ -233,7 +235,8 @@ definitions:
       - default
       - enabled
       - id
-      - model_provider
+      - model_configuration
+      - model_configuration_support
       - object
     type: object
   api.CoreHarnessList:
@@ -332,20 +335,16 @@ definitions:
       - connection
       - data
     type: object
-  api.HarnessModelProvider:
+  api.HarnessModelConfiguration:
     properties:
-      api_key_configured:
-        type: boolean
-      base_url:
-        type: string
-      context_window:
-        type: integer
       harness:
         enum:
           - claude_sdk
           - codex
           - mcode
         type: string
+      harness_config:
+        type: object
       last_error_at:
         format: date-time
         type: string
@@ -367,28 +366,25 @@ definitions:
         format: date-time
         type: string
         x-nullable: true
-      max_output_tokens:
-        type: integer
+      model:
+        type: string
+      model_provider:
+        $ref: '#/definitions/v1.ModelProviderView'
       object:
         enum:
-          - core.model_provider
-        type: string
-      protocol:
-        enum:
-          - anthropic
-          - responses
+          - core.model_configuration
         type: string
       updated_at:
         type: string
     required:
-      - api_key_configured
-      - base_url
       - harness
+      - harness_config
       - last_error_at
       - last_error_code
       - last_used_at
+      - model
+      - model_provider
       - object
-      - protocol
       - updated_at
     type: object
   api.Installation:
@@ -1583,8 +1579,8 @@ definitions:
           - claude_sdk
           - mcode
         type: string
-    required:
-      - harness
+      harness_config:
+        type: object
     type: object
   v1.Credential:
     properties:
@@ -1791,6 +1787,21 @@ definitions:
       - has_more
       - object
     type: object
+  v1.ExecutionHarnessConfigSelection:
+    properties:
+      source:
+        enum:
+          - session
+          - agent
+          - deployment
+          - unknown
+        type: string
+      value:
+        type: object
+    required:
+      - source
+      - value
+    type: object
   v1.ExecutionProviderSelection:
     properties:
       configuration:
@@ -1965,6 +1976,38 @@ definitions:
       - data
       - has_more
       - object
+    type: object
+  v1.ModelConfigurationInput:
+    properties:
+      harness_config:
+        type: object
+      model:
+        type: string
+      model_provider:
+        $ref: '#/definitions/v1.ModelProviderInput'
+    required:
+      - model
+      - model_provider
+    type: object
+  v1.ModelConfigurationSupport:
+    properties:
+      accepts_harness_config:
+        type: boolean
+      native_protocols:
+        items:
+          type: string
+        type: array
+      protocols:
+        items:
+          type: string
+        type: array
+      token_limits_required:
+        type: boolean
+    required:
+      - accepts_harness_config
+      - native_protocols
+      - protocols
+      - token_limits_required
     type: object
   v1.ModelProviderInput:
     properties:
@@ -2604,6 +2647,8 @@ definitions:
           - claude_sdk
           - mcode
         type: string
+      harness_config:
+        type: object
       model_provider:
         $ref: '#/definitions/v1.ModelProviderView'
     type: object
@@ -2834,6 +2879,8 @@ definitions:
     properties:
       harness:
         $ref: '#/definitions/v1.ExecutionSelection'
+      harness_config:
+        $ref: '#/definitions/v1.ExecutionHarnessConfigSelection'
       model:
         $ref: '#/definitions/v1.ExecutionSelection'
       model_provider:
@@ -2850,6 +2897,7 @@ definitions:
         type: string
     required:
       - harness
+      - harness_config
       - model
       - model_provider
       - object
@@ -3400,7 +3448,7 @@ paths:
         - Core Administration
   /core/v1/harnesses:
     get:
-      description: Core key only. Returns every harness this build supports, in name order. enabled and default are read-only views of the process configuration (OAC_DEFAULT_HARNESS and OAC_HARNESSES). model_provider is the harness's deployment default, stored in Core, or null. Keys are never returned; api_key_configured reports that one is set.
+      description: Core key only. Returns every harness this build supports, in name order. enabled and default are read-only views of the process configuration (OAC_DEFAULT_HARNESS and OAC_HARNESSES). model_configuration is the harness's deployment default, stored in Core, or null. Keys are never returned; api_key_configured reports that one is set.
       produces:
         - application/json
       responses:
@@ -3421,7 +3469,7 @@ paths:
       summary: List harnesses and their deployment default model providers
       tags:
         - Deployment Model Providers
-  /core/v1/harnesses/{harness}/model-provider:
+  /core/v1/harnesses/{harness}/model-configuration:
     delete:
       description: Core key only. Idempotent; each successful request is audited. Sessions that already froze the default keep it. Afterwards new openai_hosted Sessions for this harness need a Session or Agent bundle.
       parameters:
@@ -3472,7 +3520,7 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.HarnessModelProvider'
+            $ref: '#/definitions/api.HarnessModelConfiguration'
         "401":
           description: Unauthorized
           schema:
@@ -3493,7 +3541,7 @@ paths:
     put:
       consumes:
         - application/json
-      description: 'Core key only. The body is the complete x_agents_core.model_provider bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, an upstream protocol (responses, anthropic or chat_completions), automatically adapted by Runtime to the selected harness and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions that resolve no Session or Agent bundle freeze this default into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key and resets last_used_at, last_error_code and last_error_at to null, including identical writes.'
+      description: 'Core key only. The body is the complete x_agents_core.model_configuration bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, an upstream protocol (responses, anthropic or chat_completions), automatically adapted by Runtime to the selected harness and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions resolve omitted model settings from this default and freeze the resolved configuration into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key and resets last_used_at, last_error_code and last_error_at to null, including identical writes.'
       parameters:
         - description: Harness
           enum:
@@ -3509,14 +3557,14 @@ paths:
           name: body
           required: true
           schema:
-            $ref: '#/definitions/v1.ModelProviderInput'
+            $ref: '#/definitions/v1.ModelConfigurationInput'
       produces:
         - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/api.HarnessModelProvider'
+            $ref: '#/definitions/api.HarnessModelConfiguration'
         "400":
           description: Bad Request
           schema:

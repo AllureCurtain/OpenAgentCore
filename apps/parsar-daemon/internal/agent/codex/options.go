@@ -10,12 +10,14 @@ import (
 	"strings"
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/paths"
+	harnessconfiguration "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/codex"
 	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 )
 
 // SessionPlan holds the resolved per-prompt launch plan derived from
 // the daemon's PromptRequestPayload.
 type SessionPlan struct {
+	ModelRoute modeltransport.Route
 
 	// Cwd is the validated working directory passed to codex (and to
 	// the spawned app-server). Empty when the caller provided no work_dir.
@@ -101,6 +103,11 @@ func BuildSessionPlan(runID, agentStateKey, workDir string, opts map[string]any)
 		Cleanup:           cleanup,
 	}
 
+	nativeConfig, err := harnessconfiguration.Configuration().PrepareHarnessConfig(opts)
+	if err != nil {
+		return plan, err
+	}
+
 	if value, present := opts["web_search"]; present {
 		switch value {
 		case "disabled", "cached", "live":
@@ -166,11 +173,12 @@ func BuildSessionPlan(runID, agentStateKey, workDir string, opts map[string]any)
 	}
 
 	// The native adapter selects Responses; Runtime converts other upstream protocols.
-	preparedOptions, endpoint, err := modeltransport.PrepareOptions(opts, modeltransport.Responses)
+	preparedOptions, endpoint, err := modeltransport.PrepareOptions(opts, harnessconfiguration.Configuration().NativeProtocols()...)
 	if err != nil {
 		return plan, err
 	}
 	if endpoint != nil {
+		plan.ModelRoute = endpoint.Route
 		cleanup = func() { _ = endpoint.Close() }
 		plan.Cleanup = cleanup
 	}
@@ -190,6 +198,9 @@ func BuildSessionPlan(runID, agentStateKey, workDir string, opts map[string]any)
 	plan.Env = env
 	plan.Cleanup = cleanup
 	plan.ExtraConfig = extraConfigFromOpts(opts)
+	if effort, ok := nativeConfig["model_reasoning_effort"].(string); ok {
+		plan.ExtraConfig = append(plan.ExtraConfig, [2]string{"model_reasoning_effort", strconv(effort)})
+	}
 	if plan.ModelProvider != "" {
 		// Pin model_provider at the CLI layer so codex skips its builtin
 		// "openai" provider — without this the [model_providers.oac]

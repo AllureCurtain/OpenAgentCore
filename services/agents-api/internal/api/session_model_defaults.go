@@ -83,7 +83,7 @@ func (h *Handler) resolveSessionExecution(ctx context.Context, input sessionRequ
 	var revision uuid.UUID
 	provider, source := inherited, v1.ModelProviderSourceAgent
 	if extension := input.XAgentsCore; extension != nil {
-		if extension.ModelProvider == nil && !input.modelProviderNull {
+		if extension.ModelProvider == nil && !input.modelProviderNull && len(extension.HarnessConfig) == 0 {
 			return "", nil, "", uuid.Nil, errors.New("x_agents_core requires an execution option")
 		}
 		if extension.ModelProvider != nil {
@@ -92,11 +92,7 @@ func (h *Handler) resolveSessionExecution(ctx context.Context, input sessionRequ
 	}
 	environment := input.Environment.Type
 	if provider == nil && h.modelProviderDefaults != nil && v1.ModelProviderAllowed(environment, v1.ModelProviderSourceDeployment) {
-		var snapshot *store.DeploymentModelProviderSnapshot
-		snapshot, err = h.modelProviderDefaults(ctx, engine)
-		if err != nil {
-			return "", nil, "", uuid.Nil, &modelProviderDefaultsError{err}
-		}
+		snapshot := input.deploymentDefaults
 		if snapshot != nil {
 			provider, revision = snapshot.Provider, snapshot.Revision
 		}
@@ -111,7 +107,7 @@ func (h *Handler) resolveSessionExecution(ctx context.Context, input sessionRequ
 	if !v1.ModelProviderAllowed(environment, source) {
 		return "", nil, "", uuid.Nil, errors.New("caller model credentials require an openai_hosted or self_hosted environment")
 	}
-	if err := provider.ValidateHarness(engine); err != nil {
+	if err := provider.ValidateConfiguration(engine, input.resolvedHarnessConfig); err != nil {
 		return "", nil, "", uuid.Nil, err
 	}
 	return engine, provider, source, revision, nil
