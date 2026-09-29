@@ -1230,6 +1230,15 @@ export interface HarnessModelConfiguration extends ModelConfigurationView {
   updated_at: string;
 }
 
+/** Adapter build support, independent of runtime readiness or model availability. */
+export interface ModelConfigurationSupport {
+  protocols: ModelProviderInput["protocol"][];
+  /** Ordered native protocols; the first is the default. */
+  native_protocols: ModelProviderInput["protocol"][];
+  accepts_harness_config: boolean;
+  token_limits_required: boolean;
+}
+
 /**
  * A harness this Core build supports. `enabled` and `default` are read-only views of
  * the process configuration; `model_configuration` is the deployment default, or null.
@@ -1240,6 +1249,7 @@ export interface CoreHarness {
   enabled: boolean;
   default: boolean;
   model_configuration: HarnessModelConfiguration | null;
+  model_configuration_support: ModelConfigurationSupport;
 }
 
 /** Native parameter inheritance follows the extension contract; null provider clears it. */

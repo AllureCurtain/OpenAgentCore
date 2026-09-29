@@ -240,16 +240,31 @@ export function projectHarnessModelConfiguration(value: unknown, harness?: CoreH
   if (!provider.api_key_configured) return invalidAdminResponse();
   return { object, harness: kind as CoreHarnessKind, model_provider: provider, model, harness_config: { ...harness_config }, updated_at, last_used_at, last_error_at, last_error_code: last_error_code as ProviderObservationErrorCode | null };
 }
+function projectModelConfigurationSupport(value: unknown): CoreHarness["model_configuration_support"] {
+  const support = record(value, ["protocols", "native_protocols", "accepts_harness_config", "token_limits_required"]);
+  const known = new Set(["anthropic", "responses", "chat_completions"]);
+  const protocols = support.protocols;
+  const native = support.native_protocols;
+  if (!Array.isArray(protocols) || protocols.length === 0 || protocols.some((protocol) => !known.has(protocol)) ||
+    new Set(protocols).size !== protocols.length || !Array.isArray(native) || native.length === 0 ||
+    native.some((protocol) => !protocols.includes(protocol)) || new Set(native).size !== native.length ||
+    typeof support.accepts_harness_config !== "boolean" || typeof support.token_limits_required !== "boolean") return invalidAdminResponse();
+  return {
+    protocols: [...protocols], native_protocols: [...native],
+    accepts_harness_config: support.accepts_harness_config, token_limits_required: support.token_limits_required,
+  };
+}
 export function projectCoreHarnessList(value: unknown): { object: "list"; data: CoreHarness[] } {
   const page = record(value, ["object", "data"]);
   if (page.object !== "list" || !Array.isArray(page.data)) return invalidAdminResponse();
   const data = page.data.map((entry): CoreHarness => {
-    const harness = record(entry, ["object", "id", "enabled", "default", "model_configuration"]);
+    const harness = record(entry, ["object", "id", "enabled", "default", "model_configuration", "model_configuration_support"]);
     if (harness.object !== "core.harness" || typeof harness.id !== "string" || !harnessKinds.has(harness.id) ||
       typeof harness.enabled !== "boolean" || typeof harness.default !== "boolean" || (harness.default && !harness.enabled)) return invalidAdminResponse();
     const id = harness.id as CoreHarnessKind;
     return {
       object: "core.harness", id, enabled: harness.enabled, default: harness.default,
+      model_configuration_support: projectModelConfigurationSupport(harness.model_configuration_support),
       model_configuration: harness.model_configuration === null ? null : projectHarnessModelConfiguration(harness.model_configuration, id),
     };
   });
