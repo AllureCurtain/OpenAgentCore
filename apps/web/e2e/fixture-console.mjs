@@ -89,7 +89,7 @@ const templateBuild = { status: "ready", resources: { cpus: 2, memory_mib: 2048,
 
 // E2B runs sandboxes in its cloud: no nodes, only what Core holds there.
 function e2bDeployment() {
-  return { ...configuredDeployment(), provider: "e2b", mode: "direct", rollout: noNodeRollout(), resources: { allocations: 3, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 } }, e2b: { template: "oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b", credential_configured: true, template_build: templateBuild } };
+  return { ...configuredDeployment(), provider: "e2b", mode: "direct", rollout: noNodeRollout(), resources: { allocations: 3, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 } }, e2b: { template: "oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b", api_url: "https://api.e2b.app", domain: "e2b.app", credential_configured: true, template_build: templateBuild } };
 }
 
 function reset(mode = "login", fresh = false, sandbox = "configured", nodes = "demo", address = "public", credentials = "configured", installers = true, artifacts = "docker,microsandbox") {
@@ -409,7 +409,7 @@ async function sandboxRoute(request, response, path, url) {
       resources: held,
       rollout: e2b ? { ...noNodeRollout(), previous_generation_sandboxes: held.allocations + held.pending } : nodeRollout(held.allocations + held.pending),
       specification,
-      ...(e2b ? { e2b: { template: input.e2b?.template ?? "", credential_configured: true, template_build: templateBuild } } : {}),
+      ...(e2b ? { e2b: { template: input.e2b?.template ?? "", api_url: input.e2b?.api_url ?? state.deployment.e2b?.api_url ?? "https://api.e2b.app", domain: input.e2b?.domain ?? state.deployment.e2b?.domain ?? "e2b.app", credential_configured: true, template_build: templateBuild } } : {}),
       suspension: input.provider === "microsandbox" ? { idle_seconds: 300, retention_seconds: 86400 } : null,
     };
     return send(response, 200, state.deployment);

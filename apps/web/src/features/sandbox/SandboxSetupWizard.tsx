@@ -306,6 +306,7 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
           <Field id={`${id}-template`} label={t("Template")}>
             <select id={`${id}-template`} value={selectedTemplate} disabled={discovery !== "ready"} onChange={(event) => { setSelectedTemplate(event.target.value); setTemplate(""); }}>
               <option value="">{t("Select a template")}</option>
+              {editing && selectedTemplate && !templates.some((item) => item.id === selectedTemplate) ? <option value={selectedTemplate}>{t("Current")} · {selectedTemplate}</option> : null}
               {templates.map((item) => <option key={item.id} value={item.id}>{item.names[0] ? `${item.names[0]} · ` : ""}{item.id}</option>)}
             </select>
           </Field>
@@ -315,6 +316,7 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
           <Field id={`${id}-build`} label={t("Template build")} help={t("Core validates the exact ready build again when you save.")}>
             <select id={`${id}-build`} value={template} disabled={buildDiscovery !== "ready"} onChange={(event) => setTemplate(event.target.value)}>
               <option value="">{t("Select a ready build")}</option>
+              {editing && template && !builds.some((item) => `${selectedTemplate}:${item.id}` === template) ? <option value={template}>{t("Current")} · {template}</option> : null}
               {builds.map((item) => <option key={item.id} value={`${selectedTemplate}:${item.id}`}>{item.id} · {item.cpus} CPU / {item.memory_mib} MiB</option>)}
             </select>
           </Field>

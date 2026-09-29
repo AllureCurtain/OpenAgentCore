@@ -303,6 +303,17 @@ test("uses the official E2B preset and clears a selected build when the key chan
   await expect(page.getByRole("button", { name: "Next" })).toBeDisabled();
 });
 
+test("shows the retained E2B build while a replacement key is checked", async ({ page, request }) => {
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "e2b" });
+  await page.getByRole("button", { name: "Change resources" }).click();
+  const edit = page.getByRole("dialog", { name: "Change resources" });
+  const saved = "oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b";
+  await expect(edit.getByLabel("Template build")).toHaveValue(saved);
+  await edit.getByLabel("E2B API key").fill("replacement-fixture-key");
+  await expect(edit.getByLabel("Template build")).toHaveValue(saved);
+  await expect(edit.getByRole("button", { name: "Next" })).toBeEnabled();
+});
+
 test("edits only the saved backend, preserving a custom size and Runtime", async ({ page, request }) => {
   const runtime = { source_commit: "0".repeat(40), image_id: `sha256:${"a".repeat(64)}`, image_manifest_digest: `sha256:${"b".repeat(64)}`,
     microsandbox_ref: `oac-runtime@sha256:${"b".repeat(64)}`, runtime_sha256: "c".repeat(64), firmware_sha256: "d".repeat(64) };

@@ -75,6 +75,32 @@ func TestE2BGenerationsRetainOwnershipAndUseCurrentCredential(t *testing.T) {
 	}
 }
 
+func TestE2BRetainedCustomEndpointAfterOnlineSwitch(t *testing.T) {
+	s, w, view, input := webSpecificationFixture(t, "e2b")
+	ctx := SandboxResetTestContext(t.Context())
+	input.E2B.APIURL, input.E2B.Domain = "https://sandbox.example.com", "sandbox.example.com"
+	custom, err := w.UpdateSandboxDeployment(ctx, view.InstallationID, SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: input, ExpectedGeneration: view.Generation})
+	if err != nil || custom.Generation != 2 {
+		t.Fatal(custom, err)
+	}
+	tenant, session := managedArchiveSession(t, s, managerSessionInput(uuid.NewString()))
+	owner := archiveAllocation(t, w, tenant, session, view.InstallationID)
+	input.E2B.APIURL, input.E2B.Domain = "", ""
+	current, err := w.UpdateSandboxDeployment(ctx, view.InstallationID, SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: input, ExpectedGeneration: custom.Generation})
+	if err != nil || current.Generation != 3 || current.E2B.APIURL != "https://api.e2b.app" {
+		t.Fatal(current, err)
+	}
+	ref := sandbox.Reference{TenantID: tenant, EnvironmentID: owner.EnvironmentID, AllocationID: owner.ID}
+	retained, err := s.GetSandboxAllocationSetup(t.Context(), ref)
+	if err != nil || retained.Generation != 2 || retained.E2B.APIURL != "https://sandbox.example.com" || retained.E2B.Domain != "sandbox.example.com" {
+		t.Fatal(retained, err)
+	}
+	generations, err := s.SandboxGenerationPage(t.Context(), -1)
+	if err != nil || len(generations) != 1 || generations[0].E2B.APIURL != "https://sandbox.example.com" {
+		t.Fatal(generations, err)
+	}
+}
+
 func TestE2BChangeClassifierOmittedKeyAndExplicitSameKey(t *testing.T) {
 	_, w, view, input := webSpecificationFixture(t, "e2b")
 	key := input.E2B.APIKey

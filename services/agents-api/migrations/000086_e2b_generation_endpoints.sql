@@ -9,6 +9,13 @@ ALTER TABLE runtime_deployment_generations ADD CONSTRAINT runtime_deployment_gen
 );
 
 -- +goose Down
+-- +goose StatementBegin
+DO $$ BEGIN
+    IF EXISTS (SELECT 1 FROM runtime_deployment_generations WHERE e2b_api_url <> '' OR e2b_domain <> '') THEN
+        RAISE EXCEPTION 'cannot remove E2B generation endpoints while a custom endpoint is retained';
+    END IF;
+END $$;
+-- +goose StatementEnd
 ALTER TABLE runtime_deployment_generations DROP CONSTRAINT runtime_deployment_generation_e2b_endpoint_check;
 ALTER TABLE runtime_deployment_generations DROP COLUMN e2b_domain;
 ALTER TABLE runtime_deployment_generations DROP COLUMN e2b_api_url;
