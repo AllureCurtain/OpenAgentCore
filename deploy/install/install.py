@@ -300,8 +300,8 @@ def check_compose():
 
 
 def check_host():
-    if platform.system() != "Linux" or platform.machine() not in ("x86_64", "amd64") or os.getuid() == 0:
-        raise InstallError("Run as a non-root user on Linux amd64 with Docker access")
+    if platform.system() != "Linux" or platform.machine() not in ("x86_64", "amd64"):
+        raise InstallError("Core installation requires Linux amd64 with Docker access")
     check_compose()
     run(["docker", "info", "--format", "{{.ServerVersion}}"], stdout=subprocess.DEVNULL)
 
