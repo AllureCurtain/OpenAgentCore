@@ -93,7 +93,7 @@ connection generations fence observations; they do not revoke an old process or
 an already-dispatched file write.
 
 Determine prerequisites for each public operation under the
-[Core/Runtime rules](../../CONTRIBUTING.md#environment-ownership-and-placement).
+[Core/Runtime rules](environments.md#ownership-and-placement-decision).
 Environment metadata retrieval already reads durable resources without preparing
 execution. Files.list needs live path/size metadata from the authorized workspace;
 the private bounded byte reader alone does not implement that route. Reuse native
@@ -144,9 +144,7 @@ Use the same fixed SDK/raw HTTP and real execution acceptance for both public
 engines before claiming the complete milestone.
 
 `NATIVE-COMMAND-OUTPUT-001` remains a material Codex retained-output gap. The user
-has deferred it from the current principal-workflow milestone acceptance on the
-task board; this does not establish complete output fidelity. The recorded failed real run
+has deferred it from the current principal-workflow milestone acceptance; this does not establish complete output fidelity. The recorded failed real run
 is not fixed by a later gated success. No production-ready maintained remedy was
 verified in the checked upstream sources; do not fabricate output, repair model
-prose or silently adopt a native fork. Reassess that dependency from the full
-board alongside other material security, state and data-loss issues.
+prose or silently adopt a native fork. Reassess that dependency alongside other material security, state and data-loss issues.

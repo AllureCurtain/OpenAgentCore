@@ -60,8 +60,8 @@ Native tool schemas are retained. Text and image results use standard MCP conten
 video results reject explicitly. The pinned native CLI may add task/skill utility tools;
 qualification must inspect the actual inventory rather than assume exactly six.
 
-See [workspace qualification](../../contracts/agents-api/mcode-workspace-v1.md) for
-the required tests and stopping conditions. Synthetic isolation probes and native
+Qualify changes with the
+[Harness acceptance checklist](../../contracts/agents-api/harnesses.md#acceptance-checklist). Synthetic isolation probes and native
 model runs do not complete public Files/Artifacts or independent Core acceptance.
 
 For the packaged Linux regression, provide an operator-owned private profile and
