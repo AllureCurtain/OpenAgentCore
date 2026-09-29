@@ -6,62 +6,63 @@
 
 OpenAI Agents API 的开源实现，支持多种原生执行引擎，可部署在自己的基础设施上。
 
-[快速开始](#快速开始) · [文档](#文档) · [调用 API](docs/getting-started/quickstart.md) · [参与贡献](CONTRIBUTING.md)
+[安装](#安装) · [调用 API](docs/getting-started/quickstart.md) · [文档](#文档) · [参与贡献](CONTRIBUTING.md)
 
 [English](README.md) · **简体中文**
 
 </div>
 
-你可以选择 Codex、Claude Code 或 MiniMax Code 作为执行引擎。沙箱、模型供应商和
-Harness 都通过明确的协议和薄适配层接入，新增或替换组件无需修改 Core 的编排逻辑。
+## 这是什么
 
-## 快速开始
+OpenAgentCore 在你自己的基础设施上运行 AI Agent，对外提供 OpenAI Agents API。
 
-在已准备 Docker 和 Python 3.9+ 的 Linux amd64 主机上，一条命令安装最新正式版：
+- **与 OpenAI 相同的 API。** 官方 OpenAI SDK 或直接 HTTP 调用，改一下地址即可，无需学习新客户端。
+- **自选 Agent。** 每个 Session 运行一个原生 Harness：Codex、Claude Code 或 MiniMax Code，
+  使用你配置的模型供应商。
+- **自选机器。** Agent 可以在托管沙箱（Docker、microsandbox 或 E2B）里工作，
+  也可以在你自己的 Linux、macOS 或 Windows 机器上工作。
+- **每个部件都可替换。** 沙箱、Harness 和模型供应商都通过既定协议接入。
+
+## 安装
+
+在已准备 Docker 和 Python 3.9+ 的 Linux amd64 主机上：
 
 ```sh
 curl -fsSL https://github.com/MiniMax-AI/parsar-core/releases/latest/download/install.sh | bash
 ```
 
-你可以通过[安装配置选项](docs/getting-started/install-options.md)自定义监听地址、端口和部署方式。
+然后：
 
-1. 在 Linux 主机上[安装 Core 和 Web](docs/getting-started/install.md)。安装指南包含环境要求、
-   发行包下载、本地试用和 HTTPS 配置。
-2. 用安装器生成的 Core key 登录 Web，配置模型提供方，创建 Project 并签发应用 API key。
-   使用托管环境时，先[添加节点或配置 E2B](docs/getting-started/nodes.md)。
-3. 跟随[第一个 Session 示例](docs/getting-started/quickstart.md)，安装指定版本的 Python SDK，
-   验证访问、提交任务并等待执行结果。
+1. 用安装器生成的 Core key **登录 Web**（管理控制台）。
+2. **设置默认模型**，并**签发 Project API key**。
+3. **添加执行资源**：节点、E2B，或你自己的机器。
+4. 用 OpenAI SDK **[运行第一个 Session](docs/getting-started/quickstart.md)**。
 
-要在自己的 Linux、macOS 或 Windows 机器上执行任务，请阅读
-[自托管 Runtime 指南](docs/getting-started/self-hosted.md)。
+[安装指南](docs/getting-started/install.md)详细介绍每一步，以及 HTTPS 配置和本地快速试用。监听地址、端口等参数见[安装配置选项](docs/getting-started/install-options.md)。
 
 ## 组件关系
 
 ![OpenAgentCore 架构](docs/assets/architecture.png)
 
-Core 对外提供两组 API：应用调用公开的 **Agents API**（`/v1`），与 OpenAI 协议一致；
-管理员通过 Web 调用私有的 **Core API**（`/core/v1`）。Core 管理 Session 和执行状态；
-Runtime 准备 Skill 和 MCP 工具并运行所选引擎；沙箱供应商管理运行环境，模型供应商提供推理服务。
-各部件之间都通过既定协议连接，任何一个都可以单独替换。
+Core 对外提供两组 API：
 
-托管 Provider 提供 Linux 环境；自托管 daemon 支持 Linux、macOS 和 Windows，
-具体组合见 [Harness 平台支持表](docs/self-hosted-native.md#platforms-and-prerequisites)。
-daemon 使用启动账户的权限，隔离由外层沙箱负责。释放执行器不会销毁 Environment。
+| API | 路径 | 调用方 |
+| --- | --- | --- |
+| **Agents API** | `/v1` | 你的应用，与 OpenAI 协议一致 |
+| **Core API** | `/core/v1` | 管理员，通过 Web 调用 |
 
-已支持的 API 操作和原生引擎差异见[协议覆盖记录](contracts/agents-api/README.md)。
+所有状态都由 Core 保存；Runtime 在 Environment 中运行所选 Harness。各部件之间都通过既定协议连接，
+任何一个都可以单独替换。详见[架构说明](docs/architecture.md)。
 
 ## 文档
 
-| 入口 | 内容 |
+| 我想要 | 从这里开始 |
 | --- | --- |
-| [文档目录](docs/getting-started/README.md) | 安装、使用和运维的阅读路径 |
-| [架构](docs/architecture.md) | 各组件、三组 API 与一个 Session 的完整流程 |
-| [使用指南](docs/user-guide.md) | Session、Skill/Plugin/MCP、文件、取消与恢复 |
-| [配置参考](docs/configuration.md) | 部署设置和模型配置 |
-| [API 参考](docs/api/README.md) | 应用、管理与机器接口 |
-| [开发指南](docs/development.md) | 仓库结构、开发环境、构建与验证 |
-| [接入 Harness](contracts/agents-api/harness-onboarding.md) | 适配器实现与验收 |
-| [Core–Runtime 协议](docs/runtime-protocol.md) | 生命周期、能力准备与执行 |
-| [接入 Sandbox Provider](docs/sandbox-provider.md) | 环境创建与资源管理 |
+| 安装并运维 | [安装指南](docs/getting-started/install.md)，然后看[运维](docs/getting-started/operations.md) |
+| 基于 API 开发应用 | [快速开始](docs/getting-started/quickstart.md)，然后看 [Agents API 指南](docs/api/public-agent-api.md) |
+| 看一个完整的应用 | [示例](docs/examples.md) |
+| 在自己的机器上运行 Agent | [自托管执行](docs/getting-started/self-hosted.md) |
+| 了解设计 | [架构说明](docs/architecture.md) |
+| 接入新的沙箱、Harness 或其他组件 | [开发指南](docs/development.md) |
 
-修改代码前请阅读[贡献规范](CONTRIBUTING.md)。
+全部文档见[文档目录](docs/getting-started/README.md)。修改代码前请阅读[贡献规范](CONTRIBUTING.md)。

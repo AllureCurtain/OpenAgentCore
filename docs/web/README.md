@@ -37,15 +37,8 @@ deployment sandbox nodes. Deployment sandbox management selects E2B, Docker or
 microsandbox; caller-managed `self_hosted` Runtimes remain a separate application
 path.
 
-A Project owns one tenant and one principal. All its keys share assets and
-permissions; writes record the individual key as provenance. Projects and keys
-live only in PostgreSQL. Key issuance returns plaintext once and stores its digest.
-Rotate by issuing another key and revoking the old one. Archive disables every key
-in the Project while retaining assets and admitted work.
-
-The management API cannot create or edit arbitrary application resources, start
-Sessions, submit input or cancel execution. Applications perform those operations
-through `/v1`. Core has no API users, roles or memberships.
+How Projects and keys behave, and what administrators can and cannot do, is in
+the [design principles](../design-principles.md#projects-own-assets).
 
 ## Connect and develop
 
