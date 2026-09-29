@@ -1,5 +1,7 @@
 package dispatch_test
 
+import "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
+
 import (
 	"context"
 	"testing"
@@ -19,7 +21,7 @@ func TestOptionalInteractionResponders(t *testing.T) {
 			h := newHarness(t)
 			defer h.router.Shutdown(context.Background())
 			var output chan<- proto.Envelope
-			h.reg.Register("minimal", func(_ context.Context, _ proto.PromptRequestPayload, out chan<- proto.Envelope) (agent.Session, error) {
+			h.reg.Register("minimal", harnessconfig.Configuration{}, func(_ context.Context, _ proto.PromptRequestPayload, out chan<- proto.Envelope) (agent.Session, error) {
 				output = out
 				s := &fakeSession{out: out, closeOutOnCancel: true}
 				return lifecycleOnly{cancel: s.Cancel}, nil

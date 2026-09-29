@@ -62,13 +62,8 @@ func TestModelExecutionHTTPWriteOnlyAndStrictAdmission(t *testing.T) {
 	for _, protocol := range []string{"anthropic", "chat_completions"} {
 		crossProtocol := strings.Replace(body, `"protocol":"responses"`, `"protocol":"`+protocol+`"`, 1)
 		response := call("POST", "/v1/agents/sessions", crossProtocol, uuid.NewString())
-		var created struct{ ID string }
-		if response.Code != 201 || json.Unmarshal(response.Body.Bytes(), &created) != nil || created.ID == "" {
-			t.Fatalf("cross-protocol Session rejected: %d", response.Code)
-		}
-		provider, err := st.SessionModelExecution(t.Context(), tenant, created.ID)
-		if err != nil || provider == nil || provider.Protocol != protocol || provider.BaseURL != "https://example.com/v1" || provider.APIKey != "model-http-canary" {
-			t.Fatal("Session did not freeze its complete upstream bundle", err)
+		if response.Code != 400 || !strings.Contains(response.Body.String(), "does not support this model provider protocol") {
+			t.Fatalf("non-native Session was not rejected explicitly: %d", response.Code)
 		}
 	}
 	for _, invalid := range []string{strings.Replace(body, `"protocol":"responses"`, `"protocol":"unknown"`, 1), strings.Replace(body, `"api_key":"model-http-canary"`, `"api_key":"model-http-canary","unknown":true`, 1), strings.Replace(body, `"type":"openai_hosted"`, `"type":"none"`, 1), strings.Replace(body, `"api_key":"model-http-canary"`, `"api_key":null`, 1)} {

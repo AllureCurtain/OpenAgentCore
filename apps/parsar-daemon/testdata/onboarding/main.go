@@ -2,6 +2,8 @@
 // It is test-only, has no workspace/tools, and is never in the built-in catalog.
 package main
 
+import "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
+
 import (
 	"context"
 	"encoding/json"
@@ -160,7 +162,7 @@ func run() error {
 	h := &harness{history: map[string]string{}}
 	registry.RegisterKind(proto.SupportedAgentKind{Kind: "fixture_harness", Available: true, Capabilities: proto.AgentKindCapabilities{
 		Streaming: true, Steering: true, DurableTurns: true, DurableInputReceipts: true, ExecutionControls: true, ToolObservations: true, SubagentControl: true, EnvironmentNone: true,
-	}}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
+	}}, harnessconfig.Configuration{}, func(context.Context, proto.PromptRequestPayload, chan<- proto.Envelope) (agent.Session, error) {
 		return nil, errors.New("fixture execution requires an Executor")
 	})
 	registry.RegisterExecutor("fixture_harness", h.prepare)

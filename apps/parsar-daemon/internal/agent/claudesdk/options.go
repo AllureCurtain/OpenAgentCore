@@ -24,22 +24,22 @@ type subagentOptions struct {
 }
 
 type startRequest struct {
-	HarnessConfig    proto.HarnessConfig  `json:"harness_config,omitempty"`
-	ToolSearch       bool                 `json:"tool_search,omitempty"`
-	Subagents        *subagentOptions     `json:"subagents,omitempty"`
-	OutputFormat     *proto.OutputFormat  `json:"output_format,omitempty"`
-	Type             string               `json:"type"`
-	Input            proto.MessageInput   `json:"input,omitempty"`
-	Model            string               `json:"model"`
-	SystemPrompt     string               `json:"system_prompt"`
-	Cwd              string               `json:"cwd"`
-	Resume           string               `json:"resume,omitempty"`
-	ObserveMessages  bool                 `json:"observe_messages,omitempty"`
-	Functions        []proto.FunctionTool `json:"functions,omitempty"`
-	MCPHTTPServers   *[]mcpHTTPServer     `json:"mcp_http_servers,omitempty"`
-	Workspace        *workspaceProfile    `json:"workspace,omitempty"`
-	RequireHistory   bool                 `json:"require_history,omitempty"`
-	observeFunctions bool
+	NativeModelOptions *nativeModelOptions  `json:"native_model_options,omitempty"`
+	ToolSearch         bool                 `json:"tool_search,omitempty"`
+	Subagents          *subagentOptions     `json:"subagents,omitempty"`
+	OutputFormat       *proto.OutputFormat  `json:"output_format,omitempty"`
+	Type               string               `json:"type"`
+	Input              proto.MessageInput   `json:"input,omitempty"`
+	Model              string               `json:"model"`
+	SystemPrompt       string               `json:"system_prompt"`
+	Cwd                string               `json:"cwd"`
+	Resume             string               `json:"resume,omitempty"`
+	ObserveMessages    bool                 `json:"observe_messages,omitempty"`
+	Functions          []proto.FunctionTool `json:"functions,omitempty"`
+	MCPHTTPServers     *[]mcpHTTPServer     `json:"mcp_http_servers,omitempty"`
+	Workspace          *workspaceProfile    `json:"workspace,omitempty"`
+	RequireHistory     bool                 `json:"require_history,omitempty"`
+	observeFunctions   bool
 }
 
 func prepare(config Config, req proto.PromptRequestPayload) (startRequest, []string, error) {
@@ -59,11 +59,11 @@ func prepareConfiguration(config Config, req proto.PromptRequestPayload) (startR
 	fail := func(reason string) (startRequest, []string, error) {
 		return startRequest{}, nil, fmt.Errorf("claudesdk: %s", reason)
 	}
-	nativeConfig, err := harnessconfiguration.Configuration().PrepareHarnessConfig(req.AgentOptions)
+	modelConfiguration, err := harnessconfiguration.Configuration().Prepare(req.AgentOptions)
 	if err != nil {
 		return startRequest{}, nil, err
 	}
-	start.HarnessConfig = nativeConfig
+	start.NativeModelOptions = compileNativeModelOptions(modelConfiguration.HarnessConfig)
 	if req.WorkspaceAuthoring || req.ObserveTools {
 		return fail("requested capability is not available in the private SDK adapter")
 	}

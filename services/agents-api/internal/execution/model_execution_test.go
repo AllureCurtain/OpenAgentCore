@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
@@ -40,6 +41,17 @@ func TestSessionModelOptionsPreserveUpstreamBundleForEveryHarness(t *testing.T) 
 			t.Run(engine+"/"+protocol, func(t *testing.T) {
 				provider := &v1.ModelProviderInput{Protocol: protocol, BaseURL: "https://example.com/v1", APIKey: "private-key", ContextWindow: 200000, MaxOutputTokens: 8000}
 				got, err := resolvedSessionModelOptions(provider, engine)
+				native := engine == "mcode" || engine == "codex" && protocol == "responses" || engine == "claude_sdk" && protocol == "anthropic"
+				if !native {
+					var protocolError *v1.ModelProviderError
+					if got != nil || !errors.As(err, &protocolError) || strings.Contains(err.Error(), provider.APIKey) {
+						t.Fatal("non-native provider was not safely rejected")
+					}
+					if provider.Protocol != protocol {
+						t.Fatal("rejection rewrote the frozen provider protocol")
+					}
+					return
+				}
 				want := map[string]any{"model_provider": map[string]any{
 					"protocol": protocol, "base_url": provider.BaseURL, "api_key": provider.APIKey,
 					"context_window": provider.ContextWindow, "max_output_tokens": provider.MaxOutputTokens,

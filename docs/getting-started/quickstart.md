@@ -11,7 +11,8 @@ and reported back. You need:
 - a model: either the installation's default model, set by your administrator, or
   your own provider's model ID, base URL and API key.
 
-The example uses Codex. Other harnesses are covered in the
+The example uses Codex, which needs a provider that speaks the OpenAI Responses API.
+Other harnesses and protocols are in the
 [user guide](../user-guide.md#choose-a-harness-and-a-model).
 
 ## 1. Connect

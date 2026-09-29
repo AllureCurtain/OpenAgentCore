@@ -58,7 +58,7 @@ export function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
   const support = harness?.model_configuration_support;
   const limitsRequired = support?.token_limits_required ?? false;
   const protocolOptions = (support?.protocols ?? []).map((value) => ({ value, label: protocolNames[value] }));
-  const [protocol, setProtocol] = useState<Protocol>(current?.protocol ?? support?.native_protocols[0] ?? "responses");
+  const [protocol, setProtocol] = useState<Protocol | "">(current?.protocol ?? support?.protocols[0] ?? "");
   const [baseUrl, setBaseUrl] = useState(current?.base_url ?? "");
   const [apiKey, setApiKey] = useState("");
   const [model, setModel] = useState(configuration?.model ?? "");
@@ -79,7 +79,7 @@ export function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
   const fieldError = (param: string) => coreFieldError(rejection, param, tCommon) ?? coreFieldError(rejection, `model_provider.${param}`, tCommon);
 
   const name = harness ? harnessNames[harness.id] : "";
-  const configRouteProblem = nativeConfig !== null && Object.keys(nativeConfig).length > 0 && !support?.native_protocols.includes(protocol) ? t("models.form.configNativeOnly") : null;
+  const protocolProblem = !protocol ? t("models.form.protocolUnavailable") : !support?.protocols.includes(protocol) ? t("models.form.protocolUnsupported", { protocol: protocolNames[protocol] }) : null;
   const configTooLarge = nativeConfig !== null && new TextEncoder().encode(JSON.stringify(nativeConfig)).length > 16 * 1024;
   const url = baseUrl.trim();
   const urlProblem = url && !isProviderUrl(url) ? t("models.form.baseUrlInvalid") : null;
@@ -89,7 +89,7 @@ export function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
   const outputProblem = limitProblem(output);
   // The missing or undersized window is the field the administrator must fix.
   const contextProblem = limitProblem(context) ?? (!outputProblem && output.value !== undefined && output.value > (context.value ?? 0) ? t("models.form.needsContext") : null);
-  const ready = harness !== null && !busy && url !== "" && !urlProblem && apiKey.trim() !== "" && model.trim() !== "" && nativeConfig !== null && !configTooLarge && !configRouteProblem && (!limitsRequired || Boolean(context.value && output.value)) && !contextProblem && !outputProblem;
+  const ready = harness !== null && !busy && url !== "" && !urlProblem && apiKey.trim() !== "" && model.trim() !== "" && nativeConfig !== null && !configTooLarge && !protocolProblem && (!limitsRequired || Boolean(context.value && output.value)) && !contextProblem && !outputProblem;
 
   function clearNativeConfig() {
     setConfigText("{}");
@@ -97,7 +97,7 @@ export function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
   }
 
   async function save() {
-    if (!ready || !harness || !nativeConfig || saving.current) return;
+    if (!ready || !harness || !protocol || !nativeConfig || saving.current) return;
     saving.current = true;
     setBusy(true);
     setError(null); setRejection(null);
@@ -155,8 +155,9 @@ export function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
 
   const baseUrlError = urlProblem ?? fieldError("base_url");
   const apiKeyError = fieldError("api_key");
-  const configError = configRouteProblem ?? (configTouched && configTooLarge ? t("models.form.configTooLarge") : configTouched && nativeConfig === null ? t("models.form.configInvalid") : null) ?? fieldError("harness_config");
+  const configError = (configTouched && configTooLarge ? t("models.form.configTooLarge") : configTouched && nativeConfig === null ? t("models.form.configInvalid") : null) ?? fieldError("harness_config");
   const modelError = fieldError("model");
+  const protocolError = protocolProblem ?? fieldError("protocol");
   const fieldRejected = ["base_url", "api_key", "context_window", "max_output_tokens", "protocol", "model", "harness_config"].some((param) => fieldError(param));
   return (
     <Modal
@@ -176,14 +177,14 @@ export function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
             <span>{t("models.protocol")}</span>
             <HelpTip>{t("models.form.protocolHelp")}</HelpTip>
           </span>
-          <ConsoleSelect label={t("models.protocol")} value={protocol} options={protocolOptions} disabled={busy} onChange={(value) => {
+          <ConsoleSelect label={t("models.protocol")} placeholder={t("models.form.selectProtocol")} value={protocolProblem ? "" : protocol} options={protocolOptions} disabled={busy} onChange={(value) => {
             const option = protocolOptions.find((option) => option.value === value);
             if (option) {
               if (option.value !== protocol) clearNativeConfig();
               setProtocol(option.value); setRejection(null); setError(null);
             }
           }} />
-          {fieldError("protocol") ? <span className="field-error" role="alert">{fieldError("protocol")}</span> : null}
+          {protocolError ? <span className="field-error" role="alert">{protocolError}</span> : null}
         </div>
         <div className="field">
           <span className="field-label-row"><label htmlFor={`${id}-url`}>{t("models.baseUrl")}</label></span>

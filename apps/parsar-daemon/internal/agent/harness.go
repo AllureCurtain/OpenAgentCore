@@ -10,8 +10,8 @@
 // rather than additional Go interfaces; qualify and advertise them separately.
 //
 // Registration: RegisterKind takes the existing proto.SupportedAgentKind
-// descriptor (kind, availability, native version and AgentKindCapabilities) and
-// direct-call Factory. RegisterExecutor supplies the Session-owned lifecycle.
+// descriptor (kind, availability, native version and AgentKindCapabilities),
+// the mandatory shared Configuration and the direct-call Factory. RegisterExecutor supplies the Session-owned lifecycle.
 // RegisterPreparation optionally adds workspace access without model input.
 // RegisterKind resets the other factories, so register it first. Preparation
 // flags are derived by these methods; other advertised capabilities must reflect
@@ -27,55 +27,21 @@ import (
 	"context"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
+	"github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
 )
 
-// ExecutorFactory must prepare model configuration before native startup and
-// before submitting model input; accepted fields must never be silently dropped.
-// proto.HarnessConfig is a JSON object: omission and {} are empty configuration;
-// explicit null, arrays and objects above 16 KiB of serialized UTF-8 bytes are
-// invalid. The selected
-// adapter owns field names, meanings and native validation. See the native model
-// configuration section of contracts/agents-api/harness-onboarding.md.
-// Core freezes model, model_provider and proto.HarnessConfig in the Session.
-// Runtime resolves modeltransport first; adapters consume only its final effective
-// connection (address, protocol and authentication).
-// Each adapter declares safe native model fields in internal/harnessconfig and
-// validates the same declaration at admission and again before native application.
-// Unknown fields and conflicts with model, provider/authentication, workspace,
-// tools/MCP, permissions or lifecycle controls fail with a value-free error.
-// Apply accepted fields directly to native config or SDK options, without a
-// cross-Harness parameter translation layer. Never merge arbitrary host config.
-// Preparation failure cleans up owned configuration files, processes/SDK resources
-// and proxies. Unconfirmed cleanup returns a non-nil Executor with the error under
-// the factory ownership contract. The logical configuration snapshot remains fixed
-// across Turns and reconnects; rebuilding an Executor may regenerate local proxy
-// addresses or short-lived credentials. Configuration defaults and inheritance
-// belong to the public API contract.
-
-// Configuration support is declared once by each adapter in internal/harnessconfig:
-// accepted upstream protocols, native protocols, token-limit requirements and its
-// native model-parameter validator. Core admission, Runtime and modeltransport
-// consume that declaration; adding a Harness must not introduce another public
-// configuration shape or a Harness-name branch in orchestration.
+// Model configuration has one shared contract, authored in
+// internal/harnessconfig/harness.go. RegisterKind requires that declaration;
+// RegisterExecutor and RegisterPreparation inherit it. Every registered entry
+// validates model, provider and native parameters before calling native code.
+// The declaration belongs to the adapter and is also consumed by Core. Keep
+// adapter field rules and rendering private. That shared contract owns frozen
+// configuration and native application obligations. This file owns execution
+// lifecycle only. Native image/tool/operation support is qualified through proto
+// capabilities and the Core engine profile, not model configuration declarations.
 //
-// modeltransport owns route selection and preservation requirements. JSON parsing,
-// adapter acceptance, conversion qualification and upstream model support are
-// separate facts. A registered translator alone does not prove preservation.
-// Native routes keep the original protocol; conversion routes must reject an
-// unqualified requirement before forwarding model input. Nonempty native parameters,
-// structured output, tool search, native web search and nondefault verbosity are
-// currently native-route-only. Existing text, ordinary tools and streaming retain
-// their qualified conversion paths; no model-name heuristic establishes support.
-// Direct transport does not prove that the selected remote model accepts a native
-// parameter: the native Harness/provider remains responsible for that response.
-//
-// Input capability uses the existing MessageImages/MessageImagePlacements and
-// proto.MessageInput contracts, not another image type in model configuration.
-// Configuration preparation checks known requirements. Each Turn, steer and tool
-// result must also check newly introduced input requirements against the fixed
-// route before native submission or proxy forwarding. Unqualified image forms
-// must fail explicitly, never be dropped or reduced to text. The proxy performs
-// the final request check before forwarding; it cannot silently weaken semantics.
+// Preparation failure retains unconfirmed native cleanup in a non-nil Executor
+// under the factory ownership contract below.
 
 // Required execution lifecycle.
 
@@ -214,7 +180,7 @@ type Factory func(ctx context.Context, req proto.PromptRequestPayload, out chan<
 // RegisterKind installs f and the heartbeat descriptor for an
 // agent_kind. Callers may set Available=false when an adapter exists
 // but its underlying CLI is not usable.
-func (r *Registry) RegisterKind(info proto.SupportedAgentKind, f Factory) {
+func (r *Registry) RegisterKind(info proto.SupportedAgentKind, configuration harnessconfig.Configuration, f Factory) {
 	kind := info.Kind
 	if kind == "" {
 		panic("agent.Registry.Register: empty kind")
@@ -222,9 +188,19 @@ func (r *Registry) RegisterKind(info proto.SupportedAgentKind, f Factory) {
 	if f == nil {
 		panic("agent.Registry.Register: nil factory")
 	}
+	if err := configuration.ValidateDeclaration(); err != nil {
+		panic(err)
+	}
+	configuration = configuration.Clone()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.factories[kind] = f
+	r.configurations[kind] = configuration
+	r.factories[kind] = func(ctx context.Context, req proto.PromptRequestPayload, out chan<- proto.Envelope) (Session, error) {
+		if _, err := configuration.Prepare(req.AgentOptions); err != nil {
+			return nil, err
+		}
+		return f(ctx, req, out)
+	}
 	delete(r.preparers, kind)
 	delete(r.executors, kind)
 	info.Capabilities.Preparation = false
@@ -241,7 +217,16 @@ func (r *Registry) RegisterExecutor(kind string, factory ExecutorFactory) {
 	if !exists || factory == nil {
 		panic("agent.Registry.RegisterExecutor: registered kind and factory required")
 	}
-	r.executors[kind] = factory
+	configuration, declared := r.configurations[kind]
+	if !declared {
+		panic("agent.Registry.RegisterExecutor: configuration required")
+	}
+	r.executors[kind] = func(ctx context.Context, req proto.PromptRequestPayload) (Executor, error) {
+		if _, err := configuration.Prepare(req.AgentOptions); err != nil {
+			return nil, err
+		}
+		return factory(ctx, req)
+	}
 	info.Capabilities.Preparation = true
 	r.kinds[kind] = info
 }
@@ -255,7 +240,16 @@ func (r *Registry) RegisterPreparation(kind string, workspaceRead bool, prepare 
 	if !exists || prepare == nil {
 		panic("agent.Registry.RegisterPreparation: registered kind and factory required")
 	}
-	r.preparers[kind] = prepare
+	configuration, declared := r.configurations[kind]
+	if !declared {
+		panic("agent.Registry.RegisterPreparation: configuration required")
+	}
+	r.preparers[kind] = func(ctx context.Context, req proto.PromptRequestPayload) (Prepared, error) {
+		if _, err := configuration.Prepare(req.AgentOptions); err != nil {
+			return nil, err
+		}
+		return prepare(ctx, req)
+	}
 	info.Capabilities.Preparation = true
 	info.Capabilities.WorkspaceReadPreparation = workspaceRead
 	r.kinds[kind] = info
@@ -263,6 +257,6 @@ func (r *Registry) RegisterPreparation(kind string, workspaceRead bool, prepare 
 
 // Register installs f as the factory for kind with a basic available
 // descriptor. Panics on empty kind or nil factory.
-func (r *Registry) Register(kind string, f Factory) {
-	r.RegisterKind(proto.SupportedAgentKind{Kind: kind, Available: true}, f)
+func (r *Registry) Register(kind string, configuration harnessconfig.Configuration, f Factory) {
+	r.RegisterKind(proto.SupportedAgentKind{Kind: kind, Available: true}, configuration, f)
 }

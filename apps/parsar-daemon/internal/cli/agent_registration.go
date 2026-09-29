@@ -1,5 +1,9 @@
 package cli
 
+import "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
+import codexconfiguration "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/codex"
+import mcodeconfiguration "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/mcode"
+
 import (
 	"context"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
@@ -13,15 +17,15 @@ import (
 )
 
 func registerAgentKinds(registry *agent.Registry, agentCLIs agentCLIDiscovery, serverURL string) {
-	registerProduct := func(info proto.SupportedAgentKind, factory agent.Factory) {
+	registerProduct := func(info proto.SupportedAgentKind, configuration harnessconfig.Configuration, factory agent.Factory) {
 		if agentCLIs.permits(info.Kind) {
-			registerProductAgentKind(registry, info, factory)
+			registerProductAgentKind(registry, info, configuration, factory)
 		}
 	}
 
-	registerProduct(agentCLIs.ClaudeCode, withSkillUploadServer(withCapabilityDownloads(claudecode.Factory, serverURL), serverURL))
-	registerProduct(agentCLIs.OpenCode, withSkillUploadServer(withCapabilityDownloads(opencodeagent.Factory, serverURL), serverURL))
-	registerProduct(agentCLIs.Codex, withSkillUploadServer(withCapabilityDownloads(codex.Factory, serverURL), serverURL))
+	registerProduct(agentCLIs.ClaudeCode, harnessconfig.Configuration{}, withSkillUploadServer(withCapabilityDownloads(claudecode.Factory, serverURL), serverURL))
+	registerProduct(agentCLIs.OpenCode, harnessconfig.Configuration{}, withSkillUploadServer(withCapabilityDownloads(opencodeagent.Factory, serverURL), serverURL))
+	registerProduct(agentCLIs.Codex, codexconfiguration.Configuration(), withSkillUploadServer(withCapabilityDownloads(codex.Factory, serverURL), serverURL))
 	if agentCLIs.Codex.Available {
 		registry.RegisterExecutor("codex", withExecutorCapabilities(codex.NewExecutorFactory(), serverURL))
 	}
@@ -34,12 +38,12 @@ func registerAgentKinds(registry *agent.Registry, agentCLIs agentCLIDiscovery, s
 			return prepared, err
 		})
 	}
-	registerProduct(agentCLIs.Pi, withSkillUploadServer(withCapabilityDownloads(pi.Factory, serverURL), serverURL))
+	registerProduct(agentCLIs.Pi, harnessconfig.Configuration{}, withSkillUploadServer(withCapabilityDownloads(pi.Factory, serverURL), serverURL))
 	if agentCLIs.MCodeWorkspace != nil {
-		registry.RegisterKind(agentCLIs.MCode, mcode.Factory)
+		registry.RegisterKind(agentCLIs.MCode, mcodeconfiguration.Configuration(), mcode.Factory)
 		registry.RegisterPreparation("mcode", true, mcode.NewPreparationFactory(*agentCLIs.MCodeWorkspace))
 	} else {
-		registerProduct(agentCLIs.MCode, withSkillUploadServer(withCapabilityDownloads(mcode.Factory, serverURL), serverURL))
+		registerProduct(agentCLIs.MCode, mcodeconfiguration.Configuration(), withSkillUploadServer(withCapabilityDownloads(mcode.Factory, serverURL), serverURL))
 	}
 	if agentCLIs.MCode.Available {
 		registry.RegisterExecutor("mcode", withExecutorCapabilities(mcode.NewExecutorFactory(agentCLIs.MCodeWorkspace), serverURL))
@@ -47,7 +51,7 @@ func registerAgentKinds(registry *agent.Registry, agentCLIs agentCLIDiscovery, s
 	registerClaudeSDK(registry, agentCLIs.ClaudeSDK)
 }
 
-func registerProductAgentKind(registry *agent.Registry, info proto.SupportedAgentKind, factory agent.Factory) {
+func registerProductAgentKind(registry *agent.Registry, info proto.SupportedAgentKind, configuration harnessconfig.Configuration, factory agent.Factory) {
 	info.Capabilities.WorkspaceAuthoring = true
-	registry.RegisterKind(info, factory)
+	registry.RegisterKind(info, configuration, factory)
 }

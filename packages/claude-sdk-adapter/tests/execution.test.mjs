@@ -59,7 +59,7 @@ globalThis.queryFixture = ({prompt,options}) => {
     },
   };
 };
-await execute({type:"start",input: [{ content: [{ type: "input_text", text: "opening text" }] }],model:"fixture",system_prompt:"",cwd:process.cwd(),harness_config:{effort:"high",thinking:{type:"enabled",budgetTokens:1024}},
+await execute({type:"start",input: [{ content: [{ type: "input_text", text: "opening text" }] }],model:"fixture",system_prompt:"",cwd:process.cwd(),native_model_options:{effort:"high",thinking:{type:"enabled",budgetTokens:1024}},
   ...(mode === "later-function" ? {functions:[{name:"lookup",description:"fixture",parameters:{type:"object",properties:{}}}]} : {})},emit,abort,functions,inputs);
 assert.equal(inputs.complete,true);
 assert.equal(events.filter(e=>e.type === "input_applied" && e.input_id === "extra").length,1);

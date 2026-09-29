@@ -263,7 +263,7 @@ A deployment runs its sandboxes on exactly one backend:
 | `none` | Nothing yet | Choose on the **Nodes** page in Web |
 
 The Standard sizes come from Web's
-[`standard-sizes.json`](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/apps/web/src/features/sandbox/standard-sizes.json). If
+[`standard-sizes.json`](https://github.com/MiniMax-AI/parsar-core/blob/f6d258735fc601c521dd990e6f9e1ed261f4ef2d/apps/web/src/features/sandbox/standard-sizes.json). If
 Core refuses the choice, for example because E2B rejects the key, the installer
 prints Core's message and exits; the services keep running and you choose the
 backend in Web. To change the backend or size later, see
@@ -277,7 +277,7 @@ without a terminal, pass `--accept-docker-risks`.
 
 **E2B** needs a public HTTPS URL that is not loopback, because E2B's sandboxes call
 Core from E2B's cloud. Prepare the template build with the
-[E2B guide](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/services/agents-api/deploy/e2b/README.md), then:
+[E2B guide](https://github.com/MiniMax-AI/parsar-core/blob/f6d258735fc601c521dd990e6f9e1ed261f4ef2d/services/agents-api/deploy/e2b/README.md), then:
 
 ```sh
 ./install.sh --public-url https://core.example --sandbox e2b \
@@ -455,4 +455,4 @@ release; see [installation version policy](/troubleshooting#installation-version
 An installation from before the rename, at `~/.parsar/core`, blocks a new default
 install. Keep it and choose another `--install-dir`.
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/docs/getting-started/install.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f6d258735fc601c521dd990e6f9e1ed261f4ef2d/docs/getting-started/install.md)

@@ -185,8 +185,3 @@ Model configuration writes additionally return `model_configuration_model_invali
 with `param: model`, or `harness_config_invalid` with `param: harness_config`.
 Both carry fixed messages without submitted values. Existing provider field errors
 retain their field params within the `model_provider` object.
-
-`model_configuration_route_unsupported` rejects a configuration whose required
-semantics are not qualified for its conversion route. Its param is
-`harness_config` for native parameters, or `model_provider.protocol` for other
-route requirements. The message never includes submitted values.

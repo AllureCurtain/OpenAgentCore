@@ -24,18 +24,18 @@ The harness is the agent program that runs your Session. Set it in
 `x_agents_core.harness` on the Agent; if you don't, the installation's default
 (Codex unless changed) is used.
 
-| Harness | `harness` | Native model parameters (`harness_config`) |
-| --- | --- | --- |
-| Codex | `codex` | `model_reasoning_effort` |
-| Claude Code | `claude_sdk` | `effort`, `thinking` |
-| MiniMax Code | `mcode` | None. The provider must set `context_window` and `max_output_tokens` |
+| Harness | `harness` | Provider `protocol` | Native model parameters (`harness_config`) |
+| --- | --- | --- | --- |
+| Codex | `codex` | `responses` | `model_reasoning_effort` |
+| Claude Code | `claude_sdk` | `anthropic` | `effort`, `thinking` |
+| MiniMax Code | `mcode` | `anthropic` (default), `responses` or `chat_completions` | None. The provider must set `context_window` and `max_output_tokens` |
 
 - **Model.** `agent.model` is the provider's exact model ID. An inline Agent on an
   `openai_hosted` or `none` Session may omit it to use the installation default's
   model. Saved Agents always need one.
-- **Provider protocol.** Any harness accepts `responses`, `anthropic` or
-  `chat_completions`; the Runtime converts when the harness doesn't speak it
-  natively. Native model parameters need a native protocol.
+- **Provider protocol.** The harness connects to your provider directly, so the
+  provider must speak one of the harness's protocols above. There is no conversion;
+  a mismatch is rejected when the Session is created.
 - **Native parameters.** `x_agents_core.harness_config` passes the harness's own
   settings; see [native model configuration](../contracts/agents-api/harness-onboarding.md#native-model-configuration).
 

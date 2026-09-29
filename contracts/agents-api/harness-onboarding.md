@@ -6,6 +6,14 @@ Core–Runtime execution contract into that engine's SDK or protocol. This guide
 the single numbered path for adding one. Qualification evidence and the
 per-operation support table live in [Harness integration](harnesses.md).
 
+Start from two entry points:
+
+- [`internal/harnessconfig/harness.go`](../../internal/harnessconfig/harness.go):
+  the shared model configuration contract (declarations and preparation).
+- [`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go): the
+  execution lifecycle, optional interfaces and registration methods.
+
+
 The code entry point is
 [`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go). It
 declares the required lifecycle, the separate optional interfaces and the
@@ -97,9 +105,21 @@ a time. Do not copy an adapter's native limitations into the shared Core protoco
 
 ## Native model configuration
 
-[`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go) owns the
-preparation, validation, reserved-field, effective-connection and cleanup contract.
-The shared wire object is `proto.HarnessConfig`. Adapter declarations in
+[`internal/harnessconfig/harness.go`](../../internal/harnessconfig/harness.go) owns
+the shared configuration declaration and pure preparation contract. Each adapter
+supplies one `Configuration` to Core's composition and Runtime's `RegisterKind`.
+All three Runtime entry paths validate through that declaration before native
+side effects: direct factory, preparation and Executor. Registry wrappers retain
+the declaration alongside the factory. Lifecycle and cleanup ownership remain in
+[`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go).
+The shared wire object is `proto.HarnessConfig`.
+
+A supplied `model` must be a nonempty string, and an explicit `model_provider`
+requires it. The native-owned connection path may omit both; explicit null is
+invalid. An explicitly empty adapter declaration accepts no provider or nonempty
+native parameters. It does not advertise provider support. Unknown protocol
+formats and duplicate protocol declarations fail at registration.
+Adapter declarations in
 `internal/harnessconfig/<kind>` own these native fields:
 
 | Harness | Accepted native fields | Application |
@@ -115,19 +135,19 @@ These are native settings, not a shared reasoning vocabulary; model availability
 and provider support remain the selected harness's responsibility.
 
 Native protocol and parameter declarations also feed Core administration's small
-configuration-support descriptor. `modeltransport` selects and validates routes
-from those declarations. Its conversion qualification is distinct from adapter
-acceptance and remote-model support. Follow the route and per-input requirements
-in `agent/harness.go`; do not add a second model capability registry or infer
-capabilities from model names. Nonempty `harness_config` currently requires a native
-protocol route because the translator has no loss report for those parameters.
+configuration-support descriptor. Its ordered `protocols` list is the sole source
+for accepted protocols and the default (the first entry). Core and Runtime reject
+unsupported combinations through the same declaration. The current protocol
+matrix belongs to [model execution](model-execution.md#saved-defaults-and-precedence).
+Adapters connect directly through native configuration; they must not introduce
+a model API proxy or protocol converter. Follow the per-input capability
+requirements in the execution lifecycle contract; do not add a second model capability registry
+or infer capabilities from model names. Native protocol acceptance and remote
+model support remain separate facts.
 
-Every Executor factory must honor the configuration preparation contract in
-`agent/harness.go`. Shared wire types live in `internal/agentdaemon/proto`. The
-standalone Core build includes the shared `internal/modeltransport` route
-qualification code alongside the adapter declarations; Runtime still owns proxy
-startup and request forwarding. Public configuration sources and inheritance belong
-to [model execution](model-execution.md#native-model-parameters).
+Claude's private bridge receives compiled native options and performs structural
+checks only, not a second copy of the declaration's rules. Planned fields and
+ownership are in the [unified model configuration design](model-configuration-design.md).
 
 
 ## Required adapter interfaces
@@ -220,7 +240,7 @@ from [`cli/agent_registration.go`](../../apps/parsar-daemon/internal/cli/agent_r
 
 | Order | Method | Registers |
 | --- | --- | --- |
-| 1 | `RegisterKind(proto.SupportedAgentKind, agent.Factory)` | Kind, availability, version, `AgentKindCapabilities` and the direct-call factory. Resets the other registrations, so call it first. |
+| 1 | `RegisterKind(proto.SupportedAgentKind, harnessconfig.Configuration, agent.Factory)` | Kind, availability, version, `AgentKindCapabilities`, the adapter's model configuration declaration and the direct-call factory. Resets the other registrations, so call it first. |
 | 2 | `RegisterExecutor(kind, agent.ExecutorFactory)` | The shared Executor/Turn lifecycle used for execution. Derives the `Preparation` capability. |
 | 3 | `RegisterPreparation(kind, workspaceRead, agent.PreparationFactory)` | Optional. Separate read-only workspace preparation when qualified workspace operations need it. |
 

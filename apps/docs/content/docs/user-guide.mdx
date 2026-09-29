@@ -27,23 +27,23 @@ The harness is the agent program that runs your Session. Set it in
 `x_agents_core.harness` on the Agent; if you don't, the installation's default
 (Codex unless changed) is used.
 
-| Harness | `harness` | Native model parameters (`harness_config`) |
-| --- | --- | --- |
-| Codex | `codex` | `model_reasoning_effort` |
-| Claude Code | `claude_sdk` | `effort`, `thinking` |
-| MiniMax Code | `mcode` | None. The provider must set `context_window` and `max_output_tokens` |
+| Harness | `harness` | Provider `protocol` | Native model parameters (`harness_config`) |
+| --- | --- | --- | --- |
+| Codex | `codex` | `responses` | `model_reasoning_effort` |
+| Claude Code | `claude_sdk` | `anthropic` | `effort`, `thinking` |
+| MiniMax Code | `mcode` | `anthropic` (default), `responses` or `chat_completions` | None. The provider must set `context_window` and `max_output_tokens` |
 
 - **Model.** `agent.model` is the provider's exact model ID. An inline Agent on an
   `openai_hosted` or `none` Session may omit it to use the installation default's
   model. Saved Agents always need one.
-- **Provider protocol.** Any harness accepts `responses`, `anthropic` or
-  `chat_completions`; the Runtime converts when the harness doesn't speak it
-  natively. Native model parameters need a native protocol.
+- **Provider protocol.** The harness connects to your provider directly, so the
+  provider must speak one of the harness's protocols above. There is no conversion;
+  a mismatch is rejected when the Session is created.
 - **Native parameters.** `x_agents_core.harness_config` passes the harness's own
   settings; see [native model configuration](/harness-onboarding#native-model-configuration).
 
 Selecting a harness doesn't make an unsupported model or operation work; see
-[harness selection](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/harness-selection.md).
+[harness selection](https://github.com/MiniMax-AI/parsar-core/blob/f6d258735fc601c521dd990e6f9e1ed261f4ef2d/contracts/agents-api/harness-selection.md).
 
 ### Which model provider a Session uses
 
@@ -65,7 +65,7 @@ never merged:
 Self-hosted Sessions never use the default, because it holds the operator's key and
 your machine is outside the operator's control. A Session freezes its provider at
 creation; later changes affect only new Sessions. Full rules:
-[model execution](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/contracts/agents-api/model-execution.md).
+[model execution](https://github.com/MiniMax-AI/parsar-core/blob/f6d258735fc601c521dd990e6f9e1ed261f4ef2d/contracts/agents-api/model-execution.md).
 
 ## Follow up and steer
 
@@ -158,4 +158,4 @@ history; see [operating the installation](/self-hosted-native#add-harnesses-and-
 
 A 401 usually means a key from the wrong namespace; see the [API index](/public-api).
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f45a4198aca79bf252412c55cad3647f5d704515/docs/user-guide.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/f6d258735fc601c521dd990e6f9e1ed261f4ef2d/docs/user-guide.md)

@@ -5,8 +5,6 @@ import "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
 
 func Configuration() harnessconfig.Configuration {
 	return harnessconfig.Configuration{ValidateNativeConfig: validateNativeConfig, Providers: []harnessconfig.Provider{
-		{Protocol: "anthropic"},
-		{Native: true, Protocol: "responses"},
-		{Protocol: "chat_completions"},
+		{Protocol: "responses"},
 	}}
 }

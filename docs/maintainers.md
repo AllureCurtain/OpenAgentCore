@@ -600,6 +600,8 @@ bootstrap routes use this grant, not an Environment ID as authentication. Public
 artifact routes contain no credentials. Native bundles must match the Core source
 revision and Runtime wire version. Core release qualification consumes the same
 three-platform native CI artifacts and includes them in its distribution.
+`make check-distribution` exercises catalog assembly with manifests larger than
+Node's default subprocess output buffer; catalog reads allow up to 64 MiB.
 Bootstrap scripts own platform download/extraction only; installation, startup,
 connection verification and Runtime execution remain common. Serialize background
 PID inspection and publication so concurrent starts cannot create duplicate daemons.

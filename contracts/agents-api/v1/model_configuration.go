@@ -2,10 +2,9 @@ package v1
 
 import (
 	"encoding/json"
-	"strings"
 
+	"github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
 	"github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/builtin"
-	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 )
 
 // ModelConfigurationInput combines the existing provider contract with a model
@@ -50,7 +49,7 @@ func ResolvedHarnessConfig(raw json.RawMessage) json.RawMessage {
 // ValidateNativeModelConfiguration checks the resolved public execution inputs
 // through the same adapter validation used by deployment administration.
 func ValidateNativeModelConfiguration(harness, model string, raw json.RawMessage) error {
-	if strings.TrimSpace(model) == "" {
+	if _, err := harnessconfig.ValidateModel(model); err != nil {
 		return &ModelProviderError{Code: "model_configuration_model_invalid", Param: "model", message: "model must be a nonempty model identifier"}
 	}
 	return ValidateHarnessConfig(harness, raw)
@@ -59,7 +58,6 @@ func ValidateNativeModelConfiguration(harness, model string, raw json.RawMessage
 // ModelConfigurationSupport describes this build, not remote-model availability.
 type ModelConfigurationSupport struct {
 	Protocols            []string `json:"protocols" binding:"required"`
-	NativeProtocols      []string `json:"native_protocols" binding:"required"`
 	AcceptsHarnessConfig bool     `json:"accepts_harness_config" binding:"required"`
 	TokenLimitsRequired  bool     `json:"token_limits_required" binding:"required"`
 }
@@ -68,24 +66,5 @@ func (p *ModelProviderInput) ValidateConfiguration(harness string, native json.R
 	if err := p.ValidateHarness(harness); err != nil {
 		return err
 	}
-	return ValidateModelConfigurationRoute(harness, p.Protocol, native, modeltransport.Requirements{})
-}
-
-// ValidateModelConfigurationRoute uses the same declaration and route policy as Runtime.
-func ValidateModelConfigurationRoute(harness, protocol string, native json.RawMessage, requirements modeltransport.Requirements) error {
-	if err := ValidateHarnessConfig(harness, native); err != nil {
-		return err
-	}
-	var fields map[string]json.RawMessage
-	_ = json.Unmarshal(native, &fields)
-	requirements.NativeConfig = len(fields) > 0
-	declaration, _ := builtin.Registry().Lookup(harness)
-	if err := declaration.ValidateRoute(protocol, requirements); err != nil {
-		param := "model_provider.protocol"
-		if requirements.NativeConfig {
-			param = "harness_config"
-		}
-		return &ModelProviderError{Code: "model_configuration_route_unsupported", Param: param, message: "the model protocol route does not support the requested configuration"}
-	}
-	return nil
+	return ValidateHarnessConfig(harness, native)
 }

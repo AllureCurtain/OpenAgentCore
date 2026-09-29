@@ -538,25 +538,18 @@ replaced; do not carry obsolete compatibility code forward to satisfy this secti
   identity; retries cannot replace it. Keep this administrator query separate from
   runtime observations and do not touch activity or wake sandboxes. The versioned
   contract is `contracts/agents-api/execution-configuration.md`.
-- Model communication uses `internal/modeltransport` in the Runtime. Core sends one
-  frozen confidential `model_provider` bundle, independent of engine and placement;
-  it must not manufacture native provider options or retain a historical-options
-  dispatch path. The adapter declares native protocols. Native matches connect
-  directly; mismatches use one private loopback endpoint owned by the existing
-  Session execution resource. Its credential is distinct from the upstream key.
-  Keep endpoint cleanup on final native teardown, including preparation failure,
-  rather than on individual Turn completion. No second Session manager is added.
-  CLIProxyAPI's pinned translator is an embedded conversion dependency, not a
-  gateway service. Requests, JSON responses and incremental SSE events share the
-  same conversion implementation for hosted and self-hosted execution. The
-  dependency owns protocol fields, tools, reasoning and usage conversion. Do not
-  add local field maps, parameter restoration or parallel compatibility rules.
-  Keep SDK format selection, HTTP/SSE framing, limits, cancellation and resource
-  cleanup here. Pin dependency versions and qualify upgrades with contract and
-  native engine tests; document upstream limitations instead of silently promising
-  lossless conversion. Preserve model identity, reject incomplete streams and
-  never redirect upstream credentials. See `contracts/agents-api/model-protocol-conversion.md` for coverage,
-  limits and dependency qualification. Go 1.26.8 is the pinned build toolchain.
+- Model communication uses native direct connections only. Core sends one frozen
+  confidential `model_provider` bundle, independent of engine and placement;
+  adapters apply it through their native provider configuration. The shared
+  `internal/harnessconfig` descriptor declares one ordered `protocols` list,
+  with the first entry as the default. Core admission and Runtime enforce it.
+  There is no built-in model API proxy, passthrough gateway or cross-protocol
+  conversion, including inside individual Harnesses. Unsupported combinations
+  fail explicitly; saved configurations and immutable Session snapshots are
+  never rewritten, aliased or migrated to another protocol. Provider validation,
+  credential encryption, capability checks and native lifecycle ownership remain
+  mandatory. See `contracts/agents-api/model-execution.md` for the current
+  protocol matrix. Go 1.26.8 is the pinned build toolchain.
 - Provider input validation uses the adapter-owned rules in `internal/harnessconfig`.
   Keep one internal registry for protocol and token-limit validation; Core owns
   credential environment and endpoint admission policy. These rules are not a

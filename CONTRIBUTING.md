@@ -20,7 +20,7 @@ copy, when a contract changes.
 | Core service implementation constraints | [Agents API implementation constraints](services/agents-api/IMPLEMENTATION.md) and [service README](services/agents-api/README.md) |
 | Runtime messages, Executor/Turn lifetimes, receipts and failure ownership | [Core–Runtime protocol](docs/runtime-protocol.md) and `internal/agentdaemon/proto` |
 | Environment ownership and capability preparation (Skills, Plugins, MCP, `packages.system`) | [Environments](contracts/agents-api/environments.md) |
-| Adding a Harness (steps) | [Harness onboarding](contracts/agents-api/harness-onboarding.md) and `apps/parsar-daemon/internal/agent/harness.go` |
+| Adding a Harness (steps) | [Harness onboarding](contracts/agents-api/harness-onboarding.md), `apps/parsar-daemon/internal/agent/harness.go` and `internal/harnessconfig/harness.go` |
 | Harness qualification and acceptance | [Harness integration](contracts/agents-api/harnesses.md) |
 | Harness selection and Agent defaults | [Harness selection](contracts/agents-api/harness-selection.md) |
 | Adding a Sandbox Provider | [Sandbox Provider guide](docs/sandbox-provider.md) and `services/agents-api/internal/sandbox/sandbox_provider.go` |
@@ -214,7 +214,7 @@ The Runtime is not a sandbox; see
 | Boundary | Canonical guide | Code entry point |
 | --- | --- | --- |
 | Core–Runtime wire | [Core–Runtime protocol](docs/runtime-protocol.md) | `internal/agentdaemon/proto` |
-| Harness | [Harness onboarding](contracts/agents-api/harness-onboarding.md) | `apps/parsar-daemon/internal/agent/harness.go` |
+| Harness | [Harness onboarding](contracts/agents-api/harness-onboarding.md) | `apps/parsar-daemon/internal/agent/harness.go`, `internal/harnessconfig/harness.go` |
 | Sandbox Provider | [Sandbox Provider guide](docs/sandbox-provider.md) | `services/agents-api/internal/sandbox/sandbox_provider.go` |
 
 Shared wire types and validators live only in `internal/agentdaemon/proto`.

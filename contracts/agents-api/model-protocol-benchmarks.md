@@ -1,4 +1,11 @@
-# Model transport benchmarks
+# Model transport benchmarks — historical, retired
+
+> Historical record of the retired built-in model proxy and converter. The
+> implementation, dependency choices, commands and results below describe that
+> earlier revision only; they are not current setup instructions, dependencies
+> or supported protocol combinations. The current native-only contract is
+> [model execution](model-execution.md#saved-defaults-and-precedence). No
+> compatibility alias, automatic migration or restoration of this converter is supported.
 
 Measured on 2026-09-28 on Linux amd64, Intel Xeon Platinum 8358P @ 2.60 GHz,
 Go 1.26.8, GOMAXPROCS=8, CLIProxyAPI v8.0.3. This measures the thin Exchange

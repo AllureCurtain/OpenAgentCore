@@ -6,7 +6,7 @@ const codes = new Set<keyof typeof coreErrors>([
   "e2b_team_mismatch", "e2b_api_key_invalid", "e2b_template_build_invalid", "e2b_request_unconfirmed", "sandbox_configuration_error",
   "sandbox_generation_stale", "sandbox_reset_required", "sandbox_reset_in_progress", "sandbox_not_configured", "sandbox_in_use", "runtime_node_in_use", "runtime_node_unavailable", "sandbox_admin_not_configured",
   "invalid_admin_key", "console_sign_in_required", "console_origin_rejected", "console_request_invalid", "core_unreachable",
-  "invalid_name", "invalid_node_capacity", "invalid_model_provider", "model_configuration_model_invalid", "harness_config_invalid", "model_configuration_route_unsupported", "model_provider_base_url_invalid",
+  "invalid_name", "invalid_node_capacity", "invalid_model_provider", "model_configuration_model_invalid", "harness_config_invalid", "model_provider_base_url_invalid",
   "model_provider_protocol_unsupported", "model_provider_api_key_invalid", "model_provider_token_limits_invalid",
   "invalid_sandbox_configuration", "project_archived", "project_exists", "project_api_key_exists",
   "executor_credential_exists", "credential_storage_unavailable", "diagnostics_unavailable", "internal_error",

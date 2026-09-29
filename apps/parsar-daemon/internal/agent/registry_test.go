@@ -1,5 +1,7 @@
 package agent_test
 
+import "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
+
 import (
 	"context"
 	"errors"
@@ -28,7 +30,7 @@ func (stubSession) SubmitPromptForUserChoice(context.Context, string, proto.Prom
 
 func TestRegistryResolveReturnsRegisteredFactory(t *testing.T) {
 	reg := agent.NewRegistry()
-	reg.Register("claude_code", stubFactory("cc"))
+	reg.Register("claude_code", harnessconfig.Configuration{}, stubFactory("cc"))
 
 	f, err := reg.Resolve("claude_code")
 	if err != nil {
@@ -46,7 +48,7 @@ func TestRegistryResolveReturnsRegisteredFactory(t *testing.T) {
 
 func TestRegistryResolveUnknownKindReturnsTypedError(t *testing.T) {
 	reg := agent.NewRegistry()
-	reg.Register("claude_code", stubFactory("cc"))
+	reg.Register("claude_code", harnessconfig.Configuration{}, stubFactory("cc"))
 
 	_, err := reg.Resolve("opencode")
 	if !errors.Is(err, agent.ErrUnsupportedKind) {
@@ -56,8 +58,8 @@ func TestRegistryResolveUnknownKindReturnsTypedError(t *testing.T) {
 
 func TestRegistryRegisterOverwrites(t *testing.T) {
 	reg := agent.NewRegistry()
-	reg.Register("k", stubFactory("v1"))
-	reg.Register("k", stubFactory("v2"))
+	reg.Register("k", harnessconfig.Configuration{}, stubFactory("v1"))
+	reg.Register("k", harnessconfig.Configuration{}, stubFactory("v2"))
 
 	f, err := reg.Resolve("k")
 	if err != nil {
@@ -71,8 +73,8 @@ func TestRegistryRegisterOverwrites(t *testing.T) {
 
 func TestRegistryKindsReportsRegistered(t *testing.T) {
 	reg := agent.NewRegistry()
-	reg.Register("claude_code", stubFactory("cc"))
-	reg.Register("opencode", stubFactory("oc"))
+	reg.Register("claude_code", harnessconfig.Configuration{}, stubFactory("cc"))
+	reg.Register("opencode", harnessconfig.Configuration{}, stubFactory("oc"))
 
 	got := reg.Kinds()
 	slices.Sort(got)
@@ -88,7 +90,7 @@ func TestRegistryRegisterPanicsOnEmptyKind(t *testing.T) {
 			t.Fatal("Register(\"\", ...) did not panic")
 		}
 	}()
-	agent.NewRegistry().Register("", stubFactory("x"))
+	agent.NewRegistry().Register("", harnessconfig.Configuration{}, stubFactory("x"))
 }
 
 func TestRegistryRegisterPanicsOnNilFactory(t *testing.T) {
@@ -97,7 +99,7 @@ func TestRegistryRegisterPanicsOnNilFactory(t *testing.T) {
 			t.Fatal("Register(kind, nil) did not panic")
 		}
 	}()
-	agent.NewRegistry().Register("k", nil)
+	agent.NewRegistry().Register("k", harnessconfig.Configuration{}, nil)
 }
 
 func TestRegistrySupportedAgentKindsReportsDescriptors(t *testing.T) {
@@ -109,7 +111,7 @@ func TestRegistrySupportedAgentKindsReportsDescriptors(t *testing.T) {
 		Capabilities: proto.AgentKindCapabilities{
 			Streaming: true,
 		},
-	}, stubFactory("oc"))
+	}, harnessconfig.Configuration{}, stubFactory("oc"))
 	reg.RegisterKind(proto.SupportedAgentKind{
 		Kind:      "claude_code",
 		Available: true,
@@ -120,7 +122,7 @@ func TestRegistrySupportedAgentKindsReportsDescriptors(t *testing.T) {
 			Usage:       true,
 			Resume:      true,
 		},
-	}, stubFactory("cc"))
+	}, harnessconfig.Configuration{}, stubFactory("cc"))
 
 	got := reg.SupportedAgentKinds()
 	if len(got) != 2 {
@@ -139,7 +141,7 @@ func TestRegistrySupportedAgentKindsReportsDescriptors(t *testing.T) {
 
 func TestRegistryExecutorRequiresExplicitRegistration(t *testing.T) {
 	registry := agent.NewRegistry()
-	registry.Register("native", stubFactory("native"))
+	registry.Register("native", harnessconfig.Configuration{}, stubFactory("native"))
 	if _, err := registry.ResolveExecutor("native"); err == nil {
 		t.Fatal("legacy factory implied reusable execution")
 	}
@@ -152,7 +154,7 @@ func TestRegistryExecutorRequiresExplicitRegistration(t *testing.T) {
 	if _, err := factory(t.Context(), proto.PromptRequestPayload{}); !errors.Is(err, expected) {
 		t.Fatal(err)
 	}
-	registry.Register("native", stubFactory("replacement"))
+	registry.Register("native", harnessconfig.Configuration{}, stubFactory("replacement"))
 	if _, err := registry.ResolveExecutor("native"); err == nil {
 		t.Fatal("replacing a kind retained its old executor capability")
 	}

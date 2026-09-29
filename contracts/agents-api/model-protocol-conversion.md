@@ -1,4 +1,11 @@
-# Runtime model protocol conversion
+# Runtime model protocol conversion — historical, retired
+
+> Historical record of the retired built-in model proxy and converter. The
+> implementation, dependency choices, commands and results below describe that
+> earlier revision only; they are not current setup instructions, dependencies
+> or supported protocol combinations. The current native-only contract is
+> [model execution](model-execution.md#saved-defaults-and-precedence). No
+> compatibility alias, automatic migration or restoration of this converter is supported.
 
 The model provider bundle names the upstream protocol, endpoint, credential and
 limits. The Agent model and execution harness are separate selections. Runtime

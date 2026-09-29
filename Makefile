@@ -133,6 +133,7 @@ check-microsandbox-provider:
 
 .PHONY: check-distribution build-core-distribution
 check-distribution:
+	node --test scripts/build-native-catalog.test.mjs
 	go test ./services/core-console -count=1
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy/install -p 'test_*.py'
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/core-distribution-manifest.test.py

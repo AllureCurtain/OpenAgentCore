@@ -165,7 +165,7 @@ func TestUnifiedModelConfigurationHTTP(t *testing.T) {
 	for _, tc := range []struct{ name, update string }{
 		{"model", `{"model":"another-model"}`},
 		{"provider", `{"x_agents_core":{"model_provider":` + explicitProvider + `}}`},
-		{"harness", `{"x_agents_core":{"harness":"claude_sdk"}}`},
+		{"harness", `{"x_agents_core":{"harness":"claude_sdk","model_provider":` + strings.Replace(provider, `"protocol":"responses"`, `"protocol":"anthropic"`, 1) + `}}`},
 	} {
 		t.Run("saved Agent "+tc.name, func(t *testing.T) {
 			body := `{"model":"saved-model","x_agents_core":{"harness":"codex","harness_config":` + high + `,"model_provider":` + provider + `}}`
@@ -184,16 +184,14 @@ func TestUnifiedModelConfigurationHTTP(t *testing.T) {
 			}
 		})
 	}
-	// Disabled search requires no search semantics from a converted route.
+	// Disabling tools cannot enable a non-native model protocol.
 	for _, protocol := range []string{"anthropic", "chat_completions"} {
-		t.Run("disabled search "+protocol, func(t *testing.T) {
-			converted := `{"protocol":"` + protocol + `","base_url":"https://converted.example/v1","api_key":"converted-canary"}`
-			agent := `{"model":"converted-model","tools":[{"type":"web_search","mode":"disabled"}]}`
-			create(`{"agent":`+agent+`,"environment":{"type":"openai_hosted"},"x_agents_core":{"model_provider":`+converted+`}}`, uuid.NewString())
-			saved := strings.TrimSuffix(agent, "}") + `,"x_agents_core":{"harness":"codex","model_provider":` + converted + `}}`
-			id := text(object(call("POST", "/v1/agents", token, saved, "", 201))["id"])
-			create(`{"agent_id":"`+id+`","environment":{"type":"openai_hosted"}}`, uuid.NewString())
+		t.Run("non-native protocol "+protocol, func(t *testing.T) {
+			incompatible := `{"protocol":"` + protocol + `","base_url":"https://model.example/v1","api_key":"rejected-canary"}`
+			agent := `{"model":"fixed-model","tools":[{"type":"web_search","mode":"disabled"}]}`
+			call("POST", "/v1/agents/sessions", token, `{"agent":`+agent+`,"environment":{"type":"openai_hosted"},"x_agents_core":{"model_provider":`+incompatible+`}}`, uuid.NewString(), 400)
+			saved := strings.TrimSuffix(agent, "}") + `,"x_agents_core":{"harness":"codex","model_provider":` + incompatible + `}}`
+			call("POST", "/v1/agents", token, saved, "", 400)
 		})
 	}
-
 }

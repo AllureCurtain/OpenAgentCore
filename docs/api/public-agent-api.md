@@ -141,7 +141,7 @@ only additions to the OpenAI shapes, and they sit inside `x_agents_core`:
 | Field | Where | Value |
 | --- | --- | --- |
 | `harness` | Agent, or a Session's inline `agent` | `codex`, `claude_sdk` or `mcode` |
-| `model_provider` | Agent, or Session creation (top level) | `protocol` (`responses`, `anthropic` or `chat_completions`), `base_url`, `api_key`, and for `mcode` also `context_window` and `max_output_tokens` |
+| `model_provider` | Agent, or Session creation (top level) | `protocol`, `base_url`, `api_key`, and for `mcode` also `context_window` and `max_output_tokens`. The protocol must be one the harness supports: Codex `responses`, Claude Code `anthropic`, MiniMax Code any of `anthropic`, `responses`, `chat_completions` |
 | `harness_config` | Agent, inline `agent`, or Session creation (top level, wins) | The harness's native model parameters, such as Codex's `model_reasoning_effort` |
 | `installation` | Read-only, on `self_hosted` Sessions | Short-lived install commands for your machine; see [self-hosted execution](../getting-started/self-hosted.md) |
 
