@@ -1,6 +1,6 @@
 <div align="center">
 
-![Open AgentCore red pixel wordmark](docs/assets/openagentcore-banner.png)
+![OpenAgentCore — One core. Many agents.](docs/assets/openagentcore-banner.jpeg)
 
 # OpenAgentCore
 

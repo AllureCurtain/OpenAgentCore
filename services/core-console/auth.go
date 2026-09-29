@@ -199,6 +199,6 @@ func publicConsoleAsset(r *http.Request) bool {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		return false
 	}
-	return r.URL.Path == "/" || r.URL.Path == "/index.html" || r.URL.Path == "/favicon.png" ||
-		r.URL.Path == "/oac-mark-light.png" || r.URL.Path == "/oac-mark-dark.png" || strings.HasPrefix(r.URL.Path, "/assets/")
+	return r.URL.Path == "/" || r.URL.Path == "/index.html" || r.URL.Path == "/favicon.svg" ||
+		r.URL.Path == "/oac-mark.svg" || strings.HasPrefix(r.URL.Path, "/assets/")
 }

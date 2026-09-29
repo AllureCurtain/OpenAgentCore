@@ -26,5 +26,5 @@ for (const file of fs.readdirSync(path.join(app, 'content/docs')).filter(n => n.
   const text = fs.readFileSync(path.join(app, 'content/docs', file), 'utf8')
   for (const retired of ['/core/v1/admin', 'sandbox-manager.openapi.yaml']) assert.ok(!text.includes(retired), 'Obsolete claim in ' + file + ': ' + retired)
 }
-assert.deepEqual(fs.readFileSync(path.join(app, 'app/icon.png')), fs.readFileSync(path.join(repo, 'apps/web/public/favicon.png')), 'Docs favicon must match the approved Web asset')
+assert.deepEqual(fs.readFileSync(path.join(app, 'app/icon.svg')), fs.readFileSync(path.join(repo, 'apps/web/public/favicon.svg')), 'Docs favicon must match the approved Web asset')
 console.log('Guide copies, source authority and namespace/configuration facts are current.')

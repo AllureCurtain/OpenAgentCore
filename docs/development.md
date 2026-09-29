@@ -5,6 +5,8 @@ or the documentation site. For using a deployment, start with the
 [getting started guide](getting-started/README.md). Read the
 [contributor rules](../CONTRIBUTING.md) before changing code.
 
+![OpenAgentCore architecture: applications and the Web console connect to Core through separate APIs; Sandbox Providers, Runtime, Harnesses and model providers connect through shared protocols.](assets/development-architecture.png)
+
 ## Set up a checkout
 
 Work from an isolated worktree so experiments and validation do not disturb

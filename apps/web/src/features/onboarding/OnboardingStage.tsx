@@ -29,7 +29,7 @@ export function OnboardingStage({ scene, chapter }: { scene: StageScene | null; 
         <div className="onboarding-glow" />
       </div>
       <div className="onboarding-brand">
-        <img src="/oac-mark-dark.png" width="22" height="22" alt="" aria-hidden="true" />
+        <img className="onboarding-mark" src="/oac-mark.svg" width="22" height="22" alt="" aria-hidden="true" />
         <span>OpenAgentCore</span>
       </div>
       {scene === "tour" && chapter ? <TourShowcase chapter={chapter} /> : <Constellation copy={scene === "login"} />}
@@ -60,7 +60,7 @@ function Constellation({ copy }: { copy: boolean }) {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.7, ease: EASE }}
         >
-          <img src="/oac-mark-dark.png" width="40" height="40" alt="" />
+          <img className="onboarding-mark" src="/oac-mark.svg" width="40" height="40" alt="" />
           <BorderBeam size={70} duration={7} colorFrom="#818cf8" colorTo="#e879f9" borderWidth={1.5} />
         </m.div>
       </div>

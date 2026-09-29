@@ -363,6 +363,17 @@ Build the MiniMax companion from this revision's patched native sources when
 packaging a renamed Runtime. An older companion still uses the old
 model-provider, workspace and subagent names and cannot be reused.
 
+## Branding
+
+Public project branding uses OpenAgentCore. The canonical vector mark is
+`docs/assets/openagentcore-logo.svg`; Core Web, docs and landing-page assets use
+the same outline, with transparent margins cropped, theme-aware favicon colors
+and dark-surface inversion. The canonical SVG preserves the reference PNG canvas.
+The README hero uses the supplied `docs/assets/openagentcore-banner.jpeg`.
+The `example/parsar/` workbench retains its own name, logo and favicon.
+Historical provenance, external repository URLs, import paths and existing data
+identifiers retain their original spelling; do not rename those as display copy.
+
 ## OpenAgentCore name guard
 
 `make check-names` scans tracked text for retired branding, settings and

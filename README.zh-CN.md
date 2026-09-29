@@ -1,6 +1,6 @@
 <div align="center">
 
-![Open AgentCore 红色像素字标](docs/assets/openagentcore-banner.png)
+![OpenAgentCore — One core. Many agents.](docs/assets/openagentcore-banner.jpeg)
 
 # OpenAgentCore
 
