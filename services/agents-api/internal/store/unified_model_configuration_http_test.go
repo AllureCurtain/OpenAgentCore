@@ -184,4 +184,16 @@ func TestUnifiedModelConfigurationHTTP(t *testing.T) {
 			}
 		})
 	}
+	// Disabled search requires no search semantics from a converted route.
+	for _, protocol := range []string{"anthropic", "chat_completions"} {
+		t.Run("disabled search "+protocol, func(t *testing.T) {
+			converted := `{"protocol":"` + protocol + `","base_url":"https://converted.example/v1","api_key":"converted-canary"}`
+			agent := `{"model":"converted-model","tools":[{"type":"web_search","mode":"disabled"}]}`
+			create(`{"agent":`+agent+`,"environment":{"type":"openai_hosted"},"x_agents_core":{"model_provider":`+converted+`}}`, uuid.NewString())
+			saved := strings.TrimSuffix(agent, "}") + `,"x_agents_core":{"harness":"codex","model_provider":` + converted + `}}`
+			id := text(object(call("POST", "/v1/agents", token, saved, "", 201))["id"])
+			create(`{"agent_id":"`+id+`","environment":{"type":"openai_hosted"}}`, uuid.NewString())
+		})
+	}
+
 }

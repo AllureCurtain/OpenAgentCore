@@ -120,12 +120,13 @@ func validateSessionTransport(engine string, provider *v1.ModelProviderInput, ra
 	for _, rawTool := range cfg.Agent.Tools {
 		var tool struct {
 			Type string `json:"type"`
+			Mode string `json:"mode"`
 		}
 		if err := json.Unmarshal(rawTool, &tool); err != nil {
 			return err
 		}
 		requirements.ToolSearch = requirements.ToolSearch || tool.Type == "tool_search"
-		requirements.WebSearch = requirements.WebSearch || tool.Type == "web_search"
+		requirements.WebSearch = requirements.WebSearch || (tool.Type == "web_search" && tool.Mode != "disabled")
 	}
 	var native json.RawMessage
 	if cfg.Agent.XAgentsCore != nil {

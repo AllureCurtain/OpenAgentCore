@@ -60,6 +60,15 @@ func (c Configuration) PrepareHarnessConfig(options map[string]any) (proto.Harne
 // Agents without a selected Harness: at least one registered adapter must accept
 // the object. Session admission always validates its resolved kind again.
 func (r Registry) ValidateHarnessConfig(kind string, raw json.RawMessage) error {
+	config, err := decodeHarnessConfig(raw)
+	if err != nil {
+		return err
+	}
+	// Empty configuration needs no adapter-specific parameter qualification.
+	// Provider protocol support still requires an explicit declaration.
+	if len(config) == 0 {
+		return nil
+	}
 	if kind != "" {
 		c, ok := r.Lookup(kind)
 		if !ok {

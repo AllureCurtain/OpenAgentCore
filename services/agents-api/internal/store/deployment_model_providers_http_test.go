@@ -93,9 +93,21 @@ func TestDeploymentModelProvidersHTTP(t *testing.T) {
 	call("GET", "/core/v1/harnesses", projectKey, "", 401)
 	call("PUT", path, projectKey, codexDefault, 401)
 	list := call("GET", "/core/v1/harnesses", coreKey, "", 200)
-	if string(list["object"]) != `"list"` || !strings.Contains(string(list["data"]), `{"object":"core.harness","id":"claude_sdk","enabled":false,"default":false,"model_configuration":null}`) ||
-		!strings.Contains(string(list["data"]), `{"object":"core.harness","id":"codex","enabled":true,"default":true,"model_configuration":null}`) {
+	var harnesses []struct {
+		Object        string          `json:"object"`
+		ID            string          `json:"id"`
+		Enabled       bool            `json:"enabled"`
+		Default       bool            `json:"default"`
+		Configuration json.RawMessage `json:"model_configuration"`
+	}
+	if string(list["object"]) != `"list"` || json.Unmarshal(list["data"], &harnesses) != nil || len(harnesses) != 3 {
 		t.Fatalf("unexpected harness list: %s", list["data"])
+	}
+	for _, harness := range harnesses {
+		if harness.Object != "core.harness" || harness.Enabled != (harness.ID != "claude_sdk") ||
+			harness.Default != (harness.ID == "codex") || string(harness.Configuration) != "null" {
+			t.Fatalf("unexpected harness: %#v", harness)
+		}
 	}
 	call("GET", path, coreKey, "", 404)
 	call("PUT", "/core/v1/harnesses/other/model-configuration", coreKey, codexDefault, 404)

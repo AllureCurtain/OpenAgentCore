@@ -1,7 +1,7 @@
 """Opt-in real-model protocol acceptance through public Sessions and the pinned SDK.
 
 OAC_TEST_MODEL_PROTOCOL_OPTIONS points to a private JSON file containing engine,
-model and model_provider. Evidence contains only scenario markers, resource IDs,
+model, model_provider and optional harness_config. Evidence contains only scenario markers, resource IDs,
 event counts and controlled check names; never provider options or raw errors.
 """
 import importlib.metadata
@@ -44,6 +44,8 @@ def main():
         require(stage in {"initial", "resume"}, "invalid_stage")
         settings = json.loads(Path(options_file).read_text())
         engine, model, provider = settings["engine"], settings["model"], settings["model_provider"]
+        harness_config = settings.get("harness_config", {})
+        require(isinstance(harness_config, dict), "invalid_harness_config")
         require(engine in {"codex", "claude_sdk", "mcode"}, "invalid_engine")
         require(provider["protocol"] in {"anthropic", "responses", "chat_completions"}, "invalid_protocol")
         require(isinstance(model, str) and bool(model), "missing_model")
@@ -155,13 +157,19 @@ def main():
                 agent["instructions"] = "Remember user-supplied markers. Answer in text and do not use tools."
                 prompt = "Remember " + marker + ". Reply exactly " + marker + "."
                 record["not_exercised"] = ["public_functions_not_supported_by_mcode", "function_error", "cancel"]
-            creation = sessions.create(agent=agent, environment={"type": "none"}, input=prompt, stream=True)
+            # Explicit model selection clears deployment-native defaults, so exercise
+            # the public Session override instead of relying on fixture injection.
+            creation = sessions.create(agent=agent, environment={"type": "none"}, input=prompt, stream=True,
+                                       extra_body={"x_agents_core": {"harness_config": harness_config}})
             first = next(creation)
             sid = first.session.id
             record["session"] = sid
             save()
             public = sessions.retrieve(sid).to_dict()
             require(provider["api_key"] not in json.dumps(public), "provider_key_exposed_by_public_session")
+            require(public.get("agent", {}).get("x_agents_core", {}).get("harness_config", {}) == harness_config,
+                    "harness_config_snapshot_mismatch")
+            record["checks"].append("public_harness_config_snapshot")
             if engine == "mcode":
                 run(sid, prompt, "native_protocol_memory_first_turn", expected=marker, creation=creation)
             else:

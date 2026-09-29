@@ -34,9 +34,10 @@ func TestNativeModelProtocolPublicExecution(t *testing.T) {
 		t.Fatal("cannot read private model protocol options")
 	}
 	var options struct {
-		Engine   string                `json:"engine"`
-		Model    string                `json:"model"`
-		Provider v1.ModelProviderInput `json:"model_provider"`
+		Engine        string                `json:"engine"`
+		Model         string                `json:"model"`
+		Provider      v1.ModelProviderInput `json:"model_provider"`
+		HarnessConfig json.RawMessage       `json:"harness_config"`
 	}
 	if json.Unmarshal(raw, &options) != nil || options.Model == "" || options.Provider.BaseURL == "" || options.Provider.APIKey == "" {
 		t.Fatal("invalid private model protocol options")
@@ -88,7 +89,7 @@ func TestNativeModelProtocolPublicExecution(t *testing.T) {
 	}
 	providerRevision := uuid.New()
 	handler, err := api.NewHandler(h.s, auth, options.Engine, api.WithExecution(worker), api.WithExecutionPolicy(h.d.Policy), api.WithModelProviderDefaults(func(context.Context, string) (*store.DeploymentModelProviderSnapshot, error) {
-		return &store.DeploymentModelProviderSnapshot{Model: "fixture", Provider: &options.Provider, Revision: providerRevision}, nil
+		return &store.DeploymentModelProviderSnapshot{Model: options.Model, HarnessConfig: options.HarnessConfig, Provider: &options.Provider, Revision: providerRevision}, nil
 	}))
 	if err != nil {
 		t.Fatal("cannot create public API handler")
