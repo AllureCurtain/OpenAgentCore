@@ -6390,10 +6390,6 @@ components:
       properties:
         accepts_harness_config:
           type: boolean
-        native_protocols:
-          items:
-            type: string
-          type: array
         protocols:
           items:
             type: string
@@ -6402,7 +6398,6 @@ components:
           type: boolean
       required:
         - accepts_harness_config
-        - native_protocols
         - protocols
         - token_limits_required
       type: object
