@@ -19,3 +19,20 @@ func TestRegistryOwnsDeclarations(t *testing.T) {
 		t.Fatal("unknown declarations were inferred")
 	}
 }
+
+func TestUndeclaredHarnessHasNoNativeParameters(t *testing.T) {
+	registry := NewRegistry(nil)
+	for _, raw := range []string{"", "{}", "{ \n }"} {
+		if err := registry.ValidateHarnessConfig("additional-adapter", []byte(raw)); err != nil {
+			t.Fatalf("empty parameters rejected: %v", err)
+		}
+	}
+	for _, raw := range []string{"null", "[]", `{"effort":"low"}`, `{"effort":"low","effort":"high"}`} {
+		if err := registry.ValidateHarnessConfig("additional-adapter", []byte(raw)); err == nil {
+			t.Fatal("undeclared or malformed parameters accepted")
+		}
+	}
+	if registry.ValidateProtocol("additional-adapter", "responses") == nil {
+		t.Fatal("empty parameters inferred provider support")
+	}
+}

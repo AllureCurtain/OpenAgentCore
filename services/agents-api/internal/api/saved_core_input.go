@@ -16,14 +16,17 @@ func validateSavedCoreInput(raw []byte) error {
 	}
 	coreShape := shape{kind: objectValue, nullable: true, members: []member{
 		{"harness", shape{kind: enumValue, values: []string{"codex", "claude_sdk", "mcode"}}},
-		{"model_provider", shape{kind: objectValue, nullable: true, members: []member{
-			{"protocol", requiredString}, {"base_url", requiredString}, {"api_key", requiredString},
-			{"context_window", shape{kind: integerValue, minimum: 0}},
-			{"max_output_tokens", shape{kind: integerValue, minimum: 0}},
-		}}},
+		{"model_provider", nullableModelProviderShape()},
+		{"harness_config", shape{kind: openObject}},
 	}}
 	if !json.Valid(extension) || checkValue("x_agents_core", extension, coreShape) != nil {
-		return errors.New("x_agents_core must contain an optional supported harness and an optional complete model_provider input.")
+		return errors.New("x_agents_core must contain an optional supported harness and an optional complete model_provider input and native harness_config object.")
 	}
 	return nil
+}
+
+func nullableModelProviderShape() shape {
+	result := modelProviderInputShape
+	result.nullable = true
+	return result
 }

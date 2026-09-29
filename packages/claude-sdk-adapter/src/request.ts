@@ -4,7 +4,10 @@ import { isAbsolute } from "node:path";
 import { parseHTTPServers, type HTTPServer } from "./mcp.js";
 import { parseWorkspace, type Workspace } from "./workspace.js";
 
+import { parseHarnessConfig, type HarnessConfig } from "./harness_config.js";
+
 export type Start = {
+  harness_config?: HarnessConfig;
   type: "start";
   output_format?: { type: "json_schema"; schema: Record<string, unknown> };
   input: MessageInput;
@@ -32,7 +35,7 @@ export function parseRequest(line: string): Start | Prepare | ExecutorPrepare {
   const value: unknown = JSON.parse(line);
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_request");
   const request = value as Record<string, unknown>;
-  const allowed = new Set(["type", "input", "model", "system_prompt", "cwd", "resume", "require_history", "observe_messages", "output_format", "subagents", "functions", "tool_search", "mcp_http_servers", "workspace"]);
+  const allowed = new Set(["harness_config", "type", "input", "model", "system_prompt", "cwd", "resume", "require_history", "observe_messages", "output_format", "subagents", "functions", "tool_search", "mcp_http_servers", "workspace"]);
   if (Object.keys(request).some(key => !allowed.has(key)) ||
       (request.type !== "start" && request.type !== "prepare" && request.type !== "executor_prepare") ||
       (request.type === "start" ? !Array.isArray(request.input) : "input" in request) ||
@@ -62,6 +65,7 @@ export function parseRequest(line: string): Start | Prepare | ExecutorPrepare {
         request.mcp_http_servers !== undefined) throw new Error("invalid_request");
   }
   if (request.type === "start") requestInput(request.input);
+  parseHarnessConfig(request.harness_config);
   parseHTTPServers(request.mcp_http_servers);
   const workspace = parseWorkspace(request.workspace, request.cwd);
   if (request.subagents && workspace?.mcp?.length) throw new Error("invalid_request");

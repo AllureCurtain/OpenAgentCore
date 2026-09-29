@@ -100,6 +100,9 @@ func (s *session) receiveFunction(event bridgeEvent, start startRequest, emit fu
 }
 
 func (s *session) SubmitFunctionResult(ctx context.Context, result proto.FunctionResultPayload) error {
+	if err := s.modelRoute.ValidateFunctionResult(result); err != nil {
+		return err
+	}
 	if result.CallID == "" || result.DeliveryID == "" {
 		return fmt.Errorf("claudesdk: function result identities are required")
 	}

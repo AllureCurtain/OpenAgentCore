@@ -23,10 +23,14 @@ type decodedSessionRequest struct {
 }
 
 type sessionRequest struct {
-	initialFiles        []store.InitialFile
-	initialization      store.EnvironmentSetup
-	originalEnvironment json.RawMessage
-	modelProviderNull   bool
+	initialFiles          []store.InitialFile
+	initialization        store.EnvironmentSetup
+	originalEnvironment   json.RawMessage
+	modelProviderNull     bool
+	deploymentDefaults    *store.DeploymentModelProviderSnapshot
+	modelSource           string
+	harnessConfigSource   string
+	resolvedHarnessConfig json.RawMessage
 	v1.CreateSessionRequest
 	Input               json.RawMessage
 	templateID          string
@@ -37,7 +41,7 @@ type sessionRequest struct {
 func (request decodedSessionRequest) validated() (sessionRequest, error) {
 	input := sessionRequest{CreateSessionRequest: request.CreateSessionRequest, Input: request.Input}
 	if len(request.Execution) > 0 && !bytes.Equal(bytes.TrimSpace(request.Execution), []byte("null")) {
-		if decodeInputObject(request.Execution, &input.XAgentsCore, "model_provider") != nil {
+		if decodeInputObject(request.Execution, &input.XAgentsCore, "model_provider", "harness_config") != nil {
 			return input, store.ErrInvalidInput
 		}
 		var fields map[string]json.RawMessage

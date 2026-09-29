@@ -59,6 +59,7 @@ func (s *Session) startNative(ctx context.Context, plan SessionPlan, req proto.P
 		turnParams.CollaborationMode = &CollaborationMode{
 			Mode: plan.CollaborationMode,
 			Settings: CollaborationModeSettings{
+				ReasoningEffort:       plan.ModelReasoningEffort,
 				Model:                 model,
 				DeveloperInstructions: developerInstructions,
 			},

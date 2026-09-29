@@ -50,12 +50,7 @@ func NewExchange(source, target Protocol, model string, request []byte, stream b
 		return nil, ErrExchange
 	}
 	current, _ = sjson.SetBytes(current, "stream", stream)
-	route := []Protocol{source, target}
-	// The SDK's direct Responses->Claude route drops custom apply_patch.
-	// Its Chat route owns the freeform bridge and reverse namespace/custom mapping.
-	if source == Responses && target == Anthropic {
-		route = []Protocol{source, ChatCompletions, target}
-	}
+	route := translationRoute(source, target)
 	if source != target {
 		registry := builtin.Registry()
 		for i := 1; i < len(route); i++ {

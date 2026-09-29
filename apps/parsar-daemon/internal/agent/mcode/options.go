@@ -13,6 +13,8 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent"
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/agent/claudecode"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
+	harnessconfiguration "github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/mcode"
+	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 	"github.com/MiniMax-AI-Dev/parsar/internal/obs/log"
 )
 
@@ -28,6 +30,18 @@ func prepareOptions(ctx context.Context, req proto.PromptRequestPayload) (launch
 
 func prepareOptionsWithSkills(ctx context.Context, req proto.PromptRequestPayload, managedSkills bool) (launchOptions, error) {
 	var result launchOptions
+	if _, err := harnessconfiguration.Configuration().PrepareHarnessConfig(req.AgentOptions); err != nil {
+		return result, err
+	}
+	if raw, ok := req.AgentOptions["model_provider"]; ok {
+		provider, err := modeltransport.ParseProvider(raw)
+		if err != nil {
+			return result, err
+		}
+		if err = harnessconfiguration.Configuration().ValidateRoute(string(provider.Protocol), modeltransport.RequirementsFromRequest(req)); err != nil {
+			return result, err
+		}
+	}
 	if req.StrictResume {
 		if err := validateExecutionRequest(req); err != nil {
 			return result, err

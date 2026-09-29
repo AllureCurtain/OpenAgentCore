@@ -20,7 +20,7 @@ func (h *Handler) sessionHarness(raw json.RawMessage) (string, error) {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return "", err
 	}
-	if cfg.Agent.XAgentsCore == nil {
+	if cfg.Agent.XAgentsCore == nil || cfg.Agent.XAgentsCore.Harness == "" {
 		return h.engine, nil
 	}
 	kind := cfg.Agent.XAgentsCore.Harness

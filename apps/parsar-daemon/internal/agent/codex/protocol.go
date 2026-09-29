@@ -249,6 +249,7 @@ type CollaborationMode struct {
 }
 
 type CollaborationModeSettings struct {
+	ReasoningEffort       string  `json:"reasoning_effort,omitempty"`
 	Model                 string  `json:"model"`
 	DeveloperInstructions *string `json:"developer_instructions"`
 }

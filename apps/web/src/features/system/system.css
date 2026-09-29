@@ -190,3 +190,21 @@
   font-size: 13px;
   line-height: 18px;
 }
+
+/* Advanced model settings stay in the edit dialog. */
+.system-model-advanced > summary {
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+.system-model-advanced > .form-stack { margin-top: 16px; }
+.system-model-json {
+  width: 100%;
+  min-height: 168px;
+  font-family: var(--font-mono, monospace);
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  tab-size: 2;
+}
+.system-model-format { align-self: flex-start; }

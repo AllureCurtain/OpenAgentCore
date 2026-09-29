@@ -27,13 +27,13 @@ func TestDeploymentModelProviderEncryptedAuditedAndReplaced(t *testing.T) {
 	started := time.Now()
 	ctx := adminaudit.WithSource(t.Context(), adminaudit.Source{CredentialID: "abcd1234", ActorLabel: "console", RequestID: "request-set", TraceID: "trace-set"})
 	provider := v1.ModelProviderInput{Protocol: "anthropic", BaseURL: "https://deployment.example/v1", APIKey: "deployment-key-canary"}
-	if _, err := s.SetDeploymentModelProvider(ctx, "codex", v1.ModelProviderInput{Protocol: "unknown", BaseURL: provider.BaseURL, APIKey: "k"}); !errors.Is(err, ErrInvalidInput) {
+	if _, err := s.SetDeploymentModelProvider(ctx, "codex", v1.ModelConfigurationInput{ModelProvider: v1.ModelProviderInput{Protocol: "unknown", BaseURL: provider.BaseURL, APIKey: "k"}, Model: "fixture"}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatal("unknown upstream protocol accepted", err)
 	}
-	if _, err := New(pool).SetDeploymentModelProvider(ctx, "codex", provider); !errors.Is(err, ErrCredentialStorageUnavailable) {
+	if _, err := New(pool).SetDeploymentModelProvider(ctx, "codex", v1.ModelConfigurationInput{ModelProvider: provider, Model: "fixture"}); !errors.Is(err, ErrCredentialStorageUnavailable) {
 		t.Fatal("key stored without encryption", err)
 	}
-	saved, err := s.SetDeploymentModelProvider(ctx, "codex", provider)
+	saved, err := s.SetDeploymentModelProvider(ctx, "codex", v1.ModelConfigurationInput{ModelProvider: provider, Model: "fixture"})
 	if err != nil || saved.Harness != "codex" || saved.Provider != *provider.SafeView() || saved.UpdatedAt.IsZero() {
 		t.Fatal("default not saved", saved, err)
 	}
@@ -56,7 +56,7 @@ func TestDeploymentModelProviderEncryptedAuditedAndReplaced(t *testing.T) {
 		t.Fatal("wrong encryption key did not fail closed", err)
 	}
 	replacement := v1.ModelProviderInput{Protocol: "chat_completions", BaseURL: "https://replacement.example/v1", APIKey: "replacement-key"}
-	if _, err := s.SetDeploymentModelProvider(ctx, "codex", replacement); err != nil {
+	if _, err := s.SetDeploymentModelProvider(ctx, "codex", v1.ModelConfigurationInput{ModelProvider: replacement, Model: "fixture"}); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := s.DeploymentModelProvider(ctx, "codex"); err != nil || *got.Provider != replacement {
@@ -83,7 +83,7 @@ func TestDeploymentModelProviderEncryptedAuditedAndReplaced(t *testing.T) {
 	if scoped, err := s.ListAdminAudit(ctx, AdminAuditFilter{ProjectID: "00000000-0000-4000-8000-000000000001"}); err != nil || len(scoped.Data) != 0 {
 		t.Fatal("Project filter returned deployment entries", err)
 	}
-	if _, err := s.SetDeploymentModelProvider(adminaudit.WithSource(t.Context(), adminaudit.Source{CredentialID: "abcd1234", RequestID: "r", TraceID: "t", ProjectID: "00000000-0000-4000-8000-000000000001"}), "codex", provider); !errors.Is(err, ErrInvalidInput) {
+	if _, err := s.SetDeploymentModelProvider(adminaudit.WithSource(t.Context(), adminaudit.Source{CredentialID: "abcd1234", RequestID: "r", TraceID: "t", ProjectID: "00000000-0000-4000-8000-000000000001"}), "codex", v1.ModelConfigurationInput{ModelProvider: provider, Model: "fixture"}); !errors.Is(err, ErrInvalidInput) {
 		t.Fatal("Project-scoped audit source accepted for a deployment write", err)
 	}
 	if got, _ := s.DeploymentModelProvider(ctx, "codex"); got != nil {

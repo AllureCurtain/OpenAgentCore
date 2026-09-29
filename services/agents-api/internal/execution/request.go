@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"maps"
 
@@ -42,6 +43,14 @@ func (d *Dispatcher) executionRequest(ctx context.Context, session store.Session
 	}
 	options["model"], options["system_prompt"] = snapshot.Agent.Model, snapshot.Agent.Instructions
 	delete(options, "override_system_prompt")
+	delete(options, "harness_config")
+	if snapshot.Agent.XAgentsCore != nil && len(snapshot.Agent.XAgentsCore.HarnessConfig) > 0 {
+		var native map[string]any
+		if err := json.Unmarshal(snapshot.Agent.XAgentsCore.HarnessConfig, &native); err != nil {
+			return proto.PromptRequestPayload{}, err
+		}
+		options["harness_config"] = native
+	}
 	verbosity := snapshot.Agent.Text.Verbosity
 	if verbosity == "" {
 		verbosity = "medium"

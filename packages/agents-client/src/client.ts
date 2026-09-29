@@ -268,8 +268,8 @@ const agentSnapshotFields = new Set([
   "service_tier", "text", "tools",
 ]);
 const agentSnapshotAcceptedFields = new Set([...agentSnapshotFields, "x_agents_core"]);
-const sessionAgentCoreFields = new Set(["harness"]);
-const savedAgentCoreFields = new Set(["harness", "model_provider"]);
+const sessionAgentCoreFields = new Set(["harness", "harness_config"]);
+const savedAgentCoreFields = new Set(["harness", "model_provider", "harness_config"]);
 const multiAgentFields = new Set(["enabled", "max_concurrent_subagents"]);
 const reasoningFields = new Set(["effort", "summary"]);
 const textFields = new Set(["format", "verbosity"]);
@@ -611,13 +611,18 @@ function invalidSessionResource(message = "OpenAgentCore returned an invalid Ses
 
 type AgentConfiguration<Core> = Omit<AgentSnapshot, "x_agents_core"> & { x_agents_core?: Core | null };
 
-/** A Session's effective Agent reports only its persisted harness. */
+/** A Session's effective Agent preserves its explicit native selections. */
 function projectSessionAgentCore(value: unknown): AgentsCoreSelection | null | undefined {
   if (value === undefined || value === null) return value;
-  if (!isRecord(value) || !exactFields(value, sessionAgentCoreFields) || !isHarnessKind(value.harness)) {
+  if (!isRecord(value) || !onlyFields(value, sessionAgentCoreFields) ||
+    (hasOwn(value, "harness") && !isHarnessKind(value.harness)) ||
+    (hasOwn(value, "harness_config") && !isRecord(value.harness_config))) {
     return invalidSessionResource();
   }
-  return { harness: value.harness };
+  return {
+    ...(hasOwn(value, "harness") ? { harness: value.harness as CoreHarnessKind } : {}),
+    ...(hasOwn(value, "harness_config") ? { harness_config: { ...value.harness_config as Record<string, unknown> } } : {}),
+  };
 }
 
 /**
@@ -628,13 +633,15 @@ function projectSavedAgentCore(value: unknown): SavedAgentCore | null | undefine
   if (value === undefined || value === null) return value;
   if (
     !isRecord(value) || !onlyFields(value, savedAgentCoreFields) ||
-    (hasOwn(value, "harness") && !isHarnessKind(value.harness))
+    (hasOwn(value, "harness") && !isHarnessKind(value.harness)) ||
+    (hasOwn(value, "harness_config") && !isRecord(value.harness_config))
   ) return invalidSessionResource();
   return {
     ...(hasOwn(value, "harness") ? { harness: value.harness as CoreHarnessKind } : {}),
     ...(hasOwn(value, "model_provider")
       ? { model_provider: safeProvider(value.model_provider, invalidSessionResource) }
       : {}),
+    ...(hasOwn(value, "harness_config") ? { harness_config: { ...value.harness_config as Record<string, unknown> } } : {}),
   };
 }
 

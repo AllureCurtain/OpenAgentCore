@@ -19,9 +19,10 @@ tenant and Agent with a distinct encryption purpose. Agent writes commit safe
 configuration and ciphertext together. A model-only edit does not require a key.
 
 Session creation resolves each explicit model/harness override before saved defaults;
-when no harness is selected, the deployment harness applies. The pinned API still
-requires a model for an inline Agent and when creating a saved Agent. There is no
-model-name inference. Provider precedence is: complete Session bundle, complete
+when no harness is selected, the deployment harness applies. Saved Agent creation still requires a model. As a Core extension, an inline
+`openai_hosted` or `none` Session may omit its model to use the deployment model
+for the resolved harness. `self_hosted` never uses deployment model settings.
+There is no model-name inference. Provider precedence is: complete Session bundle, complete
 saved bundle, then the deployment default for the resolved harness. Never merge a
 replacement endpoint with an inherited key. A model-only override reuses the entire
 inherited bundle. All three engines accept `responses`, `anthropic` and `chat_completions` as
@@ -60,8 +61,8 @@ Unknown, duplicate or output-only saved-provider input fields are rejected. Save
 Agent creation without a harness may save a valid bundle, with final harness
 compatibility checked at Session admission. Provider-only Agent updates preserve
 the saved harness and validate their merged compatibility under the row lock.
-Session inline `agent.x_agents_core` remains harness-only; the provider override
-belongs at the Session request's top level.
+Session inline `agent.x_agents_core` accepts `harness` and `harness_config`;
+the provider override belongs at the Session request's top level.
 
 Read the Agent configuration and encrypted bundle from one coherent database
 snapshot. Explicit complete Session overrides do not need to decrypt a saved
@@ -72,7 +73,7 @@ model, harness or provider. A missing/wrong encryption key fails closed. Retain 
 same deployment credential-encryption key across restarts. V1 has no Turn override,
 provider catalog, Session migration or new execution loop.
 
-All new hosted requests record caller intent before resolving mutable defaults,
+All new hosted requests and requests that omit the inline model record caller intent before resolving mutable defaults,
 including inline requests that use deployment defaults. Other inline requests,
 such as `none`, keep the resolved-request retry rule; that hash leaves out a
 deployment default, so setting, replacing or removing the default does not change
@@ -109,12 +110,13 @@ is automatic when the selected engine cannot use that upstream protocol natively
 The endpoint must use HTTPS without embedded credentials, a query or a fragment.
 Keys must be nonempty, at most 16 KiB, and contain no NUL/CR/LF. Unknown fields and
 unsupported protocol/Harness/environment combinations are rejected before creating
-a Session. The Session's `x_agents_core` accepts only `model_provider`; hosted node
+a Session. The Session's `x_agents_core` accepts `model_provider` and `harness_config`; hosted node
 placement is automatic, and the removed `sandbox_node_id` is rejected with 400 like
 any other unknown member. Context/output limits are optional nonnegative integers, with output no
 larger than context; both must be positive for MiniMax Code. Use the actual model's
 limits. Native provider availability is checked during execution, not by a new probe.
-`agent.model` retains its exact meaning; this extension never changes model identity.
+`agent.model` retains its exact provider model identity; a supplied value always
+replaces the deployment model.
 
 The entire resolved provider configuration is frozen and encrypted in the Session creation
 transaction, with a distinct credential-crypto purpose and tenant/Session binding.
@@ -138,20 +140,55 @@ access whatever that user can read. The daemon does not isolate its local
 credentials from same-user tools. Revocation does not erase an already delivered
 bundle.
 
+## Native model parameters
+
+The optional `harness_config` object uses the selected harness's native model
+parameters. It is accepted on saved Agent `x_agents_core`, inline
+`agent.x_agents_core`, and the Session's top-level `x_agents_core`. The Session
+extension takes precedence over the inline extension. See
+[Harness onboarding](harness-onboarding.md#native-model-configuration) for the
+single supported-field reference and Runtime preparation contract.
+
+An explicitly supplied object replaces the entire object; `{}` clears it, and
+null is invalid. A Session that explicitly selects a model or provider without
+supplying native parameters uses `{}` rather than inheriting another model's
+parameters. Otherwise a saved Agent supplies its object. An inline Session using
+the deployment model uses its deployment object. Changing the selected harness
+also clears inherited parameters. Updating a saved Agent's model, provider or
+harness follows the same rule unless that update supplies `harness_config`.
+There is no deep merge. An inline extension that only sets native parameters
+preserves the saved harness; a null inline extension resets harness selection. Neither this object nor a deployment default enables
+public `reasoning` execution options that the service does not already support.
+
+Core validates the resolved configuration before persistence and freezes it in the
+Session Agent configuration. The administrator execution-configuration read records
+its value and source. Nonempty native parameters require a native protocol route. Converted routes also
+reject structured output, tool discovery, native web search and nondefault verbosity
+until those combinations are qualified. Runtime checks newly introduced images at
+input admission and the proxy checks the request before forwarding. A supported
+transport route does not establish that the remote model accepts a parameter.
+
+Model parameters are safe, non-confidential fields; provider
+keys remain in the separate encrypted bundle. Reconnect uses the frozen logical
+configuration. New proxy endpoints may have different local addresses and short-lived
+credentials, but cannot change the selected upstream or native parameters.
+
 ## Deployment defaults
 
-The deployment default is a runtime setting stored in Core, one complete bundle per
+The deployment default is a runtime setting stored in Core, one complete model configuration per
 harness, managed with the Core key through Web or `/core/v1`:
 
 | Method and route | Result |
 | --- | --- |
-| `GET /core/v1/harnesses` | Every harness this build supports, with `enabled` and `default` from the process configuration and its `model_provider` (safe view) or null |
-| `GET /core/v1/harnesses/{harness}/model-provider` | The safe view; 404 when none is set |
-| `PUT /core/v1/harnesses/{harness}/model-provider` | Replace it with a complete `x_agents_core.model_provider` bundle, validated for the harness |
-| `DELETE /core/v1/harnesses/{harness}/model-provider` | Remove it; idempotent, 204 |
+| `GET /core/v1/harnesses` | Every harness this build supports, with `enabled` and `default` from the process configuration and its `model_configuration` (safe view) or null |
+| `GET /core/v1/harnesses/{harness}/model-configuration` | The safe view; 404 when none is set |
+| `PUT /core/v1/harnesses/{harness}/model-configuration` | Replace `{model_provider, model, harness_config}` using the shared provider and native-parameter validators |
+| `DELETE /core/v1/harnesses/{harness}/model-configuration` | Remove it; idempotent, 204 |
 
-Reads return `protocol`, `base_url`, optional limits, `api_key_configured` and
-`updated_at`, never the key. The bundle is encrypted with its own
+PUT requires `model` and a complete `model_provider` bundle; `harness_config`
+defaults to `{}`. Reads return `model`, `harness_config`, the safe `model_provider`
+view, observations and `updated_at`, never the key. The provider view owns
+`protocol`, `base_url`, optional token limits and `api_key_configured`. The bundle is encrypted with its own
 credential-encryption purpose, bound to the harness, and each write records an
 administrator audit entry (`resource_type: deployment_model_provider`, the harness
 as `resource_id`, action `set` or `delete`, `project_id` null) without the key. A
@@ -164,7 +201,7 @@ default never reaches existing Sessions, so a Session's first and later Turns al
 use the same provider. The execution-configuration read shows the frozen safe view
 with source `deployment`.
 
-Configure deployment defaults through `PUT /core/v1/harnesses/{harness}/model-provider`.
+Configure deployment defaults through `PUT /core/v1/harnesses/{harness}/model-configuration`.
 The operator options file and historical native-option snapshots are unsupported.
 A missing or invalid provider snapshot fails closed; no upgrade reader, automatic
 migration or fallback to another model/provider is provided.
@@ -200,3 +237,12 @@ writes in any half-open 30-second interval of nondecreasing DB-clock time. Equal
 backwards clock readings are preserved and can make timestamp-based display
 ambiguous; recovery does not impose a total order. No readiness probe, automatic
 refresh, observation history or credential/raw-error read is provided.
+
+The harness list also returns `model_configuration_support`, derived from the
+same adapter declaration used by Core and Runtime: `protocols` lists selectable
+upstream protocols, `native_protocols` lists direct protocols in default order,
+`accepts_harness_config` reports whether native parameters are accepted, and
+`token_limits_required` reports required provider token limits. The first native
+protocol is the configuration form's default. This descriptor describes the
+current build, not a live Runtime, proxy support for arbitrary parameters, or a
+remote model's availability.

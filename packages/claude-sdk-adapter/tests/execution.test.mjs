@@ -37,6 +37,9 @@ const result = (uuid, ids, failed = false) => ({type:"result",uuid,session_id:"n
   subtype:failed?"error_during_execution":"success",is_error:failed,result:"later answer",
   usage:{input_tokens:2,output_tokens:1},modelUsage:{},total_cost_usd:0.01});
 globalThis.queryFixture = ({prompt,options}) => {
+  assert.equal(options.effort, "high");
+  assert.deepEqual(options.thinking, {type:"enabled",budgetTokens:1024});
+  assert.equal(options.model, "fixture");
   const child = options.spawnClaudeCodeProcess({command:process.execPath,args:["-e","process.stdin.resume();process.stdin.on('end',()=>process.exit(0));"],env:process.env,signal:abort.signal});
   return {
     close(){child.stdin.end();},
@@ -56,7 +59,7 @@ globalThis.queryFixture = ({prompt,options}) => {
     },
   };
 };
-await execute({type:"start",input: [{ content: [{ type: "input_text", text: "opening text" }] }],model:"fixture",system_prompt:"",cwd:process.cwd(),
+await execute({type:"start",input: [{ content: [{ type: "input_text", text: "opening text" }] }],model:"fixture",system_prompt:"",cwd:process.cwd(),harness_config:{effort:"high",thinking:{type:"enabled",budgetTokens:1024}},
   ...(mode === "later-function" ? {functions:[{name:"lookup",description:"fixture",parameters:{type:"object",properties:{}}}]} : {})},emit,abort,functions,inputs);
 assert.equal(inputs.complete,true);
 assert.equal(events.filter(e=>e.type === "input_applied" && e.input_id === "extra").length,1);

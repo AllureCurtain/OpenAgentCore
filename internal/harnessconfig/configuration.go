@@ -5,17 +5,22 @@ package harnessconfig
 import (
 	"errors"
 	"slices"
+
+	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 )
 
 // Provider is deliberately limited to configuration compatibility. Core owns
 // credential admission and endpoint security; native launch options stay private.
 type Provider struct {
 	Protocol            string
+	Native              bool
 	RequiresTokenLimits bool
 }
 
 type Configuration struct {
 	Providers []Provider
+	// ValidateNativeConfig belongs to the selected adapter, never Core.
+	ValidateNativeConfig func(proto.HarnessConfig) bool
 }
 
 func (c Configuration) Clone() Configuration {

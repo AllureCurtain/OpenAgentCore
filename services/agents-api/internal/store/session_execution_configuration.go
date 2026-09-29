@@ -97,6 +97,10 @@ func (s *Store) GetSessionExecutionConfiguration(ctx context.Context, tenantID, 
 func normalizeExecutionProjection(projection *v1.SessionExecutionConfiguration, sessionID string) {
 	projection.Object = "agent.session.execution_configuration"
 	projection.SchemaVersion = 1
+	if projection.HarnessConfig.Source == "" {
+		projection.HarnessConfig.Source = "unknown"
+	}
+	projection.HarnessConfig.Value = v1.ResolvedHarnessConfig(projection.HarnessConfig.Value)
 	projection.SessionID = sessionID
 	if projection.ModelProvider.Source == "deployment" && (projection.ModelProvider.Status != "available" || projection.ModelProvider.Configuration == nil) {
 		// Sessions created before deployment defaults moved into Core stay redacted.

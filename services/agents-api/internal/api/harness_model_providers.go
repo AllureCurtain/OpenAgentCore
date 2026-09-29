@@ -7,6 +7,7 @@ import (
 	"time"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
+	"github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig/builtin"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/engine"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/store"
 	"github.com/go-chi/chi/v5"
@@ -16,35 +17,32 @@ import (
 // harness. Keys are write-only and encrypted.
 type DeploymentModelProviderStore interface {
 	ListDeploymentModelProviders(context.Context) ([]store.DeploymentModelProvider, error)
-	SetDeploymentModelProvider(context.Context, string, v1.ModelProviderInput) (store.DeploymentModelProvider, error)
+	SetDeploymentModelProvider(context.Context, string, v1.ModelConfigurationInput) (store.DeploymentModelProvider, error)
 	DeleteDeploymentModelProvider(context.Context, string) error
 }
 
-// HarnessModelProvider is a harness's deployment default model provider. It
+// HarnessModelConfiguration is a harness's deployment default model provider. It
 // never contains the API key, only whether one is configured.
-type HarnessModelProvider struct {
-	Object           string     `json:"object" enums:"core.model_provider" binding:"required"`
-	Harness          string     `json:"harness" enums:"claude_sdk,codex,mcode" binding:"required"`
-	Protocol         string     `json:"protocol" enums:"anthropic,responses" binding:"required"`
-	BaseURL          string     `json:"base_url" binding:"required"`
-	ContextWindow    int32      `json:"context_window,omitempty"`
-	MaxOutputTokens  int32      `json:"max_output_tokens,omitempty"`
-	APIKeyConfigured bool       `json:"api_key_configured" binding:"required"`
-	LastUsedAt       *time.Time `json:"last_used_at" format:"date-time" extensions:"x-nullable" binding:"required"`
-	LastErrorCode    *string    `json:"last_error_code" extensions:"x-nullable" binding:"required" enums:"authentication_error,connection_failed,rate_limit_exceeded,usage_limit_exceeded,server_overloaded,server_error,resource_not_found,request_timeout,invalid_request"`
-	LastErrorAt      *time.Time `json:"last_error_at" format:"date-time" extensions:"x-nullable" binding:"required"`
-	UpdatedAt        time.Time  `json:"updated_at" binding:"required"`
+type HarnessModelConfiguration struct {
+	Object  string `json:"object" enums:"core.model_configuration" binding:"required"`
+	Harness string `json:"harness" enums:"claude_sdk,codex,mcode" binding:"required"`
+	v1.ModelConfigurationView
+	LastUsedAt    *time.Time `json:"last_used_at" format:"date-time" extensions:"x-nullable" binding:"required"`
+	LastErrorCode *string    `json:"last_error_code" extensions:"x-nullable" binding:"required" enums:"authentication_error,connection_failed,rate_limit_exceeded,usage_limit_exceeded,server_overloaded,server_error,resource_not_found,request_timeout,invalid_request"`
+	LastErrorAt   *time.Time `json:"last_error_at" format:"date-time" extensions:"x-nullable" binding:"required"`
+	UpdatedAt     time.Time  `json:"updated_at" binding:"required"`
 }
 
 // CoreHarness describes one harness this build supports. Enabled and default
 // come from the process configuration; the model provider is the deployment
 // default stored in Core, or null.
 type CoreHarness struct {
-	Object        string                `json:"object" enums:"core.harness" binding:"required"`
-	ID            string                `json:"id" enums:"claude_sdk,codex,mcode" binding:"required"`
-	Enabled       bool                  `json:"enabled" binding:"required"`
-	Default       bool                  `json:"default" binding:"required"`
-	ModelProvider *HarnessModelProvider `json:"model_provider" extensions:"x-nullable" binding:"required"`
+	ModelConfigurationSupport v1.ModelConfigurationSupport `json:"model_configuration_support" binding:"required"`
+	Object                    string                       `json:"object" enums:"core.harness" binding:"required"`
+	ID                        string                       `json:"id" enums:"claude_sdk,codex,mcode" binding:"required"`
+	Enabled                   bool                         `json:"enabled" binding:"required"`
+	Default                   bool                         `json:"default" binding:"required"`
+	ModelConfiguration        *HarnessModelConfiguration   `json:"model_configuration" extensions:"x-nullable" binding:"required"`
 }
 
 type CoreHarnessList struct {
@@ -52,11 +50,9 @@ type CoreHarnessList struct {
 	Data   []CoreHarness `json:"data" binding:"required"`
 }
 
-func harnessModelProvider(value store.DeploymentModelProvider) *HarnessModelProvider {
-	return &HarnessModelProvider{Object: "core.model_provider", Harness: value.Harness,
-		Protocol: value.Provider.Protocol, BaseURL: value.Provider.BaseURL,
-		ContextWindow: value.Provider.ContextWindow, MaxOutputTokens: value.Provider.MaxOutputTokens,
-		APIKeyConfigured: value.Provider.APIKeyConfigured, UpdatedAt: value.UpdatedAt.UTC(), LastUsedAt: value.LastUsedAt, LastErrorCode: value.LastErrorCode, LastErrorAt: value.LastErrorAt}
+func harnessModelConfiguration(value store.DeploymentModelProvider) *HarnessModelConfiguration {
+	return &HarnessModelConfiguration{Object: "core.model_configuration", Harness: value.Harness,
+		ModelConfigurationView: v1.ModelConfigurationView{ModelProvider: &value.Provider, Model: value.Model, HarnessConfig: value.HarnessConfig}, UpdatedAt: value.UpdatedAt.UTC(), LastUsedAt: value.LastUsedAt, LastErrorCode: value.LastErrorCode, LastErrorAt: value.LastErrorAt}
 }
 
 // registerHarnessRoutes adds harness and deployment model provider management
@@ -67,9 +63,9 @@ func (h *Handler) registerHarnessRoutes(r chi.Router) {
 		return
 	}
 	r.Get("/harnesses", func(w http.ResponseWriter, r *http.Request) { h.listHarnesses(w, r, s) })
-	r.Get("/harnesses/{harness}/model-provider", func(w http.ResponseWriter, r *http.Request) { h.getHarnessModelProvider(w, r, s) })
-	r.Put("/harnesses/{harness}/model-provider", func(w http.ResponseWriter, r *http.Request) { h.setHarnessModelProvider(w, r, s) })
-	r.Delete("/harnesses/{harness}/model-provider", func(w http.ResponseWriter, r *http.Request) { h.deleteHarnessModelProvider(w, r, s) })
+	r.Get("/harnesses/{harness}/model-configuration", func(w http.ResponseWriter, r *http.Request) { h.getHarnessModelConfiguration(w, r, s) })
+	r.Put("/harnesses/{harness}/model-configuration", func(w http.ResponseWriter, r *http.Request) { h.setHarnessModelConfiguration(w, r, s) })
+	r.Delete("/harnesses/{harness}/model-configuration", func(w http.ResponseWriter, r *http.Request) { h.deleteHarnessModelConfiguration(w, r, s) })
 }
 
 // knownHarness reports the path harness, writing 404 for one this build lacks.
@@ -83,7 +79,7 @@ func knownHarness(w http.ResponseWriter, r *http.Request) (string, bool) {
 }
 
 // @Summary List harnesses and their deployment default model providers
-// @Description Core key only. Returns every harness this build supports, in name order. enabled and default are read-only views of the process configuration (OAC_DEFAULT_HARNESS and OAC_HARNESSES). model_provider is the harness's deployment default, stored in Core, or null. Keys are never returned; api_key_configured reports that one is set.
+// @Description Core key only. Returns every harness this build supports, in name order. enabled and default are read-only views of the process configuration (OAC_DEFAULT_HARNESS and OAC_HARNESSES). model_configuration is the harness's deployment default, stored in Core, or null. Keys are never returned; api_key_configured reports that one is set.
 // @Tags Deployment Model Providers
 // @Produce json
 // @Security DeploymentAdminAuth
@@ -98,10 +94,19 @@ func (h *Handler) listHarnesses(w http.ResponseWriter, r *http.Request, s Deploy
 	}
 	list := CoreHarnessList{Object: "list", Data: []CoreHarness{}}
 	for _, kind := range (engine.Catalog{}).Kinds() {
-		harness := CoreHarness{Object: "core.harness", ID: kind, Enabled: kind == h.engine || h.harnesses[kind], Default: kind == h.engine}
+		declaration, _ := builtin.Registry().Lookup(kind)
+		support := v1.ModelConfigurationSupport{Protocols: []string{}, NativeProtocols: []string{}, AcceptsHarnessConfig: declaration.AcceptsHarnessConfig()}
+		for _, provider := range declaration.Providers {
+			support.Protocols = append(support.Protocols, provider.Protocol)
+			support.TokenLimitsRequired = support.TokenLimitsRequired || provider.RequiresTokenLimits
+		}
+		for _, protocol := range declaration.NativeProtocols() {
+			support.NativeProtocols = append(support.NativeProtocols, string(protocol))
+		}
+		harness := CoreHarness{ModelConfigurationSupport: support, Object: "core.harness", ID: kind, Enabled: kind == h.engine || h.harnesses[kind], Default: kind == h.engine}
 		for _, provider := range providers {
 			if provider.Harness == kind {
-				harness.ModelProvider = harnessModelProvider(provider)
+				harness.ModelConfiguration = harnessModelConfiguration(provider)
 			}
 		}
 		list.Data = append(list.Data, harness)
@@ -115,10 +120,10 @@ func (h *Handler) listHarnesses(w http.ResponseWriter, r *http.Request, s Deploy
 // @Produce json
 // @Security DeploymentAdminAuth
 // @Param harness path string true "Harness" Enums(claude_sdk,codex,mcode)
-// @Success 200 {object} api.HarnessModelProvider
+// @Success 200 {object} api.HarnessModelConfiguration
 // @Failure 401,404,500 {object} CoreErrorResponse
-// @Router /core/v1/harnesses/{harness}/model-provider [get]
-func (h *Handler) getHarnessModelProvider(w http.ResponseWriter, r *http.Request, s DeploymentModelProviderStore) {
+// @Router /core/v1/harnesses/{harness}/model-configuration [get]
+func (h *Handler) getHarnessModelConfiguration(w http.ResponseWriter, r *http.Request, s DeploymentModelProviderStore) {
 	harness, ok := knownHarness(w, r)
 	if !ok {
 		return
@@ -130,31 +135,42 @@ func (h *Handler) getHarnessModelProvider(w http.ResponseWriter, r *http.Request
 	}
 	for _, provider := range providers {
 		if provider.Harness == harness {
-			writeJSON(w, http.StatusOK, harnessModelProvider(provider))
+			writeJSON(w, http.StatusOK, harnessModelConfiguration(provider))
 			return
 		}
 	}
 	writeError(w, http.StatusNotFound, "not_found", "This harness has no deployment default model provider.")
 }
 
-var harnessModelProviderShape = shape{kind: objectValue, members: []member{
+var modelProviderInputShape = shape{kind: objectValue, members: []member{
 	{"protocol", requiredString}, {"base_url", requiredString}, {"api_key", requiredString},
 	{"context_window", shape{kind: integerValue, minimum: 0}},
 	{"max_output_tokens", shape{kind: integerValue, minimum: 0}},
 }}
 
+var modelConfigurationShape = shape{kind: objectValue, members: []member{
+	{"model_provider", requiredModelProviderShape()}, {"model", requiredString},
+	{"harness_config", shape{kind: openObject}},
+}}
+
+func requiredModelProviderShape() shape {
+	result := modelProviderInputShape
+	result.required = true
+	return result
+}
+
 // @Summary Replace a harness's deployment default model provider
-// @Description Core key only. The body is the complete x_agents_core.model_provider bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, an upstream protocol (responses, anthropic or chat_completions), automatically adapted by Runtime to the selected harness and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions that resolve no Session or Agent bundle freeze this default into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key and resets last_used_at, last_error_code and last_error_at to null, including identical writes.
+// @Description Core key only. The body is the complete x_agents_core.model_configuration bundle, including the write-only api_key; there is no partial update and bundles are never merged. The provider is validated for this harness: an HTTPS base_url without credentials, query or fragment, an upstream protocol (responses, anthropic or chat_completions), automatically adapted by Runtime to the selected harness and, for mcode, positive context_window and max_output_tokens. New openai_hosted and none Sessions resolve omitted model settings from this default and freeze the resolved configuration into their encrypted snapshot; existing Sessions never change. self_hosted Sessions never use it. The key is encrypted and never returned. Each write records an administrator audit entry without the key and resets last_used_at, last_error_code and last_error_at to null, including identical writes.
 // @Tags Deployment Model Providers
 // @Accept json
 // @Produce json
 // @Security DeploymentAdminAuth
 // @Param harness path string true "Harness" Enums(claude_sdk,codex,mcode)
-// @Param body body v1.ModelProviderInput true "Complete model provider bundle"
-// @Success 200 {object} api.HarnessModelProvider
+// @Param body body v1.ModelConfigurationInput true "Complete model provider bundle"
+// @Success 200 {object} api.HarnessModelConfiguration
 // @Failure 400,401,404,413,500,503 {object} CoreErrorResponse
-// @Router /core/v1/harnesses/{harness}/model-provider [put]
-func (h *Handler) setHarnessModelProvider(w http.ResponseWriter, r *http.Request, s DeploymentModelProviderStore) {
+// @Router /core/v1/harnesses/{harness}/model-configuration [put]
+func (h *Handler) setHarnessModelConfiguration(w http.ResponseWriter, r *http.Request, s DeploymentModelProviderStore) {
 	harness, ok := knownHarness(w, r)
 	if !ok {
 		return
@@ -163,10 +179,10 @@ func (h *Handler) setHarnessModelProvider(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	var input v1.ModelProviderInput
+	var input v1.ModelConfigurationInput
 	// Neither message echoes submitted values, which may include the key.
-	if checkValue("model_provider", raw, harnessModelProviderShape) != nil || decodeInputObject(raw, &input, "protocol", "base_url", "api_key", "context_window", "max_output_tokens") != nil {
-		writeError(w, http.StatusBadRequest, "invalid_model_provider", "The body must be a complete model provider: protocol, base_url, api_key and optional nonnegative context_window and max_output_tokens.")
+	if checkValue("model_configuration", raw, modelConfigurationShape) != nil || decodeInputObject(raw, &input, "model_provider", "model", "harness_config") != nil {
+		writeError(w, http.StatusBadRequest, "invalid_model_provider", "The body requires model_provider, model and optional harness_config.")
 		return
 	}
 	if err := input.ValidateHarness(harness); err != nil {
@@ -182,7 +198,7 @@ func (h *Handler) setHarnessModelProvider(w http.ResponseWriter, r *http.Request
 		writeStoreError(w, r, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, harnessModelProvider(provider))
+	writeJSON(w, http.StatusOK, harnessModelConfiguration(provider))
 }
 
 // @Summary Remove a harness's deployment default model provider
@@ -192,8 +208,8 @@ func (h *Handler) setHarnessModelProvider(w http.ResponseWriter, r *http.Request
 // @Param harness path string true "Harness" Enums(claude_sdk,codex,mcode)
 // @Success 204
 // @Failure 401,404,500 {object} CoreErrorResponse
-// @Router /core/v1/harnesses/{harness}/model-provider [delete]
-func (h *Handler) deleteHarnessModelProvider(w http.ResponseWriter, r *http.Request, s DeploymentModelProviderStore) {
+// @Router /core/v1/harnesses/{harness}/model-configuration [delete]
+func (h *Handler) deleteHarnessModelConfiguration(w http.ResponseWriter, r *http.Request, s DeploymentModelProviderStore) {
 	harness, ok := knownHarness(w, r)
 	if !ok {
 		return

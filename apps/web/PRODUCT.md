@@ -85,7 +85,7 @@ workbench.
   individual node operations). Add node asks for limits before issuing its
   one-time command; installers use Core's public URL and require supported node
   artifacts. Removal offers the host's uninstall command. System owns installation
-  facts, each harness's default model provider, startup settings, and a link to
+  facts, each harness's default model configuration, startup settings, and a link to
   the Sandbox configuration secondary page. That page owns setup, resource edits,
   rollout details and reset. Setup selects a backend, size and Runtime, then asks
   for a deliberate save; own-machine setup continues to Add node.

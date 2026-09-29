@@ -66,6 +66,8 @@ type DeploymentModelProvider struct {
 	LastErrorCode   pgtype.Text        `json:"last_error_code"`
 	LastErrorAt     pgtype.Timestamptz `json:"last_error_at"`
 	RecoveryPending bool               `json:"recovery_pending"`
+	Model           string             `json:"model"`
+	HarnessConfig   []byte             `json:"harness_config"`
 }
 
 type Device struct {

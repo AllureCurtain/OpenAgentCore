@@ -46,10 +46,13 @@ export function safeProvider(value: unknown, invalid: Invalid): ModelProviderVie
 }
 
 export function projectExecutionConfiguration(value: unknown, sessionId: string, invalid: Invalid): SessionExecutionConfiguration {
-  if (!isRecord(value) || !exactFields(value, new Set(["object", "schema_version", "session_id", "model", "harness", "model_provider"])) ||
+  if (!isRecord(value) || !exactFields(value, new Set(["object", "schema_version", "session_id", "model", "harness", "model_provider", "harness_config"])) ||
     value.object !== "agent.session.execution_configuration" || value.schema_version !== 1 ||
     typeof value.session_id !== "string" || !canonicalUuid(value.session_id) || !sameResourceId(value.session_id, sessionId) ||
     !isRecord(value.model_provider) || !exactFields(value.model_provider, new Set(["source", "status", "configuration"]))) return invalid();
+  const native = value.harness_config;
+  if (!isRecord(native) || !exactFields(native, selectionFields) || !isRecord(native.value) ||
+    !sources.has(String(native.source)) || (native.source === "unknown" && Object.keys(native.value).length !== 0)) return invalid();
   const provider = value.model_provider;
   let configuration: ModelProviderView | null = null;
   if (provider.status === "available" && (provider.source === "session" || provider.source === "agent" || provider.source === "deployment")) {
@@ -59,6 +62,7 @@ export function projectExecutionConfiguration(value: unknown, sessionId: string,
   return {
     object: "agent.session.execution_configuration", schema_version: 1, session_id: value.session_id,
     model: selection(value.model, invalid), harness: selection(value.harness, invalid),
+    harness_config: { value: { ...native.value }, source: native.source as ExecutionConfigurationSource },
     model_provider: { source: provider.source as ExecutionConfigurationSource, status: provider.status as SessionExecutionConfiguration["model_provider"]["status"], configuration },
   };
 }

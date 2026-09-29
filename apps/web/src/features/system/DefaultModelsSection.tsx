@@ -1,65 +1,32 @@
-import { AgentCoreError, type CoreHarness, type CoreHarnessKind, type ModelProviderInput } from "@agents-core-web/agents-client";
+import { type CoreHarnessKind } from "@agents-core-web/agents-client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
-import { ConsoleSelect } from "../../components/console-select";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { EmptyState, HelpTip, revealInPageBody, Section } from "../../components/console-ui";
+import { EmptyState, revealInPageBody, Section } from "../../components/console-ui";
 import { ErrorState } from "../../components/ErrorState";
-import { Modal } from "../../components/Modal";
 import { TableSkeleton } from "../../components/Skeleton";
 import { failedLast, useFailureToast, useToast } from "../../components/Toast";
-import { coreError, coreFieldError } from "../../lib/core-error";
 import { useDeleteFlow } from "../../lib/delete-flow";
-import { formatInteger } from "../../lib/format";
 import { useConsoleIntent } from "../../lib/console-navigation";
-import { harnessNames, protocolNames } from "../../lib/harness-labels";
+import { harnessNames } from "../../lib/harness-labels";
 import { admin } from "../../lib/projects";
+import { ModelProviderDialog } from "./ModelProviderDialog";
 import { HarnessCard } from "./HarnessCard";
 import { harnessesQuery } from "./harness-queries";
-
-/** A write that gets no answer in this time has an unknown outcome. */
-const WRITE_TIMEOUT_MS = 30_000;
-
-type Protocol = ModelProviderInput["protocol"];
-/** New providers start with the harness native protocol; saved providers keep their upstream protocol. */
-const defaultHarnessProtocol: Record<CoreHarnessKind, Protocol> = { codex: "responses", claude_sdk: "anthropic", mcode: "anthropic" };
-const protocolOptions = (["anthropic", "responses", "chat_completions"] as const).map((value) => ({ value, label: protocolNames[value] }));
-/** Core stores both token limits as 32-bit integers. */
-const INT32_MAX = 2_147_483_647;
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error ?? "");
 }
 
-/** A token limit: empty is omitted; anything but a whole number within Core's range is a problem. */
-function tokenLimit(text: string): { value: number | undefined; problem: "whole" | "large" | null } {
-  const value = text.trim();
-  if (!value) return { value: undefined, problem: null };
-  if (!/^\d+$/u.test(value)) return { value: undefined, problem: "whole" };
-  const number = Number(value);
-  return number > INT32_MAX ? { value: undefined, problem: "large" } : { value: number, problem: null };
-}
-
-function isProviderUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    const authority = /^https:\/\/([^/]+)/iu.exec(value)?.[1];
-    return authority !== undefined && url.protocol === "https:" && url.hostname !== "" && !authority.includes("@")
-      && !/[\\\s?#]/u.test(value);
-  } catch {
-    return false;
-  }
-}
-
 /**
- * System › Default model provider: each harness's deployment default model provider.
- * It applies to Core-hosted Sessions, after a provider in the request or on
- * the Agent, and is the only source for Sessions without an environment;
- * self-hosted Sessions bring their own. Whether a harness is enabled, and
+ * System owns each harness's deployment default model configuration.
+ * New Core-hosted Sessions and Sessions without an environment inherit it
+ * when no explicit Session or Agent model configuration takes precedence.
+ * Self-hosted Sessions bring their own configuration. Whether a harness is enabled, and
  * which is the default, is Core's startup configuration and only shown here.
- * A write replaces the whole provider and needs the API key every time; the
+ * A write replaces the whole model configuration and needs the API key every time; the
  * key lives only in the open form's state, never in the query cache, storage
  * or the URL. Writes are never retried automatically; after each one the
  * harnesses are read again.
@@ -86,7 +53,7 @@ export function DefaultModelsSection() {
   const editingHarness = (editing && harnesses?.find((harness) => harness.id === editing)) || null;
   const clear = useDeleteFlow<CoreHarnessKind>(
     async (harness) => {
-      await admin.deleteHarnessModelProvider(harness, { signal: AbortSignal.timeout(WRITE_TIMEOUT_MS) });
+      await admin.deleteHarnessModelConfiguration(harness, { signal: AbortSignal.timeout(30_000) });
       toast.show(t("models.cleared", { harness: harnessNames[harness] }), { tone: "success" });
     },
     reread,
@@ -143,161 +110,5 @@ export function DefaultModelsSection() {
         ) : null}
       </ConfirmDialog>
     </Section>
-  );
-}
-
-
-
-/**
- * Sets or replaces one harness's provider. Non-secret fields start from the
- * current provider; the API key never does. The protocol describes the upstream
- * model provider. The form checks the HTTPS provider URL and whole-number
- * limits within Core's range, with max output no larger than the context window.
- * Core's typed rejection is shown beside its field, or beside the form
- * when no editable field applies. Enter saves; a save in flight blocks another.
- */
-function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
-  harness: CoreHarness | null;
-  onClose: () => void;
-  onSaved: (harness: CoreHarnessKind) => void;
-  onReread: () => void;
-}) {
-  const { t } = useTranslation("system");
-  const { t: tCommon } = useTranslation();
-  const id = useId();
-  const formId = `${id}-form`;
-  const current = harness?.model_provider ?? null;
-  const [protocol, setProtocol] = useState<Protocol>(current?.protocol ?? (harness ? defaultHarnessProtocol[harness.id] : "responses"));
-  const [baseUrl, setBaseUrl] = useState(current?.base_url ?? "");
-  const [apiKey, setApiKey] = useState("");
-  const [contextWindow, setContextWindow] = useState(current?.context_window === undefined ? "" : String(current.context_window));
-  const [maxOutputTokens, setMaxOutputTokens] = useState(current?.max_output_tokens === undefined ? "" : String(current.max_output_tokens));
-  const [busy, setBusy] = useState(false);
-  const saving = useRef(false);
-  const [error, setError] = useState<string | null>(null);
-  const [rejection, setRejection] = useState<unknown>(null);
-  const fieldError = (param: string) => coreFieldError(rejection, param, tCommon);
-
-  const name = harness ? harnessNames[harness.id] : "";
-  const limitsRequired = harness?.id === "mcode";
-  const url = baseUrl.trim();
-  const urlProblem = url && !isProviderUrl(url) ? t("models.form.baseUrlInvalid") : null;
-  const context = tokenLimit(contextWindow);
-  const output = tokenLimit(maxOutputTokens);
-  const limitProblem = (limit: ReturnType<typeof tokenLimit>) => (limit.problem === "whole" ? t("models.form.wholeNumber") : limit.problem === "large" ? t("models.form.tooLarge") : null);
-  const outputProblem = limitProblem(output);
-  // The missing or undersized window is the field the administrator must fix.
-  const contextProblem = limitProblem(context) ?? (!outputProblem && output.value !== undefined && output.value > (context.value ?? 0) ? t("models.form.needsContext") : null);
-  const ready = harness !== null && !busy && url !== "" && !urlProblem && apiKey.trim() !== "" && !contextProblem && !outputProblem;
-
-  async function save() {
-    if (!ready || !harness || saving.current) return;
-    saving.current = true;
-    setBusy(true);
-    setError(null); setRejection(null);
-    try {
-      await admin.setHarnessModelProvider(harness.id, {
-        protocol, base_url: url, api_key: apiKey.trim(),
-        ...(context.value === undefined ? {} : { context_window: context.value }),
-        ...(output.value === undefined ? {} : { max_output_tokens: output.value }),
-      }, { signal: AbortSignal.timeout(WRITE_TIMEOUT_MS) });
-      onSaved(harness.id);
-    } catch (caught) {
-      // Never retried: a rejection shows Core's reason; an unknown outcome is read again first.
-      if (caught instanceof AgentCoreError && caught.status >= 400 && caught.status < 500 && caught.status !== 408) {
-        setRejection(caught);
-        setError(coreError(caught, tCommon));
-      } else if (caught instanceof AgentCoreError && caught.code === "credential_storage_unavailable") {
-        // A deployment without a credential key stores nothing: a configuration error, not an unknown outcome.
-        setError(t("models.form.noCredentialKey"));
-      } else {
-        setError(t("models.form.uncertain"));
-        onReread();
-      }
-    } finally {
-      saving.current = false;
-      setBusy(false);
-    }
-  }
-
-  const limitField = (field: "context" | "output", value: string, setValue: (value: string) => void, problem: string | null) => {
-    const inputId = `${id}-${field}`;
-    problem = problem ?? fieldError(field === "context" ? "context_window" : "max_output_tokens");
-    return (
-      <div className="field">
-        <span className="field-label-row">
-          <label htmlFor={inputId}>{t(field === "context" ? "models.contextWindow" : "models.maxOutputTokens")}</label>
-          <HelpTip id={`${inputId}-help`}>{t(`models.form.${field}Help${limitsRequired ? "Required" : ""}`)}</HelpTip>
-        </span>
-        <input
-          id={inputId}
-          inputMode="numeric"
-          autoComplete="off"
-          value={value}
-          onChange={(event) => { setValue(event.target.value); setRejection(null); setError(null); }}
-          aria-required={limitsRequired}
-          aria-invalid={problem ? true : undefined}
-          aria-describedby={`${inputId}-help${problem ? ` ${inputId}-problem` : ""}`}
-        />
-        {problem ? <span id={`${inputId}-problem`} className="field-error">{problem}</span> : null}
-      </div>
-    );
-  };
-
-  const baseUrlError = urlProblem ?? fieldError("base_url");
-  const apiKeyError = fieldError("api_key");
-  const fieldRejected = ["base_url", "api_key", "context_window", "max_output_tokens", "protocol"].some((param) => fieldError(param));
-  return (
-    <Modal
-      open={harness !== null}
-      title={t(current ? "models.form.replaceTitle" : "models.form.setTitle", { harness: name })}
-      onClose={() => { if (!busy) onClose(); }}
-      footer={(
-        <>
-          <button type="button" className="button outline" disabled={busy} onClick={onClose}>{tCommon("actions.cancel")}</button>
-          <button type="submit" form={formId} className="button primary" disabled={!ready}>{busy ? t("models.form.saving") : t("models.form.save")}</button>
-        </>
-      )}
-    >
-      <form id={formId} className="form-stack" autoComplete="off" onSubmit={(event) => { event.preventDefault(); void save(); }}>
-        <div className="field">
-          <span className="field-label-row">
-            <span>{t("models.protocol")}</span>
-            <HelpTip>{t("models.form.protocolHelp")} {t("models.form.modelName")}</HelpTip>
-          </span>
-          <ConsoleSelect label={t("models.protocol")} value={protocol} options={protocolOptions} disabled={busy} onChange={(value) => {
-            const option = protocolOptions.find((option) => option.value === value);
-            if (option) setProtocol(option.value);
-          }} />
-          {fieldError("protocol") ? <span className="field-error" role="alert">{fieldError("protocol")}</span> : null}
-        </div>
-        <div className="field">
-          <span className="field-label-row"><label htmlFor={`${id}-url`}>{t("models.baseUrl")}</label></span>
-          <input
-            id={`${id}-url`}
-            value={baseUrl}
-            onChange={(event) => { setBaseUrl(event.target.value); setRejection(null); setError(null); }}
-            autoComplete="off"
-            spellCheck={false}
-            aria-invalid={baseUrlError ? true : undefined}
-            aria-describedby={baseUrlError ? `${id}-url-problem` : undefined}
-          />
-          {baseUrlError ? <span id={`${id}-url-problem`} className="field-error">{baseUrlError}</span> : null}
-        </div>
-        <div className="field">
-          <span className="field-label-row">
-            <label htmlFor={`${id}-key`}>{t("models.apiKey")}</label>
-            <HelpTip id={`${id}-key-help`}>{t("models.form.apiKeyHelp")}</HelpTip>
-          </span>
-          <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={(event) => { setApiKey(event.target.value); setRejection(null); setError(null); }} aria-required="true" aria-invalid={apiKeyError ? true : undefined} aria-describedby={`${id}-key-help${apiKeyError ? ` ${id}-key-problem` : ""}`} />
-          {apiKeyError ? <span id={`${id}-key-problem`} className="field-error">{apiKeyError}</span> : null}
-        </div>
-        <div className="system-model-limits">
-          {limitField("context", contextWindow, setContextWindow, contextProblem)}
-          {limitField("output", maxOutputTokens, setMaxOutputTokens, outputProblem)}
-        </div>
-        {error && !fieldRejected ? <p className="confirm-dialog-error" role="alert">{error}</p> : null}
-      </form>
-    </Modal>
   );
 }

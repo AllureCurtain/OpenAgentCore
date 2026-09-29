@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"encoding/json"
 	"errors"
 
 	"github.com/MiniMax-AI-Dev/parsar/internal/harnessconfig"
@@ -10,12 +11,14 @@ import (
 // SavedAgentCoreInput carries defaults for future Sessions. The provider bundle
 // is replaced as a whole; its API key is write-only.
 type SavedAgentCoreInput struct {
+	HarnessConfig json.RawMessage     `json:"harness_config,omitempty" swaggertype:"object"`
 	Harness       string              `json:"harness,omitempty" enums:"codex,claude_sdk,mcode"`
 	ModelProvider *ModelProviderInput `json:"model_provider,omitempty" extensions:"x-nullable"`
 }
 
 // SavedAgentCore is the non-confidential representation of saved defaults.
 type SavedAgentCore struct {
+	HarnessConfig json.RawMessage    `json:"harness_config,omitempty" swaggertype:"object"`
 	Harness       string             `json:"harness,omitempty" enums:"codex,claude_sdk,mcode"`
 	ModelProvider *ModelProviderView `json:"model_provider,omitempty"`
 }
@@ -37,11 +40,14 @@ func (x *SavedAgentCoreInput) Validate() error {
 			return err
 		}
 	}
+	if err := ValidateHarnessConfig(x.Harness, x.HarnessConfig); err != nil {
+		return err
+	}
 	if x.ModelProvider == nil {
 		return nil
 	}
 	if x.Harness != "" {
-		return x.ModelProvider.ValidateHarness(x.Harness)
+		return x.ModelProvider.ValidateConfiguration(x.Harness, x.HarnessConfig)
 	}
 	return x.ModelProvider.Validate()
 }
@@ -50,7 +56,7 @@ func (x *SavedAgentCoreInput) SafeView() *SavedAgentCore {
 	if x == nil {
 		return nil
 	}
-	return &SavedAgentCore{Harness: x.Harness, ModelProvider: x.ModelProvider.SafeView()}
+	return &SavedAgentCore{Harness: x.Harness, ModelProvider: x.ModelProvider.SafeView(), HarnessConfig: append(json.RawMessage(nil), x.HarnessConfig...)}
 }
 
 func (p *ModelProviderInput) SafeView() *ModelProviderView {
