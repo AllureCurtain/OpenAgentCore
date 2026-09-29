@@ -33,6 +33,30 @@ gaps, not claimed upstream restrictions. Codex and MiniMax discovery remain gaps
 Unknown public combinations reject before execution; an actual Runtime must also
 advertise the operation. An advertisement alone cannot qualify a public profile.
 
+Public `tool_search` and function `defer_loading` are shared Runtime intent.
+Core preserves complete immutable definitions, sends `PromptRequestPayload.ToolSearch`
+and each `FunctionTool.DeferLoading`, and requires the operation's existing profile
+qualification plus the Runtime `tool_search` capability. It never performs native
+search, selects native names, interprets provider policies or implements another
+model/tool loop. Additional harnesses implement the same intent in their adapters.
+The pinned Session AgentTool response union excludes the tool_search input member;
+project it out of Session/SSE resources while preserving saved and frozen input.
+
+The bounded implementation targets Claude's single-agent `environment:none`
+function profile, including qualified inline message images. The adapter explicitly enables native ToolSearch and sets
+per-function MCP `anthropic/alwaysLoad` from the requested deferral flag. Ordinary
+functions stay eager. Existing function callbacks, application receipts, cancellation
+and cold continuation remain the only execution/result lifecycle. Runtime discovery
+advertises this operation only with an installed bridge supporting `tool_search`.
+
+Known conflicting native provider modes and search/beta settings reject in the
+adapter. The maintained native harness owns dynamic model/provider eligibility;
+its SDK exposes no reliable pre-input receipt proving effective deferral after a
+policy change. Do not represent tool inventory or an operator allowlist as that
+proof. Record exact real model/provider evidence and this detection gap separately.
+Search-only, missing-search, workspace, MCP and Subagent combinations remain
+unqualified; a repeated `tool_search` is a protocol error. See [the operation coverage](tool-search.md).
+
 ## Evidence and limitations
 
 Native feasibility passed with Kimi `kimi-k3`: initial provider requests excluded

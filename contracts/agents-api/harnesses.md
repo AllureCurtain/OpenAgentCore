@@ -9,43 +9,25 @@ feature sets. Optional native limitations are separate capability work and do no
 block completion of otherwise qualified onboarding.
 
 For implementation steps and interface obligations, see
-[Add a native harness](harness-onboarding.md).
+[Add a native Harness](harness-onboarding.md).
 
 ## Integration surface
 
-1. Implement `agent.ExecutorFactory`, `Executor` and `Turn`. Prepare fixed native
-   resources once, start fresh Turns on that owner, cancel an exact Turn, confirm
-   settlement and close the Executor. Implement optional interfaces only for
-   declared operations. Reuse `internal/agentdaemon/proto` requests, neutral events,
-   input receipts and errors.
-2. Register the Executor factory and verified Runtime capabilities in the daemon
-   registry. Keep native translation in the adapter. Managed and user-managed
-   environments use the same execution lifecycle after connection; dedicated local
-   environments retain shared Files/write/export helpers and binding checks.
-3. Add a pure qualified profile to `services/agents-api/internal/engine` and its
-   static catalog (or supply an immutable catalog at service composition). Declare
-   supported placements, public configuration/result limits
-   and required Runtime controls. A profile uses existing public/protocol types;
-   it has no database, credential-decryption or native-process responsibilities.
-4. Supply the native deployment prerequisites. Verify common lifecycle behavior
-   and run public acceptance for each declared operation. Do not require MCP,
-   functions, images, verbosity control or another engine's optional features simply
-   to register a harness.
-   No new handler, store table, scheduler, event projector or model loop is needed
-   for capabilities already represented by the contract.
+Follow the numbered steps in [Add a native Harness](harness-onboarding.md#steps)
+to implement, register and select an adapter. This page owns what counts as
+qualified.
 
-The catalog is the explicit service qualification boundary; a Runtime heartbeat
-cannot authorize new public functionality. Unknown profiles fail closed. Schema
-validity, qualified service support and the available Runtime remain independent
-checks. Additional capability combinations require evidence, not an engine-name
-exception. The static registry requires a build to add an implementation; dynamic
-plugin loading and untrusted code execution are outside this design.
+The service profile catalog is the explicit qualification boundary; a Runtime
+heartbeat cannot authorize new public functionality. Unknown profiles fail
+closed. Schema validity, qualified service support and the available Runtime
+remain independent checks. Additional capability combinations require evidence,
+not an engine-name exception. No new handler, store table, scheduler, event
+projector or model loop is needed for capabilities the contract already represents.
 
-New Session selection uses the default `OAC_DEFAULT_HARNESS` or the documented
-[harness extension](harness-selection.md). `OAC_HARNESSES` explicitly adds
-deployment-supported profiles without requiring a managed Provider; existing
-Sessions retain their engine. The default is a deployment convenience,
-not a different contract or authority level. The documented extension remains separate from the pinned public protocol.
+Do not require MCP, functions, images, verbosity control or another engine's
+optional features simply to register a Harness. The default engine is a
+deployment convenience, not a different contract or authority level; see
+[engine selection](harness-onboarding.md#engine-selection).
 
 ## Shared behavioral obligations
 
@@ -68,35 +50,70 @@ not a different contract or authority level. The documented extension remains se
 ## Current qualified operations
 
 The baseline is actual supported behavior on main, not everything Codex accepts
-syntactically or everything either upstream harness can theoretically perform.
+syntactically or everything an upstream Harness can theoretically perform. The
+MiniMax Code column summarizes the `mcode` row of the
+[public engine profiles](README.md#public-engine-profiles) and the linked operation
+contracts.
 
-| Operation | Codex | Claude Code |
-| --- | --- | --- |
-| Docker hosted text execution, native local tools | Qualified | Qualified |
-| Files, immutable Artifacts, cancellation, restart/history recovery | Qualified | Qualified |
-| Public functions in `none` | Qualified | Qualified; object-root schemas; text or successful inline PNG/JPEG results |
-| Public functions alongside hosted workspace tools | Qualified | Qualified; object-root schemas and text or successful inline PNG/JPEG results |
-| HTTP MCP and static-bearer Vault credentials in `none` | Qualified | Qualified subset |
-| Required MCP initialization | Qualified | Qualified on `none`; native readiness before initial input |
-| Hosted HTTP MCP | Gap | Gap |
-| Function image results | Supported subset; early acknowledgement is transport-only | Successful inline PNG/JPEG on `none` and Docker `openai_hosted`; native resizing allowed, error images rejected |
-| Non-default verbosity | Native/model-dependent support | No equivalent qualified; medium only |
-| Public detailed Usage | Supported native counters | Native raw usage retained; public breakdown gap |
-| V1 `self_hosted` daemon enrollment at `/workspace` | [Qualified deployment scope](user-managed-runtime-v1.md) | [Qualified deployment scope](user-managed-runtime-v1.md) |
-| Deferred function discovery | Unqualified; explicit rejection | [Single-agent text/function profile](tool-search.md) |
-| Structured output | Unqualified; explicit rejection | [Qualified single-agent function profile](structured-output.md) |
-| Message images | Inline PNG/JPEG on `none` and Docker `openai_hosted` | Inline PNG/JPEG on `none` and Docker `openai_hosted` |
-| Explicit reasoning | Shared service gap | Shared service gap |
-| Six Subagent reads | [Qualified scope](subagents.md) | [Qualified scope](subagents.md) |
+| Operation | Codex | Claude Code | MiniMax Code |
+| --- | --- | --- | --- |
+| Docker hosted text execution, native local tools | Qualified | Qualified | Qualified (Docker `openai_hosted`) |
+| Files, immutable Artifacts, cancellation, restart/history recovery | Qualified | Qualified | Qualified on the dedicated Docker profile; see [MiniMax Code Runtime](../../services/agents-api/deploy/mcode/README.md) |
+| Public functions in `none` | Qualified | Qualified; object-root schemas; text or successful inline PNG/JPEG results | Unsupported |
+| Public functions alongside hosted workspace tools | Qualified | Qualified; object-root schemas and text or successful inline PNG/JPEG results | Unsupported |
+| HTTP MCP and static-bearer Vault credentials in `none` | Qualified | Qualified subset | Unsupported |
+| Required MCP initialization | Qualified | Qualified on `none`; native readiness before initial input | Unsupported |
+| Hosted HTTP MCP | Gap | Gap | Gap |
+| Function image results | Supported subset; early acknowledgement is transport-only | Successful inline PNG/JPEG on `none` and Docker `openai_hosted`; native resizing allowed, error images rejected | Unsupported |
+| Non-default verbosity | Native/model-dependent support | No equivalent qualified; medium only | Medium only |
+| Public detailed Usage | Supported native counters | Native raw usage retained; public breakdown gap | Public breakdown unsupported |
+| V1 `self_hosted` daemon enrollment at `/workspace` | [Qualified deployment scope](user-managed-runtime-v1.md) | [Qualified deployment scope](user-managed-runtime-v1.md) | [Qualified deployment scope](user-managed-runtime-v1.md) |
+| Deferred function discovery | Unqualified; explicit rejection | [Single-agent text/function profile](tool-search.md) | Gap; see [tool search](tool-search.md) |
+| Structured output | Unqualified; explicit rejection | [Qualified single-agent function profile](structured-output.md) | Gap; see [structured output](structured-output.md) |
+| Message images | Inline PNG/JPEG on `none` and Docker `openai_hosted` | Inline PNG/JPEG on `none` and Docker `openai_hosted` | Unsupported; see [message input](message-input.md) |
+| Explicit reasoning | Shared service gap | Shared service gap | Shared service gap |
+| Six Subagent reads | [Qualified scope](subagents.md) | [Qualified scope](subagents.md) | [Qualified scope](subagents.md) |
 
 This inventory records supported combinations, not a feature-equality checklist.
 Do not silently drop options, fabricate measurements, weaken isolation or remove
 working features. Unsupported operations stay explicit; implementing them is a
-separate board decision, not an onboarding prerequisite. MiniMax also implements the same colocated Runtime enrollment. This V1 decision
+separately prioritized decision, not an onboarding prerequisite. MiniMax also implements the same colocated Runtime enrollment. This V1 decision
 uses our daemon as executor and explicitly does not claim stock `exec-server`
 interoperability. The old service-side harness/remote executor route is retired.
 Service-origin HTTP MCP remains unsupported on `self_hosted`; `none` MCP and
 qualified hosted Template Plugin MCP retain their separate scopes.
+
+## Acceptance checklist
+
+Before implementation, record the operation set, expected results, exclusions and
+stopping conditions. A batch ends when its declared operations pass; it does not
+expand to match another Harness's feature list. A small adapter does not remove
+the need for native qualification.
+
+- Adapter tests: two ordinary Turns share one native process/connection and history;
+  cancellation followed by another Turn; stale cancellation and late events; native
+  exit, cleanup failure, input write/application receipts and unknown outcomes.
+  Verify fresh per-Turn usage, function, input and child-observation state.
+- Shared integration: public admission, actual Worker/device selection, gateway,
+  daemon registration/dispatch and durable terminal projection. See
+  `TestThirdHarnessPublicOnboarding` for a synthetic example, not native evidence.
+- Real acceptance: pinned official Python SDK and raw HTTP against our Agents API,
+  real provider API, native harness and independent execution database. Verify
+  initial execution, warm follow-up, cancellation and restart/continuation.
+  Record native owner identity and same-condition cold/warm timing; mock results
+  cannot establish native reuse or performance gains.
+  For hosted qualification also verify Files/Artifacts, workspace identity,
+  credential protection and foreign-history rejection.
+- Regression: existing qualified engines keep working. Run targeted tests during
+  development, then `make check` and applicable real regressions. API changes
+  require `make openapi`; query changes require `make sqlc-generate`.
+- Review: follow the repository
+  [blind review workflow](../../CONTRIBUTING.md#review).
+
+Record exact revisions, image/package versions, commands, results and limits.
+Keep keys in private operator files; never commit them or include them in logs.
+Failed or synthetic runs cannot be counted as real acceptance. Acceptance of one
+engine is not complete public protocol compatibility.
 
 ## Common contract acceptance
 

@@ -117,6 +117,22 @@ public `/v1` and machine routes retain their previous complete error bodies.
 Unknown sandbox providers retain the existing untyped error. E2B provider errors
 above retain their fixed redaction contract with no echoed template or key.
 
+Core administration error details are scoped by the `/core/v1` router writer mark,
+not a request path test. Use `writeCoreError` with typed `CoreErrorDetails` values
+and document fixed keys in `contracts/agents-api/core-errors.md` when adding a
+code. Include only safe Core-owned facts; never pass submitted values, secrets,
+native text or provider bodies. Invalid/empty details are omitted. Preserve the
+public and machine error serializers, observer callbacks and streaming interfaces.
+The Core client ignores malformed optional details and never retries a mutation.
+
+Core operation validators preserve the original error text, sentinel identity,
+and validation precedence. Package-owned typed errors carry fixed field metadata;
+only the marked Core error mapper translates it to operation codes and safe
+bounds/catalog details. Preserve Project/key rune limits and node byte limits
+separately. Keep sandbox validation metadata through its existing store wrapper
+without changing transaction or provider authority. Public Session provider
+validation remains byte-compatible; cover it with handler-level golden responses.
+
 ## Diagnostic failure categories
 
 The [root diagnostics reads](session-diagnostics.md) return these categories

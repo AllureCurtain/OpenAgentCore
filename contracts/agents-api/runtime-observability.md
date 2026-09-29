@@ -153,3 +153,40 @@ Additional provider telemetry and idle-policy authority remain separate work.
 
 The OTLP resource identifies Core with `service.name=oac-core` and
 `service.namespace=oac`. Metric names retain the `agents.*` namespace.
+
+## Implementation rules
+
+Runtime telemetry uses a separate read-only service boundary documented in
+[`contracts/agents-api/runtime-observability.md`](runtime-observability.md).
+Resolve durable Session, Environment and Runtime-instance identity before selecting
+a provider source. Observation never extends a lease or changes compute lifecycle.
+Keep observed zero, unavailable data and unsupported Runtime modes distinct. Metrics
+may inform operators, but automatic suspension requires durable Core-owned activity
+state and must not use a monitoring backend as lifecycle authority.
+Managed Docker observes one non-streaming Inspect/Stats sample. Managed microsandbox
+observes the exact persisted compute generation through the existing one-shot helper
+and pinned native CLI metrics report, with SDK identity checks before and after
+observation. Derive compute start from the same native sample timestamp and precise
+uptime; never subtract rounded uptime from a new wall-clock timestamp. Preserve
+cumulative CPU seconds, memory usage/limit and
+compute uptime semantics across both. Do not use microsandbox's instantaneous CPU
+percent, wake suspended compute, or expose provider-native identifiers to fill a
+common field. E2B has no cumulative CPU time: one read-only helper request per
+page of at most 100 allocations reads E2B's batch metrics and confirms each
+receipt's sandbox in a labelled running listing. Its reported CPU share fills
+`utilization_ratio`; disk appears only in the administrator list. Page reads go
+through the Service's optional batch source; do not add a second collector.
+
+Runtime history uses the existing Core PostgreSQL database: one sanitized row per
+periodic observation, seven-day retention and bounded reads. It is best-effort
+operational evidence, not execution or Usage authority. The execution owner samples
+by default every 30 seconds. Core's internal measured Session usage (every
+recorded root Turn snapshot, active Turns included) supplies token snapshots, not
+the public Session usage rule; never aggregate provider counters as model tokens. Preserve missing data
+and reset CPU derivation across compute incarnations or counter regressions. E2B
+history stores the reported utilization ratio; a bucket holds their mean.
+The bounded asynchronous database writer and optional OTLP exporter have independent
+queues; external telemetry outages must not stall local history or execution.
+Retention cleanup also runs without active Runtimes. The browser queries only Core,
+never storage or a Collector, and stays a lightweight administrator console.
+No additional metrics database or Collector is required for retained charts.

@@ -67,3 +67,13 @@ No interpolation, offline backfill or whole-host process inventory is performed.
 History survives Core and node restarts until normal retention expiry. Core
 process history remains a separate in-memory series and resets when Core restarts.
 Neither series contains credentials, model data, paths or user content.
+
+## Implementation rules
+
+Administrator node detail adds host observations and history as documented in
+[node-host-history.md](node-host-history.md). Keep the node
+list unchanged apart from the address each node enrolled with (`core_url`). Reuse authenticated heartbeat ownership, the Runtime sampling
+sweep and PostgreSQL retention cleanup; node observations have their own table
+because they do not belong to a Project, Session or Environment. History is
+best-effort telemetry, never scheduling truth. No read-triggered sampling or
+offline backfill is allowed.

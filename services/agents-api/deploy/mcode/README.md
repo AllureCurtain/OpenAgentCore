@@ -2,10 +2,9 @@
 
 MiniMax Code uses the same Core/Runtime execution contract as the other engines.
 The text profile supports `environment:none`; the dedicated Docker profile adds
-workspace execution and the shared Files/Artifacts path. See
-[workspace qualification](../../../../contracts/agents-api/mcode-workspace-v1.md)
-for historical acceptance evidence and its limits. Inner sandbox denial results
-from that qualification do not describe the current bypass profile.
+workspace execution and the shared Files/Artifacts path. The historical
+workspace qualification (evidence under `~/.parsar/remediation/20260919/mcode-workspace/`)
+does not describe the current bypass profile.
 Public MCP/functions, image input and native Subagent execution remain outside
 this batch.
 
@@ -114,6 +113,57 @@ private cwd. Missing/foreign history fails; recovery by guessing an ID from nati
 session listings is not qualified. Public usage breakdown is unavailable because
 native ACP context occupancy and cumulative cost are not per-Turn usage.
 
+### Adapter rules
+
+MiniMax Code's opt-in Agents API profile qualifies native ACP 0.4.12 for
+`environment:none` text execution. It reuses the shared lifecycle without public
+workspace, functions or MCP. Enabled Subagents use the separately qualified
+common observation path below. Native configuration disables
+file/shell authority and external
+capability discovery; the child receives a private Session home and a restricted
+environment. Active-input application requires a native ACP receipt. Normal
+Turns retain one ACP connection and native Session. Cancellation requires native
+root and child completion evidence before reuse. Without a qualified root-state
+reader, the ACP cancellation response is insufficient: stop the invalid native
+process and wait for its exit before settling the Turn as non-reusable. Common
+Runtime recovery then loads the exact owned native history in a new Executor. Do not infer history IDs or qualify hosted execution from this text
+profile. See [Acceptance](#acceptance).
+
+MiniMax companion readiness uses private protocol 2; old companions are rejected
+even when the upstream version matches. Cancellation retires the executor and
+settles its native workers and detached Bash groups before acknowledgement;
+later work recovers the same native history in a new owner without replay.
+
+The MiniMax workspace profile builds one CLI from the fixed upstream source and
+lockfile through the existing companion packaging path, and connects native
+workspace tools through its standard MCP client. The process and native Session
+share one private control directory; public workspace files cannot configure that
+process or become privileged project instructions. A trusted adapter-owned bridge
+runs the original six tool implementations with the launching user's ordinary
+permissions. It adds no inner sandbox on any platform. Keep native history bound
+to the control directory and Files/Artifacts bound to the public workspace. Core and shared file helpers remain engine
+neutral. This internal MCP transport does not admit public MCP configuration.
+Record the upstream revision, native admission patch hashes and worker-source
+provenance. The bounded patch checks the shared descendant-task limit inside the
+existing native SQLite admission transaction before start, without another
+scheduler. ACP initialization must acknowledge the applied limit before input.
+The native tool catalog selects the same admitted workspace tools for every child,
+not only the root's configured profile; this is tool selection, not filesystem
+isolation. Only the Session's authorized internal
+workspace MCP entry crosses the native child selector; this does not grant
+external MCP access. Initialization must acknowledge the admitted tool inventory
+before input as well. Subagent reads use the Session's native database; the daemon
+does not protect it from other tools running as the same user. Multi-agent
+workspace execution installs only the existing authorized workspace MCP entry in
+that private native configuration so children inherit the same tools; public MCP
+and Environment-origin MCP combinations remain separately qualified. Complete the hosted
+[acceptance checklist](../../../../contracts/agents-api/harnesses.md#acceptance-checklist) before enabling
+hosted execution. The standalone companion uses its own npm lock; `make check`
+runs its lifecycle tests and script checks, while its exact-source Linux build and
+native qualification for the actual supported platform and outer deployment
+are required when the companion changes. Historical tests of both inner network
+policies do not qualify the current bypass implementation.
+
 ## Acceptance
 
 Recorded results below are historical evidence for their exact binaries and
@@ -153,8 +203,9 @@ and covers new/resume, model/instruction refresh, Skill discovery and MCP using
 its existing synthetic provider fixture.
 
 That text acceptance used an in-process Core HTTP server and a separate real
-daemon. The subsequent [Docker workspace qualification](../../../../contracts/agents-api/mcode-workspace-v1.md)
-uses independently built Core binaries, its own database and managed Runtime.
+daemon. The subsequent Docker workspace qualification
+(`~/.parsar/remediation/20260919/mcode-workspace/`) used independently built
+Core binaries, its own database and managed Runtime.
 It covers public Files/Artifacts, cancellation, reconnect, exact-history recovery
 and isolation with real Kimi and MiniMax APIs. Read its recorded Kimi continuation
 limitation: new model-issued commands are not automatic recovery replay. Neither
