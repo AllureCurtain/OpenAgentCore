@@ -42,6 +42,55 @@ business assets, the Parsar product Web, product API and product migrations rema
 in Parsar. Do not import `server/`, `apps/parsar/`, product CLI/plugin packages or
 their deployment stack.
 
+`example/parsar/` is an optional, independently started Agent workbench,
+authorized to reuse the product UI and maintain a small product-owned SQLite database.
+Named Provider groups and their models, anonymous HTTP MCP configurations, runtime profiles and reusable Agents
+belong to that database. An Agent contains model, harness, instructions, Skills
+and MCP bindings; it excludes the runtime. Starting a Session selects a runtime
+and passes an inline Agent/configuration snapshot to the public Core API. One
+Agent may have many independent Sessions. Existing Sessions keep their original
+configuration and history. Hosted Sessions have independent workspaces; native
+Sessions use the selected host directory, so selecting the same path shares files.
+There is no task layer or automatic workspace coordination.
+Providers are explicit catalog groups without default groups. Each model references
+one Provider. The example can fetch an OpenAI-shaped model list from a user-entered
+Provider Base URL using that Provider's key, then save checked/custom models and
+the Provider in one SQLite transaction. Editing reads the Provider revision and
+its models as one snapshot; individual model changes advance the owning Provider
+revision. Provider keys stay in the local restricted
+SQLite file and are omitted from every browser response. Discovery uses only the
+Provider credential, never the Core Project key, and never follows redirects.
+Catalog import does not reconfigure deployment routing. Self-hosted Session creation
+uses the selected Provider's URL/key in the explicit Session model-provider bundle;
+Core freezes and delivers it. Pending requests are never serialized to browsers.
+Core owns Skills and all execution/history state. SQLite stores Session references
+and freezes pending creation requests with stable idempotency keys for retry;
+confirmed requests are removed from local storage. Earlier example templates and
+instances migrate to Agent configurations, never to fabricated Sessions.
+Hosted HTTP MCP bindings become inline environment Plugins; none uses service-origin
+MCP. Unsupported harness/runtime combinations fail before execution. The example
+calls only public `/v1` APIs, using `OpenAIAgentsClient` for browser resource calls
+and a small server adapter for Session creation. Its Project key stays server-side.
+Session output uses the public SSE event stream through a non-buffering proxy;
+durable history reads reconcile completion and recover missed events. Browser
+disconnection aborts the upstream stream, never the running Session. Send latency
+measurements are browser-local observations (request return and first nonempty
+text delta), not inferred Core execution timings.
+Product resources use `/app/` and never become Core API or database conventions.
+The example supports native self-hosted runtime profiles with a platform and existing
+absolute workspace/capability paths. Create an empty Session first, issue its credential
+in Core Web, then run the displayed native install/start command. The example never
+holds a Core key or issues machine credentials; Core's public Environment status gates
+message sending. Core-only credential issuance remains in the operator console.
+Native Skills come from local capability directories: managed Skill references are
+rejected explicitly rather than ignored. Bound service-origin MCP is also rejected
+for self-hosted Sessions; use local Plugin capability directories. This example supports Codex and Claude Code on user machines; MiniMax Code's
+required token-limit configuration is not exposed here. No scheduler or user permissions
+are included. SQLite uses
+Node's built-in module (Node 22.13+), lives outside the checkout, and is isolated by
+Core origin and Project key fingerprint. The example is excluded from Core
+distributions and cannot become a service dependency.
+
 Preserve copied runtime and protocol behavior. Existing Go import paths remain unchanged and do not require fetching the original
 repository. Installed commands and environment settings use the OpenAgentCore names
 documented below. The source snapshot and per-file
@@ -299,6 +348,10 @@ shared dependencies or packaging inputs trigger that matrix; documentation-only
 and unrelated Web changes do not. Manual native validation remains available.
 Superseded native runs on the same ref are cancelled. Workflow syntax validation
 and release qualification remain separate checks.
+
+`make check-example` validates the optional application example with TypeScript,
+proxy/product-persistence tests, a build and fixture browser acceptance; it also runs in
+`make check`. Its synthetic responses are not live model qualification.
 
 Run `make check` before completion. The standalone gate includes all daemon/shared
 Go tests, Core contract/client/service tests, Core Web and TypeScript client

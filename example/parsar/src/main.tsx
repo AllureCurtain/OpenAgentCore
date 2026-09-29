@@ -1,0 +1,19 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import * as Tooltip from "@radix-ui/react-tooltip";
+import { App } from "./App";
+import "./style.css";
+
+const client = new QueryClient({
+  defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+});
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <QueryClientProvider client={client}>
+      <Tooltip.Provider>
+        <App />
+      </Tooltip.Provider>
+    </QueryClientProvider>
+  </React.StrictMode>,
+);

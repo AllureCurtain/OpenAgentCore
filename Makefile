@@ -8,7 +8,7 @@ SWAG_VERSION ?= v1.16.4
 help:
 	@printf '%s\n' 'make build-agents-api  Build standalone Core commands' 'make build-daemon      Build the execution daemon' 'make check             Run Core, persistence and runtime checks' 'See README.md for runtime prerequisites and deployment.'
 
-check: check-docs check-names check-distribution check-database check-sqlc check-go check-microsandbox-provider check-agents-api check-claude-sdk check-web check-mcode-harness
+check: check-docs check-names check-distribution check-database check-sqlc check-go check-microsandbox-provider check-agents-api check-claude-sdk check-web check-example check-mcode-harness
 	@printf 'OpenAgentCore checks passed.\n'
 
 .PHONY: check-names
@@ -89,6 +89,13 @@ check-web: node-deps
 
 build-claude-sdk-runtime:
 	./scripts/build-claude-sdk-runtime.sh
+
+.PHONY: check-example
+check-example: node-deps
+	pnpm --filter @oac/parsar-example typecheck
+	pnpm --filter @oac/parsar-example test
+	pnpm --filter @oac/parsar-example build
+	pnpm --filter @oac/parsar-example test:e2e
 
 check-mcode-harness:
 	node --test packages/mcode-harness/*.test.mjs

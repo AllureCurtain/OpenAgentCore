@@ -57,6 +57,10 @@ and native harness differences.
 
 ## Documentation
 
+For a complete application example using the Parsar product UI, see
+[`example/parsar`](example/parsar/README.md): model, Skill, MCP and runtime management, reusable Agents, and independent
+Sessions backed by the public API.
+
 | Start here | Purpose |
 | --- | --- |
 | [Documentation index](docs/getting-started/README.md) | Installation, usage and administration reading paths |
