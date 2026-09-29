@@ -21,6 +21,7 @@ func TestE2BGenerationsRetainOwnershipAndUseCurrentCredential(t *testing.T) {
 	ctx := SandboxResetTestContext(t.Context())
 	oldTemplate := input.E2B.Template
 	input.E2B.Template = "next:" + uuid.NewString()
+	input.E2B.APIURL, input.E2B.Domain = "https://sandbox.example.com", "sandbox.example.com"
 	input.Resources.CPUs++
 	changed, err := w.UpdateSandboxDeployment(ctx, view.InstallationID, SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: input, ExpectedGeneration: 1})
 	if err != nil || changed.Generation != 2 || changed.OwnerEpoch != view.OwnerEpoch || changed.Rollout.PreviousGenerationSandboxes != 1 || changed.Rollout.State != "settled" {
@@ -29,7 +30,7 @@ func TestE2BGenerationsRetainOwnershipAndUseCurrentCredential(t *testing.T) {
 	assertSandboxSnapshotEquivalent(t, s.pool)
 	ref := sandbox.Reference{TenantID: tenant, EnvironmentID: owner.EnvironmentID, AllocationID: owner.ID}
 	retained, err := s.GetSandboxAllocationSetup(t.Context(), ref)
-	if err != nil || retained.Generation != 1 || retained.E2B.Template != oldTemplate || retained.Specification.Resources.CPUs == input.Resources.CPUs {
+	if err != nil || retained.Generation != 1 || retained.E2B.Template != oldTemplate || retained.E2B.APIURL != "" || retained.Specification.Resources.CPUs == input.Resources.CPUs {
 		t.Fatal(retained, err)
 	}
 	input.E2B.APIKey = "replacement-secret"
@@ -39,7 +40,7 @@ func TestE2BGenerationsRetainOwnershipAndUseCurrentCredential(t *testing.T) {
 		t.Fatal(changed, err)
 	}
 	retained, err = s.GetSandboxAllocationSetup(t.Context(), ref)
-	if err != nil || retained.Generation != 1 || retained.E2B.APIKey != input.E2B.APIKey || retained.E2B.Template != oldTemplate {
+	if err != nil || retained.Generation != 1 || retained.E2B.APIKey != input.E2B.APIKey || retained.E2B.Template != oldTemplate || retained.E2B.APIURL != "" {
 		t.Fatal("old generation did not use committed key", err)
 	}
 	if _, err = s.pool.Exec(t.Context(), `UPDATE runtime_allocations SET deployment_generation=3 WHERE id=$1`, owner.ID); err == nil {
@@ -49,7 +50,7 @@ func TestE2BGenerationsRetainOwnershipAndUseCurrentCredential(t *testing.T) {
 		t.Fatal(err)
 	}
 	generations, err := s.SandboxGenerationPage(t.Context(), -1)
-	if err != nil || len(generations) != 1 || generations[0].Generation != 1 {
+	if err != nil || len(generations) != 1 || generations[0].Generation != 1 || generations[0].E2B.APIURL != "" {
 		t.Fatal(generations, err)
 	}
 	if _, err = w.RequestRuntimeCleanup(t.Context(), owner); err != nil {
@@ -71,6 +72,32 @@ func TestE2BGenerationsRetainOwnershipAndUseCurrentCredential(t *testing.T) {
 	historical, err := s.GetRuntimeAllocation(t.Context(), tenant, owner.EnvironmentID)
 	if err != nil || historical.DeploymentGeneration != 1 {
 		t.Fatal("historical generation erased", err)
+	}
+}
+
+func TestE2BRetainedCustomEndpointAfterOnlineSwitch(t *testing.T) {
+	s, w, view, input := webSpecificationFixture(t, "e2b")
+	ctx := SandboxResetTestContext(t.Context())
+	input.E2B.APIURL, input.E2B.Domain = "https://sandbox.example.com", "sandbox.example.com"
+	custom, err := w.UpdateSandboxDeployment(ctx, view.InstallationID, SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: input, ExpectedGeneration: view.Generation})
+	if err != nil || custom.Generation != 2 {
+		t.Fatal(custom, err)
+	}
+	tenant, session := managedArchiveSession(t, s, managerSessionInput(uuid.NewString()))
+	owner := archiveAllocation(t, w, tenant, session, view.InstallationID)
+	input.E2B.APIURL, input.E2B.Domain = "", ""
+	current, err := w.UpdateSandboxDeployment(ctx, view.InstallationID, SandboxDeploymentUpdateRequest{SandboxDeploymentSetupRequest: input, ExpectedGeneration: custom.Generation})
+	if err != nil || current.Generation != 3 || current.E2B.APIURL != "https://api.e2b.app" {
+		t.Fatal(current, err)
+	}
+	ref := sandbox.Reference{TenantID: tenant, EnvironmentID: owner.EnvironmentID, AllocationID: owner.ID}
+	retained, err := s.GetSandboxAllocationSetup(t.Context(), ref)
+	if err != nil || retained.Generation != 2 || retained.E2B.APIURL != "https://sandbox.example.com" || retained.E2B.Domain != "sandbox.example.com" {
+		t.Fatal(retained, err)
+	}
+	generations, err := s.SandboxGenerationPage(t.Context(), -1)
+	if err != nil || len(generations) != 1 || generations[0].E2B.APIURL != "https://sandbox.example.com" {
+		t.Fatal(generations, err)
 	}
 }
 

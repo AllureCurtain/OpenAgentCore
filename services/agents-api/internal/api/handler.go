@@ -45,6 +45,7 @@ type Handler struct {
 	sandboxStore          *store.Store
 	deploymentAuth        *DeploymentAuthenticator
 	sandboxSetup          func(context.Context, store.SandboxDeploymentSetupRequest) (store.RuntimeDeploymentView, error)
+	sandboxE2BDiscover    func(context.Context, SandboxE2BDiscoveryInput, string) (SandboxE2BDiscoveryResult, error)
 	sandboxUpdate         func(context.Context, store.SandboxDeploymentUpdateRequest) (store.RuntimeDeploymentView, error)
 	sandboxReset          func(context.Context, store.SandboxResetRequest) (store.RuntimeDeploymentView, error)
 	sandboxResetCancel    func(context.Context, uint64) (store.RuntimeDeploymentView, error)

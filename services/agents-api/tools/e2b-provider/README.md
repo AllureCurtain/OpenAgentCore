@@ -12,6 +12,18 @@ selection without resources adopts the ready build's CPU and memory. It returns
 the build's status, CPU, memory and reported disk size for Core to record with
 the selection, and creates neither compute nor allocation receipts.
 
+The console's Core-key-only setup flow uses two more read-only helper requests.
+`list_templates` pages the credential's visible templates through the official
+`GET /v2/templates` SDK operation; `list_builds`
+pages one selected template and returns ready exact build IDs and resources.
+Both operations use the same explicit endpoint selectors and a transient API
+key. They cap results at 200, never write a receipt, and cannot replace the
+deployment write's exact-build validation.
+Compatible endpoints must return the E2B SDK 2.51.0 template-list and
+template-build response models. The helper does not adapt provider-specific
+catalog shapes.
+
+Runtime observation uses a third read-only request, `observe`, for at most 100
 Runtime observation uses a separate read-only request, `observe`, for at most 100
 allocations. It reads each allocation's sandbox ID from its receipt without the
 allocation lock, then runs one `GET /sandboxes/metrics` request and one labelled
@@ -42,7 +54,12 @@ The private JSON boundary has version 1. Requests and credentials enter stdin;
 stdout contains one bounded response with sanitized error codes. API keys never
 enter arguments, inherited environment or receipts. The process retains its
 allocation lock when the Core caller times out, until the bounded SDK operation
-returns. Core tracks actual child exit even after caller timeout. Credential fencing
+returns. Core must serialize lifecycle requests and never replay Create.
+The request carries the deployment's explicit API origin and sandbox domain.
+Every SDK call uses these selectors after ambient `E2B_*` variables are removed.
+Receipts bind an allocation to those selectors; receipts written before this
+feature belong to official E2B. Endpoint changes retain earlier generations on their original API and data-plane domain. The candidate credential must verify all retained ownership before an online switch.
+Core tracks actual child exit even after caller timeout. Credential fencing
 waits for those children without killing them; child exit itself never proves remote
 Create settled. Core must serialize lifecycle requests and never replay Create.
 

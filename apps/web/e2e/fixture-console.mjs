@@ -89,7 +89,7 @@ const templateBuild = { status: "ready", resources: { cpus: 2, memory_mib: 2048,
 
 // E2B runs sandboxes in its cloud: no nodes, only what Core holds there.
 function e2bDeployment() {
-  return { ...configuredDeployment(), provider: "e2b", mode: "direct", rollout: noNodeRollout(), resources: { allocations: 3, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 } }, e2b: { template: "oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b", credential_configured: true, template_build: templateBuild } };
+  return { ...configuredDeployment(), provider: "e2b", mode: "direct", rollout: noNodeRollout(), resources: { allocations: 3, pending: 1 }, specification: { resources: { cpus: 2, memory_mib: 2048 } }, e2b: { template: "oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b", api_url: "https://api.e2b.app", domain: "e2b.app", credential_configured: true, template_build: templateBuild } };
 }
 
 function reset(mode = "login", fresh = false, sandbox = "configured", nodes = "demo", address = "public", credentials = "configured", installers = true, artifacts = "docker,microsandbox") {
@@ -324,6 +324,18 @@ function nodeDetail(node) {
 }
 
 async function sandboxRoute(request, response, path, url) {
+  const e2bTemplates = ["/e2b/templates", "/e2b/templates/template/builds"];
+  if (e2bTemplates.includes(path)) {
+    if (request.method !== "POST") return error(response, 405, "Method not allowed.");
+    const input = await body(request);
+    const knownEndpoint = [
+      ["https://sandbox.sandbase.ai", "sandbox.sandbase.ai"],
+      ["https://api.e2b.app", "e2b.app"],
+    ].some(([apiURL, domain]) => input.api_url === apiURL && input.domain === domain);
+    if (input.api_key !== "fixture-private-key" || !knownEndpoint) return error(response, 400, "Invalid E2B connection.");
+    if (path === "/e2b/templates") return send(response, 200, { templates: [{ id: "template", names: ["fixture-runtime"] }] });
+    return send(response, 200, { builds: [{ id: "94be54a1-138c-4f30-bc87-b13686272dbe", cpus: 2, memory_mib: 2048 }] });
+  }
   // Retired even for authenticated callers; never reinterpret maintenance as reset.
   if (path === "/deployment/maintenance") return error(response, 404, "Not found.");
   if (path === "/deployment/reset" && (request.method === "POST" || request.method === "DELETE")) {
@@ -397,7 +409,7 @@ async function sandboxRoute(request, response, path, url) {
       resources: held,
       rollout: e2b ? { ...noNodeRollout(), previous_generation_sandboxes: held.allocations + held.pending } : nodeRollout(held.allocations + held.pending),
       specification,
-      ...(e2b ? { e2b: { template: input.e2b?.template ?? "", credential_configured: true, template_build: templateBuild } } : {}),
+      ...(e2b ? { e2b: { template: input.e2b?.template ?? "", api_url: input.e2b?.api_url ?? state.deployment.e2b?.api_url ?? "https://api.e2b.app", domain: input.e2b?.domain ?? state.deployment.e2b?.domain ?? "e2b.app", credential_configured: true, template_build: templateBuild } } : {}),
       suspension: input.provider === "microsandbox" ? { idle_seconds: 300, retention_seconds: 86400 } : null,
     };
     return send(response, 200, state.deployment);

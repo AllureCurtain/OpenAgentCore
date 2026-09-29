@@ -30,11 +30,11 @@ export interface InitializeSandboxDeployment {
   resources?: SandboxResources;
   /** Required for Docker/microsandbox; E2B uses its fixed template build. */
   runtime?: SandboxRuntimeRelease;
-  e2b?: { api_key: string; template: string };
+  e2b?: { api_key: string; template: string; api_url?: string; domain?: string };
 }
 export interface UpdateSandboxDeployment extends Omit<InitializeSandboxDeployment, "e2b"> {
   /** Omit api_key to preserve the current key. Supplying it, even unchanged, verifies and replaces it once. */
-  e2b?: { api_key?: string; template: string };
+  e2b?: { api_key?: string; template: string; api_url?: string; domain?: string };
 }
 export interface SandboxRollout {
   /** Poll at high frequency only while preparing, independently of old Session retention. */
@@ -74,7 +74,7 @@ export interface SandboxDeployment {
   generation: number;
   mode: "nodes" | "direct" | "";
   resources: { allocations: number; pending: number };
-  e2b?: { template: string; credential_configured: boolean; template_build: SandboxE2BTemplateBuild };
+  e2b?: { template: string; api_url: string; domain: string; credential_configured: boolean; template_build: SandboxE2BTemplateBuild };
   /** Idle suspension policy; microsandbox only, otherwise null. */
   suspension: { idle_seconds: number; retention_seconds: number } | null;
 }
@@ -83,6 +83,9 @@ export interface SandboxE2BTemplateBuild {
   status: string | null;
   resources: { cpus: number | null; memory_mib: number | null; root_disk_mib: number | null };
 }
+export interface SandboxE2BDiscoveryInput { api_key: string; api_url?: string; domain?: string }
+export interface SandboxE2BTemplate { id: string; names: string[] }
+export interface SandboxE2BReadyBuild { id: string; cpus: number; memory_mib: number }
 export interface SandboxNode {
   rollout: SandboxNodeRollout;
   id: string;
@@ -196,13 +199,16 @@ function projectSpecification(value: unknown): SandboxSpecification {
 }
 /** The safe E2B view; it has no key member. */
 function projectE2B(value: unknown): NonNullable<SandboxDeployment["e2b"]> {
-  const e2b = members(value, ["template", "credential_configured", "template_build"]);
+  const e2b = members(value, ["template", "credential_configured", "template_build"], ["api_url", "domain"]);
   const build = members(e2b.template_build, ["status", "resources"]);
   const resources = members(build.resources, ["cpus", "memory_mib", "root_disk_mib"]);
-  valid(typeof e2b.template === "string" && typeof e2b.credential_configured === "boolean" && (build.status === null || typeof build.status === "string") &&
+  valid(typeof e2b.template === "string" && typeof e2b.credential_configured === "boolean" &&
+    (!hasOwn(e2b, "api_url") || typeof e2b.api_url === "string") && (!hasOwn(e2b, "domain") || typeof e2b.domain === "string") &&
+    (hasOwn(e2b, "api_url") === hasOwn(e2b, "domain")) && (build.status === null || typeof build.status === "string") &&
     Object.values(resources).every(nullable(isNonnegativeInteger)));
   return {
-    template: e2b.template as string, credential_configured: e2b.credential_configured as boolean,
+    template: e2b.template as string, api_url: (e2b.api_url as string | undefined) ?? "https://api.e2b.app",
+    domain: (e2b.domain as string | undefined) ?? "e2b.app", credential_configured: e2b.credential_configured as boolean,
     template_build: { status: build.status as string | null, resources: { ...resources } as SandboxE2BTemplateBuild["resources"] },
   };
 }
@@ -314,6 +320,23 @@ export class SandboxAdminClient {
 
   constructor(options: CoreClientOptions = {}) {
     this.#core = new CoreRequester(options.baseUrl ?? "/core/v1/sandbox", options.token, options.fetch, invalidSandboxResponse);
+  }
+
+  async listE2BTemplates(input: SandboxE2BDiscoveryInput, options?: ReadOptions): Promise<SandboxE2BTemplate[]> {
+    const value = await this.#core.json("/e2b/templates", options, "POST", input);
+    if (!isRecord(value) || !onlyFields(value, new Set(["templates"])) || !Array.isArray(value.templates) || value.templates.length > 200) invalidSandboxResponse();
+    return value.templates.map((item) => {
+      if (!isRecord(item) || !onlyFields(item, new Set(["id", "names"])) || typeof item.id !== "string" || !Array.isArray(item.names) || !item.names.every((name) => typeof name === "string")) invalidSandboxResponse();
+      return { id: item.id, names: item.names };
+    });
+  }
+  async listE2BReadyBuilds(templateId: string, input: SandboxE2BDiscoveryInput, options?: ReadOptions): Promise<SandboxE2BReadyBuild[]> {
+    const value = await this.#core.json(`/e2b/templates/${encodeURIComponent(templateId)}/builds`, options, "POST", input);
+    if (!isRecord(value) || !onlyFields(value, new Set(["builds"])) || !Array.isArray(value.builds) || value.builds.length > 200) invalidSandboxResponse();
+    return value.builds.map((item) => {
+      if (!isRecord(item) || !onlyFields(item, new Set(["id", "cpus", "memory_mib"])) || typeof item.id !== "string" || !isNonnegativeInteger(item.cpus) || !isNonnegativeInteger(item.memory_mib)) invalidSandboxResponse();
+      return { id: item.id, cpus: item.cpus, memory_mib: item.memory_mib };
+    });
   }
 
   #json<T>(path: string, options?: ReadOptions, method?: string, body?: unknown): Promise<T> {

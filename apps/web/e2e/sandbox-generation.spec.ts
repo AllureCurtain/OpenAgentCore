@@ -4,6 +4,7 @@ import type { SandboxAllocation, SandboxDeployment, SandboxNode } from "@agents-
 import { expectManagementBoundary, failNext, openConsole, setDeployment, setNode, writes } from "./console";
 
 const deploymentPath = "/core/v1/sandbox/deployment";
+const templateDiscoveryPath = "/core/v1/sandbox/e2b/templates";
 const rollout = (page: Page) => page.getByRole("region", { name: "Configuration rollout", exact: true });
 const fact = (scope: Locator, label: string) => scope.locator("dt").filter({ hasText: new RegExp(`^${label}`) }).locator("..").locator("dd");
 async function inspectRollout(page: Page, values: Record<string, string>) {
@@ -197,7 +198,13 @@ test("E2B omitted-key updates keep the saved key while explicit same-key replace
   const storage = await page.evaluate(() => JSON.stringify({ local: { ...localStorage }, session: { ...sessionStorage } }));
   expect(storage).not.toContain(key);
   expect(await page.content()).not.toContain(key);
-  expect(await writes(request)).toEqual(Array(3).fill(`PUT ${deploymentPath}`));
+  expect(await writes(request)).toEqual([
+    `PUT ${deploymentPath}`,
+    `POST ${templateDiscoveryPath}`,
+    `PUT ${deploymentPath}`,
+    `POST ${templateDiscoveryPath}`,
+    `PUT ${deploymentPath}`,
+  ]);
 });
 
 test("a different E2B team leaves the committed configuration intact and requires a deliberate reset", async ({ page, request }) => {
@@ -214,15 +221,15 @@ test("a different E2B team leaves the committed configuration intact and require
   await expect(page.getByRole("button", { name: "Keep saved key", exact: true })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Change resources", exact: true })).toBeVisible();
   await expect(page.getByRole("dialog", { name: "Couldn't confirm the sandbox change" })).toHaveCount(0);
-  expect(await writes(request)).toEqual([`PUT ${deploymentPath}`]);
+  expect(await writes(request)).toEqual([`POST ${templateDiscoveryPath}`, `PUT ${deploymentPath}`]);
   await page.getByRole("button", { name: "Cancel editing", exact: true }).click();
   await page.getByRole("button", { name: "Reset deployment", exact: true }).click();
   const reset = page.getByRole("dialog", { name: "Reset sandbox deployment?", exact: true });
   await expect(reset).toContainText("Hosted Sessions will be archived permanently.");
-  expect(await writes(request)).toEqual([`PUT ${deploymentPath}`]);
+  expect(await writes(request)).toEqual([`POST ${templateDiscoveryPath}`, `PUT ${deploymentPath}`]);
   await reset.getByRole("button", { name: "Back", exact: true }).click();
   await editE2B(page);
-  expect(await writes(request)).toEqual([`PUT ${deploymentPath}`]);
+  expect(await writes(request)).toEqual([`POST ${templateDiscoveryPath}`, `PUT ${deploymentPath}`]);
 });
 
 

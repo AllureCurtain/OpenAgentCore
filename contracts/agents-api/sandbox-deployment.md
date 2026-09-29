@@ -24,7 +24,20 @@ for the operator workflow. Generated schemas cover the
 | `PUT /core/v1/sandbox/deployment` | Core key | Advance the same-provider target online while retaining existing ownership |
 | `POST /core/v1/sandbox/deployment/reset` | Core key | Start or escalate a durable hosted clear |
 | `DELETE /core/v1/sandbox/deployment/reset?expected_generation=N` | Core key | Cancel the remaining clear without restoring archived work |
+| `POST /core/v1/sandbox/e2b/templates` | Core Web server or operator script with Core key | List up to 200 templates visible to a transient E2B credential |
+| `POST /core/v1/sandbox/e2b/templates/{template_id}/builds` | Core Web server or operator script with Core key | List up to 200 ready builds for one selected template |
 | `GET /api/v1/sandbox-node/configuration` | Enrollment token or retained node credential | Read the active node installation configuration without consuming enrollment |
+
+Template discovery posts `{ "api_key": "...", "api_url": "https://sandbox.sandbase.ai", "domain": "sandbox.sandbase.ai" }`.
+The official E2B endpoint may omit both endpoint fields. The first response is
+`{ "templates": [{ "id": "...", "names": ["..."] }] }`;
+the second is `{ "builds": [{ "id": "build-uuid", "cpus": 2, "memory_mib": 2048 }] }`.
+Both lists may be empty. The Core key authenticates the caller; the E2B key is
+used only for this request, is never stored by discovery, and is never returned.
+Discovery uses the pinned SDK helper and its `GET /v2/templates` operation,
+makes no allocation, and is capped at 200
+results. A limit or provider failure returns 503 with a generic message. The
+deployment write separately validates the selected exact ready build.
 
 The paired console injects the Core key server-side on every signed-in `/core/v1`
 request. The browser never receives that key. Node configuration
@@ -74,7 +87,7 @@ resource and same-selection conditions, including an identical old request body.
 | `provider` | Exactly one of `docker`, `microsandbox`, `e2b` |
 | `resources` | Per-sandbox resource limits described below; required for Docker/microsandbox, optional for E2B |
 | `runtime` | Required immutable distribution identity for Docker/microsandbox; absent for E2B |
-| `e2b` | Required only for E2B: immutable `template` build selector; write-only `api_key` required on POST, optional on same-provider PUT |
+| `e2b` | Required only for E2B: immutable `template` build selector; write-only `api_key` required on POST, optional on same-provider PUT; optional paired `api_url` and `domain` selectors |
 
 The request has no Core address. Core derives the deployment's `core_url` from the
 installation public URL (`public_url` in `config.json`, `OAC_PUBLIC_URL` for
@@ -148,8 +161,15 @@ before registration and retains the exact local image identity it imports.
 E2B instead uses `e2b.template` in `template-id:build-uuid` form. The build UUID must
 be canonical and nonzero; a mutable template alias alone is insufficient. Omit
 `runtime`. The API key is encrypted in PostgreSQL and never returned in a safe
-view, bootstrap configuration, command argument or log. Same-team key or build
+view, bootstrap configuration, command argument or log. Same-team key, build or endpoint
 changes apply online while old sandboxes retain their original specification.
+By default Core uses `https://api.e2b.app` and `e2b.app`. For a compatible
+service, set both `e2b.api_url` (HTTPS API origin, with no path, port, query,
+fragment or credentials) and `e2b.domain` (sandbox data-plane DNS suffix).
+The API host must equal the data-plane domain or be its subdomain. Core rejects
+a sandbox response whose data-plane domain lies outside the selected suffix
+before sending daemon credentials or using envd. Existing sandboxes retain
+their original endpoint and credential across online changes.
 
 ## Safe response
 
@@ -157,8 +177,8 @@ GET and successful mutations return `installation_id`, `provider`, `core_url`
 (read-only: the installation public URL, present before configuration), `mode`,
 `generation`, `owner_epoch`, `reset`, `rollout`, `suspension` and resource
 accounting. A configured deployment also returns `specification` and
-`specification_digest`. E2B returns only `e2b.template`,
-`e2b.credential_configured` and `e2b.template_build`; the `e2b` object is absent
+`specification_digest`. E2B returns `e2b.template`, `e2b.api_url`,
+`e2b.domain`, `e2b.credential_configured` and `e2b.template_build`; the `e2b` object is absent
 for Docker and microsandbox.
 
 `e2b.template_build` is `{status, resources: {cpus, memory_mib, root_disk_mib}}`:
@@ -222,7 +242,7 @@ Initial setup requires the selected template to appear in the credential's team-
 template listing; public readability alone is insufficient. Before an online change,
 Core verifies that the committed key owns the current template, then requires the
 candidate key to own that exact template as a shared ownership anchor. It also reads
-the candidate and every retained build with the candidate key and confirms each
+the candidate and every retained build at its original endpoint with the candidate key and confirms each
 settled live receipt in the installation-labelled sandbox listing.
 
 A legacy public-template selection without this ownership anchor, or a committed key
@@ -245,11 +265,11 @@ revoke the previous key in E2B. Template/resource changes do not drain lifecycle
 ### Generation ownership and rollout
 
 `runtime_deployment` owns the current specification. Superseded rows contain only
-immutable specification/build metadata, never another E2B credential. An E2B
+immutable specification/build/endpoint metadata, never another E2B credential. An E2B
 allocation binds its generation at reservation. Node placements bind at Session
 admission and allocations copy that generation, even after repeated updates.
 Inspection, renewal, command execution and cleanup route the allocation's original
-specification with the current credential; a missing generation never falls back
+specification and endpoint with the current credential; a missing generation never falls back
 to the current specification. Released historical generation identifiers remain.
 
 Retain a generation while it is current, referenced by an unreleased allocation or

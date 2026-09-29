@@ -7,8 +7,10 @@ build's size. Nodes are added afterwards from Web, this host included.
 """
 import json
 import http.client
+import ipaddress
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -85,6 +87,37 @@ def e2b_template(value):
         exact = None
     return (re.fullmatch(r"[A-Za-z0-9_-]{1,128}", template) is not None and exact is not None
             and exact.int != 0 and str(exact) == build)
+
+
+def e2b_endpoint(api_url, domain):
+    """The two explicit SDK selectors, or neither for official E2B."""
+    if api_url is None and domain is None:
+        return True
+    if not api_url or not domain or len(api_url) > 512 or len(domain) > 253:
+        return False
+    def public_name(host):
+        labels = host.split(".")
+        try:
+            ipaddress.ip_address(host)
+            return False
+        except ValueError:
+            pass
+        return (len(host) <= 253 and len(labels) >= 2 and
+                not host.endswith((".localhost", ".local")) and
+                all(0 < len(label) <= 63 and
+                    re.fullmatch(r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?", label)
+                    for label in labels))
+    if not public_name(domain):
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(api_url)
+        return (parsed.scheme == "https" and parsed.hostname == parsed.netloc and
+                public_name(parsed.hostname or "") and
+                (parsed.hostname == domain or parsed.hostname.endswith("." + domain)) and
+                not parsed.path and not parsed.query and not parsed.fragment and
+                parsed.geturl() == api_url)
+    except ValueError:
+        return False
 
 
 def selection(bundle, manifest, choice, e2b=None):

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { expectManagementBoundary, failNext, openConsole, resetFixture, setNode, writes } from "./console";
+import { expectManagementBoundary, failNext, openConsole, resetFixture, selectFixtureE2BBuild, setNode, writes } from "./console";
 
 test.afterEach(async ({ request }) => expectManagementBoundary(request));
 
@@ -241,14 +241,67 @@ test("preselects microsandbox and asks once before switching to Docker", async (
 });
 
 test("saves E2B without opening Add node, as it has no machines", async ({ page, request }) => {
+  let submitted: Record<string, unknown> | null = null;
+  page.on("request", (sent) => {
+    if (sent.method() === "POST" && sent.url().endsWith("/core/v1/sandbox/deployment")) submitted = sent.postDataJSON() as Record<string, unknown>;
+  });
   await openConsole(page, request, "system?id=sandbox", { sandbox: "none" });
   await page.getByRole("button", { name: "E2B cloud" }).click();
-  await page.getByLabel("E2B API key").fill("fixture-private-key");
-  await page.getByLabel("Template build").fill("template:94be54a1-138c-4f30-bc87-b13686272dbe");
+  await expect(page.getByLabel("E2B provider")).toHaveValue("sandbase");
+  await expect(page.getByLabel("Sandbox API URL")).toHaveValue("https://sandbox.sandbase.ai");
+  await expect(page.getByLabel("Sandbox data-plane domain")).toHaveValue("sandbox.sandbase.ai");
+  const keyConsole = page.getByRole("link", { name: "Console → API Keys" });
+  await expect(keyConsole.locator("..")).toHaveClass(/field-label-row/);
+  await expect(keyConsole).toHaveCSS("font-size", "11px");
+  await expect(keyConsole).toHaveAttribute("href", "https://www.sandbase.ai/console/keys");
+  await expect(keyConsole).toHaveAttribute("target", "_blank");
+  await expect(keyConsole).toHaveAttribute("rel", "noopener noreferrer");
+  await selectFixtureE2BBuild(page);
   await page.getByRole("button", { name: "Next" }).click();
   await page.getByRole("button", { name: "Save configuration" }).click();
   await expect(page.getByRole("heading", { name: "Sandbox configuration", level: 1 })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(submitted).toMatchObject({ provider: "e2b", e2b: {
+    api_key: "fixture-private-key", template: "template:94be54a1-138c-4f30-bc87-b13686272dbe",
+    api_url: "https://sandbox.sandbase.ai", domain: "sandbox.sandbase.ai",
+  } });
+  expect(await writes(request)).toEqual([
+    "POST /core/v1/sandbox/e2b/templates",
+    "POST /core/v1/sandbox/e2b/templates/template/builds",
+    "POST /core/v1/sandbox/deployment",
+  ]);
+});
+
+test("uses the official E2B preset and clears a selected build when the key changes", async ({ page, request }) => {
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "none" });
+  await page.getByRole("button", { name: "E2B cloud" }).click();
+  await page.getByLabel("E2B provider").selectOption("official");
+  await expect(page.getByLabel("Sandbox API URL")).toHaveValue("https://api.e2b.app");
+  await expect(page.getByLabel("Sandbox data-plane domain")).toHaveValue("e2b.app");
+  const keyConsole = page.getByRole("link", { name: "Console → API Keys" });
+  await expect(keyConsole).toHaveAttribute("href", "https://e2b.dev/dashboard?tab=api-keys");
+  await page.getByLabel("Sandbox API URL").fill("https://custom.e2b.app");
+  await expect(keyConsole).toHaveCount(0);
+  await page.getByLabel("E2B provider").selectOption("custom");
+  await expect(keyConsole).toHaveCount(0);
+  await page.getByLabel("E2B provider").selectOption("official");
+  await selectFixtureE2BBuild(page);
+  await expect(page.getByRole("button", { name: "Next" })).toBeEnabled();
+  await page.getByLabel("E2B API key").fill("changed-fixture-key");
+  await expect(page.getByLabel("Template", { exact: true })).toHaveValue("");
+  await expect(page.getByLabel("Template build")).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Next" })).toBeDisabled();
+});
+
+test("shows the retained E2B build while a replacement key is checked", async ({ page, request }) => {
+  await openConsole(page, request, "system?id=sandbox", { sandbox: "e2b" });
+  await page.getByRole("button", { name: "Change resources" }).click();
+  const edit = page.getByRole("dialog", { name: "Change resources" });
+  const saved = "oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b";
+  await expect(edit.getByLabel("Template build")).toHaveValue(saved);
+  await edit.getByLabel("E2B API key").fill("replacement-fixture-key");
+  await expect(edit.getByLabel("Template build")).toHaveValue(saved);
+  await expect(edit.getByRole("button", { name: "Next" })).toBeEnabled();
 });
 
 test("edits only the saved backend, preserving a custom size and Runtime", async ({ page, request }) => {
