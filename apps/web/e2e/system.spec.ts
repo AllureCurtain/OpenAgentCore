@@ -22,9 +22,9 @@ test("sets, replaces and clears a harness's default model configuration, and kee
   const set = page.getByRole("dialog", { name: "Set default model configuration for Codex" });
   await expect(set.getByRole("combobox", { name: "Protocol", exact: true })).toHaveText("OpenAI Responses");
   await set.getByRole("combobox", { name: "Protocol", exact: true }).click();
-  await expect(page.getByRole("option")).toHaveText(["Anthropic Messages", "OpenAI Responses", "OpenAI Chat Completions"]);
+  await expect(page.getByRole("option")).toHaveText(["OpenAI Responses"]);
   await page.screenshot({ path: test.info().outputPath("provider-protocol-options.png"), animations: "disabled" });
-  await page.getByRole("option", { name: "OpenAI Chat Completions", exact: true }).click();
+  await page.getByRole("option", { name: "OpenAI Responses", exact: true }).click();
   await set.getByLabel("Base URL").fill("https://model.example/v1");
   await set.getByLabel("API key").fill(KEY);
   await set.getByLabel("Default model ID").fill("fixture-model");
@@ -48,12 +48,6 @@ test("sets, replaces and clears a harness's default model configuration, and kee
   await config.fill('{"model_reasoning_effort":"high"}');
   await set.getByRole("button", { name: "Format JSON" }).click();
   await expect(config).toHaveValue('{\n  "model_reasoning_effort": "high"\n}');
-  await expect(set.getByText("Advanced model settings require a native protocol for this harness. Change the protocol or clear the JSON object.")).toBeVisible();
-  await expect(set.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
-  await set.getByRole("combobox", { name: "Protocol", exact: true }).click();
-  await page.getByRole("option", { name: "OpenAI Responses", exact: true }).click();
-  await expect(config).toHaveValue("{}");
-  await config.fill('{"model_reasoning_effort":"high"}');
   // Limits are Core's 32-bit whole numbers, and max output needs a context window at least as large.
   await set.getByLabel("Max output tokens").fill("32000");
   await expect(set.getByText("Set a context window at least this large.")).toBeVisible();
@@ -89,9 +83,6 @@ test("sets, replaces and clears a harness's default model configuration, and kee
   await replace.getByLabel("Base URL").fill("https://another-model.example/v1");
   await expect(nativeSettings).toHaveValue("{}");
   await nativeSettings.fill('{"model_reasoning_effort":"high"}');
-  await replace.getByRole("combobox", { name: "Protocol", exact: true }).click();
-  await page.getByRole("option", { name: "Anthropic Messages", exact: true }).click();
-  await expect(nativeSettings).toHaveValue("{}");
   await replace.getByRole("button", { name: "Cancel" }).click();
   expect(await page.content()).not.toContain(KEY);
   await codex.getByRole("button", { name: "Replace the default model configuration for Codex" }).click();
@@ -99,8 +90,6 @@ test("sets, replaces and clears a harness's default model configuration, and kee
   await expect(replace.getByRole("combobox", { name: "Protocol", exact: true })).toHaveText("OpenAI Responses");
   await expect(replace.getByLabel("Default model ID")).toHaveValue("fixture-model");
   await expect(replace.getByLabel("Harness configuration (JSON)")).toHaveValue(/model_reasoning_effort/);
-  await replace.getByRole("combobox", { name: "Protocol", exact: true }).click();
-  await page.getByRole("option", { name: "Anthropic Messages", exact: true }).click();
   await expect(replace.getByLabel("API key")).toHaveValue("");
   await replace.getByLabel("Base URL").fill("https://model.example/v2");
   await replace.getByLabel("API key").fill(KEY);
@@ -109,7 +98,7 @@ test("sets, replaces and clears a harness's default model configuration, and kee
   await replace.getByLabel("API key").press("Enter");
   await expect(replace).toBeHidden();
   await expect(codex).toContainText("https://model.example/v2");
-  await expect(codex).toContainText("Anthropic Messages");
+  await expect(codex).toContainText("OpenAI Responses");
 
   await codex.getByRole("button", { name: "Clear the default model configuration for Codex" }).click();
   const confirm = page.getByRole("dialog", { name: "Clear default model configuration" });
@@ -122,6 +111,7 @@ test("sets, replaces and clears a harness's default model configuration, and kee
   const limits = page.getByRole("dialog", { name: "Set default model configuration for MiniMax Code" });
   await expect(limits.getByRole("combobox", { name: "Protocol", exact: true })).toHaveText("Anthropic Messages");
   await limits.getByRole("combobox", { name: "Protocol", exact: true }).click();
+  await expect(page.getByRole("option")).toHaveText(["Anthropic Messages", "OpenAI Responses", "OpenAI Chat Completions"]);
   await page.getByRole("option", { name: "OpenAI Responses", exact: true }).click();
   await limits.getByLabel("Base URL").fill("https://model.example/anthropic");
   await limits.getByLabel("API key").fill(KEY);
@@ -175,4 +165,34 @@ test("reports an unconfirmed save, reads the default model configurations again 
   await page.waitForTimeout(500);
   expect(reads).toHaveLength(1);
   expect(await writes(request)).toEqual(["PUT /core/v1/harnesses/codex/model-configuration"]);
+});
+
+test("requires an explicit supported protocol choice for an older default configuration", async ({ page, request }) => {
+  await page.route("**/core/v1/harnesses", async (route) => {
+    const response = await route.fetch();
+    const data = await response.json();
+    const codex = data.data.find((harness: { id: string }) => harness.id === "codex");
+    codex.model_configuration.model_provider.protocol = "chat_completions";
+    codex.model_configuration.harness_config = { model_reasoning_effort: "high" };
+    await route.fulfill({ response, json: data });
+  });
+  await openConsole(page, request, "system");
+  const codex = page.getByRole("region", { name: "Default model configuration" }).getByRole("article", { name: "Codex" });
+  await expect(codex).toContainText("OpenAI Chat Completions");
+  await codex.getByRole("button", { name: "Replace the default model configuration for Codex" }).click();
+  const dialog = page.getByRole("dialog", { name: "Replace default model configuration for Codex" });
+  await dialog.getByLabel("API key").fill(KEY);
+  await expect(dialog.getByRole("combobox", { name: "Protocol", exact: true })).toHaveText("Select protocol");
+  await expect(dialog.getByRole("alert")).toHaveText("This harness does not support OpenAI Chat Completions. Select a supported protocol.");
+  await expect(dialog.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await dialog.getByLabel("API key").press("Enter");
+  expect(await writes(request)).toEqual([]);
+  await page.screenshot({ path: test.info().outputPath("unsupported-saved-protocol.png"), animations: "disabled" });
+  await dialog.getByRole("combobox", { name: "Protocol", exact: true }).click();
+  await expect(page.getByRole("option")).toHaveText(["OpenAI Responses"]);
+  await page.getByRole("option", { name: "OpenAI Responses", exact: true }).click();
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(dialog.getByLabel("Harness configuration (JSON)")).toHaveValue("{}");
+  await expect(dialog.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+  expect(await writes(request)).toEqual([]);
 });
