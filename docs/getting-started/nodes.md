@@ -16,10 +16,12 @@ node protocol, manual registration, placement and failure handling.
   sandbox calls Core at `public_url`. A loopback installation can't have nodes, and
   Web says so at Add node. See
   [HTTPS and the reverse proxy](install.md#https-and-the-reverse-proxy).
-- **Web holds the node files.** Install from the offline bundle, or add the release's
-  node files to the smaller bundle; see
-  [Download a release](install.md#download-a-release). Otherwise Add node says that
-  the console has no node files for the provider.
+- **Nodes can download their execution files.** Web supplies the release metadata.
+  With the default online installation, nodes follow HTTPS redirects to download
+  their matching Runtime and provider files directly from the release, verifying
+  sizes and SHA-256 checksums before use. Core and Web do not download these files.
+  For nodes without release access, use the [offline bundle](install.md#download-a-release)
+  on the Web host so it serves the files locally. Verified local files are reused.
 - **A sandbox backend is chosen.** The installer selects microsandbox unless you chose
   otherwise. After `--sandbox none`, the **Nodes** page first asks you to choose
   **Own machines**, then microsandbox (preselected as recommended) or Docker, which it

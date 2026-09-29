@@ -114,9 +114,9 @@ The [Core–Runtime protocol](docs/runtime-protocol.md) owns message order,
 identities, receipts and failure ownership. Shared types and validators live only
 in `internal/agentdaemon/proto`; change both peers together with an exact
 wire-version check. Do not add a parallel schema or historical wire fallback.
-Hosted and self-hosted peers use the same contract. The project is not public:
-change current callers and implementations together instead of maintaining
-historical compatibility layers, aliases or migrations.
+Hosted and self-hosted peers use the same contract. Change current callers and
+implementations together. Historical upgrades remain unsupported; do not add
+compatibility layers, aliases or migrations without an explicit upgrade contract.
 
 `make check-runtime-contract` is the focused shared-contract entry point. Its
 checks also run through `check-go` and `check-agents-api` in the required full gate.
@@ -2002,8 +2002,10 @@ assets or move an existing version tag. The [maintainer guide](docs/maintainers.
 owns tag syntax, prereleases and failed-publication recovery.
 Release assets include `deploy/install-release.sh` as standalone `install.sh`
 with a checksum. This public downloader resolves latest once (or a selected tag),
-verifies the offline archive before safe extraction, and delegates to that bundle's
-installer. It introduces no separate installation state, upgrade path or login flow.
+verifies the control-plane archive before safe extraction, and delegates to that
+bundle's installer. Default installation downloads Core, Web and PostgreSQL payloads,
+never the Runtime image or node execution artifacts. Offline archives remain an
+explicit distribution option. It introduces no separate installation state, upgrade path or login flow.
 Build/test success is distinct from real-model qualification; maintainers assess
 that evidence before pushing a release tag, and no synthetic result substitutes
 for native execution acceptance.
@@ -2027,9 +2029,13 @@ remains independent of Docker's local store identity.
 
 The manifest is the shared download contract for Core, node and self-hosted
 installers: flat versioned filenames, compressed Runtime size/hash and unpacked
-size/hash. Nodes and self-hosted executors download artifacts only from their
-console's payload (or a local offline bundle), never from a release URL the build
-recorded; release URLs serve people downloading bundles. Download into
+size/hash. Nodes obtain bootstrap metadata from their configured console (or a local offline
+bundle). Web serves locally available artifacts first; for missing declared execution
+artifacts it redirects the node to the versioned HTTPS release base in the verified
+distribution manifest. Web does not download or cache those bytes. Only artifact
+requests may follow HTTPS redirects, without credentials or cookies; metadata and
+enrollment requests must remain on the configured console. Nodes retain size and
+SHA-256 verification, resumable transfers and immutable release selection. Download into
 private temporary files, verify before atomic promotion, and reuse only verified
 cache entries or exact image identities. Core's default image must not acquire
 execution-only payloads. Python zipapps bundle the shared resolver with each
@@ -2038,7 +2044,8 @@ artifact names. Candidate build automation creates artifacts and may create an
 unpublished draft; a successful build is not real execution qualification. A
 separate existing-host batch controller may publish that draft automatically only
 after directly supervised real qualification and verified batch landing. Repository
-visibility remains internal and independent of Release publication.
+visibility is public. Published release downloads are anonymous and must not
+require GitHub login or repository credentials.
 Manual builds use the legal `build-<full source SHA>` release tag; tag-triggered
 builds use the actual `v*` tag. The manifest download base and draft tag must match,
 while artifact filenames and source provenance retain the full source SHA.
@@ -2189,11 +2196,10 @@ selection. E2B needs a non-loopback HTTPS `public_url`, `--e2b-api-key-file` and
 microsandbox selection is saved, but no node can serve it until `public_url` is
 guest-reachable HTTPS. `--sandbox-provider` and `--provider` are retired and fail.
 The thin distribution supplies native Core binaries. Provider helpers, the node
-agent, Runtime launcher and pinned msb runtime/firmware are separate, same-revision
-assets. Nodes obtain them only from the console's payload, so a console serves
-nodes only with the offline bundle's assets or release assets placed in the bundle's
-`artifacts/` directory before `install.sh` runs; `/console/config` reports which
-providers it can serve. Core packaging is independent of provider:
+agent, Runtime image and pinned msb runtime/firmware are separate, same-revision
+assets. Web serves local offline artifacts or redirects the node to the verified
+manifest's versioned HTTPS release. `/console/config` reports providers with a
+complete set of local files or declared release downloads. Core packaging is independent of provider:
 `--native-core` runs Core as a systemd user service, with PostgreSQL/Web in Compose
 and a private loopback database port. Native Core needs no KVM or node assets. Core receives no
 Docker socket or node identity mount in either mode. The ordinary standalone node

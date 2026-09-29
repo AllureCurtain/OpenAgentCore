@@ -10,7 +10,7 @@ With E2B you need no nodes. Self-hosted executors, which applications run for th
 own Sessions, are a different thing; see [Self-hosted executors](/self-hosted-execution).
 
 You add a node by generating a command in Web and pasting it on the host. The
-[operator reference](https://github.com/MiniMax-AI/parsar-core/blob/0d546dfd38e1bdd754b0887442d7b358a73002a6/services/agents-api/HOSTED-SANDBOX-MANAGER.md) covers the
+[operator reference](https://github.com/MiniMax-AI/parsar-core/blob/2652bcf6df39e411d1932ae1960242b56e9eb24f/services/agents-api/HOSTED-SANDBOX-MANAGER.md) covers the
 node protocol, manual registration, placement and failure handling.
 
 ## Before you add a node
@@ -19,10 +19,12 @@ node protocol, manual registration, placement and failure handling.
   sandbox calls Core at `public_url`. A loopback installation can't have nodes, and
   Web says so at Add node. See
   [HTTPS and the reverse proxy](/install#https-and-the-reverse-proxy).
-- **Web holds the node files.** Install from the offline bundle, or add the release's
-  node files to the smaller bundle; see
-  [Download a release](/install#download-a-release). Otherwise Add node says that
-  the console has no node files for the provider.
+- **Nodes can download their execution files.** Web supplies the release metadata.
+  With the default online installation, nodes follow HTTPS redirects to download
+  their matching Runtime and provider files directly from the release, verifying
+  sizes and SHA-256 checksums before use. Core and Web do not download these files.
+  For nodes without release access, use the [offline bundle](/install#download-a-release)
+  on the Web host so it serves the files locally. Verified local files are reused.
 - **A sandbox backend is chosen.** The installer selects microsandbox unless you chose
   otherwise. After `--sandbox none`, the **Nodes** page first asks you to choose
   **Own machines**, then microsandbox (preselected as recommended) or Docker, which it
@@ -187,7 +189,7 @@ The installation ID is in the command (`--installation-id`) and on the **System*
 1. In Web, open **Nodes** and choose **Remove node** on the node's page, or
    **Remove** in its list row, then **Confirm removal**. Core refuses while the node
    still holds sandboxes, snapshots or pending cleanup; let them finish, or
-   [archive their Sessions](https://github.com/MiniMax-AI/parsar-core/blob/0d546dfd38e1bdd754b0887442d7b358a73002a6/services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
+   [archive their Sessions](https://github.com/MiniMax-AI/parsar-core/blob/2652bcf6df39e411d1932ae1960242b56e9eb24f/services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
    through the Core API. Removal is permanent: the host can come back only as a new
    node.
 2. Web then shows **Clean up the host** with the uninstall command. Run it on the host:
@@ -290,7 +292,7 @@ files. Shared daemon images remain; a host administrator may remove them only af
 confirming no installation still needs them. Microsandbox image cleanup remains
 scoped to the installation's private native store and verified ownership receipts.
 
-The [operator reference](https://github.com/MiniMax-AI/parsar-core/blob/0d546dfd38e1bdd754b0887442d7b358a73002a6/services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
+The [operator reference](https://github.com/MiniMax-AI/parsar-core/blob/2652bcf6df39e411d1932ae1960242b56e9eb24f/services/agents-api/HOSTED-SANDBOX-MANAGER.md#removal-and-reset)
 describes reset and API behavior. Same-team E2B edits have a separate online Core
 API path and do not involve node installation.
 
@@ -303,4 +305,4 @@ convert or delete it. Preserve the old installation, Runtime resources and histo
 provision a fresh node separately through **Add node**. The current installer does
 not adopt historical resources or remove another installation's state.
 
-[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/0d546dfd38e1bdd754b0887442d7b358a73002a6/docs/getting-started/nodes.md)
+[Repository source](https://github.com/MiniMax-AI/parsar-core/blob/2652bcf6df39e411d1932ae1960242b56e9eb24f/docs/getting-started/nodes.md)
