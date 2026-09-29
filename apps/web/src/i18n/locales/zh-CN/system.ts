@@ -71,7 +71,7 @@ export const system: TranslationShape<typeof english> = {
       advanced: "高级设置",
       harnessConfig: "Harness 配置（JSON）",
       configNativeOnly: "高级模型参数需要使用该 harness 的原生协议。请更换协议，或将 JSON 清空为 {}。",
-      configHelp: "可选，填写 {{harness}} 的原生模型参数，格式为 JSON 对象。模型 ID、连接凭据和 Core 管理的设置不能在此重复定义。空对象表示不添加额外参数。高级模型参数要求使用原生协议，支持的字段由 harness 适配器规定。",
+      configHelp: "可选，填写 {{harness}} 的原生模型参数，格式为 JSON 对象。模型 ID、连接凭据和 Core 管理的设置不能在此重复定义。空对象表示不添加额外参数。修改模型 ID、服务地址或协议会清空此对象。高级模型参数要求使用原生协议，支持的字段由 harness 适配器规定。",
       configTooLarge: "JSON 配置不能超过 16 KiB。",
       configInvalid: "请输入有效的 JSON 对象，例如 {}。",
       formatJson: "格式化 JSON",

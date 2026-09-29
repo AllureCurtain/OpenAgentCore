@@ -837,7 +837,9 @@ harness discovery response supplies supported protocols, native protocols, JSON
 support and required limits from one adapter declaration. The form uses those
 fields without harness-specific branches. Nonempty JSON requires a native protocol;
 the form explains an incompatible selection beside the editor. Help tips explain
-the scope of native settings. The key field is a required password input, never prefilled or shown and
+the scope of native settings. Changing the model ID, provider URL or protocol
+clears the native JSON so settings cannot follow an unrelated model by accident.
+Re-entering the required write-only API key alone does not change model identity. The key field is a required password input, never prefilled or shown and
 forgotten when the form closes. Core's rejection stays in red inside the form; Clear
 is a ConfirmDialog. Usage details opens Core’s observations in a separate dialog.
 Sandboxes: one navigation row to the Sandbox configuration secondary page; do not

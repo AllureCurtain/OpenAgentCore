@@ -69,7 +69,7 @@ export const system = {
       advanced: "Advanced settings",
       harnessConfig: "Harness configuration (JSON)",
       configNativeOnly: "Advanced model settings require a native protocol for this harness. Change the protocol or clear the JSON object.",
-      configHelp: "Optional native model settings for {{harness}}. Use a JSON object. Model ID, connection credentials and Core-managed settings belong outside this object. An empty object uses no extra settings. Advanced model settings require a native protocol; supported fields are defined by the harness adapter.",
+      configHelp: "Optional native model settings for {{harness}}. Use a JSON object. Model ID, connection credentials and Core-managed settings belong outside this object. An empty object uses no extra settings. Changing the model ID, service address or protocol clears this object. Advanced model settings require a native protocol; supported fields are defined by the harness adapter.",
       configTooLarge: "Keep the JSON configuration within 16 KiB.",
       configInvalid: "Enter a valid JSON object, such as {}.",
       formatJson: "Format JSON",

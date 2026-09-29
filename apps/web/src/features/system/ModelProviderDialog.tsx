@@ -91,6 +91,11 @@ export function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
   const contextProblem = limitProblem(context) ?? (!outputProblem && output.value !== undefined && output.value > (context.value ?? 0) ? t("models.form.needsContext") : null);
   const ready = harness !== null && !busy && url !== "" && !urlProblem && apiKey.trim() !== "" && model.trim() !== "" && nativeConfig !== null && !configTooLarge && !configRouteProblem && (!limitsRequired || Boolean(context.value && output.value)) && !contextProblem && !outputProblem;
 
+  function clearNativeConfig() {
+    setConfigText("{}");
+    setConfigTouched(false);
+  }
+
   async function save() {
     if (!ready || !harness || !nativeConfig || saving.current) return;
     saving.current = true;
@@ -174,8 +179,8 @@ export function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
           <ConsoleSelect label={t("models.protocol")} value={protocol} options={protocolOptions} disabled={busy} onChange={(value) => {
             const option = protocolOptions.find((option) => option.value === value);
             if (option) {
+              if (option.value !== protocol) clearNativeConfig();
               setProtocol(option.value); setRejection(null); setError(null);
-              if (nativeConfig && Object.keys(nativeConfig).length && !support?.native_protocols.includes(option.value)) setAdvancedOpen(true);
             }
           }} />
           {fieldError("protocol") ? <span className="field-error" role="alert">{fieldError("protocol")}</span> : null}
@@ -185,7 +190,7 @@ export function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
           <input
             id={`${id}-url`}
             value={baseUrl}
-            onChange={(event) => { setBaseUrl(event.target.value); setRejection(null); setError(null); }}
+            onChange={(event) => { if (event.target.value.trim() !== baseUrl.trim()) clearNativeConfig(); setBaseUrl(event.target.value); setRejection(null); setError(null); }}
             autoComplete="off"
             spellCheck={false}
             aria-invalid={baseUrlError ? true : undefined}
@@ -204,7 +209,7 @@ export function ModelProviderDialog({ harness, onClose, onSaved, onReread }: {
         <div className="field">
           <span className="field-label-row"><label htmlFor={`${id}-model`}>{t("models.model")}</label><HelpTip>{t("models.form.modelName")}</HelpTip></span>
           <input id={`${id}-model`} value={model} disabled={busy} spellCheck={false} autoComplete="off" aria-required="true" aria-invalid={Boolean(modelError)} aria-describedby={modelError ? `${id}-model-error` : undefined}
-            onChange={(event) => { setModel(event.target.value); setRejection(null); setError(null); }} />
+            onChange={(event) => { if (event.target.value.trim() !== model.trim()) clearNativeConfig(); setModel(event.target.value); setRejection(null); setError(null); }} />
           {modelError ? <span id={`${id}-model-error`} className="field-error" role="alert">{modelError}</span> : null}
         </div>
         <details className="system-model-advanced" open={advancedOpen} onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}>

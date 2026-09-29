@@ -52,6 +52,8 @@ test("sets, replaces and clears a harness's default model configuration, and kee
   await expect(set.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await set.getByRole("combobox", { name: "Protocol", exact: true }).click();
   await page.getByRole("option", { name: "OpenAI Responses", exact: true }).click();
+  await expect(config).toHaveValue("{}");
+  await config.fill('{"model_reasoning_effort":"high"}');
   // Limits are Core's 32-bit whole numbers, and max output needs a context window at least as large.
   await set.getByLabel("Max output tokens").fill("32000");
   await expect(set.getByText("Set a context window at least this large.")).toBeVisible();
@@ -79,8 +81,17 @@ test("sets, replaces and clears a harness's default model configuration, and kee
   await expect(replace.getByLabel("API key")).toHaveValue("");
   await expect(replace.getByRole("button", { name: "Save" })).toBeDisabled();
   await replace.getByLabel("API key").fill(KEY);
+  const nativeSettings = replace.getByLabel("Harness configuration (JSON)");
+  await expect(nativeSettings).toHaveValue(/model_reasoning_effort/);
+  await replace.getByLabel("Default model ID").fill("different-model");
+  await expect(nativeSettings).toHaveValue("{}");
+  await nativeSettings.fill('{"model_reasoning_effort":"low"}');
+  await replace.getByLabel("Base URL").fill("https://another-model.example/v1");
+  await expect(nativeSettings).toHaveValue("{}");
+  await nativeSettings.fill('{"model_reasoning_effort":"high"}');
   await replace.getByRole("combobox", { name: "Protocol", exact: true }).click();
   await page.getByRole("option", { name: "Anthropic Messages", exact: true }).click();
+  await expect(nativeSettings).toHaveValue("{}");
   await replace.getByRole("button", { name: "Cancel" }).click();
   expect(await page.content()).not.toContain(KEY);
   await codex.getByRole("button", { name: "Replace the default model configuration for Codex" }).click();
@@ -93,7 +104,7 @@ test("sets, replaces and clears a harness's default model configuration, and kee
   await expect(replace.getByLabel("API key")).toHaveValue("");
   await replace.getByLabel("Base URL").fill("https://model.example/v2");
   await replace.getByLabel("API key").fill(KEY);
-  await replace.getByLabel("Harness configuration (JSON)").fill("{}");
+  await expect(replace.getByLabel("Harness configuration (JSON)")).toHaveValue("{}");
   // Enter saves.
   await replace.getByLabel("API key").press("Enter");
   await expect(replace).toBeHidden();
