@@ -288,6 +288,17 @@ artifacts. The [maintainer guide](docs/maintainers.md#publish-a-version) owns th
 workflow, cache behavior and failure-cost tradeoff.
 
 
+CI coverage has three owners: `core-check` runs the complete `make check` gate;
+`api-acceptance.yml` adds the pinned official-client, migration-command and container
+acceptance without repeating the full service test suite; `native.yml`
+builds and tests the daemon, process lifecycle, Harness protocols and installer
+bundle together on Linux, macOS and Windows. Native tests use the packaged
+Harnesses and share one daemon build per platform. Changes to native sources,
+shared dependencies or packaging inputs trigger that matrix; documentation-only
+and unrelated Web changes do not. Manual native validation remains available.
+Superseded native runs on the same ref are cancelled. Workflow syntax validation
+and release qualification remain separate checks.
+
 Run `make check` before completion. The standalone gate includes all daemon/shared
 Go tests, Core contract/client/service tests, Core Web and TypeScript client
 checks (including fixture-only Playwright acceptance), a real dedicated PostgreSQL test

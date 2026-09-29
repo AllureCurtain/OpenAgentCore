@@ -1,14 +1,38 @@
-name: native-installer
+name: native-check
 
 on:
   pull_request:
+    paths:
+      - 'apps/parsar-daemon/**'
+      - 'internal/**'
+      - 'contracts/agents-api/**'
+      - 'packages/claude-sdk-adapter/**'
+      - 'packages/mcode-harness/**'
+      - 'packages/tsconfig/**'
+      - 'scripts/build-native-installer*'
+      - 'scripts/native-harness-smoke.mjs'
+      - 'scripts/build-mcode-harness.sh'
+      - 'go.mod'
+      - 'go.sum'
+      - 'go.work'
+      - 'go.work.sum'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'tsconfig.base.json'
+      - '.npmrc'
+      - '.github/workflows/native.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  bundle:
+  platform:
     strategy:
       fail-fast: false
       matrix:
@@ -30,6 +54,34 @@ jobs:
         run: |
           go build -ldflags "-X github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/cli.Version=$GITHUB_SHA" -o "$RUNNER_TEMP/oac-daemon${{ runner.os == 'Windows' && '.exe' || '' }}" ./apps/parsar-daemon/cmd/parsar-daemon
           node --test scripts/build-native-installer.test.mjs
+      - name: Native filesystem, authentication and process lifecycle
+        run: >-
+          go test -race -count=1
+          ./internal/runtimefs
+          ./apps/parsar-daemon/internal/auth
+          ./apps/parsar-daemon/internal/paths
+          ./apps/parsar-daemon/internal/daemonize
+          ./apps/parsar-daemon/internal/agent/clirunner
+      - name: Native Harness ownership and environment identity
+        run: >-
+          go test -race -count=1
+          ./apps/parsar-daemon/internal/agent/codex
+          ./apps/parsar-daemon/internal/agent/claudesdk
+          ./apps/parsar-daemon/internal/agent/mcode
+          -run 'TestJSONRPCClientOwnsToolDescendants|TestSelfHostedToolEnvironment'
+      - name: Native capability snapshots, files and installation
+        run: >-
+          go test -race -count=1
+          ./apps/parsar-daemon/internal/localworkspace
+          ./apps/parsar-daemon/internal/cli
+          -run 'TestNative|TestRuntimeInit|TestRuntimePreparationRejects|TestPreparationFreezesLocalContentsAcrossReconnect|TestSnapshotMarker'
+      - name: Windows npm and npx stdio launchers without network
+        if: runner.os == 'Windows'
+        run: >-
+          go test -race -count=1 -timeout=2m
+          ./apps/parsar-daemon/internal/localworkspace
+          ./apps/parsar-daemon/internal/cli
+          -run 'TestWindowsPackageManager|TestWindowsRuntimeMCP'
       - name: Build pinned native components
         run: |
           npm install --global pnpm@10.30.3
