@@ -12,6 +12,17 @@ selection without resources adopts the ready build's CPU and memory. It returns
 the build's status, CPU, memory and reported disk size for Core to record with
 the selection, and creates neither compute nor allocation receipts.
 
+The console's Core-key-only setup flow uses two more read-only helper requests.
+`list_templates` pages the credential's visible templates through the official
+`GET /v2/templates` SDK operation; `list_builds`
+pages one selected template and returns ready exact build IDs and resources.
+Both operations use the same explicit endpoint selectors and a transient API
+key. They cap results at 200, never write a receipt, and cannot replace the
+deployment write's exact-build validation.
+Compatible endpoints must return the E2B SDK 2.51.0 template-list and
+template-build response models. The helper does not adapt provider-specific
+catalog shapes.
+
 Runtime observation uses a third read-only request, `observe`, for at most 100
 allocations. It reads each allocation's sandbox ID from its receipt without the
 allocation lock, then runs one `GET /sandboxes/metrics` request and one labelled

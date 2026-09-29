@@ -11,7 +11,7 @@ from e2b import Sandbox, SandboxQuery, SandboxState
 from e2b.api.client.models.sandbox_metric import SandboxMetric
 from e2b.exceptions import FileNotFoundException, SandboxNotFoundException
 
-from sdk import connection_material, definitely_rejected, read_metrics, restore, run, sdk_options, validate_deployment
+from sdk import connection_material, definitely_rejected, list_builds, list_templates, read_metrics, restore, run, sdk_options, validate_deployment
 from state import Failure, Receipt, private_root, read_receipt
 
 PREFIX = 'oac_'
@@ -68,19 +68,20 @@ class Provider:
         self.reference = request['Reference']
         self.references = request.get('References') or []
         if (request['Version'] != 1 or request['Operation'] not in
-                ('create', 'inspect', 'renew', 'kill', 'command', 'validate_deployment', 'observe') or
-                (request['Operation'] not in ('validate_deployment', 'observe') and
+                ('create', 'inspect', 'renew', 'kill', 'command', 'validate_deployment', 'observe', 'list_templates', 'list_builds') or
+                (request['Operation'] not in ('validate_deployment', 'observe', 'list_templates', 'list_builds') and
                  not valid_reference(self.reference)) or
                 (request['Operation'] == 'observe' and
                  (not 1 <= len(self.references) <= 100 or
                   not all(valid_reference(r) for r in self.references) or
                   len({tuple(sorted(r.items())) for r in self.references}) != len(self.references))) or
-                not valid_id(self.config['InstallationID'])):
+                (request['Operation'] not in ('list_templates', 'list_builds') and
+                 not valid_id(self.config['InstallationID']))):
             raise Failure('invalid')
         deadline = datetime.fromisoformat(request['Deadline'].replace('Z', '+00:00'))
         self.deadline = time.monotonic() + (deadline - datetime.now(timezone.utc)).total_seconds()
         self.metadata = {PREFIX + field.lower(): value for field, value in
-                         dict(self.reference, InstallationID=self.config['InstallationID']).items()}
+                         dict(self.reference, InstallationID=self.config.get('InstallationID', '')).items()}
         self.receipt = None
 
     def remaining(self):
@@ -326,8 +327,12 @@ class Provider:
                 dict(reference, InstallationID=self.config['InstallationID']).items()}
 
     def execute(self):
-        if self.q['Operation'] in ('validate_deployment', 'observe'):
+        if self.q['Operation'] in ('validate_deployment', 'observe', 'list_templates', 'list_builds'):
             try:
+                if self.q['Operation'] == 'list_templates':
+                    return {'Version': 1, 'Templates': list_templates(self.config, self.remaining), 'ErrorCode': ''}
+                if self.q['Operation'] == 'list_builds':
+                    return {'Version': 1, 'Builds': list_builds(self.config, self.remaining), 'ErrorCode': ''}
                 if self.q['Operation'] == 'observe':
                     return {'Version': 1, 'Observations': self.observe(), 'ErrorCode': ''}
                 build = validate_deployment(self.config, self.remaining)

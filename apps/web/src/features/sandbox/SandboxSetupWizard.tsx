@@ -1,9 +1,9 @@
-import type { InitializeSandboxDeployment, SandboxProvider, SandboxResources, SandboxRuntimeRelease, SandboxSpecification } from "@agents-core-web/agents-client";
+import type { InitializeSandboxDeployment, SandboxE2BReadyBuild, SandboxE2BTemplate, SandboxProvider, SandboxResources, SandboxRuntimeRelease, SandboxSpecification } from "@agents-core-web/agents-client";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import { ArrowLeft, ArrowRight, Box, Cloud, Cpu, Server, SlidersHorizontal, type LucideIcon } from "lucide-react";
-import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
@@ -16,12 +16,23 @@ import type { MessageKey } from "../../lib/locale-strings";
 import { sandboxConfigurationRejection } from "../../lib/sandbox-labels";
 import { defaultSandboxResources, distributionRuntime, savedSpecification, validSandboxResources } from "./deployment-specification";
 import { isRuntimeRelease, isRuntimeReleaseField, RUNTIME_RELEASE_FIELDS } from "./runtime-release";
+import { sandboxAdmin } from "./sandbox-queries";
 import "./sandbox-wizard.css";
 
 type Where = "nodes" | "direct";
 type Step = "where" | "backend" | "e2b" | "size" | "review" | "advanced";
 type Preset = "small" | "standard" | "large";
 type Size = Preset | "current" | "custom";
+type E2BService = "sandbase" | "official" | "custom";
+const E2B_PRESETS = {
+  sandbase: { apiURL: "https://sandbox.sandbase.ai", domain: "sandbox.sandbase.ai" },
+  official: { apiURL: "https://api.e2b.app", domain: "e2b.app" },
+} as const;
+function e2bService(apiURL?: string): E2BService {
+  if (!apiURL) return "sandbase";
+  if (apiURL === E2B_PRESETS.official.apiURL) return "official";
+  return apiURL === E2B_PRESETS.sandbase.apiURL ? "sandbase" : "custom";
+}
 
 const MIB = 2 ** 20;
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -109,8 +120,15 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
   const [size, setSize] = useState<Size>(current?.specification ? presetOf(current.provider, current.specification.resources) ?? "current" : "standard");
   const [apiKey, setApiKey] = useState("");
   const [template, setTemplate] = useState(current?.e2bTemplate ?? "");
-  const [apiURL, setAPIURL] = useState(current?.e2bAPIURL === "https://api.e2b.app" ? "" : current?.e2bAPIURL ?? "");
-  const [domain, setDomain] = useState(current?.e2bDomain === "e2b.app" ? "" : current?.e2bDomain ?? "");
+  const [service, setService] = useState<E2BService>(e2bService(current?.e2bAPIURL));
+  const [apiURL, setAPIURL] = useState(current?.e2bAPIURL ?? E2B_PRESETS[e2bService(current?.e2bAPIURL) as keyof typeof E2B_PRESETS]?.apiURL ?? "");
+  const [domain, setDomain] = useState(current?.e2bDomain ?? E2B_PRESETS[e2bService(current?.e2bAPIURL) as keyof typeof E2B_PRESETS]?.domain ?? "");
+  const [templates, setTemplates] = useState<SandboxE2BTemplate[]>([]);
+  const [builds, setBuilds] = useState<SandboxE2BReadyBuild[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState(current?.e2bTemplate?.split(":")[0] ?? "");
+  const [discovery, setDiscovery] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [buildDiscovery, setBuildDiscovery] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [discoveryRetry, setDiscoveryRetry] = useState(0);
   const [runtime, setRuntime] = useState<Partial<SandboxRuntimeRelease>>({});
   const [busy, setBusy] = useState(false);
   const [dockerConfirmed, setDockerConfirmed] = useState(current?.provider === "docker");
@@ -121,6 +139,35 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
   const installation = useQuery(installationQuery);
   const address = coreUrl || installation.data?.public_url || null;
   const configuration = installation.data?.configuration ?? null;
+
+  useEffect(() => {
+    setTemplates([]); setBuilds([]); setDiscovery("idle"); setBuildDiscovery("idle");
+    if (provider !== "e2b" || !apiKey.trim() || !validEndpoint(apiURL.trim(), domain.trim())) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setDiscovery("loading");
+      void sandboxAdmin.listE2BTemplates({ api_key: apiKey.trim(), api_url: apiURL.trim(), domain: domain.trim() }, { signal: controller.signal })
+        .then((items) => { if (!controller.signal.aborted) { setTemplates(items); setDiscovery("ready"); } })
+        .catch(() => { if (!controller.signal.aborted) setDiscovery("error"); });
+    }, 500);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [provider, apiKey, apiURL, domain, discoveryRetry]);
+
+  useEffect(() => {
+    setBuilds([]); setBuildDiscovery("idle");
+    if (discovery !== "ready" || !selectedTemplate || !templates.some((item) => item.id === selectedTemplate)) return;
+    const controller = new AbortController();
+    setBuildDiscovery("loading");
+    void sandboxAdmin.listE2BReadyBuilds(selectedTemplate, { api_key: apiKey.trim(), api_url: apiURL.trim(), domain: domain.trim() }, { signal: controller.signal })
+      .then((items) => { if (!controller.signal.aborted) { setBuilds(items); setBuildDiscovery("ready"); } })
+      .catch(() => { if (!controller.signal.aborted) setBuildDiscovery("error"); });
+    return () => controller.abort();
+  }, [discovery, selectedTemplate, templates, apiKey, apiURL, domain, discoveryRetry]);
+
+  function changeConnection(key: string, url: string, dataDomain: string) {
+    setApiKey(key); setAPIURL(url); setDomain(dataDomain);
+    setTemplate(""); setSelectedTemplate(""); setTemplates([]); setBuilds([]);
+  }
 
   // A release the administrator entered comes first, then the saved one of the same backend,
   // then the one this console distributes (the release its node installer verifies).
@@ -209,17 +256,44 @@ export function SandboxSetupWizard({ coreUrl, current, disabled, switching = fal
     page = (
       <Question title={t("Connect E2B")}>
         <div className="wizard-fields">
+          <Field id={`${id}-service`} label={t("E2B provider")}>
+            <select id={`${id}-service`} value={service} onChange={(event) => {
+              const next = event.target.value as E2BService;
+              setService(next);
+              const preset = next === "custom" ? { apiURL: "", domain: "" } : E2B_PRESETS[next];
+              changeConnection("", preset.apiURL, preset.domain);
+            }}>
+              <option value="sandbase">SandBase Sandbox</option>
+              <option value="official">E2B</option>
+              <option value="custom">{t("Other E2B-compatible provider")}</option>
+            </select>
+          </Field>
           <Field id={`${id}-key`} label={t("E2B API key")} help={t("The key is write-only: Core encrypts it and never shows it again.")}>
-            <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={(event) => setApiKey(event.target.value)} />
+            <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={(event) => changeConnection(event.target.value, apiURL, domain)} />
           </Field>
-          <Field id={`${id}-template`} label={t("Template build")} help={t("The exact ready build, as template-id:build-uuid. A template alias alone is not enough. Each sandbox gets the build's CPU and memory.")} error={template && !validTemplate(template.trim()) ? t("Enter a template ID and build UUID separated by a colon.") : null}>
-            <input id={`${id}-template`} value={template} onChange={(event) => setTemplate(event.target.value)} placeholder="oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b" autoComplete="off" spellCheck={false} aria-invalid={Boolean(template && !validTemplate(template.trim()))} />
+          {discovery === "loading" ? <p role="status">{t("Loading templates…")}</p> : null}
+          {discovery === "error" ? <p role="alert">{t("Could not load templates. Check the key and provider connection.")} <button type="button" className="wizard-link" onClick={() => setDiscoveryRetry((value) => value + 1)}>{t("Try again")}</button></p> : null}
+          {discovery === "ready" && templates.length === 0 ? <p role="status">{t("No templates are visible to this key.")}</p> : null}
+          <Field id={`${id}-template`} label={t("Template")}>
+            <select id={`${id}-template`} value={selectedTemplate} disabled={discovery !== "ready"} onChange={(event) => { setSelectedTemplate(event.target.value); setTemplate(""); }}>
+              <option value="">{t("Select a template")}</option>
+              {templates.map((item) => <option key={item.id} value={item.id}>{item.names[0] ? `${item.names[0]} · ` : ""}{item.id}</option>)}
+            </select>
           </Field>
-          <Field id={`${id}-api-url`} label={t("Sandbox API URL")} help={t("Leave both endpoint fields blank for official E2B. A compatible service needs its HTTPS API origin and data-plane domain.")}>
-            <input id={`${id}-api-url`} type="url" value={apiURL} onChange={(event) => setAPIURL(event.target.value)} placeholder="https://sandbox.example.com" autoComplete="off" spellCheck={false} />
+          {buildDiscovery === "loading" ? <p role="status">{t("Loading ready builds…")}</p> : null}
+          {buildDiscovery === "error" ? <p role="alert">{t("Could not load builds.")} <button type="button" className="wizard-link" onClick={() => setDiscoveryRetry((value) => value + 1)}>{t("Try again")}</button></p> : null}
+          {buildDiscovery === "ready" && builds.length === 0 ? <p role="status">{t("This template has no ready builds.")}</p> : null}
+          <Field id={`${id}-build`} label={t("Template build")} help={t("Core validates the exact ready build again when you save.")}>
+            <select id={`${id}-build`} value={template} disabled={buildDiscovery !== "ready"} onChange={(event) => setTemplate(event.target.value)}>
+              <option value="">{t("Select a ready build")}</option>
+              {builds.map((item) => <option key={item.id} value={`${selectedTemplate}:${item.id}`}>{item.id} · {item.cpus} CPU / {item.memory_mib} MiB</option>)}
+            </select>
+          </Field>
+          <Field id={`${id}-api-url`} label={t("Sandbox API URL")} help={t("The selected provider supplies a default. You can edit it for a compatible endpoint.")}>
+            <input id={`${id}-api-url`} type="url" value={apiURL} onChange={(event) => changeConnection(apiKey, event.target.value, domain)} placeholder="https://sandbox.example.com" autoComplete="off" spellCheck={false} />
           </Field>
           <Field id={`${id}-domain`} label={t("Sandbox data-plane domain")} error={(apiURL || domain) && !validEndpoint(apiURL.trim(), domain.trim()) ? t("Enter both a public HTTPS API origin and a domain.") : null}>
-            <input id={`${id}-domain`} value={domain} onChange={(event) => setDomain(event.target.value)} placeholder="sandbox.example.com" autoComplete="off" spellCheck={false} />
+            <input id={`${id}-domain`} value={domain} onChange={(event) => changeConnection(apiKey, apiURL, event.target.value)} placeholder="sandbox.example.com" autoComplete="off" spellCheck={false} />
           </Field>
         </div>
         <Nav onBack={back} onNext={() => setStep("review")} nextDisabled={!e2bReady} t={t} />
