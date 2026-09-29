@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
 )
@@ -36,6 +37,10 @@ func (h *Handler) prepareSessionModelConfiguration(ctx context.Context, input *s
 	if h.modelProviderDefaults != nil && v1.ModelProviderAllowed(input.Environment.Type, v1.ModelProviderSourceDeployment) && ((inherited == nil && !explicitProvider) || needsModel) {
 		input.deploymentDefaults, err = h.modelProviderDefaults(ctx, engine)
 		if err != nil {
+			var configurationError *v1.ModelProviderError
+			if errors.As(err, &configurationError) {
+				return configurationError
+			}
 			return &modelProviderDefaultsError{err}
 		}
 	}

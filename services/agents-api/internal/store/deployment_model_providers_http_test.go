@@ -163,6 +163,29 @@ func TestDeploymentModelProvidersHTTP(t *testing.T) {
 	}
 	call("PUT", path, coreKey, codexDefault, 200)
 
+	// Simulate a default persisted when cross-protocol execution was supported.
+	// It must remain readable, but cannot create new Sessions or be rewritten.
+	historical := strings.Replace(codexDefault, `"protocol":"responses"`, `"protocol":"anthropic"`, 1)
+	encrypted, err := cipher.SealDeploymentModelProvider([]byte(historical), "codex")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(t.Context(), "UPDATE deployment_model_providers SET protocol='anthropic', encrypted_config=$1 WHERE harness='codex'", encrypted); err != nil {
+		t.Fatal(err)
+	}
+	incompatible := call("POST", "/v1/agents/sessions", projectKey, hosted, 400)
+	if !strings.Contains(string(incompatible["error"]), "does not support this model provider protocol") || strings.Contains(string(incompatible["error"]), "credential_storage_unavailable") {
+		t.Fatal("unsupported stored protocol was reported as a credential failure")
+	}
+	if text(providerView(call("GET", path, coreKey, "", 200))["protocol"]) != "anthropic" {
+		t.Fatal("unsupported default was rewritten")
+	}
+	var retained []byte
+	if err := pool.QueryRow(t.Context(), "SELECT encrypted_config FROM deployment_model_providers WHERE harness='codex'").Scan(&retained); err != nil || !bytes.Equal(retained, encrypted) {
+		t.Fatal("rejected default changed its encrypted snapshot", err)
+	}
+	call("PUT", path, coreKey, codexDefault, 200)
+
 	// Hosted Sessions freeze the default; later edits never reach them.
 	hostedID := text(call("POST", "/v1/agents/sessions", projectKey, hosted, 201)["id"])
 	if providerOf(hostedID) != "deployment-canary" {
