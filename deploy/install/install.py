@@ -32,7 +32,13 @@ import oac_cli
 import sandbox_setup
 from distribution import DistributionError, artifact, image_identities, ensure_docker_image
 
-SETTING_FLAGS = ("core_only", "web_only", "native_core", "core_port", "web_port", "core_url", "public_url")
+SETTING_ARGUMENTS = {
+    config_model.annotation(node, "install_flag"): (key, node)
+    for key, node, _ in config_model.leaves()
+    if config_model.annotation(node, "install_flag") and key not in ("mode", "native_core")
+}
+SETTING_FLAGS = ("core_only", "web_only", "native_core", *(
+    flag.removeprefix("--").replace("-", "_") for flag in SETTING_ARGUMENTS))
 RETIRED_NODE_FLAGS = ("--sandbox-provider and --provider are retired: use --sandbox docker|microsandbox|e2b|none. "
                       "The installer no longer adds this host as a node; add it with Add node on the Nodes page in Web.")
 DOCKER_RISKS = """Docker sandboxes isolate less than microsandbox, the default:
@@ -91,10 +97,11 @@ def verify_bundle(bundle):
     return manifest
 
 
-def free_port(port):
-    with socket.socket() as sock:
+def free_port(port, host):
+    family = socket.AF_INET6 if ipaddress.ip_address(host).version == 6 else socket.AF_INET
+    with socket.socket(family) as sock:
         try:
-            sock.bind(("127.0.0.1", port))
+            sock.bind((host, port))
         except OSError:
             raise InstallError(f"Port {port} is already in use; select another port") from None
 
@@ -136,10 +143,9 @@ def arguments(argv=None):
     parser.add_argument("--sandbox-provider", nargs="?", const=True, help=argparse.SUPPRESS)
     parser.add_argument("--provider", nargs="?", const=True, help=argparse.SUPPRESS)
     parser.add_argument("--install-dir", type=Path)
-    parser.add_argument("--core-port", type=int)
-    parser.add_argument("--web-port", type=int)
-    parser.add_argument("--core-url", type=public_origin, help="Web-only: origin of the existing Core")
-    parser.add_argument("--public-url", type=public_origin, help="Public HTTPS origin behind your TLS reverse proxy")
+    for flag, (_, node) in SETTING_ARGUMENTS.items():
+        value_type = int if node.get("type") == "integer" else public_origin if config_model.annotation(node, "check") == "origin" else str
+        parser.add_argument(flag, type=value_type, help=node["description"])
     parser.add_argument("--core-key-file", type=Path, help="Web-only: private file containing the existing Core's Core key")
     parser.add_argument("--config", type=Path, help="Seed a new installation's config.json from this file")
     parser.add_argument("--convert", action="store_true",
@@ -217,9 +223,10 @@ def seed_config(args, document):
         return config_model.validate(document)
     mode = "core-only" if args.core_only else "web-only" if args.web_only else "all"
     native = bool(args.native_core)
-    return config_model.initial(mode, native, public_url=args.public_url, **{
-        "ports.core": args.core_port, "ports.web": args.web_port, "web.core_url": args.core_url,
-        "ports.database": database_port() if native else None})
+    values = {key: getattr(args, flag.removeprefix("--").replace("-", "_"))
+              for flag, (key, _) in SETTING_ARGUMENTS.items()}
+    values["ports.database"] = database_port() if native else None
+    return config_model.initial(mode, native, **values)
 
 
 def loopback_origin(value):
@@ -574,13 +581,13 @@ def summary(root, config, fresh, selection=None, deployment=None):
     mode, public_url, ports = config["mode"], config["public_url"], config["ports"]
     if mode != "core-only":
         # The console accepts only its configured origin, so a public URL has no loopback console.
-        console = public_url or f'http://127.0.0.1:{ports["web"]}'
+        console = configuration.web_origin(config)
         print("Console: " + console + (" (local only)" if loopback_origin(console) else ""))
     if mode != "web-only":
-        api = f'http://127.0.0.1:{ports["core"]}/v1'
+        api = configuration.service_origin(config, "core") + "/v1"
         if public_url and not loopback_origin(public_url):
             print("API base URL: " + public_url + "/v1")
-            print("Local-only API on this host: " + api)
+            print(("Local-only API on this host: " if configuration.loopback_listener(config["host"]) else "Direct API on this host: ") + api)
         elif public_url and origin_port(public_url) != ports.get("web"):
             print("API base URL: " + public_url + "/v1 (local only)")
         else:
@@ -588,8 +595,9 @@ def summary(root, config, fresh, selection=None, deployment=None):
             print("API base URL: " + api + " (local only)")
     core_key = root / "secrets/core.key"
     if mode == "core-only":
+        local = " (local only)" if configuration.loopback_listener(config["host"]) else ""
         print(f'Next: create a Project and its API key through the Core management API at '
-              f'http://127.0.0.1:{ports["core"]}/core/v1 (local only) with the Core key in {core_key}.')
+              f'{configuration.service_origin(config, "core")}/core/v1{local} with the Core key in {core_key}.')
     else:
         print(f"Next: sign in to Web with the Core key in {core_key}, then create a Project and its API key on the Projects and keys page.")
     print("Keep the Core key private; it also authorizes the Core management API.")
@@ -687,7 +695,7 @@ def install_locked(args, root, bundle, manifest, prepared):
         native_service.preflight(bundle, root)
     for key in ("core", "web", "database"):
         if key in config["ports"]:
-            free_port(config["ports"][key])
+            free_port(config["ports"][key], "127.0.0.1" if key == "database" else config["host"])
     selection = None if choice == "none" else sandbox_setup.selection(bundle, manifest, choice, e2b)
     images = image_loader(manifest, bundle)(image_names(config["mode"], config.get("native_core", False)))
     create(root, args, config, manifest, images)
