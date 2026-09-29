@@ -1062,10 +1062,13 @@ registered nodes can read their matching configuration during reset. Validate
 installation, generation, specification digest and release before writing node files,
 registering or reconnecting. Reject drift rather than overwriting retained identity
 or using local resource defaults. Registration consumes a token only after these
-checks. The installer verifies downloaded files and starts the ordinary node process
-as a user service, or, run as root, as a root-owned system service for the dedicated
-`oac-node` user it prepares; it performs no SSH installation, Session creation or
-model call.
+checks. The node installer requires root or sudo, verifies downloaded files and
+starts a root-owned system service for the dedicated `oac-node` user it prepares.
+It performs no SSH installation, Session creation or model call. Ordinary-user
+installation and removal are rejected before reading credentials or mutating state.
+Internal generation preparation and collection still run as the service account.
+Web exposes one root/sudo command; do not retain a user-service alternative. This
+boundary is specific to Sandbox Provider nodes, not native self-hosted daemons.
 
 Node management (Web's **Nodes** page; see the
 [operator reference](services/agents-api/HOSTED-SANDBOX-MANAGER.md)) is a
@@ -2244,8 +2247,12 @@ work around bootstrap access.
 Installer progress describes the operation about to run. Do not imply fresh
 health checks on a no-change repair. Keep terminal styling optional, honor
 `NO_COLOR`, and preserve plain redirected logs. Summaries show credential file
-locations, never their values. The bundled `install_output.py` owns presentation
-and is shipped and checksum-verified with the installer.
+locations, never their values. `install_display.py` owns shared terminal formatting;
+`install_output.py` and `node_output.py` own their respective completion guidance.
+Ship and checksum the display modules, including them in both the distributed node
+bootstrap and retained helper. A node summary reports success only after Core
+connection and provider readiness are confirmed. Service-user output stays plain
+and passes through the existing terminal-control sanitizer.
 
 The Core/Web installer uses the launching account, including root, and a writable
 installation directory. It never invokes sudo, switches accounts or changes host
@@ -2278,9 +2285,8 @@ and a private loopback database port. Native Core needs no KVM or node assets. C
 Docker socket or node identity mount in either mode. The ordinary standalone node
 service owns its provider processes outside the Core container. Its `KillMode=process`
 preserves resident microVM/helper processes across a node-service restart. User KVM
-access and the Linux runtime libraries are prerequisites for microsandbox. The node
-installed by a normal user runs as a systemd user service and needs linger. Run as
-root (sudo mode), the installer instead prepares the host: it creates or adopts the
+access and the Linux runtime libraries are prerequisites for microsandbox. The
+installer runs as root and prepares the host: it creates or adopts the
 `oac-node` system user, adds it to the `docker` or `kvm` device group (no other
 group), and installs one root-owned system service per installation that runs the
 same node program with `User=oac-node`. Sudo mode serves one Core per host,
