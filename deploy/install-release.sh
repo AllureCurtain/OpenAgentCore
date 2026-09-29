@@ -113,8 +113,10 @@ def install(version, arguments):
         raise ReleaseError("Run the installer as a non-root user with Docker access")
     tag, bundle, sums = select_release(version)
     print("Installing OpenAgentCore " + tag, flush=True)
-    cache = pathlib.Path.home() / ".oac" / "releases"
-    cache.mkdir(mode=0o700, parents=True, exist_ok=True)
+    home = pathlib.Path.home() / ".oac"
+    home.mkdir(mode=0o700, exist_ok=True)
+    cache = home / "releases"
+    cache.mkdir(mode=0o700, exist_ok=True)
     extracted = pathlib.Path(tempfile.mkdtemp(prefix="release-", dir=cache))
     try:
         with tempfile.TemporaryDirectory(prefix=".download-", dir=cache) as temporary:

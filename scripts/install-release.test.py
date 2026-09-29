@@ -3,6 +3,8 @@ import contextlib
 import hashlib
 import io
 import json
+import os
+import stat
 import pathlib
 import subprocess
 import tarfile
@@ -152,6 +154,15 @@ class BootstrapTests(unittest.TestCase):
         self.invoke.return_value = 17
         self.assertEqual(bootstrap.main([]), 17)
         self.assertTrue(pathlib.Path(self.invoke.call_args.args[0][1]).is_file())
+
+    def test_new_private_directories_do_not_inherit_public_umask(self):
+        previous = os.umask(0o022)
+        try:
+            bootstrap.main([])
+        finally:
+            os.umask(previous)
+        for path in (self.root / ".oac", self.root / ".oac/releases"):
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700)
 
     def test_shell_entrypoint_help_needs_no_network(self):
         result = subprocess.run(["bash", str(SCRIPT), "--help"], capture_output=True, text=True)
