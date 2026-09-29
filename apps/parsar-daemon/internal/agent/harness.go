@@ -10,8 +10,8 @@
 // rather than additional Go interfaces; qualify and advertise them separately.
 //
 // Registration: RegisterKind takes the existing proto.SupportedAgentKind
-// descriptor (kind, availability, native version and AgentKindCapabilities) and
-// direct-call Factory. RegisterExecutor supplies the Session-owned lifecycle.
+// descriptor (kind, availability, native version and AgentKindCapabilities),
+// the mandatory shared Configuration and the direct-call Factory. RegisterExecutor supplies the Session-owned lifecycle.
 // RegisterPreparation optionally adds workspace access without model input.
 // RegisterKind resets the other factories, so register it first. Preparation
 // flags are derived by these methods; other advertised capabilities must reflect
@@ -35,12 +35,9 @@ import (
 // RegisterExecutor and RegisterPreparation inherit it. Every registered entry
 // validates model, provider and native parameters before calling native code.
 // The declaration belongs to the adapter and is also consumed by Core. Keep
-// adapter field rules and rendering private; never add a model API proxy or
-// cross-protocol conversion. This file owns execution lifecycle only.
-//
-// Core freezes the model configuration per Session. Reconnect and later Turns
-// retain it; unsupported snapshots fail without aliases, migration or rewriting.
-// Native image/tool/operation support remains qualified separately through proto
+// adapter field rules and rendering private. That shared contract owns frozen
+// configuration and native application obligations. This file owns execution
+// lifecycle only. Native image/tool/operation support is qualified through proto
 // capabilities and the Core engine profile, not model configuration declarations.
 //
 // Preparation failure retains unconfirmed native cleanup in a non-nil Executor
