@@ -3588,6 +3588,15 @@ The [package artifact contract](packages/claude-sdk-adapter/README.md#runtime-ar
 owns build isolation, dependency export, readiness and relocation checks.
 Keep the adapter artifact independent of the Core binary and product sources.
 
+### Harness model configuration
+
+The configuration preparation contract in `apps/parsar-daemon/internal/agent/harness.go`
+is mandatory for every Executor factory. Shared wire types live in
+`internal/agentdaemon/proto`; native model fields and their application are documented
+in [Harness onboarding](contracts/agents-api/harness-onboarding.md#native-model-configuration).
+Public configuration sources and inheritance belong to
+[model execution](contracts/agents-api/model-execution.md).
+
 ### Harness selection and Agent defaults
 
 Core accepts the optional `agent.x_agents_core.harness` extension through the
