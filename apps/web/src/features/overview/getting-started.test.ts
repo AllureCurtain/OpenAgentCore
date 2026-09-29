@@ -11,8 +11,8 @@ const deployment = (overrides: Partial<SandboxDeployment> = {}): SandboxDeployme
 });
 const fleet = (value: SandboxDeployment, nodes = [node("n1")]): FleetState => ({ status: "ready", snapshot: { deployment: value, nodes, allocations: [], loadedAt: 0 }, targetGeneration: value.generation, refreshing: false, error: null });
 const sandboxes = (state: FleetState) => gettingStartedSteps({ sandboxReset: false, fleet: state, localOnly: false, projects: [], sessions: 0, harnesses: [] }).sandboxes;
-const provider = { object: "core.model_provider", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, last_used_at: null, last_error_code: null, last_error_at: null, updated_at: "2026-09-25T00:00:00Z" } as const;
-const harness = (id: CoreHarness["id"], fields: Partial<CoreHarness> = {}): CoreHarness => ({ object: "core.harness", id, enabled: true, default: false, model_provider: null, ...fields });
+const provider = { object: "core.model_configuration", model: "fixture-model", harness_config: {}, model_provider: { protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true }, last_used_at: null, last_error_code: null, last_error_at: null, updated_at: "2026-09-25T00:00:00Z" } as const;
+const harness = (id: CoreHarness["id"], fields: Partial<CoreHarness> = {}): CoreHarness => ({ object: "core.harness", model_configuration_support: { protocols: ["responses"], native_protocols: ["responses"], accepts_harness_config: true, token_limits_required: false }, id, enabled: true, default: false, model_configuration: null, ...fields });
 
 describe("Getting started steps", () => {
   it("uses live provider readiness independently of target state or a durable pin", () => {
@@ -29,7 +29,7 @@ describe("Getting started steps", () => {
   it("does not report ready during reset or an unreadable deployment, even with ready nodes", () => {
     for (const backend of ["docker", "e2b"] as const) {
       const input = { fleet: fleet(deployment({ provider: backend })), localOnly: false, projects: [project("p")], sessions: 1,
-        harnesses: [harness("codex", { default: true, model_provider: { ...provider, harness: "codex" } })] };
+        harnesses: [harness("codex", { default: true, model_configuration: { ...provider, harness: "codex" } })] };
       for (const sandboxReset of [true, "failed", undefined] as const) {
         const steps = gettingStartedSteps({ ...input, sandboxReset });
         expect(steps.sandboxes).toMatchObject({ state: sandboxReset === true ? "todo" : sandboxReset === "failed" ? "unknown" : null, action: "nodes" });
@@ -47,7 +47,7 @@ describe("Getting started steps", () => {
   it("cannot complete onboarding while the installation read is pending or failed", () => {
     for (const localOnly of [undefined, "failed"] as const) {
       const steps = gettingStartedSteps({ sandboxReset: false, localOnly, fleet: fleet(deployment()), projects: [project("p")], sessions: 1,
-        harnesses: [harness("codex", { default: true, model_provider: { ...provider, harness: "codex" } })] });
+        harnesses: [harness("codex", { default: true, model_configuration: { ...provider, harness: "codex" } })] });
       expect(steps.sandboxes.state).toBe(localOnly === "failed" ? "unknown" : null);
       expect(checklistView([steps.sandboxes.state, steps.model, steps.key.state, steps.session.state], "open")).toBe("full");
     }
@@ -97,10 +97,10 @@ describe("Getting started steps", () => {
   it("needs a default model on the default harness, or on any enabled harness when none is default", () => {
     const model = (harnesses: Parameters<typeof gettingStartedSteps>[0]["harnesses"]) => gettingStartedSteps({ sandboxReset: false, fleet: { status: "loading" }, projects: undefined, sessions: null, harnesses }).model;
     const on = (id: CoreHarness["id"]) => ({ ...provider, harness: id });
-    expect(model([harness("codex", { default: true }), harness("claude_sdk", { model_provider: on("claude_sdk") })])).toBe("todo");
-    expect(model([harness("codex", { default: true, model_provider: on("codex") })])).toBe("done");
-    expect(model([harness("codex"), harness("mcode", { enabled: false, model_provider: on("mcode") })])).toBe("todo");
-    expect(model([harness("codex"), harness("claude_sdk", { model_provider: on("claude_sdk") })])).toBe("done");
+    expect(model([harness("codex", { default: true }), harness("claude_sdk", { model_configuration: on("claude_sdk") })])).toBe("todo");
+    expect(model([harness("codex", { default: true, model_configuration: on("codex") })])).toBe("done");
+    expect(model([harness("codex"), harness("mcode", { enabled: false, model_configuration: on("mcode") })])).toBe("todo");
+    expect(model([harness("codex"), harness("claude_sdk", { model_configuration: on("claude_sdk") })])).toBe("done");
     expect(model(undefined)).toBeNull();
     expect(model("failed")).toBe("unknown");
   });

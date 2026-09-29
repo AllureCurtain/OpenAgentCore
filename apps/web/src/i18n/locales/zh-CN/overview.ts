@@ -32,7 +32,7 @@ export const overview = {
       backend: "打开沙箱后端",
     },
     model: {
-      title: "设置默认模型服务",
+      title: "设置默认模型配置",
       body: "为默认执行框架设置模型服务地址和 API key，让 Agent 可以调用模型。应用也可以在请求或 Agent 上指定其他模型服务。",
       open: "打开系统",
     },
@@ -50,7 +50,7 @@ export const overview = {
     },
     complete: {
       title: "一切就绪",
-      body: "沙箱已就绪，已设置默认模型服务，项目已有 key，第一个 Session 也已运行。",
+      body: "沙箱已就绪，已设置默认模型配置，项目已有 key，第一个 Session 也已运行。",
       dismiss: "关闭",
     },
   },

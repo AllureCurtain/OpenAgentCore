@@ -117,7 +117,7 @@ function reset(mode = "login", fresh = false, sandbox = "configured", nodes = "d
     // The demo deployment's default harness has a default model; a fresh install has none.
     harnesses: {
       claude_sdk: { enabled: true, default: false, provider: null },
-      codex: { enabled: true, default: true, provider: fresh ? null : { object: "core.model_provider", harness: "codex", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, last_used_at: null, last_error_code: null, last_error_at: null, updated_at: new Date((now - 86400) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") } },
+      codex: { enabled: true, default: true, provider: fresh ? null : { object: "core.model_configuration", harness: "codex", model: "fixture-model", harness_config: {}, model_provider: { protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true }, last_used_at: null, last_error_code: null, last_error_at: null, updated_at: new Date((now - 86400) * 1000).toISOString().replace(/\.\d{3}Z$/, "Z") } },
       mcode: { enabled: false, default: false, provider: null },
     },
     // "none": the deployment is not configured yet, so the Nodes page offers setup.
@@ -496,7 +496,7 @@ function registeredNode(nodeId) {
   return { rollout: { state: "unknown", ready_generation: null }, id: nodeId, name: nodeId, provider: state.deployment?.provider ?? "docker", core_url: publicUrl(), enrollment_id, online: false, provider_ready: false, cpu_count: null, available_memory_bytes: null, available_disk_bytes: null, running: 0, snapshots: 0, last_seen_at: null, ...limits, active: 0, reserved: 0, retained: 0, cleanup_pending: 0, created_at: new Date().toISOString() };
 }
 
-const HARNESS_PROVIDER = /^\/harnesses\/([^/]+)\/model-provider$/;
+const HARNESS_PROVIDER = /^\/harnesses\/([^/]+)\/model-configuration$/;
 const PROVIDER_FIELDS = new Set(["protocol", "base_url", "api_key", "context_window", "max_output_tokens"]);
 /** Core's one message for a body that is not a complete provider; it never echoes a value. */
 const PROVIDER_SHAPE = "The body must be a complete model provider: protocol, base_url, api_key and optional nonnegative context_window and max_output_tokens.";
@@ -526,7 +526,8 @@ function providerProblem(harness, input) {
  * DELETE is 204 and safe to repeat. A disabled harness may still be configured.
  */
 async function harnessRoute(request, response, path) {
-  const view = (id) => ({ object: "core.harness", id, enabled: state.harnesses[id].enabled, default: state.harnesses[id].default, model_provider: state.harnesses[id].provider });
+  const support = (id) => ({ protocols: ["anthropic", "responses", "chat_completions"], native_protocols: id === "codex" ? ["responses"] : id === "claude_sdk" ? ["anthropic"] : ["anthropic", "responses", "chat_completions"], accepts_harness_config: id !== "mcode", token_limits_required: id === "mcode" });
+  const view = (id) => ({ model_configuration_support: support(id), object: "core.harness", id, enabled: state.harnesses[id].enabled, default: state.harnesses[id].default, model_configuration: state.harnesses[id].provider });
   if (path === "/harnesses" && request.method === "GET") return send(response, 200, { object: "list", data: Object.keys(state.harnesses).map(view) });
   const match = path.match(HARNESS_PROVIDER);
   const harness = match && Object.hasOwn(state.harnesses, match[1]) ? match[1] : null;
@@ -551,14 +552,19 @@ async function harnessRoute(request, response, path) {
   }
   input ??= {};
   if (typeof input !== "object" || Array.isArray(input)) return error(response, 400, `Invalid type: expected an object, but got ${jsonKind(input)} instead.`, "invalid_request_error");
-  const problem = providerProblem(harness, input);
+  if (typeof input.model !== "string" || !input.model.trim()) return error(response, 400, "A model ID is required.", "model_configuration_model_invalid");
+  if (input.harness_config !== undefined && (!input.harness_config || typeof input.harness_config !== "object" || Array.isArray(input.harness_config))) return error(response, 400, "Harness configuration must be an object.", "harness_config_invalid");
+  if (Object.keys(input.harness_config ?? {}).length && !support(harness).native_protocols.includes(input.model_provider?.protocol)) return error(response, 400, "The selected route cannot preserve native model settings.", "model_configuration_route_unsupported");
+  const problem = providerProblem(harness, input.model_provider ?? {});
   if (problem) return error(response, 400, problem, "invalid_request_error");
   // As Core's error mapping: sealing the key needs the credential encryption key.
   if (!state.credentialKey) return error(response, 503, "Credential encryption is not configured on this service.", "credential_storage_unavailable");
   entry.provider = {
-    object: "core.model_provider", harness, protocol: input.protocol, base_url: input.base_url, api_key_configured: true,
-    ...(input.context_window ? { context_window: input.context_window } : {}),
-    ...(input.max_output_tokens ? { max_output_tokens: input.max_output_tokens } : {}),
+    object: "core.model_configuration", harness, model: input.model, harness_config: input.harness_config ?? {},
+    model_provider: { protocol: input.model_provider.protocol, base_url: input.model_provider.base_url, api_key_configured: true,
+      ...(input.model_provider.context_window ? { context_window: input.model_provider.context_window } : {}),
+      ...(input.model_provider.max_output_tokens ? { max_output_tokens: input.model_provider.max_output_tokens } : {}),
+    },
     last_used_at: null, last_error_code: null, last_error_at: null,
     updated_at: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
   };

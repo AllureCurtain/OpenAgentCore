@@ -10,7 +10,7 @@ test("default provider observations are optional details and recover only on Cor
     if (fail) return route.fulfill({ status: 503, json: { error: { code: "internal_error", message: "Read unavailable", type: "server_error", param: null } } });
     const response = await route.fetch();
     const data = await response.json();
-    for (const harness of data.data) if (harness.model_provider) Object.assign(harness.model_provider, observation);
+    for (const harness of data.data) if (harness.model_configuration) Object.assign(harness.model_configuration, observation);
     await route.fulfill({ response, json: data });
   });
   await openConsole(page, request, "system");

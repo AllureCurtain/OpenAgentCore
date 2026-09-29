@@ -12,7 +12,8 @@ export function HarnessCard({ harness, busy, stale, onEdit, onClear }: { harness
   const locale = i18n.resolvedLanguage;
   const headingId = useId();
   const name = harnessNames[harness.id];
-  const provider = harness.model_provider;
+  const configuration = harness.model_configuration;
+  const provider = configuration?.model_provider;
   return (
     <article className="system-model" aria-labelledby={headingId} data-default={harness.default ? "" : undefined}>
       <header className="system-model-header">
@@ -36,18 +37,19 @@ export function HarnessCard({ harness, busy, stale, onEdit, onClear }: { harness
             {harness.default ? <span className="pill">{t("models.default")}</span> : null}
           </span>
         </Fact>
-        {provider ? <>
+        {provider && configuration ? <>
+          <Fact label={t("models.model")}><code className="system-code">{configuration.model}</code></Fact>
           <Fact label={t("models.protocol")}>{protocolNames[provider.protocol]}</Fact>
           <Fact label={t("models.baseUrl")}><code className="system-code">{provider.base_url}</code></Fact>
           <Fact label={t("models.apiKey")}>{provider.api_key_configured ? t("models.keyConfigured") : t("models.keyNotConfigured")}</Fact>
           {provider.context_window !== undefined ? <Fact label={t("models.contextWindow")}>{formatInteger(provider.context_window, locale)}</Fact> : null}
           {provider.max_output_tokens !== undefined ? <Fact label={t("models.maxOutputTokens")}>{formatInteger(provider.max_output_tokens, locale)}</Fact> : null}
-          <Fact label={t("models.updated")}>{formatDateTime(Math.floor(Date.parse(provider.updated_at) / 1000), locale)}</Fact>
+          <Fact label={t("models.updated")}>{formatDateTime(Math.floor(Date.parse(configuration.updated_at) / 1000), locale)}</Fact>
         </> : (
           <Fact label={t("models.provider")}><span className="system-muted">{t("models.notSet")}</span></Fact>
         )}
       </dl>
-      {provider ? <ProviderObservations provider={provider} name={name} stale={stale} /> : null}
+      {configuration ? <ProviderObservations provider={configuration} name={name} stale={stale} /> : null}
     </article>
   );
 }

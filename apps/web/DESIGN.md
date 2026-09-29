@@ -825,13 +825,19 @@ this connection-scoped state.
 
 ### System page
 Four sections, each saying where it changes. Installation: the public address, API
-base URL, installation ID and source commit as a fact card. Default model provider, the one
+base URL, installation ID and source commit as a fact card. Default model configuration, the one
 section changed here: one card per harness in an auto-fill grid, its header holding
 the harness name and outline actions (Set, or Replace and Clear); fact rows give the
 harness's read-only startup state (a status dot and a Default pill, its source behind
-a help tip), then the provider's protocol, base URL, whether a key is configured,
+a help tip), then the default model ID, provider protocol, base URL, whether a key is configured,
 token limits when set and the update time, or Not set. Set and Replace open one form
-dialog; the key field is a required password input, never prefilled or shown and
+dialog. The model ID is required; advanced settings disclose an optional JSON object
+editor with formatting and inline syntax errors, plus token limits. The existing
+harness discovery response supplies supported protocols, native protocols, JSON
+support and required limits from one adapter declaration. The form uses those
+fields without harness-specific branches. Nonempty JSON requires a native protocol;
+the form explains an incompatible selection beside the editor. Help tips explain
+the scope of native settings. The key field is a required password input, never prefilled or shown and
 forgotten when the form closes. Core's rejection stays in red inside the form; Clear
 is a ConfirmDialog. Usage details opens Core’s observations in a separate dialog.
 Sandboxes: one navigation row to the Sandbox configuration secondary page; do not

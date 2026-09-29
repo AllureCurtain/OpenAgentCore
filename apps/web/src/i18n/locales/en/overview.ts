@@ -32,7 +32,7 @@ export const overview = {
       backend: "Open sandbox backend",
     },
     model: {
-      title: "Set a default model provider",
+      title: "Set a default model configuration",
       body: "Set the model service address and API key for the default harness so Agents can call a model. Applications can override this provider in a request or on an Agent.",
       open: "Open System",
     },
@@ -50,7 +50,7 @@ export const overview = {
     },
     complete: {
       title: "You're set",
-      body: "Sandboxes are ready, a default model provider is set, a project has a key and the first Session ran.",
+      body: "Sandboxes are ready, a default model configuration is set, a project has a key and the first Session ran.",
       dismiss: "Dismiss",
     },
   },

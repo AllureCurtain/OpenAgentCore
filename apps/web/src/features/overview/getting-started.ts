@@ -82,7 +82,7 @@ function sandboxStep(fleet: FleetState): GettingStartedSteps["sandboxes"] {
 export function modelStep(harnesses: readonly CoreHarness[] | "failed" | undefined): StepState {
   if (!harnesses || harnesses === "failed") return harnesses ? "unknown" : null;
   const target = harnesses.find((harness) => harness.default);
-  const set = target ? target.model_provider !== null : harnesses.some((harness) => harness.enabled && harness.model_provider !== null);
+  const set = target ? target.model_configuration !== null : harnesses.some((harness) => harness.enabled && harness.model_configuration !== null);
   return set ? "done" : "todo";
 }
 
