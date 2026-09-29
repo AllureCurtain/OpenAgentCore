@@ -70,6 +70,14 @@ func TestDeploymentModelProvidersHTTP(t *testing.T) {
 		_ = json.Unmarshal(raw, &value)
 		return value
 	}
+	providerView := func(configuration map[string]json.RawMessage) map[string]json.RawMessage {
+		t.Helper()
+		var provider map[string]json.RawMessage
+		if err := json.Unmarshal(configuration["model_provider"], &provider); err != nil {
+			t.Fatal("invalid safe model provider", err)
+		}
+		return provider
+	}
 	providerOf := func(sessionID string) string {
 		t.Helper()
 		provider, err := st.SessionModelExecution(t.Context(), tenant, sessionID)
@@ -78,19 +86,31 @@ func TestDeploymentModelProvidersHTTP(t *testing.T) {
 		}
 		return provider.APIKey
 	}
-	const path = "/core/v1/harnesses/codex/model-provider"
-	codexDefault := `{"protocol":"responses","base_url":"https://deployment.example/v1","api_key":"deployment-canary"}`
+	const path = "/core/v1/harnesses/codex/model-configuration"
+	codexDefault := `{"model":"fixture","model_provider":{"protocol":"responses","base_url":"https://deployment.example/v1","api_key":"deployment-canary"}}`
 
 	// Only the Core key manages defaults.
 	call("GET", "/core/v1/harnesses", projectKey, "", 401)
 	call("PUT", path, projectKey, codexDefault, 401)
 	list := call("GET", "/core/v1/harnesses", coreKey, "", 200)
-	if string(list["object"]) != `"list"` || !strings.Contains(string(list["data"]), `{"object":"core.harness","id":"claude_sdk","enabled":false,"default":false,"model_provider":null}`) ||
-		!strings.Contains(string(list["data"]), `{"object":"core.harness","id":"codex","enabled":true,"default":true,"model_provider":null}`) {
+	var harnesses []struct {
+		Object        string          `json:"object"`
+		ID            string          `json:"id"`
+		Enabled       bool            `json:"enabled"`
+		Default       bool            `json:"default"`
+		Configuration json.RawMessage `json:"model_configuration"`
+	}
+	if string(list["object"]) != `"list"` || json.Unmarshal(list["data"], &harnesses) != nil || len(harnesses) != 3 {
 		t.Fatalf("unexpected harness list: %s", list["data"])
 	}
+	for _, harness := range harnesses {
+		if harness.Object != "core.harness" || harness.Enabled != (harness.ID != "claude_sdk") ||
+			harness.Default != (harness.ID == "codex") || string(harness.Configuration) != "null" {
+			t.Fatalf("unexpected harness: %#v", harness)
+		}
+	}
 	call("GET", path, coreKey, "", 404)
-	call("PUT", "/core/v1/harnesses/other/model-provider", coreKey, codexDefault, 404)
+	call("PUT", "/core/v1/harnesses/other/model-configuration", coreKey, codexDefault, 404)
 	for _, invalid := range []string{
 		`{"protocol":"responses","base_url":"http://deployment.example/v1","api_key":"invalid-canary"}`,
 		`{"protocol":"unknown","base_url":"https://deployment.example/v1","api_key":"invalid-canary"}`,
@@ -98,9 +118,9 @@ func TestDeploymentModelProvidersHTTP(t *testing.T) {
 		`{"protocol":"responses","base_url":"https://deployment.example/v1","api_key":"invalid-canary","api_key_configured":true}`,
 		`{"protocol":"responses","base_url":"https://deployment.example/v1","api_key":"invalid-canary","context_window":-1}`,
 	} {
-		call("PUT", path, coreKey, invalid, 400)
+		call("PUT", path, coreKey, `{"model":"fixture","model_provider":`+invalid+`}`, 400)
 	}
-	call("PUT", "/core/v1/harnesses/mcode/model-provider", coreKey, `{"protocol":"anthropic","base_url":"https://deployment.example/anthropic","api_key":"invalid-canary"}`, 400)
+	call("PUT", "/core/v1/harnesses/mcode/model-configuration", coreKey, `{"model":"fixture","model_provider":{"protocol":"anthropic","base_url":"https://deployment.example/anthropic","api_key":"invalid-canary"}}`, 400)
 
 	// Without any provider, hosted and self-hosted creation fail before any write.
 	hosted := `{"agent":{"model":"hosted-model"},"environment":{"type":"openai_hosted"}}`
@@ -123,17 +143,17 @@ func TestDeploymentModelProvidersHTTP(t *testing.T) {
 			t.Fatal("private observation field exposed", field)
 		}
 	}
-	if text(saved["object"]) != "core.model_provider" || text(saved["harness"]) != "codex" || text(saved["base_url"]) != "https://deployment.example/v1" || string(saved["api_key_configured"]) != "true" || text(saved["updated_at"]) == "" {
+	if text(saved["object"]) != "core.model_configuration" || text(saved["harness"]) != "codex" || text(providerView(saved)["base_url"]) != "https://deployment.example/v1" || string(providerView(saved)["api_key_configured"]) != "true" || text(saved["updated_at"]) == "" {
 		t.Fatalf("unexpected provider view: %v", saved)
 	}
-	if retrieved := call("GET", path, coreKey, "", 200); text(retrieved["base_url"]) != "https://deployment.example/v1" {
+	if retrieved := call("GET", path, coreKey, "", 200); text(providerView(retrieved)["base_url"]) != "https://deployment.example/v1" {
 		t.Fatal("retrieved view differs")
 	}
 
 	for _, protocol := range []string{"anthropic", "chat_completions"} {
 		bundle := strings.Replace(codexDefault, `"protocol":"responses"`, `"protocol":"`+protocol+`"`, 1)
 		safe := call("PUT", path, coreKey, bundle, 200)
-		if text(safe["protocol"]) != protocol || text(safe["harness"]) != "codex" || string(safe["api_key_configured"]) != "true" {
+		if text(providerView(safe)["protocol"]) != protocol || text(safe["harness"]) != "codex" || string(providerView(safe)["api_key_configured"]) != "true" {
 			t.Fatal("safe deployment view changed the selected upstream protocol")
 		}
 		provider, err := st.DeploymentModelProvider(t.Context(), "codex")
@@ -261,7 +281,7 @@ func TestNoneSessionRetryAfterDeploymentDefaultChanges(t *testing.T) {
 	admin := adminaudit.WithSource(t.Context(), adminaudit.Source{CredentialID: "abcd1234", RequestID: "none-retry", TraceID: "none-retry"})
 	setDefault := func(key string) {
 		t.Helper()
-		if _, err := st.SetDeploymentModelProvider(admin, "codex", v1.ModelProviderInput{Protocol: "responses", BaseURL: "https://deployment.example/v1", APIKey: key}); err != nil {
+		if _, err := st.SetDeploymentModelProvider(admin, "codex", v1.ModelConfigurationInput{ModelProvider: v1.ModelProviderInput{Protocol: "responses", BaseURL: "https://deployment.example/v1", APIKey: key}, Model: "fixture"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -322,7 +342,7 @@ func TestDeploymentProviderResolutionPairsRevisionDuringReplacement(t *testing.T
 	}
 	admin := adminaudit.WithSource(t.Context(), adminaudit.Source{CredentialID: "fixture-admin", RequestID: uuid.NewString(), TraceID: uuid.NewString()})
 	provider := v1.ModelProviderInput{Protocol: "responses", BaseURL: "https://original.example/v1", APIKey: "original-fixture-key"}
-	if _, err = st.SetDeploymentModelProvider(admin, "codex", provider); err != nil {
+	if _, err = st.SetDeploymentModelProvider(admin, "codex", v1.ModelConfigurationInput{ModelProvider: provider, Model: "fixture"}); err != nil {
 		t.Fatal(err)
 	}
 	original, err := st.DeploymentModelProvider(t.Context(), "codex")
@@ -338,7 +358,7 @@ func TestDeploymentProviderResolutionPairsRevisionDuringReplacement(t *testing.T
 		}
 		replacement := provider
 		replacement.APIKey = "replacement-fixture-key"
-		_, err = st.SetDeploymentModelProvider(admin, harness, replacement)
+		_, err = st.SetDeploymentModelProvider(admin, harness, v1.ModelConfigurationInput{ModelProvider: replacement, Model: "fixture"})
 		return snapshot, err
 	}
 	handler, err := api.NewHandler(st, auth, "codex", api.WithExecution(st), api.WithModelProviderDefaults(resolver))

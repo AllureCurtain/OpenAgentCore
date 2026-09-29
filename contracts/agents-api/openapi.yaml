@@ -94,8 +94,8 @@ definitions:
         - claude_sdk
         - mcode
         type: string
-    required:
-    - harness
+      harness_config:
+        type: object
     type: object
   v1.CreateAgentRequest:
     properties:
@@ -1171,6 +1171,8 @@ definitions:
         - claude_sdk
         - mcode
         type: string
+      harness_config:
+        type: object
       model_provider:
         $ref: '#/definitions/v1.ModelProviderView'
     type: object
@@ -1182,6 +1184,8 @@ definitions:
         - claude_sdk
         - mcode
         type: string
+      harness_config:
+        type: object
       model_provider:
         allOf:
         - $ref: '#/definitions/v1.ModelProviderInput'
@@ -1501,6 +1505,8 @@ definitions:
     type: object
   v1.SessionExecutionInput:
     properties:
+      harness_config:
+        type: object
       model_provider:
         $ref: '#/definitions/v1.ModelProviderInput'
     type: object

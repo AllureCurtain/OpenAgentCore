@@ -40,7 +40,7 @@ func (q *Queries) GetDeploymentModelProviderSecret(ctx context.Context, harness 
 }
 
 const listDeploymentModelProviders = `-- name: ListDeploymentModelProviders :many
-SELECT harness, protocol, base_url, context_window, max_output_tokens, updated_at, last_used_at, last_error_code, last_error_at
+SELECT harness, protocol, base_url, context_window, max_output_tokens, model, harness_config, updated_at, last_used_at, last_error_code, last_error_at
 FROM deployment_model_providers ORDER BY harness
 `
 
@@ -50,6 +50,8 @@ type ListDeploymentModelProvidersRow struct {
 	BaseUrl         string             `json:"base_url"`
 	ContextWindow   int32              `json:"context_window"`
 	MaxOutputTokens int32              `json:"max_output_tokens"`
+	Model           string             `json:"model"`
+	HarnessConfig   []byte             `json:"harness_config"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	LastUsedAt      pgtype.Timestamptz `json:"last_used_at"`
 	LastErrorCode   pgtype.Text        `json:"last_error_code"`
@@ -71,6 +73,8 @@ func (q *Queries) ListDeploymentModelProviders(ctx context.Context) ([]ListDeplo
 			&i.BaseUrl,
 			&i.ContextWindow,
 			&i.MaxOutputTokens,
+			&i.Model,
+			&i.HarnessConfig,
 			&i.UpdatedAt,
 			&i.LastUsedAt,
 			&i.LastErrorCode,
@@ -87,13 +91,13 @@ func (q *Queries) ListDeploymentModelProviders(ctx context.Context) ([]ListDeplo
 }
 
 const upsertDeploymentModelProvider = `-- name: UpsertDeploymentModelProvider :one
-INSERT INTO deployment_model_providers (harness, protocol, base_url, context_window, max_output_tokens, encrypted_config, revision, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, clock_timestamp())
+INSERT INTO deployment_model_providers (harness, protocol, base_url, context_window, max_output_tokens, model, harness_config, encrypted_config, revision, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, clock_timestamp())
 ON CONFLICT (harness) DO UPDATE SET protocol = EXCLUDED.protocol, base_url = EXCLUDED.base_url,
     context_window = EXCLUDED.context_window, max_output_tokens = EXCLUDED.max_output_tokens,
-    encrypted_config = EXCLUDED.encrypted_config, revision = EXCLUDED.revision, updated_at = EXCLUDED.updated_at,
+    model = EXCLUDED.model, harness_config = EXCLUDED.harness_config, encrypted_config = EXCLUDED.encrypted_config, revision = EXCLUDED.revision, updated_at = EXCLUDED.updated_at,
     last_used_at = NULL, last_error_code = NULL, last_error_at = NULL, recovery_pending = false
-RETURNING harness, protocol, base_url, context_window, max_output_tokens, updated_at, last_used_at, last_error_code, last_error_at
+RETURNING harness, protocol, base_url, context_window, max_output_tokens, model, harness_config, updated_at, last_used_at, last_error_code, last_error_at
 `
 
 type UpsertDeploymentModelProviderParams struct {
@@ -102,6 +106,8 @@ type UpsertDeploymentModelProviderParams struct {
 	BaseUrl         string      `json:"base_url"`
 	ContextWindow   int32       `json:"context_window"`
 	MaxOutputTokens int32       `json:"max_output_tokens"`
+	Model           string      `json:"model"`
+	HarnessConfig   []byte      `json:"harness_config"`
 	EncryptedConfig []byte      `json:"encrypted_config"`
 	Revision        pgtype.UUID `json:"revision"`
 }
@@ -112,6 +118,8 @@ type UpsertDeploymentModelProviderRow struct {
 	BaseUrl         string             `json:"base_url"`
 	ContextWindow   int32              `json:"context_window"`
 	MaxOutputTokens int32              `json:"max_output_tokens"`
+	Model           string             `json:"model"`
+	HarnessConfig   []byte             `json:"harness_config"`
 	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
 	LastUsedAt      pgtype.Timestamptz `json:"last_used_at"`
 	LastErrorCode   pgtype.Text        `json:"last_error_code"`
@@ -125,6 +133,8 @@ func (q *Queries) UpsertDeploymentModelProvider(ctx context.Context, arg UpsertD
 		arg.BaseUrl,
 		arg.ContextWindow,
 		arg.MaxOutputTokens,
+		arg.Model,
+		arg.HarnessConfig,
 		arg.EncryptedConfig,
 		arg.Revision,
 	)
@@ -135,6 +145,8 @@ func (q *Queries) UpsertDeploymentModelProvider(ctx context.Context, arg UpsertD
 		&i.BaseUrl,
 		&i.ContextWindow,
 		&i.MaxOutputTokens,
+		&i.Model,
+		&i.HarnessConfig,
 		&i.UpdatedAt,
 		&i.LastUsedAt,
 		&i.LastErrorCode,

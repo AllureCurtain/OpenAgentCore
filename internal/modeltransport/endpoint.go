@@ -21,6 +21,7 @@ const maxBody = 32 << 20
 // Endpoint belongs to one Session Executor. Close it only after the native
 // executor stops using it, including preparation failure and final teardown.
 type Endpoint struct {
+	Route     Route
 	Protocol  Protocol
 	BaseURL   string
 	APIKey    string
@@ -39,15 +40,14 @@ func Prepare(provider Provider, model string, native ...Protocol) (*Endpoint, er
 	if provider.Validate() != nil || strings.TrimSpace(model) == "" || len(native) == 0 {
 		return nil, ErrConfiguration
 	}
-	for _, protocol := range native {
-		if protocol.Path() == "" {
-			return nil, ErrConfiguration
-		}
-		if protocol == provider.Protocol {
-			return &Endpoint{Protocol: protocol, BaseURL: provider.BaseURL, APIKey: provider.APIKey}, nil
-		}
+	route, err := ResolveRoute(provider.Protocol, native)
+	if err != nil {
+		return nil, err
 	}
-	return newEndpoint(provider, model, native[0])
+	if !route.Converted() {
+		return &Endpoint{Route: route, Protocol: route.Native, BaseURL: provider.BaseURL, APIKey: provider.APIKey}, nil
+	}
+	return newEndpoint(provider, model, route.Native)
 }
 
 func newEndpoint(provider Provider, model string, native Protocol) (*Endpoint, error) {
@@ -63,7 +63,7 @@ func newEndpoint(provider Provider, model string, native Protocol) (*Endpoint, e
 	ctx, cancel := context.WithCancel(context.Background())
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = time.Minute
-	endpoint := &Endpoint{Protocol: native, BaseURL: "http://" + listener.Addr().String(),
+	endpoint := &Endpoint{Route: Route{Upstream: provider.Protocol, Native: native}, Protocol: native, BaseURL: "http://" + listener.Addr().String(),
 		APIKey: base64.RawURLEncoding.EncodeToString(token), transport: transport, cancel: cancel}
 	if native != Anthropic {
 		endpoint.BaseURL += "/v1"
@@ -146,6 +146,10 @@ func (e *Endpoint) serve(w http.ResponseWriter, request *http.Request, client *h
 	}
 	if !json.Valid(raw) || json.Unmarshal(raw, &envelope) != nil || envelope.Model != model {
 		modelError(w, e.Protocol, http.StatusBadRequest, "model request does not match the selected model")
+		return
+	}
+	if err := e.Route.Validate(requestRequirements(e.Protocol, raw)); err != nil {
+		modelError(w, e.Protocol, http.StatusBadRequest, "model protocol capability is unsupported")
 		return
 	}
 	exchange, err := NewExchange(e.Protocol, provider.Protocol, model, raw, envelope.Stream)

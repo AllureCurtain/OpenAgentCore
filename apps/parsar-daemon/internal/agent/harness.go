@@ -29,6 +29,54 @@ import (
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
 )
 
+// ExecutorFactory must prepare model configuration before native startup and
+// before submitting model input; accepted fields must never be silently dropped.
+// proto.HarnessConfig is a JSON object: omission and {} are empty configuration;
+// explicit null, arrays and objects above 16 KiB of serialized UTF-8 bytes are
+// invalid. The selected
+// adapter owns field names, meanings and native validation. See the native model
+// configuration section of contracts/agents-api/harness-onboarding.md.
+// Core freezes model, model_provider and proto.HarnessConfig in the Session.
+// Runtime resolves modeltransport first; adapters consume only its final effective
+// connection (address, protocol and authentication).
+// Each adapter declares safe native model fields in internal/harnessconfig and
+// validates the same declaration at admission and again before native application.
+// Unknown fields and conflicts with model, provider/authentication, workspace,
+// tools/MCP, permissions or lifecycle controls fail with a value-free error.
+// Apply accepted fields directly to native config or SDK options, without a
+// cross-Harness parameter translation layer. Never merge arbitrary host config.
+// Preparation failure cleans up owned configuration files, processes/SDK resources
+// and proxies. Unconfirmed cleanup returns a non-nil Executor with the error under
+// the factory ownership contract. The logical configuration snapshot remains fixed
+// across Turns and reconnects; rebuilding an Executor may regenerate local proxy
+// addresses or short-lived credentials. Configuration defaults and inheritance
+// belong to the public API contract.
+
+// Configuration support is declared once by each adapter in internal/harnessconfig:
+// accepted upstream protocols, native protocols, token-limit requirements and its
+// native model-parameter validator. Core admission, Runtime and modeltransport
+// consume that declaration; adding a Harness must not introduce another public
+// configuration shape or a Harness-name branch in orchestration.
+//
+// modeltransport owns route selection and preservation requirements. JSON parsing,
+// adapter acceptance, conversion qualification and upstream model support are
+// separate facts. A registered translator alone does not prove preservation.
+// Native routes keep the original protocol; conversion routes must reject an
+// unqualified requirement before forwarding model input. Nonempty native parameters,
+// structured output, tool search, native web search and nondefault verbosity are
+// currently native-route-only. Existing text, ordinary tools and streaming retain
+// their qualified conversion paths; no model-name heuristic establishes support.
+// Direct transport does not prove that the selected remote model accepts a native
+// parameter: the native Harness/provider remains responsible for that response.
+//
+// Input capability uses the existing MessageImages/MessageImagePlacements and
+// proto.MessageInput contracts, not another image type in model configuration.
+// Configuration preparation checks known requirements. Each Turn, steer and tool
+// result must also check newly introduced input requirements against the fixed
+// route before native submission or proxy forwarding. Unqualified image forms
+// must fail explicitly, never be dropped or reduced to text. The proxy performs
+// the final request check before forwarding; it cannot silently weaken semantics.
+
 // Required execution lifecycle.
 
 // ExecutorFactory prepares without model input. A failed factory retains any

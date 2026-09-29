@@ -23,7 +23,7 @@ func (s *coreProviderValidationStore) ListDeploymentModelProviders(context.Conte
 func (s *coreProviderValidationStore) DeleteDeploymentModelProvider(context.Context, string) error {
 	return nil
 }
-func (s *coreProviderValidationStore) SetDeploymentModelProvider(context.Context, string, v1.ModelProviderInput) (store.DeploymentModelProvider, error) {
+func (s *coreProviderValidationStore) SetDeploymentModelProvider(context.Context, string, v1.ModelConfigurationInput) (store.DeploymentModelProvider, error) {
 	s.writes++
 	return store.DeploymentModelProvider{}, nil
 }
@@ -45,7 +45,7 @@ func TestCoreModelProviderValidationFields(t *testing.T) {
 		{"output required", "mcode", `{"protocol":"anthropic","base_url":"https://example.test","api_key":"private-key","context_window":2}`, "model_provider_token_limits_invalid", "max_output_tokens", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			out := projectKeyHTTP(h, http.MethodPut, "/core/v1/harnesses/"+tc.harness+"/model-provider", "admin", tc.body)
+			out := projectKeyHTTP(h, http.MethodPut, "/core/v1/harnesses/"+tc.harness+"/model-configuration", "admin", `{"model":"fixture","model_provider":`+tc.body+`}`)
 			var body struct {
 				Error struct {
 					Code    string
@@ -72,7 +72,7 @@ func TestCoreModelProviderValidationFields(t *testing.T) {
 		harness, token string
 		status         int
 	}{{"codex", "", 401}, {"private-harness", "admin", 404}} {
-		out := projectKeyHTTP(h, http.MethodPut, "/core/v1/harnesses/"+tc.harness+"/model-provider", tc.token, `{}`)
+		out := projectKeyHTTP(h, http.MethodPut, "/core/v1/harnesses/"+tc.harness+"/model-configuration", tc.token, `{}`)
 		if out.Code != tc.status || strings.Contains(out.Body.String(), "private-") {
 			t.Fatal("admission order changed", out.Code, out.Body)
 		}

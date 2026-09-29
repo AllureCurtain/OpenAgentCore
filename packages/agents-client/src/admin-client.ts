@@ -14,10 +14,10 @@ import { CoreRequester } from "./core-request";
 import {
   invalidAdminResponse, projectAdminProject, projectAdminKey, projectIssuedAdminKey, projectAdminPage, projectAdminDeleted, projectAdminSessionArchive,
   projectResourcePage, projectSavedAgent, projectSkill, projectSkillVersion, projectArtifact, projectSummary, projectAdminRuntimePage, projectResourceOwners, projectWriteOperations, projectAdminAudit,
-  projectExecutorCredentials, projectIssuedExecutorCredential, projectCoreHarnessList, projectHarnessModelProvider, projectInstallation,
+  projectExecutorCredentials, projectIssuedExecutorCredential, projectCoreHarnessList, projectHarnessModelConfiguration, projectInstallation,
 } from "./admin-projection";
 import type {
-  CoreHarness, CoreHarnessKind, HarnessModelProvider, ModelProviderInput, PageOptions, ReadOptions, RuntimeHistoryQuery, SkillList, SkillVersionDeleted,
+  CoreHarness, CoreHarnessKind, HarnessModelConfiguration, ModelConfigurationInput, PageOptions, ReadOptions, RuntimeHistoryQuery, SkillList, SkillVersionDeleted,
   SkillVersionList, SourceFileList, VaultListOptions,
 } from "./types";
 import type {
@@ -292,26 +292,31 @@ export class AdminClient {
     await this.#response(`${scope(projectId)}/environments/${segment(environmentId)}/executor-credentials/${segment(keyId)}`, options, "DELETE");
   }
 
-  /** Every harness this Core build supports, with its deployment default model provider or null. */
+  /** Every harness this Core build supports, with its deployment default model configuration or null. */
   async listHarnesses(options?: ReadOptions): Promise<{ object: "list"; data: CoreHarness[] }> {
     return projectCoreHarnessList(await this.#json("/harnesses", options));
   }
   /** The harness's deployment default; Core answers 404 when none is set. The key is never returned. */
-  async retrieveHarnessModelProvider(harness: CoreHarnessKind, options?: ReadOptions): Promise<HarnessModelProvider> {
-    return projectHarnessModelProvider(await this.#json(`/harnesses/${segment(harness)}/model-provider`, options), harness);
+  async retrieveHarnessModelConfiguration(harness: CoreHarnessKind, options?: ReadOptions): Promise<HarnessModelConfiguration> {
+    return projectHarnessModelConfiguration(await this.#json(`/harnesses/${segment(harness)}/model-configuration`, options), harness);
   }
   /**
    * Replaces the harness's deployment default with the complete bundle, including the write-only key.
-   * New openai_hosted and none Sessions freeze it; self_hosted Sessions never use it, and existing Sessions keep the provider they froze.
+   * New openai_hosted and none Sessions freeze it; self_hosted Sessions never use it, and existing Sessions keep the configuration they froze.
    */
-  async setHarnessModelProvider(harness: CoreHarnessKind, input: ModelProviderInput, options?: ReadOptions): Promise<HarnessModelProvider> {
-    const body: ModelProviderInput = { protocol: input.protocol, base_url: input.base_url, api_key: input.api_key };
-    if (input.context_window !== undefined) body.context_window = input.context_window;
-    if (input.max_output_tokens !== undefined) body.max_output_tokens = input.max_output_tokens;
-    return projectHarnessModelProvider(await this.#json(`/harnesses/${segment(harness)}/model-provider`, options, "PUT", body), harness);
+  async setHarnessModelConfiguration(harness: CoreHarnessKind, input: ModelConfigurationInput, options?: ReadOptions): Promise<HarnessModelConfiguration> {
+    const { model_provider: provider } = input;
+    const body: ModelConfigurationInput = {
+      model: input.model,
+      model_provider: { protocol: provider.protocol, base_url: provider.base_url, api_key: provider.api_key },
+      ...(input.harness_config === undefined ? {} : { harness_config: input.harness_config }),
+    };
+    if (provider.context_window !== undefined) body.model_provider.context_window = provider.context_window;
+    if (provider.max_output_tokens !== undefined) body.model_provider.max_output_tokens = provider.max_output_tokens;
+    return projectHarnessModelConfiguration(await this.#json(`/harnesses/${segment(harness)}/model-configuration`, options, "PUT", body), harness);
   }
-  /** Removes the harness's deployment default; removing it again is safe. Existing Sessions keep their frozen provider. */
-  async deleteHarnessModelProvider(harness: CoreHarnessKind, options?: ReadOptions): Promise<void> {
-    await this.#response(`/harnesses/${segment(harness)}/model-provider`, options, "DELETE");
+  /** Removes the harness's deployment default; removing it again is safe. Existing Sessions keep their frozen configuration. */
+  async deleteHarnessModelConfiguration(harness: CoreHarnessKind, options?: ReadOptions): Promise<void> {
+    await this.#response(`/harnesses/${segment(harness)}/model-configuration`, options, "DELETE");
   }
 }

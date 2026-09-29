@@ -16,7 +16,7 @@ import (
 // fixtureDeploymentProvider configures a deployment default for every harness.
 func fixtureDeploymentProvider() api.Option {
 	return api.WithModelProviderDefaults(func(_ context.Context, harness string) (*store.DeploymentModelProviderSnapshot, error) {
-		return &store.DeploymentModelProviderSnapshot{Provider: store.FixtureModelProvider(harness), Revision: uuid.New()}, nil
+		return &store.DeploymentModelProviderSnapshot{Model: "fixture", Provider: store.FixtureModelProvider(harness), Revision: uuid.New()}, nil
 	})
 }
 

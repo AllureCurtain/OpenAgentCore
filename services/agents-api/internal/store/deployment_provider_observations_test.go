@@ -34,7 +34,7 @@ func newProviderObservationFixture(t *testing.T) providerObservationFixture {
 	t.Helper()
 	s, pool := newManagedTestStore(t)
 	provider := FixtureModelProvider("codex")
-	if _, err := s.SetDeploymentModelProvider(observationAdmin(t), "codex", *provider); err != nil {
+	if _, err := s.SetDeploymentModelProvider(observationAdmin(t), "codex", v1.ModelConfigurationInput{ModelProvider: *provider, Model: "fixture"}); err != nil {
 		t.Fatal(err)
 	}
 	snapshot, err := s.DeploymentModelProvider(t.Context(), "codex")
@@ -89,7 +89,7 @@ func TestDeploymentObservationSnapshotReplacementAndRetry(t *testing.T) {
 	}
 	replacement := *before.Provider
 	replacement.APIKey = "different-fixture-key"
-	if _, err = f.s.SetDeploymentModelProvider(observationAdmin(t), "codex", replacement); err != nil {
+	if _, err = f.s.SetDeploymentModelProvider(observationAdmin(t), "codex", v1.ModelConfigurationInput{ModelProvider: replacement, Model: "fixture"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = f.pool.Exec(t.Context(), "UPDATE deployment_model_providers SET updated_at='2000-01-01'"); err != nil {
@@ -122,7 +122,7 @@ func TestDeploymentObservationSnapshotReplacementAndRetry(t *testing.T) {
 	if err = f.s.DeleteDeploymentModelProvider(observationAdmin(t), "codex"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = f.s.SetDeploymentModelProvider(observationAdmin(t), "codex", *before.Provider); err != nil {
+	if _, err = f.s.SetDeploymentModelProvider(observationAdmin(t), "codex", v1.ModelConfigurationInput{ModelProvider: *before.Provider, Model: "fixture"}); err != nil {
 		t.Fatal(err)
 	}
 	recreated, _ := f.s.DeploymentModelProvider(t.Context(), "codex")
@@ -158,7 +158,7 @@ func TestDeploymentObservationEligibilityAndReset(t *testing.T) {
 		t.Fatal("safe observations missing")
 	}
 	old := f.revision(t)
-	reset, err := f.s.SetDeploymentModelProvider(observationAdmin(t), "codex", *f.input.ModelProvider)
+	reset, err := f.s.SetDeploymentModelProvider(observationAdmin(t), "codex", v1.ModelConfigurationInput{ModelProvider: *f.input.ModelProvider, Model: "fixture"})
 	if err != nil {
 		t.Fatal(err)
 	}

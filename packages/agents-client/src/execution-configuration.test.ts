@@ -7,6 +7,7 @@ const id = "013773a9-44b9-4f84-baca-b51c04a01201";
 const snapshot: SessionExecutionConfiguration = {
   object: "agent.session.execution_configuration", schema_version: 1, session_id: id,
   model: { value: "frozen-model", source: "session" }, harness: { value: "codex", source: "agent" },
+  harness_config: { value: { model_reasoning_effort: "high" }, source: "agent" },
   model_provider: { status: "available", source: "agent", configuration: { protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true } },
 };
 function clientReturning(value: unknown, seen?: (url: string, init?: RequestInit) => void) {
@@ -52,6 +53,9 @@ describe("frozen execution configuration", () => {
     (value: any) => { value.model_provider.configuration.base_url += "?key=secret-canary"; },
     (value: any) => { value.session_id = "wrong-session"; },
     (value: any) => { value.model.source = "guessed"; },
+    (value: any) => { value.harness_config.value = []; },
+    (value: any) => { value.harness_config.source = "unknown"; },
+    (value: any) => { value.harness_config.source = "guessed"; },
     (value: any) => { value.model_provider.configuration.protocol = "chat-completions"; },
   ])("rejects unsafe or inconsistent responses without echoing them", async (mutate) => {
     const value = structuredClone(snapshot); mutate(value);

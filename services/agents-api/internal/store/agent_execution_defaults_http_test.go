@@ -30,7 +30,7 @@ func TestAgentExecutionDefaultsPublicSnapshotAndPrecedence(t *testing.T) {
 	handler, err := api.NewHandler(st, auth, "codex", api.WithHarnesses([]string{"codex", "claude_sdk", "mcode"}), api.WithHostedEnvironments(), api.WithExecution(st), api.WithModelProviderDefaults(func(context.Context, string) (*store.DeploymentModelProviderSnapshot, error) {
 		defaultsCalls++
 		copy := *deployment
-		return &store.DeploymentModelProviderSnapshot{Provider: &copy, Revision: uuid.New()}, nil
+		return &store.DeploymentModelProviderSnapshot{Model: "fixture", Provider: &copy, Revision: uuid.New()}, nil
 	}))
 	if err != nil {
 		t.Fatal(err)

@@ -53,7 +53,7 @@ test("opens a fresh install on the Overview's Getting started: a project and its
   const step = (name: string) => page.getByRole("region", { name: "Getting started" }).getByRole("listitem").filter({ hasText: name });
   // The fixture deployment already has a ready node.
   await expect(step("Get sandboxes ready")).toContainText("Done");
-  await expect(step("Set a default model provider")).toContainText("To do");
+  await expect(step("Set a default model configuration")).toContainText("To do");
   await expect(step("Create a project and issue a key")).toContainText("To do");
   await expect(step("Run the first Session")).toContainText("To do");
 
@@ -103,21 +103,22 @@ test("opens a fresh install on the Overview's Getting started: a project and its
   expect(stored).not.toContain(FIXTURE_CORE_KEY);
 });
 
-test("leads from Getting started to the default model provider, and counts it done once the default harness has one", async ({ page, request }) => {
+test("leads from Getting started to the default model configuration, and counts it done once the default harness has one", async ({ page, request }) => {
   await openConsole(page, request, "overview", { fresh: true });
-  const step = page.getByRole("region", { name: "Getting started" }).getByRole("listitem").filter({ hasText: "Set a default model provider" });
+  const step = page.getByRole("region", { name: "Getting started" }).getByRole("listitem").filter({ hasText: "Set a default model configuration" });
   await expect(step).toContainText("To do");
   await step.getByRole("button", { name: "Open System" }).click();
   await expect(page.getByRole("heading", { name: "System", level: 1 })).toBeVisible();
   // It arrives on the default harness's action.
-  const set = page.getByRole("button", { name: "Set the default model provider for Codex" });
+  const set = page.getByRole("button", { name: "Set the default model configuration for Codex" });
   await expect(set).toBeFocused();
   // Only the page body scrolls to it: the page header stays in view.
   await expect(page.getByRole("heading", { name: "System", level: 1 })).toBeInViewport();
   await set.click();
-  const form = page.getByRole("dialog", { name: "Set default model provider for Codex" });
+  const form = page.getByRole("dialog", { name: "Set default model configuration for Codex" });
   await form.getByLabel("Base URL").fill("https://model.example/v1");
   await form.getByLabel("API key").fill("sk-fixture-getting-started");
+  await form.getByLabel("Default model ID").fill("fixture-model");
   await form.getByRole("button", { name: "Save" }).click();
   await expect(form).toBeHidden();
   await page.getByRole("button", { name: "Overview", exact: true }).click();

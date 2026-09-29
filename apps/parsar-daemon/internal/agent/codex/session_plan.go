@@ -7,6 +7,7 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/apps/parsar-daemon/internal/localworkspace"
 	"github.com/MiniMax-AI-Dev/parsar/internal/agentdaemon/proto"
+	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 )
 
 func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg sessionConfig) (SessionPlan, []string, error) {
@@ -24,6 +25,10 @@ func prepareSessionPlan(ctx context.Context, req proto.PromptRequestPayload, cfg
 	plan, err := BuildSessionPlan(req.RunID, req.AgentStateKey, req.WorkDir, req.AgentOptions)
 	if err != nil {
 		return SessionPlan{}, nil, fmt.Errorf("codex: build session plan: %w", err)
+	}
+	if err := plan.ModelRoute.Validate(modeltransport.RequirementsFromRequest(req)); err != nil {
+		plan.Cleanup()
+		return SessionPlan{}, nil, err
 	}
 	if err := configureSubagentObservations(&plan, req); err != nil {
 		plan.Cleanup()

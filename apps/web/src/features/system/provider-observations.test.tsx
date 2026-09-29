@@ -1,10 +1,10 @@
-import type { HarnessModelProvider } from "@agents-core-web/agents-client";
+import type { HarnessModelConfiguration } from "@agents-core-web/agents-client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import i18n from "../../i18n";
 import { activeProviderError, ProviderObservations } from "./ProviderObservations";
 
-const provider: HarnessModelProvider = { object: "core.model_provider", harness: "codex", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, updated_at: "2026-09-28T08:00:00Z", last_used_at: null, last_error_at: null, last_error_code: null };
+const provider: HarnessModelConfiguration = { object: "core.model_configuration", harness: "codex", model: "fixture-model", harness_config: {}, model_provider: { protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true }, updated_at: "2026-09-28T08:00:00Z", last_used_at: null, last_error_at: null, last_error_code: null };
 afterEach(() => { void i18n.changeLanguage("en"); });
 
 describe("default provider observations", () => {

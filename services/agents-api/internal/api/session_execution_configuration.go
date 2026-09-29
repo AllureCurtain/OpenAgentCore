@@ -18,7 +18,8 @@ type sessionExecutionConfigurationStore interface {
 func sessionExecutionProjection(input sessionRequest, saved *v1.SavedAgent, inherited, provider *v1.ModelProviderInput, engine string, raw json.RawMessage) v1.SessionExecutionConfiguration {
 	var configuration struct {
 		Agent struct {
-			Model string `json:"model"`
+			Model string         `json:"model"`
+			Core  *v1.AgentsCore `json:"x_agents_core"`
 		} `json:"agent"`
 	}
 	_ = json.Unmarshal(raw, &configuration) // The resolved configuration was already validated.
@@ -26,10 +27,15 @@ func sessionExecutionProjection(input sessionRequest, saved *v1.SavedAgent, inhe
 	if saved != nil && (input.Agent == nil || input.Agent.Model == nil) {
 		modelSource = "agent"
 	}
+	if input.modelSource != "" {
+		modelSource = input.modelSource
+	}
 	harnessSource := "deployment"
 	if _, overridden := input.agentFields["x_agents_core"]; overridden {
 		if input.Agent != nil && input.Agent.XAgentsCore != nil && input.Agent.XAgentsCore.Harness != "" {
 			harnessSource = "session"
+		} else if input.Agent != nil && input.Agent.XAgentsCore != nil && saved != nil && saved.XAgentsCore != nil && saved.XAgentsCore.Harness != "" {
+			harnessSource = "agent"
 		}
 	} else if saved != nil && saved.XAgentsCore != nil && saved.XAgentsCore.Harness != "" {
 		harnessSource = "agent"
@@ -45,8 +51,17 @@ func sessionExecutionProjection(input sessionRequest, saved *v1.SavedAgent, inhe
 			selection.Source = "agent"
 		}
 	}
+	native := json.RawMessage(`{}`)
+	if configuration.Agent.Core != nil {
+		native = v1.ResolvedHarnessConfig(configuration.Agent.Core.HarnessConfig)
+	}
+	nativeSource := input.harnessConfigSource
+	if nativeSource == "" {
+		nativeSource = "unknown"
+	}
 	return v1.SessionExecutionConfiguration{
-		Object: "agent.session.execution_configuration", SchemaVersion: 1,
+		HarnessConfig: v1.ExecutionHarnessConfigSelection{Value: native, Source: nativeSource},
+		Object:        "agent.session.execution_configuration", SchemaVersion: 1,
 		Model:   v1.ExecutionSelection{Value: &configuration.Agent.Model, Source: modelSource},
 		Harness: v1.ExecutionSelection{Value: &engine, Source: harnessSource}, ModelProvider: selection,
 	}

@@ -52,6 +52,33 @@ see [capability preparation](environments.md#runtime-capability-preparation).
 Model providers supply
 model communication configuration, not Turn scheduling or native process ownership.
 
+## Native model configuration
+
+[`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go) owns the
+preparation, validation, reserved-field, effective-connection and cleanup contract.
+The shared wire object is `proto.HarnessConfig`. Adapter declarations in
+`internal/harnessconfig/<kind>` own these native fields:
+
+| Harness | Accepted native fields | Application |
+| --- | --- | --- |
+| Codex | `model_reasoning_effort`: `none`, `minimal`, `low`, `medium`, `high`, `xhigh` | Native app-server `-c model_reasoning_effort=...` and each Turn's `collaborationMode.settings.reasoning_effort` |
+| Claude SDK | `effort`: `low`, `medium`, `high`, `xhigh`, `max`; `thinking`: the SDK's `adaptive`, `enabled` or `disabled` object | SDK `Options.effort` and `Options.thinking` |
+| MiniMax Code | Empty object only | Existing provider token limits remain required; additional native generation parameters are not qualified |
+
+Claude `thinking` accepts `display` (`summarized` or `omitted`) for adaptive or
+enabled thinking, and an optional positive integer `budgetTokens` only for
+`enabled`. The deprecated `maxThinkingTokens` alternative is rejected.
+These are native settings, not a shared reasoning vocabulary; model availability
+and provider support remain the selected harness's responsibility.
+
+Native protocol and parameter declarations also feed Core administration's small
+configuration-support descriptor. `modeltransport` selects and validates routes
+from those declarations. Its conversion qualification is distinct from adapter
+acceptance and remote-model support. Follow the route and per-input requirements
+in `agent/harness.go`; do not add a second model capability registry or infer
+capabilities from model names. Nonempty `harness_config` currently requires a native
+protocol route because the translator has no loss report for those parameters.
+
 ## Required adapter interfaces
 
 [`agent/harness.go`](../../apps/parsar-daemon/internal/agent/harness.go) is the

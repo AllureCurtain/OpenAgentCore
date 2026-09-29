@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	v1 "github.com/MiniMax-AI-Dev/parsar/contracts/agents-api/v1"
+	"github.com/MiniMax-AI-Dev/parsar/internal/modeltransport"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/db/sqlc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -82,16 +83,46 @@ func validateAgentModelExecution(configuration []byte, provider *v1.ModelProvide
 	if err := json.Unmarshal(configuration, &config); err != nil {
 		return ErrInvalidInput
 	}
+	if config.Core != nil {
+		if err := v1.ValidateHarnessConfig(config.Core.Harness, config.Core.HarnessConfig); err != nil {
+			return fmt.Errorf("%w: %s", ErrInvalidInput, err)
+		}
+	}
 	if config.Core == nil || config.Core.ModelProvider == nil || config.Core.Harness == "" {
 		return nil
 	}
 	if err := config.Core.ModelProvider.ValidateHarness(config.Core.Harness); err != nil {
 		return fmt.Errorf("%w: %s", ErrInvalidInput, err)
 	}
+	if err := v1.ValidateModelConfigurationRoute(config.Core.Harness, config.Core.ModelProvider.Protocol, config.Core.HarnessConfig, modeltransport.Requirements{}); err != nil {
+		return fmt.Errorf("%w: %s", ErrInvalidInput, err)
+	}
 	return nil
 }
 
 func mergeAgentConfiguration(configuration, patch map[string]json.RawMessage) error {
+	_, modelChanged := patch["model"]
+	var corePatch map[string]json.RawMessage
+	if raw := patch["x_agents_core"]; len(raw) > 0 && string(raw) != "null" {
+		if err := json.Unmarshal(raw, &corePatch); err != nil {
+			return err
+		}
+	}
+	_, providerChanged := corePatch["model_provider"]
+	_, harnessChanged := corePatch["harness"]
+	_, nativeSupplied := corePatch["harness_config"]
+	if (modelChanged || providerChanged || harnessChanged) && !nativeSupplied && string(patch["x_agents_core"]) != "null" {
+		if corePatch == nil {
+			corePatch = map[string]json.RawMessage{}
+		}
+		corePatch["harness_config"] = json.RawMessage(`{}`)
+		raw, err := json.Marshal(corePatch)
+		if err != nil {
+			return err
+		}
+		patch["x_agents_core"] = raw
+	}
+
 	for field, value := range patch {
 		if field == "x_agents_core" && string(value) != "null" {
 			core := map[string]json.RawMessage{}

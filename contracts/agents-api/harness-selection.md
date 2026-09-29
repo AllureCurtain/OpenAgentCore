@@ -65,7 +65,7 @@ never move providers. See the [deployment procedure](../../services/agents-api/H
 
 Each engine has at most one deployment default model provider, stored encrypted in
 PostgreSQL and managed with the Core key in Web or through
-`/core/v1/harnesses/{harness}/model-provider`; `GET /core/v1/harnesses` lists every
+`/core/v1/harnesses/{harness}/model-configuration`; `GET /core/v1/harnesses` lists every
 engine with its enabled and default flags and its safe provider view. No engine
 inherits another engine's credentials. New `openai_hosted` and `none` Sessions that
 resolve no Session or Agent bundle freeze their engine's default; `self_hosted`

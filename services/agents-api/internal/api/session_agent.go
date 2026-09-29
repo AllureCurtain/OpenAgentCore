@@ -18,7 +18,7 @@ func resolveSessionAgent(input sessionRequest, saved *v1.SavedAgent) (v1.Agent, 
 			return v1.Agent{}, err
 		}
 		if agent.XAgentsCore != nil {
-			request.XAgentsCore = &v1.SavedAgentCoreInput{Harness: agent.XAgentsCore.Harness}
+			request.XAgentsCore = &v1.SavedAgentCoreInput{Harness: agent.XAgentsCore.Harness, HarnessConfig: agent.XAgentsCore.HarnessConfig}
 		}
 		request.Model, request.Instructions = agent.Model, agent.Instructions
 		request.MultiAgent, request.Reasoning, request.ServiceTier = agent.MultiAgent, agent.Reasoning, agent.ServiceTier
@@ -45,6 +45,11 @@ func resolveSessionAgent(input sessionRequest, saved *v1.SavedAgent) (v1.Agent, 
 			switch field {
 			case "x_agents_core":
 				cfg.XAgentsCore = override.XAgentsCore
+				if cfg.XAgentsCore != nil && cfg.XAgentsCore.Harness == "" && saved.XAgentsCore != nil {
+					copy := *cfg.XAgentsCore
+					copy.Harness = saved.XAgentsCore.Harness
+					cfg.XAgentsCore = &copy
+				}
 			case "model":
 				cfg.Model = override.Model
 			case "instructions":
@@ -89,8 +94,8 @@ func admitSessionAgent(cfg v1.SavedAgentConfiguration) (v1.Agent, error) {
 		return v1.Agent{}, err
 	}
 	var extension *v1.AgentsCore
-	if cfg.XAgentsCore != nil && cfg.XAgentsCore.Harness != "" {
-		extension = &v1.AgentsCore{Harness: cfg.XAgentsCore.Harness}
+	if cfg.XAgentsCore != nil && (cfg.XAgentsCore.Harness != "" || len(cfg.XAgentsCore.HarnessConfig) > 0) {
+		extension = &v1.AgentsCore{Harness: cfg.XAgentsCore.Harness, HarnessConfig: cfg.XAgentsCore.HarnessConfig}
 	}
 	return v1.Agent{XAgentsCore: extension, Model: cfg.Model, Name: cfg.Name, Instructions: cfg.Instructions,
 		MultiAgent: cfg.MultiAgent, Reasoning: cfg.Reasoning, ServiceTier: cfg.ServiceTier,

@@ -44,6 +44,9 @@ func (e *Executor) StartTurn(ctx context.Context, runID string, input proto.Mess
 	if out == nil || strings.TrimSpace(runID) == "" || input.Validate() != nil {
 		return nil, errors.New("codex: start requires a run identity, input and output")
 	}
+	if err := e.prepared.plan.ModelRoute.ValidateInput(input); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -68,7 +71,7 @@ func (e *Executor) StartTurn(ctx context.Context, runID string, input proto.Mess
 	}
 	functions := &functionCalls{definitions: base.functions.definitions, names: base.functions.names, pending: map[string]*pendingFunction{}}
 	turnCtx, cancel := context.WithCancel(base.cancelCtx)
-	s := &Session{executor: e, nativeHome: base.nativeHome,
+	s := &Session{modelRoute: base.modelRoute, executor: e, nativeHome: base.nativeHome,
 		functions: functions, observeMessages: base.observeMessages, observeTools: base.observeTools,
 		observeToolObservations: base.observeToolObservations, observeSubagentIdentities: base.observeSubagentIdentities,
 		cfg: base.cfg, rpc: base.rpc, cancelCtx: turnCtx, cancelFn: cancel,

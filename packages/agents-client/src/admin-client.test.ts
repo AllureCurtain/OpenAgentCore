@@ -77,9 +77,9 @@ const routeCases: Array<[string, string, (client: AdminClient) => Promise<unknow
   ["POST", `/projects/${projectId}/environments/${resourceId}/executor-credentials`, (client) => client.issueExecutorCredential(projectId, resourceId, { key_id: keyId })],
   ["DELETE", `/projects/${projectId}/environments/${resourceId}/executor-credentials/${keyId}`, (client) => client.revokeExecutorCredential(projectId, resourceId, keyId)],
   ["GET", "/harnesses", (client) => client.listHarnesses()],
-  ["GET", "/harnesses/codex/model-provider", (client) => client.retrieveHarnessModelProvider("codex")],
-  ["PUT", "/harnesses/codex/model-provider", (client) => client.setHarnessModelProvider("codex", { protocol: "responses", base_url: "https://model.example/v1", api_key: "k" })],
-  ["DELETE", "/harnesses/codex/model-provider", (client) => client.deleteHarnessModelProvider("codex")],
+  ["GET", "/harnesses/codex/model-configuration", (client) => client.retrieveHarnessModelConfiguration("codex")],
+  ["PUT", "/harnesses/codex/model-configuration", (client) => client.setHarnessModelConfiguration("codex", { model: "test-model", model_provider: { protocol: "responses", base_url: "https://model.example/v1", api_key: "k" } })],
+  ["DELETE", "/harnesses/codex/model-configuration", (client) => client.deleteHarnessModelConfiguration("codex")],
 ];
 
 describe("AdminClient transport boundary", () => {
@@ -154,25 +154,25 @@ describe("AdminClient transport boundary", () => {
   });
 
   it("manages deployment default model providers without ever reading a key", async () => {
-    const provider = { last_used_at: null, last_error_code: null, last_error_at: null, object: "core.model_provider", harness: "codex", protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true, updated_at: "2026-09-26T08:00:00Z" };
+    const provider = { last_used_at: null, last_error_code: null, last_error_at: null, object: "core.model_configuration", harness: "codex", model: "test-model", harness_config: { model_reasoning_effort: "high" }, model_provider: { protocol: "responses", base_url: "https://model.example/v1", api_key_configured: true }, updated_at: "2026-09-26T08:00:00Z" };
     const harnesses = { object: "list", data: [
-      { object: "core.harness", id: "claude_sdk", enabled: false, default: false, model_provider: null },
-      { object: "core.harness", id: "codex", enabled: true, default: true, model_provider: provider },
+      { object: "core.harness", id: "claude_sdk", enabled: false, default: false, model_configuration: null, model_configuration_support: { protocols: ["anthropic", "responses", "chat_completions"], native_protocols: ["anthropic"], accepts_harness_config: true, token_limits_required: false } },
+      { object: "core.harness", id: "codex", enabled: true, default: true, model_configuration: provider, model_configuration_support: { protocols: ["anthropic", "responses", "chat_completions"], native_protocols: ["responses"], accepts_harness_config: true, token_limits_required: false } },
     ] };
     expect(await clientWith(harnesses).client.listHarnesses()).toEqual(harnesses);
-    expect(await clientWith(provider).client.retrieveHarnessModelProvider("codex")).toEqual(provider);
+    expect(await clientWith(provider).client.retrieveHarnessModelConfiguration("codex")).toEqual(provider);
     const { client, fetch } = clientWith(provider);
-    const input = { protocol: "responses", base_url: "https://model.example/v1", api_key: "write-only", context_window: 200000 } as const;
-    expect(await client.setHarnessModelProvider("codex", input)).toEqual(provider);
+    const input = { model: "test-model", harness_config: { model_reasoning_effort: "high" }, model_provider: { protocol: "responses", base_url: "https://model.example/v1", api_key: "write-only", context_window: 200000, max_output_tokens: 8000 } } as const;
+    expect(await client.setHarnessModelConfiguration("codex", input)).toEqual(provider);
     expect(JSON.parse(fetch.mock.calls[0]![1]!.body as string)).toEqual(input);
-    for (const unsafe of [{ ...provider, api_key: "leak" }, { ...provider, harness: "mcode" }, { ...provider, api_key_configured: false }, { ...provider, base_url: "http://model.example/v1" }, { ...provider, extra: 1 }]) {
-      await expect(clientWith(unsafe).client.retrieveHarnessModelProvider("codex")).rejects.toMatchObject({ code: "invalid_admin_response" });
+    for (const unsafe of [{ ...provider, api_key: "leak" }, { ...provider, harness: "mcode" }, { ...provider, model_provider: { ...provider.model_provider, api_key_configured: false } }, { ...provider, model_provider: { ...provider.model_provider, base_url: "http://model.example/v1" } }, { ...provider, model_provider: { ...provider.model_provider, api_key: "leak" } }, { ...provider, model: "" }, { ...provider, harness_config: [] }, { ...provider, extra: 1 }]) {
+      await expect(clientWith(unsafe).client.retrieveHarnessModelConfiguration("codex")).rejects.toMatchObject({ code: "invalid_admin_response" });
     }
-    for (const unsafe of [{ ...harnesses, data: [{ ...harnesses.data[1], model_provider: { ...provider, api_key: "leak" } }] }, { ...harnesses, data: [harnesses.data[1], harnesses.data[1]] }, { data: harnesses.data }]) {
+    for (const unsafe of [{ ...harnesses, data: [{ ...harnesses.data[1], model_configuration: { ...provider, api_key: "leak" } }] }, { ...harnesses, data: [harnesses.data[1], harnesses.data[1]] }, { data: harnesses.data }]) {
       await expect(clientWith(unsafe).client.listHarnesses()).rejects.toMatchObject({ code: "invalid_admin_response" });
     }
     const deleted = vi.fn<typeof globalThis.fetch>().mockImplementation(async () => new Response(null, { status: 204 }));
-    await expect(new AdminClient({ fetch: deleted }).deleteHarnessModelProvider("codex")).resolves.toBeUndefined();
+    await expect(new AdminClient({ fetch: deleted }).deleteHarnessModelConfiguration("codex")).resolves.toBeUndefined();
   });
 
   it("accepts deployment-wide audit entries without a Project", async () => {

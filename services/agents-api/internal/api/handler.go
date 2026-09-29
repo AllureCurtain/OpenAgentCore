@@ -236,7 +236,14 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	configuration, err := resolve(input, tenantID(r), key, saved)
+	err = h.prepareSessionModelConfiguration(r.Context(), &input, saved, inheritedProvider)
+	var configuration json.RawMessage
+	if err == nil {
+		configuration, err = resolve(input, tenantID(r), key, saved)
+	}
+	if err == nil {
+		configuration, err = freezeSessionHarnessConfig(configuration, input.resolvedHarnessConfig)
+	}
 	if err == nil {
 		configuration, err = h.bindSessionCredentials(r.Context(), tenantID(r), configuration)
 		if err != nil {
@@ -257,6 +264,9 @@ func (h *Handler) createSession(w http.ResponseWriter, r *http.Request) {
 		if invalid := h.policy.ValidateSessionConfiguration(selectedEngine, configuration); invalid != nil {
 			err = fmt.Errorf("Harness %s does not support the requested Agent/environment configuration: %w", selectedEngine, invalid)
 		}
+	}
+	if err == nil {
+		err = validateSessionTransport(selectedEngine, provider, configuration)
 	}
 	if err != nil {
 		if h.recoverSessionCreation(w, r, key, creationRequest, input.Stream) {

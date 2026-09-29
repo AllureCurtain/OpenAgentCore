@@ -1,4 +1,4 @@
-import type { HarnessModelProvider } from "@agents-core-web/agents-client";
+import type { HarnessModelConfiguration } from "@agents-core-web/agents-client";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { HelpTip, StatusDot } from "../../components/console-ui";
@@ -8,12 +8,12 @@ import { formatDateTime } from "../../lib/format";
 import { Fact } from "./Fact";
 
 /** Only a newer Core error remains actionable after a successful use. */
-export function activeProviderError(provider: HarnessModelProvider) {
+export function activeProviderError(provider: HarnessModelConfiguration) {
   return provider.last_error_code !== null && provider.last_error_at !== null &&
     (provider.last_used_at === null || Date.parse(provider.last_error_at) > Date.parse(provider.last_used_at));
 }
 
-export function ProviderObservations({ provider, name, stale }: { provider: HarnessModelProvider; name: string; stale: boolean }) {
+export function ProviderObservations({ provider, name, stale }: { provider: HarnessModelConfiguration; name: string; stale: boolean }) {
   const { t, i18n } = useTranslation("diagnostics");
   const [open, setOpen] = useState(false);
   const activeError = activeProviderError(provider);
