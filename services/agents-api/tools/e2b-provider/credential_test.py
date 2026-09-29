@@ -28,6 +28,18 @@ class TeamTemplateTest(unittest.TestCase):
 
     @patch('sdk.get_api_client')
     @patch('e2b.api.client.api.templates.get_v2_templates.sync_detailed')
+    def test_team_listing_uses_custom_endpoint(self, listing, client):
+        template = object.__new__(Template)
+        template.template_id = 'owned'
+        listing.return_value = SimpleNamespace(status_code=200, parsed=[template], headers={})
+        verify_team_template({'Template': 'owned:build', 'APIKey': 'synthetic',
+                              'APIURL': 'https://sandbox.example.com', 'Domain': 'sandbox.example.com'}, lambda: 5)
+        connection = client.call_args.args[0]
+        self.assertEqual(connection.api_url, 'https://sandbox.example.com')
+        self.assertEqual(connection.domain, 'sandbox.example.com')
+
+    @patch('sdk.get_api_client')
+    @patch('e2b.api.client.api.templates.get_v2_templates.sync_detailed')
     def test_unauthorized_and_repeated_cursor_fail_closed(self, listing, client):
         config = {'Template': 'owned:build', 'APIKey': 'synthetic'}
         for response, code in [(SimpleNamespace(status_code=401), 'unauthorized'),

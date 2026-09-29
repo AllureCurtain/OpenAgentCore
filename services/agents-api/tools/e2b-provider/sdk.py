@@ -205,8 +205,7 @@ def verify_team_template(config, remaining):
     wanted = config['Template'].split(':', 1)[0]
     cursor, seen = UNSET, set()
     for _ in range(100):
-        client = get_api_client(ConnectionConfig(api_key=config['APIKey'], retries=0,
-                                                debug=False, request_timeout=remaining()))
+        client = get_api_client(ConnectionConfig(**sdk_options(config, remaining)))
         response = get_v2_templates.sync_detailed(client=client, next_token=cursor, limit=100)
         if response.status_code in (401, 403):
             raise Failure('unauthorized')
