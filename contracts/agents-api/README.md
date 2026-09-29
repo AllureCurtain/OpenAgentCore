@@ -22,7 +22,7 @@ Parsar owns product Agents and Teams. This service owns upstream execution
 resources, including reusable Agents and protocol subagents. The OpenAI Agents
 Python **SDK** is a separate future dependency for business Team orchestration in
 Parsar, not the HTTP contract. Design rules live in
-[CONTRIBUTING.md](../../services/agents-api/IMPLEMENTATION.md#design-and-compatibility-requirements).
+[CONTRIBUTING.md](../../CONTRIBUTING.md#design-and-compatibility-requirements).
 
 The [resource selector and error qualification](resource-selector-semantics.md)
 records nullable Skill references and source Files not-found parameter fields,

@@ -62,6 +62,94 @@ unchanged and do not require fetching the original repository. The source
 snapshot and per-file hashes are an audit trail; future Core development need
 not preserve them. Do not automatically sync or delete the original repository's Core.
 
+### Product and execution service separation
+
+Agents API is the primary infrastructure deliverable. Parsar is an ordinary client
+and example application; its feature backlog must not dictate the execution
+service's public protocol or internal model. Agents API must build, deploy and run
+without the Parsar product service, frontend or database. An optional Compose
+deployment may install both services with one PostgreSQL instance, but separate
+databases, credentials and migrations. The product uses Core exclusively; it has no native daemon or HTTP Agent fallback.
+
+#### Design and compatibility requirements
+
+- The complete pinned `openai/openai-python` `beta/agents` protocol is the target,
+  including its referenced resources and types. Match paths, methods, headers,
+  field presence, nullability, discriminators, defaults, status transitions,
+  pagination, errors and streaming behavior. Engine limitations are implementation
+  gaps to solve, not grounds for narrowing or redefining the upstream contract.
+- Preserve qualified native capability differences across harnesses. If a material
+  difference from the official API has no clear mapping, pause that part and ask
+  the user before changing its semantics. Explicit unsupported enablement rejects;
+  ordinary requests retain native behavior with any official default discrepancy
+  recorded in the coverage ledger. In particular, native programmatic tool calling
+  is not currently qualified as the official default-on behavior. Do not build
+  a separate executor or model loop to fabricate parity. This does not relax
+  authentication, isolation, credential protection or data consistency.
+- Pin upstream source and SDK versions in `contracts/agents-api/upstream.json`.
+  Use official SDKs for clients and reuse upstream types or schemas where suitable.
+  SDK deserialization alone is not server validation or proof of compatibility:
+  test raw HTTP payloads and observable workflows as well. Synthetic data and mock
+  model responses may support controlled tests; live execution acceptance must
+  call a real model API through the service, daemon and harness. A real daemon
+  with a synthetic model does not constitute live model validation. Keep provider
+  credentials in private test configuration, outside source, logs and task records.
+  Record unspecified or unverified behavior explicitly; never invent official
+  semantics. When current documentation adds operations or fields absent from the
+  fixed baseline, queue a protocol upgrade instead of silently implementing a new
+  version. Owned-resource live probes can qualify status codes and wire details
+  left unspecified by the SDK; retain request evidence and distinguish observations
+  from guaranteed or fully covered behavior. Track partial
+  coverage in `contracts/agents-api/README.md` until the complete target is verified.
+  Reconcile current coverage summaries with merged routes and recorded acceptance;
+  distinguish accepted profiles, partial implementation, missing operations and
+  unverified semantics. Retain historical evidence with its original scope. Handler
+  counts are not compatibility percentages, and an active provider probe is not
+  deployment qualification.
+- No legacy Agents API compatibility requirement takes precedence over this
+  design. Replace an unsuitable implementation instead of growing compatibility
+  branches. Preserve reusable, verified infrastructure rather than rewriting it
+  merely for new names or directories. Replacements may retire obsolete private
+  interfaces and history backfills in bounded PRs; this does not authorize deleting
+  product data or changing unrelated product behavior.
+- Every concrete harness interaction goes through the common Runtime contract
+  and its adapter. Extend that contract minimally when a current operation cannot
+  be expressed; never put native capability logic or transport conversion into
+  Core handlers, storage or scheduling. Qualify public workflows through the same
+  shared chain; direct native probes establish feasibility only.
+- Keep engine-specific types, process management and protocol translation inside
+  execution adapters. The public API and persistence/application core must not
+  interpret Parsar product payloads or depend on one engine's native item types.
+  Prefer maintained upstream SDKs and native execution protocols over a second
+  hand-written model/tool loop or a general-purpose compatibility framework.
+- Verify an independent official-client workflow before a Parsar integration.
+  Parsar uses the same public contract as any other client, with no privileged
+  endpoint or direct execution-table access. An OpenAI endpoint is a possible
+  client target only where the requested capabilities and credentials support it.
+
+- Parsar owns users, workspaces, business authorization, Agent/Team definitions,
+  capabilities, product conversations, IM/sharing, approval decisions and billing.
+- Agents API owns protocol saved Agents, execution sessions/turns, effective
+  configuration snapshots, dispatch/cancel, environments, vaults, raw usage,
+  pending interactions, protocol subagents and durable events. Protocol saved
+  Agents/vaults are execution resources, not Parsar marketplace or business roles.
+  Neither service reads the other's tables. Parsar uses a versioned client contract.
+- A product conversation may map to several execution sessions. An execution
+  session is distinct from a live daemon socket, process or sandbox. Native engine
+  session identifiers belong to the execution service.
+- Establish single-Agent execution, approval, cancellation, idempotent submission,
+  persisted recovery queries before Team orchestration. The upstream SSE stream
+  is live-only; recover through Session/Turn/Items reads. Any additional product
+  cursor replay must be documented as an extension, not upstream semantics.
+  Team definitions, management and orchestration belong to Parsar. Agents API
+  establishes single-Agent execution first; business Team loops are deferred.
+  This does not exclude upstream `multi_agent` configuration or subagent resources
+  from protocol coverage. Future business Team orchestration directly depends on
+  `openai/openai-agents-python` in Parsar.
+- Daemon Skill/SP authoring remains a product operation: forward through a scoped
+  product callback with the original requester and workspace checks. A runtime
+  credential alone must not grant business write permissions.
+
 ### Optional application example
 
 `example/parsar/` is an optional, independently started Agent workbench. Its
