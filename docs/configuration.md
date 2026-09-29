@@ -157,7 +157,11 @@ file. The database owns the saved values.
 
 E2B takes no `runtime`, and Web sends no resources for it: Core adopts the CPU and
 memory of the ready template build `template-id:build-uuid`, and supplied values must
-match it. Docker has no separate disk quota.
+match it. For an E2B-compatible service, enter both its HTTPS API origin and
+sandbox data-plane domain in the setup wizard. Leaving both blank uses official
+E2B. The API host must be the data-plane domain or one of its subdomains.
+Changing either address requires draining the deployment in maintenance.
+Docker has no separate disk quota.
 
 Changing backend type or E2B team requires an explicit reset and a new setup.
 Same-team E2B template, resource and key changes apply online through the Core API:

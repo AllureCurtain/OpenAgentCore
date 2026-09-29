@@ -1,9 +1,9 @@
-import { AgentCoreError, type InitializeSandboxDeployment, type UpdateSandboxDeployment, type SandboxProvider, type SandboxResources, type SandboxRuntimeRelease, type SandboxSpecification } from "@agents-core-web/agents-client";
+import { AgentCoreError, type InitializeSandboxDeployment, type UpdateSandboxDeployment, type SandboxE2BReadyBuild, type SandboxE2BTemplate, type SandboxProvider, type SandboxResources, type SandboxRuntimeRelease, type SandboxSpecification } from "@agents-core-web/agents-client";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { ArrowLeft, ArrowRight, Box, Cloud, Cpu, Server, SlidersHorizontal, type LucideIcon } from "lucide-react";
-import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ArrowLeft, ArrowRight, Box, Cloud, Cpu, ExternalLink, Server, SlidersHorizontal, type LucideIcon } from "lucide-react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
@@ -18,12 +18,27 @@ import { sandboxConfigurationRejection } from "../../lib/sandbox-labels";
 import { defaultSandboxResources, distributionRuntime, savedSpecification, validSandboxResources } from "./deployment-specification";
 import { e2bKeyReady, e2bUpdateSelection } from "./sandbox-update";
 import { isRuntimeRelease, isRuntimeReleaseField, RUNTIME_RELEASE_FIELDS } from "./runtime-release";
+import { sandboxAdmin } from "./sandbox-queries";
 import "./sandbox-wizard.css";
 
 type Where = "nodes" | "direct";
 type Step = "where" | "backend" | "e2b" | "size" | "review" | "advanced";
 type Preset = "small" | "standard" | "large";
 type Size = Preset | "current" | "custom";
+type E2BService = "sandbase" | "official" | "custom";
+const E2B_PRESETS = {
+  sandbase: { apiURL: "https://sandbox.sandbase.ai", domain: "sandbox.sandbase.ai" },
+  official: { apiURL: "https://api.e2b.app", domain: "e2b.app" },
+} as const;
+const E2B_KEY_CONSOLES = {
+  sandbase: "https://www.sandbase.ai/console/keys",
+  official: "https://e2b.dev/dashboard?tab=api-keys",
+} as const;
+function e2bService(apiURL?: string): E2BService {
+  if (!apiURL) return "sandbase";
+  if (apiURL === E2B_PRESETS.official.apiURL) return "official";
+  return apiURL === E2B_PRESETS.sandbase.apiURL ? "sandbase" : "custom";
+}
 
 const MIB = 2 ** 20;
 const EASE = [0.16, 1, 0.3, 1] as const;
@@ -32,6 +47,21 @@ const TEMPLATE = /^[a-zA-Z0-9_-]{1,128}:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-
 function validTemplate(value: string): boolean {
   const build = TEMPLATE.exec(value)?.[1];
   return build !== undefined && /[^0-]/.test(build);
+}
+
+export function validEndpoint(apiURL: string, domain: string): boolean {
+  const publicName = (host: string) => host.length <= 253 && host.includes(".") && !/^[0-9.]+$/.test(host) &&
+    !host.endsWith(".local") && !host.endsWith(".localhost") &&
+    host.split(".").every((label) => label.length <= 63 && /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/.test(label));
+  if (!apiURL && !domain) return true;
+  if (!apiURL || !domain || apiURL.length > 512 || !publicName(domain)) return false;
+  try {
+    const url = new URL(apiURL);
+    return url.protocol === "https:" && url.origin === apiURL && !url.username && !url.password &&
+      !url.port && publicName(url.hostname) && (url.hostname === domain || url.hostname.endsWith(`.${domain}`));
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -81,7 +111,7 @@ function presetOf(provider: SandboxProvider, resources: SandboxResources): Prese
 type WizardProps = {
   coreUrl: string;
   expectedGeneration: number;
-  current?: { provider: SandboxProvider; specification?: SandboxSpecification; e2bTemplate?: string };
+  current?: { provider: SandboxProvider; specification?: SandboxSpecification; e2bTemplate?: string; e2bAPIURL?: string; e2bDomain?: string };
   disabled: boolean;
 } & ({ editing: true; onSubmit: (input: UpdateSandboxDeployment) => Promise<void> } |
   { editing?: false; onSubmit: (input: InitializeSandboxDeployment) => Promise<void> });
@@ -99,6 +129,17 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
   const [apiKey, setApiKey] = useState("");
   const [replacementRequested, setReplacementRequested] = useState(false);
   const [template, setTemplate] = useState(current?.e2bTemplate ?? "");
+  const [service, setService] = useState<E2BService>(e2bService(current?.e2bAPIURL));
+  const [apiURL, setAPIURL] = useState(current?.e2bAPIURL ?? E2B_PRESETS[e2bService(current?.e2bAPIURL) as keyof typeof E2B_PRESETS]?.apiURL ?? "");
+  const [domain, setDomain] = useState(current?.e2bDomain ?? E2B_PRESETS[e2bService(current?.e2bAPIURL) as keyof typeof E2B_PRESETS]?.domain ?? "");
+  const keyConsoleURL = service !== "custom" && apiURL === E2B_PRESETS[service].apiURL && domain === E2B_PRESETS[service].domain
+    ? E2B_KEY_CONSOLES[service] : null;
+  const [templates, setTemplates] = useState<SandboxE2BTemplate[]>([]);
+  const [builds, setBuilds] = useState<SandboxE2BReadyBuild[]>([]);
+  const [selectedTemplate, setSelectedTemplate] = useState(current?.e2bTemplate?.split(":")[0] ?? "");
+  const [discovery, setDiscovery] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [buildDiscovery, setBuildDiscovery] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [discoveryRetry, setDiscoveryRetry] = useState(0);
   const [runtime, setRuntime] = useState<Partial<SandboxRuntimeRelease>>({});
   const [busy, setBusy] = useState(false);
   const [dockerConfirmed, setDockerConfirmed] = useState(current?.provider === "docker");
@@ -114,6 +155,35 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
   const address = coreUrl || installation.data?.public_url || null;
   const configuration = installation.data?.configuration ?? null;
 
+  useEffect(() => {
+    setTemplates([]); setBuilds([]); setDiscovery("idle"); setBuildDiscovery("idle");
+    if (provider !== "e2b" || !apiKey.trim() || !validEndpoint(apiURL.trim(), domain.trim())) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setDiscovery("loading");
+      void sandboxAdmin.listE2BTemplates({ api_key: apiKey.trim(), api_url: apiURL.trim(), domain: domain.trim() }, { signal: controller.signal })
+        .then((items) => { if (!controller.signal.aborted) { setTemplates(items); setDiscovery("ready"); } })
+        .catch(() => { if (!controller.signal.aborted) setDiscovery("error"); });
+    }, 500);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [provider, apiKey, apiURL, domain, discoveryRetry]);
+
+  useEffect(() => {
+    setBuilds([]); setBuildDiscovery("idle");
+    if (discovery !== "ready" || !selectedTemplate || !templates.some((item) => item.id === selectedTemplate)) return;
+    const controller = new AbortController();
+    setBuildDiscovery("loading");
+    void sandboxAdmin.listE2BReadyBuilds(selectedTemplate, { api_key: apiKey.trim(), api_url: apiURL.trim(), domain: domain.trim() }, { signal: controller.signal })
+      .then((items) => { if (!controller.signal.aborted) { setBuilds(items); setBuildDiscovery("ready"); } })
+      .catch(() => { if (!controller.signal.aborted) setBuildDiscovery("error"); });
+    return () => controller.abort();
+  }, [discovery, selectedTemplate, templates, apiKey, apiURL, domain, discoveryRetry]);
+
+  function changeConnection(key: string, url: string, dataDomain: string) {
+    setApiKey(key); setAPIURL(url); setDomain(dataDomain);
+    setTemplate(""); setSelectedTemplate(""); setTemplates([]); setBuilds([]);
+  }
+
   // A release the administrator entered comes first, then the saved one of the same backend,
   // then the one this console distributes (the release its node installer verifies).
   const matched = useQuery({ queryKey: ["sandbox-runtime-release"], queryFn: ({ signal }) => distributionRuntime(signal).catch(() => null), staleTime: Infinity, retry: false });
@@ -123,7 +193,8 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
   const runtimeReady = !needsRuntime || isRuntimeRelease(release);
   // Initial setup requires a key; an update may retain the committed key.
   const keyReady = e2bKeyReady(Boolean(editing), replacementRequested, apiKey);
-  const e2bReady = provider !== "e2b" || (keyReady && validTemplate(template.trim()));
+  const connectionChanged = Boolean(editing && (apiURL.trim() !== (current?.e2bAPIURL || E2B_PRESETS.official.apiURL) || domain.trim() !== (current?.e2bDomain || E2B_PRESETS.official.domain)));
+  const e2bReady = provider !== "e2b" || (keyReady && validTemplate(template.trim()) && validEndpoint(apiURL.trim(), domain.trim()) && (!editing || !connectionChanged || apiKey.trim().length > 0));
   // Core sizes E2B sandboxes from the template build, so E2B sends no resources.
   const sized = provider !== null && provider !== "e2b";
   const sizeReady = provider !== null && (!sized || validSandboxResources(provider, resources));
@@ -162,8 +233,8 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
         ...(sized ? { resources } : {}),
         ...(needsRuntime ? { runtime: release as SandboxRuntimeRelease } : {}),
       };
-      if (editing) await onSubmit({ ...selection, ...(provider === "e2b" ? { e2b: e2bUpdateSelection(template, apiKey) } : {}) });
-      else await onSubmit({ ...selection, ...(provider === "e2b" ? { e2b: { api_key: apiKey.trim(), template: template.trim() } } : {}) });
+      if (editing) await onSubmit({ ...selection, ...(provider === "e2b" ? { e2b: { ...e2bUpdateSelection(template, apiKey), api_url: apiURL.trim(), domain: domain.trim() } } : {}) });
+      else await onSubmit({ ...selection, ...(provider === "e2b" ? { e2b: { api_key: apiKey.trim(), template: template.trim(), api_url: apiURL.trim(), domain: domain.trim() } } : {}) });
     } catch (error) {
       // A configuration Core rejected is explained here; the page reports every other failure.
       const reason = sandboxConfigurationRejection(error, i18n.resolvedLanguage?.startsWith("zh") ? "zh" : "en");
@@ -171,7 +242,7 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
       setRejection(reason);
       setFieldRejection(error);
       if (error instanceof AgentCoreError && error.param) {
-        if (["e2b.api_key", "e2b.template"].includes(error.param) && error.code !== "e2b_team_mismatch") setStep("e2b");
+        if (["e2b.api_key", "e2b.template", "e2b.api_url", "e2b.domain"].includes(error.param) && error.code !== "e2b_team_mismatch") setStep("e2b");
         else if (error.param === "runtime" || error.param.startsWith("resources.")) setStep("advanced");
       }
       setResetRequired(error instanceof AgentCoreError && ["e2b_team_mismatch", "sandbox_reset_required"].includes(error.code ?? ""));
@@ -209,11 +280,52 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
     page = (
       <Question title={t("Connect E2B")}>
         <div className="wizard-fields">
-          <Field id={`${id}-key`} error={fieldError("e2b.api_key")} label={t("E2B API key")} help={t(editing ? "Leave blank to keep the saved key. Any key you enter is verified as a replacement, even if unchanged." : "The key is write-only: Core encrypts it and never shows it again.")}>
-            <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} aria-invalid={Boolean(fieldError("e2b.api_key"))} aria-describedby={fieldError("e2b.api_key") ? `${id}-key-error` : undefined} onChange={(event) => { setApiKey(event.target.value); setFieldRejection(null); setReplacementRequested(Boolean(event.target.value.trim())); }} />
+          <Field id={`${id}-service`} label={t("E2B provider")}>
+            <select id={`${id}-service`} value={service} onChange={(event) => {
+              const next = event.target.value as E2BService;
+              setService(next);
+              const preset = next === "custom" ? { apiURL: "", domain: "" } : E2B_PRESETS[next];
+              changeConnection("", preset.apiURL, preset.domain);
+            }}>
+              <option value="sandbase">SandBase Sandbox</option>
+              <option value="official">E2B</option>
+              <option value="custom">{t("Other E2B-compatible provider")}</option>
+            </select>
           </Field>
-          <Field id={`${id}-template`} label={t("Template build")} help={t("The exact ready build, as template-id:build-uuid. A template alias alone is not enough. Each sandbox gets the build's CPU and memory.")} error={fieldError("e2b.template") ?? (template && !validTemplate(template.trim()) ? t("Enter a template ID and build UUID separated by a colon.") : null)}>
-            <input id={`${id}-template`} value={template} onChange={(event) => { setTemplate(event.target.value); setFieldRejection(null); }} placeholder="oac-runtime:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b" autoComplete="off" spellCheck={false} aria-invalid={Boolean(fieldError("e2b.template") || (template && !validTemplate(template.trim())))} aria-describedby={`${id}-template-error`} />
+          <Field id={`${id}-key`} label={t("E2B API key")} error={fieldError("e2b.api_key")} help={t(editing ? "Leave blank to keep the saved key. Any key you enter is verified as a replacement, even if unchanged." : "The key is write-only: Core encrypts it and never shows it again.")} afterHelp={keyConsoleURL ? (
+            <a className="wizard-key-console" href={keyConsoleURL} target="_blank" rel="noopener noreferrer">
+              {t("Console → API Keys")} <ExternalLink size={11} aria-hidden="true" />
+            </a>
+          ) : null}>
+            <input id={`${id}-key`} type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={(event) => { if (editing) { setApiKey(event.target.value); setTemplates([]); setBuilds([]); } else changeConnection(event.target.value, apiURL, domain); setReplacementRequested(Boolean(event.target.value.trim())); setFieldRejection(null); }} />
+          </Field>
+          {discovery === "loading" ? <p role="status">{t("Loading templates…")}</p> : null}
+          {discovery === "error" ? <p role="alert">{t("Could not load templates. Check the key and provider connection.")} <button type="button" className="wizard-link" onClick={() => setDiscoveryRetry((value) => value + 1)}>{t("Try again")}</button></p> : null}
+          {discovery === "ready" && templates.length === 0 ? <p role="status">{t("No templates are visible to this key.")}</p> : null}
+          {editing && !apiKey.trim() ? <Field id={`${id}-saved-template`} label={t("Template build")} error={fieldError("e2b.template")}><input id={`${id}-saved-template`} value={template} onChange={(event) => setTemplate(event.target.value)} /></Field> : <>
+          <Field id={`${id}-template`} label={t("Template")}>
+            <select id={`${id}-template`} value={selectedTemplate} disabled={discovery !== "ready"} onChange={(event) => { setSelectedTemplate(event.target.value); setTemplate(""); }}>
+              <option value="">{t("Select a template")}</option>
+              {editing && selectedTemplate && !templates.some((item) => item.id === selectedTemplate) ? <option value={selectedTemplate}>{t("Current")} · {selectedTemplate}</option> : null}
+              {templates.map((item) => <option key={item.id} value={item.id}>{item.names[0] ? `${item.names[0]} · ` : ""}{item.id}</option>)}
+            </select>
+          </Field>
+          {buildDiscovery === "loading" ? <p role="status">{t("Loading ready builds…")}</p> : null}
+          {buildDiscovery === "error" ? <p role="alert">{t("Could not load builds.")} <button type="button" className="wizard-link" onClick={() => setDiscoveryRetry((value) => value + 1)}>{t("Try again")}</button></p> : null}
+          {buildDiscovery === "ready" && builds.length === 0 ? <p role="status">{t("This template has no ready builds.")}</p> : null}
+          <Field id={`${id}-build`} label={t("Template build")} help={t("Core validates the exact ready build again when you save.")}>
+            <select id={`${id}-build`} value={template} disabled={buildDiscovery !== "ready"} onChange={(event) => setTemplate(event.target.value)}>
+              <option value="">{t("Select a ready build")}</option>
+              {editing && template && !builds.some((item) => `${selectedTemplate}:${item.id}` === template) ? <option value={template}>{t("Current")} · {template}</option> : null}
+              {builds.map((item) => <option key={item.id} value={`${selectedTemplate}:${item.id}`}>{item.id} · {item.cpus} CPU / {item.memory_mib} MiB</option>)}
+            </select>
+          </Field>
+          </>}
+          <Field id={`${id}-api-url`} label={t("Sandbox API URL")} help={t("The selected provider supplies a default. You can edit it for a compatible endpoint.")}>
+            <input id={`${id}-api-url`} type="url" value={apiURL} onChange={(event) => changeConnection(apiKey, event.target.value, domain)} placeholder="https://sandbox.example.com" autoComplete="off" spellCheck={false} />
+          </Field>
+          <Field id={`${id}-domain`} label={t("Sandbox data-plane domain")} error={(apiURL || domain) && !validEndpoint(apiURL.trim(), domain.trim()) ? t("Enter both a public HTTPS API origin and a domain.") : null}>
+            <input id={`${id}-domain`} value={domain} onChange={(event) => changeConnection(apiKey, apiURL, event.target.value)} placeholder="sandbox.example.com" autoComplete="off" spellCheck={false} />
           </Field>
         </div>
         <Nav onBack={back} onNext={() => setStep("review")} nextDisabled={!e2bReady} t={t} />
@@ -252,6 +364,8 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
           <div><dt>{t("Sandboxes run on")}</dt><dd>{where === "direct" ? t("E2B cloud") : `${t("Own machines")} · ${provider === "docker" ? "Docker" : "microsandbox"}`}</dd></div>
           <div><dt>{t("Each sandbox")}</dt><dd>{sized ? sizeLabel(resources) : t("From the template build")}{provider === "microsandbox" ? <span className="wizard-review-sub">{diskLabel(resources)}</span> : null}</dd></div>
           {provider === "e2b" ? <div><dt>{t("Template build")}</dt><dd><code>{template || "—"}</code></dd></div> : null}
+          {provider === "e2b" ? <div><dt>{t("Sandbox API URL")}</dt><dd><code>{apiURL || "https://api.e2b.app"}</code></dd></div> : null}
+          {provider === "e2b" ? <div><dt>{t("Sandbox data-plane domain")}</dt><dd><code>{domain || "e2b.app"}</code></dd></div> : null}
           {provider === "e2b" && editing ? <div><dt>{t("E2B credential")}</dt><dd>{t(replacementRequested ? "Replace saved key" : "Keep saved key")}</dd></div> : null}
           {needsRuntime ? (
             <div>
@@ -405,10 +519,10 @@ function Choice({ icon: Icon, title, badge, value, detail, selected, onClick }: 
   );
 }
 
-function Field({ id, label, help, error, children }: { id: string; label: string; help?: string; error?: string | null; children: ReactNode }) {
+function Field({ id, label, help, afterHelp, error, children }: { id: string; label: string; help?: string; afterHelp?: ReactNode; error?: string | null; children: ReactNode }) {
   return (
     <div className="field wizard-field">
-      <span className="field-label-row"><label htmlFor={id}>{label}</label>{help ? <HelpTip>{help}</HelpTip> : null}</span>
+      <span className="field-label-row"><label htmlFor={id}>{label}</label>{help ? <HelpTip>{help}</HelpTip> : null}{afterHelp}</span>
       {children}
       {error ? <span id={`${id}-error`} className="field-error" role="alert">{error}</span> : null}
     </div>

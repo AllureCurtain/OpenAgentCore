@@ -61,6 +61,8 @@ create another process configuration file.
 | `--accept-docker-risks` | Accept Docker's weaker isolation without an interactive prompt |
 | `--e2b-api-key-file FILE` | With E2B: absolute path to a private key file, no group/other access and at most 4 KiB |
 | `--e2b-template ID:BUILD` | With E2B: ready template build as `template-id:build-uuid` |
+| `--e2b-api-url URL` | With E2B: compatible service HTTPS API origin; use together with `--e2b-domain` |
+| `--e2b-domain DOMAIN` | With E2B: sandbox data-plane DNS suffix; use together with `--e2b-api-url` |
 | `--core-key-file FILE` | With Web-only: absolute path to a private file containing the existing Core key, at least 32 characters |
 
 See [deployment modes](/install#modes), [native Core](/install#native-core) and

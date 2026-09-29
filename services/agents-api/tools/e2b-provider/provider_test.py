@@ -32,6 +32,7 @@ class ProviderTest(unittest.TestCase):
         self.cloud = Mock(sandbox_id='owned-id', sandbox_domain='e2b.app', _envd_version='0.5.0',
                           _envd_access_token='private-envd-secret', traffic_access_token=None, state='running')
         self.cloud.metadata = Provider(self.request).metadata
+        self.cloud.template_id = self.config['Template']
         self.identity = dict(self.reference, InstallationID=self.config['InstallationID'],
                              SessionID=self.request['Bootstrap']['SessionID'], DeviceID=self.request['Bootstrap']['DeviceID'])
         self.ready = json.dumps({'identity': self.identity, 'status': 'daemon_started', 'daemon_pid': 123})
@@ -73,6 +74,67 @@ class ProviderTest(unittest.TestCase):
         self.assertNotIn(self.request['Bootstrap']['Credential'], serialized)
         self.assertEqual(self.record()['connection']['envd_access_token'], 'private-envd-secret')
         self.api.connect.assert_not_called()
+
+    def test_create_response_without_metadata_reads_exact_id_before_bootstrap(self):
+        created = SimpleNamespace(sandbox_id=self.cloud.sandbox_id,
+                                  sandbox_domain=self.cloud.sandbox_domain,
+                                  _envd_version=self.cloud._envd_version,
+                                  _envd_access_token=self.cloud._envd_access_token,
+                                  traffic_access_token=self.cloud.traffic_access_token,
+                                  files=self.cloud.files)
+        self.api.create.return_value = created
+        self.cloud.files.write.side_effect = lambda *args, **kwargs: self.assertEqual(
+            self.api.get_info.call_count, 1)
+        self.assertEqual(self.call('create')['ErrorCode'], '')
+        self.assertEqual(self.api.get_info.call_args.args, (created.sandbox_id,))
+        self.cloud.files.write.assert_called_once()
+
+    def test_create_without_resource_override_refuses_other_build_before_credentials(self):
+        self.cloud.template_id = self.config['Template'].split(':', 1)[0] + ':' + str(uuid4())
+        self.assertEqual(self.call('create')['ErrorCode'], 'invalid')
+        self.api.get_info.assert_called_once()
+        self.cloud.files.write.assert_not_called()
+
+    def test_create_refuses_other_owner_before_credentials(self):
+        self.cloud.metadata = {}
+        self.assertEqual(self.call('create')['ErrorCode'], 'ownership')
+        self.api.get_info.assert_called_once()
+        self.cloud.files.write.assert_not_called()
+
+    def test_qualified_gateway_template_id_accepts_only_selected_build(self):
+        self.config['Resources'] = {'cpus': 2, 'memory_mib': 2048}
+        self.cloud.template_id = self.config['Template']
+        self.cloud.cpu_count = 2
+        self.cloud.memory_mb = 2048
+        self.assertEqual(self.call('create')['ErrorCode'], '')
+        self.cloud.template_id = self.config['Template'].split(':', 1)[0] + ':' + str(uuid4())
+        self.assertEqual(self.call('inspect')['ErrorCode'], 'invalid')
+
+    def test_custom_endpoint_reaches_create_inspect_and_renew(self):
+        self.config.update(APIURL='https://sandbox-test.sandbase.ai', Domain='sandbox-test.sandbase.ai')
+        self.cloud.sandbox_domain = 'sandbox-test.sandbase.ai'
+        self.assertEqual(self.call('create')['ErrorCode'], '')
+        self.assertEqual(self.call('renew')['ErrorCode'], '')
+        for operation in (self.api.create, self.api.get_info, self.api.set_timeout):
+            self.assertEqual(operation.call_args.kwargs['api_url'], self.config['APIURL'])
+            self.assertEqual(operation.call_args.kwargs['domain'], self.config['Domain'])
+        self.assertEqual(self.record()['endpoint'], {'api_url': self.config['APIURL'],
+                                                     'domain': self.config['Domain']})
+
+    def test_custom_endpoint_reaches_unknown_create_discovery(self):
+        self.config.update(APIURL='https://sandbox-test.sandbase.ai', Domain='sandbox-test.sandbase.ai')
+        self.api.create.side_effect = TimeoutError('uncertain')
+        self.assertEqual(self.call('create')['ErrorCode'], 'unconfirmed')
+        self.call('inspect')
+        self.assertEqual(self.api.list.call_args.kwargs['api_url'], self.config['APIURL'])
+        self.assertEqual(self.api.list.call_args.kwargs['domain'], self.config['Domain'])
+
+    def test_create_refuses_foreign_data_plane_before_envd(self):
+        self.cloud.sandbox_domain = 'foreign.example'
+        self.assertEqual(self.call('create')['ErrorCode'], 'ownership')
+        self.assertEqual(self.record()['ids'], ['owned-id'])
+        self.cloud.files.write.assert_not_called()
+        self.cloud.commands.run.assert_not_called()
 
     def test_legacy_template_refuses_before_credentials_and_retains_owned_cleanup(self):
         with patch('provider.run', return_value={'ExitCode': 78, 'Stdout': '', 'Stderr': ''}):

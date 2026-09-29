@@ -51,7 +51,7 @@ func (q *Queries) ForceSandboxReset(ctx context.Context) error {
 }
 
 const getSandboxDeploymentSnapshot = `-- name: GetSandboxDeploymentSnapshot :one
-WITH deployment AS MATERIALIZED (SELECT singleton, installation_id, backend_fingerprint, admission_paused, updated_at, provider_kind, local_node_id, owner_epoch, web_managed, idle_seconds, retention_seconds, generation, mode, e2b_template, e2b_credential, specification, e2b_template_build_status, e2b_template_cpus, e2b_template_memory_mib, e2b_template_root_disk_mib, reset_clear, reset_requested_at, reset_deadline_at, reset_forced_at, reset_audit FROM runtime_deployment WHERE singleton = true LIMIT 1),
+WITH deployment AS MATERIALIZED (SELECT singleton, installation_id, backend_fingerprint, admission_paused, updated_at, provider_kind, local_node_id, owner_epoch, web_managed, idle_seconds, retention_seconds, generation, mode, e2b_template, e2b_credential, specification, e2b_template_build_status, e2b_template_cpus, e2b_template_memory_mib, e2b_template_root_disk_mib, reset_clear, reset_requested_at, reset_deadline_at, reset_forced_at, reset_audit, e2b_api_url, e2b_domain FROM runtime_deployment WHERE singleton = true LIMIT 1),
 observed AS MATERIALIZED (SELECT clock_timestamp() AS as_of),
 held AS (
     SELECT a.deployment_generation, a.node_id, s.id AS session_id, e.id AS environment_id, false AS pending,
@@ -89,7 +89,7 @@ held AS (
 ), offline AS (
     SELECT node_id, name, count(*)::bigint AS resources FROM classified WHERE offline GROUP BY node_id, name
 )
-SELECT d.singleton, d.installation_id, d.backend_fingerprint, d.admission_paused, d.updated_at, d.provider_kind, d.local_node_id, d.owner_epoch, d.web_managed, d.idle_seconds, d.retention_seconds, d.generation, d.mode, d.e2b_template, d.e2b_credential, d.specification, d.e2b_template_build_status, d.e2b_template_cpus, d.e2b_template_memory_mib, d.e2b_template_root_disk_mib, d.reset_clear, d.reset_requested_at, d.reset_deadline_at, d.reset_forced_at, d.reset_audit,
+SELECT d.singleton, d.installation_id, d.backend_fingerprint, d.admission_paused, d.updated_at, d.provider_kind, d.local_node_id, d.owner_epoch, d.web_managed, d.idle_seconds, d.retention_seconds, d.generation, d.mode, d.e2b_template, d.e2b_credential, d.specification, d.e2b_template_build_status, d.e2b_template_cpus, d.e2b_template_memory_mib, d.e2b_template_root_disk_mib, d.reset_clear, d.reset_requested_at, d.reset_deadline_at, d.reset_forced_at, d.reset_audit, d.e2b_api_url, d.e2b_domain,
     (SELECT count(*) FROM classified WHERE NOT pending)::bigint AS allocations,
     (SELECT count(*) FROM classified WHERE pending)::bigint AS pending,
     jsonb_build_object(
@@ -150,6 +150,8 @@ func (q *Queries) GetSandboxDeploymentSnapshot(ctx context.Context) (GetSandboxD
 		&i.RuntimeDeployment.ResetDeadlineAt,
 		&i.RuntimeDeployment.ResetForcedAt,
 		&i.RuntimeDeployment.ResetAudit,
+		&i.RuntimeDeployment.E2bApiUrl,
+		&i.RuntimeDeployment.E2bDomain,
 		&i.Allocations,
 		&i.Pending,
 		&i.Remaining,

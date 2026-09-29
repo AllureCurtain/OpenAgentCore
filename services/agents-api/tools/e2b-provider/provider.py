@@ -11,7 +11,7 @@ from e2b import Sandbox, SandboxQuery, SandboxState
 from e2b.api.client.models.sandbox_metric import SandboxMetric
 from e2b.exceptions import AuthenticationException, FileNotFoundException, SandboxNotFoundException
 
-from sdk import connection_material, definitely_rejected, read_metrics, restore, run, validate_deployment, verify_team_template
+from sdk import connection_material, definitely_rejected, list_builds, list_templates, read_metrics, restore, run, sdk_options, validate_deployment, verify_team_template
 from state import Failure, Receipt, private_root, read_receipt
 
 PREFIX = 'oac_'
@@ -68,19 +68,20 @@ class Provider:
         self.reference = request['Reference']
         self.references = request.get('References') or []
         if (request['Version'] != 1 or request['Operation'] not in
-                ('create', 'inspect', 'renew', 'kill', 'command', 'validate_deployment', 'observe', 'verify_credential') or
-                (request['Operation'] not in ('validate_deployment', 'observe', 'verify_credential') and
+                ('create', 'inspect', 'renew', 'kill', 'command', 'validate_deployment', 'observe', 'list_templates', 'list_builds', 'verify_credential') or
+                (request['Operation'] not in ('validate_deployment', 'observe', 'list_templates', 'list_builds', 'verify_credential') and
                  not valid_reference(self.reference)) or
                 (request['Operation'] == 'observe' and
                  (not 1 <= len(self.references) <= 100 or
                   not all(valid_reference(r) for r in self.references) or
                   len({tuple(sorted(r.items())) for r in self.references}) != len(self.references))) or
-                not valid_id(self.config['InstallationID'])):
+                (request['Operation'] not in ('list_templates', 'list_builds') and
+                 not valid_id(self.config['InstallationID']))):
             raise Failure('invalid')
         deadline = datetime.fromisoformat(request['Deadline'].replace('Z', '+00:00'))
         self.deadline = time.monotonic() + (deadline - datetime.now(timezone.utc)).total_seconds()
         self.metadata = {PREFIX + field.lower(): value for field, value in
-                         dict(self.reference, InstallationID=self.config['InstallationID']).items()}
+                         dict(self.reference, InstallationID=self.config.get('InstallationID', '')).items()}
         self.receipt = None
 
     def remaining(self):
@@ -90,8 +91,7 @@ class Provider:
         return remaining
 
     def options(self):
-        return {'api_key': self.config['APIKey'], 'retries': 0, 'debug': False,
-                'request_timeout': self.remaining()}
+        return sdk_options(self.config, self.remaining)
 
     def info(self, cloud=None, absent=False):
         record = self.receipt.data or {}
@@ -114,11 +114,21 @@ class Provider:
             raise Failure('ownership')
         return cloud
 
+    def check_domain(self, cloud):
+        domain = self.options()['domain']
+        sandbox_domain = cloud.sandbox_domain
+        if not isinstance(sandbox_domain, str) or not (
+                sandbox_domain == domain or sandbox_domain.endswith('.' + domain)):
+            raise Failure('ownership')
+
     def qualified(self, cloud):
+        self.check_domain(cloud)
+        template = self.config['Template'].split(':', 1)[0]
+        if cloud.template_id not in (template, self.config['Template']):
+            raise Failure('invalid')
         resources = self.config.get('Resources')
         if resources is not None:
-            template = self.config['Template'].split(':', 1)[0]
-            if (cloud.template_id != template or type(cloud.cpu_count) is not int or
+            if (type(cloud.cpu_count) is not int or
                     cloud.cpu_count != resources['cpus'] or type(cloud.memory_mb) is not int or
                     cloud.memory_mb != resources['memory_mib']):
                 raise Failure('invalid')
@@ -198,14 +208,17 @@ class Provider:
                 self.receipt.save(status='rejected', settled=True)
             raise Failure('unconfirmed') from None
         self.receipt.save(status='created', ids=[cloud.sandbox_id], connection=connection_material(cloud))
-        # Creation responses do not include resources. Inspect before credentials
-        # or bootstrap are written, retaining the allocation for owned cleanup.
-        if self.config.get('Resources') is not None:
-            try:
-                self.qualified(self.owns(Sandbox.get_info(cloud.sandbox_id, **self.options())))
-            except Failure:
-                self.receipt.save(status='configuration_rejected', settled=True)
-                raise
+        # A create response must not steer envd traffic to an unrelated host.
+        self.check_domain(cloud)
+        # SDK Create returns connection material, but no metadata or resources.
+        # Read its exact ID before writing credentials, even when Core adopts the
+        # template's resources and does not supply explicit limits.
+        try:
+            detail = self.owns(Sandbox.get_info(cloud.sandbox_id, **self.options()))
+            self.qualified(detail)
+        except Failure:
+            self.receipt.save(status='configuration_rejected', settled=True)
+            raise
         # Refuse a pre-rename template before writing any executor credential.
         check = run(cloud, {'Args': ['/usr/bin/python3', '-I', '-c',
                     "import os,sys; sys.exit(78 if not os.path.isfile('/opt/oac-e2b/managed_init.py') and os.path.isdir('/opt/parsar-e2b') else 0)"]},
@@ -358,8 +371,12 @@ class Provider:
         raise Failure('unconfirmed')
 
     def execute(self):
-        if self.q['Operation'] in ('validate_deployment', 'observe', 'verify_credential'):
+        if self.q['Operation'] in ('validate_deployment', 'observe', 'verify_credential', 'list_templates', 'list_builds'):
             try:
+                if self.q['Operation'] == 'list_templates':
+                    return {'Version': 1, 'Templates': list_templates(self.config, self.remaining), 'ErrorCode': ''}
+                if self.q['Operation'] == 'list_builds':
+                    return {'Version': 1, 'Builds': list_builds(self.config, self.remaining), 'ErrorCode': ''}
                 if self.q['Operation'] == 'verify_credential':
                     self.verify_credential()
                     return {'Version': 1, 'DeploymentValid': True, 'ErrorCode': ''}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/db/sqlc"
 	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox"
+	"github.com/MiniMax-AI-Dev/parsar/services/agents-api/internal/sandbox/e2b"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -24,6 +25,8 @@ var ErrSandboxCredentialUnavailable = errors.New("sandbox credential encryption 
 type SandboxE2BConfiguration struct {
 	ReplaceCredential bool                     `json:"-"`
 	APIKey            string                   `json:"-"`
+	APIURL            string                   `json:"api_url,omitempty"`
+	Domain            string                   `json:"domain,omitempty"`
 	Template          string                   `json:"template"`
 	TemplateBuild     *SandboxE2BTemplateBuild `json:"-"`
 }
@@ -63,6 +66,9 @@ func validateSandboxSelection(input SandboxDeploymentSetupRequest) error {
 		if input.E2B == nil || input.E2B.APIKey == "" || len(input.E2B.APIKey) > 4096 || strings.IndexFunc(input.E2B.APIKey, func(r rune) bool { return unicode.IsSpace(r) || r == 0 }) >= 0 {
 			return ErrInvalidInput
 		}
+		if _, _, err := e2b.NormalizeEndpoint(input.E2B.APIURL, input.E2B.Domain); err != nil {
+			return ErrInvalidInput
+		}
 		template, build, ok := strings.Cut(input.E2B.Template, ":")
 		id, err := uuid.Parse(build)
 		if !ok || template == "" || len(template) > 128 || err != nil || id == uuid.Nil || id.String() != build {
@@ -94,6 +100,11 @@ func (s *Store) sandboxSelectionEqual(d sqlc.RuntimeDeployment, input SandboxDep
 		return d.E2bTemplate == "", nil
 	}
 	if d.E2bTemplate != input.E2B.Template {
+		return false, nil
+	}
+	savedAPI, savedDomain, savedErr := e2b.NormalizeEndpoint(d.E2bApiUrl, d.E2bDomain)
+	inputAPI, inputDomain, inputErr := e2b.NormalizeEndpoint(input.E2B.APIURL, input.E2B.Domain)
+	if savedErr != nil || inputErr != nil || savedAPI != inputAPI || savedDomain != inputDomain {
 		return false, nil
 	}
 	key, err := s.credentialCipher.OpenSandboxDeployment(d.E2bCredential, runtimeUUID(d.InstallationID), uint64(d.Generation))
@@ -130,6 +141,7 @@ func (s *Store) saveSandboxSelection(ctx context.Context, q *sqlc.Queries, d sql
 			return ErrSandboxCredentialUnavailable
 		}
 		params.E2bCredential, params.E2bTemplate = encrypted, input.E2B.Template
+		params.E2bApiUrl, params.E2bDomain = input.E2B.APIURL, input.E2B.Domain
 		build := templateBuildColumns(input.E2B.TemplateBuild)
 		params.E2bTemplateBuildStatus, params.E2bTemplateCpus = build.E2bTemplateBuildStatus, build.E2bTemplateCpus
 		params.E2bTemplateMemoryMib, params.E2bTemplateRootDiskMib = build.E2bTemplateMemoryMib, build.E2bTemplateRootDiskMib

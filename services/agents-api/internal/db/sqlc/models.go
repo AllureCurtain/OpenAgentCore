@@ -278,6 +278,8 @@ type RuntimeDeployment struct {
 	ResetDeadlineAt        pgtype.Timestamptz `json:"reset_deadline_at"`
 	ResetForcedAt          pgtype.Timestamptz `json:"reset_forced_at"`
 	ResetAudit             []byte             `json:"reset_audit"`
+	E2bApiUrl              string             `json:"e2b_api_url"`
+	E2bDomain              string             `json:"e2b_domain"`
 }
 
 type RuntimeDeploymentGeneration struct {
@@ -290,6 +292,8 @@ type RuntimeDeploymentGeneration struct {
 	E2bTemplateMemoryMib   pgtype.Int4        `json:"e2b_template_memory_mib"`
 	E2bTemplateRootDiskMib pgtype.Int4        `json:"e2b_template_root_disk_mib"`
 	CreatedAt              pgtype.Timestamptz `json:"created_at"`
+	E2bApiUrl              string             `json:"e2b_api_url"`
+	E2bDomain              string             `json:"e2b_domain"`
 }
 
 type RuntimeDeviceAuthority struct {

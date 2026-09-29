@@ -98,6 +98,8 @@ type SandboxDeploymentResources struct {
 // SandboxE2BView is the safe E2B selection. It never includes the API key.
 type SandboxE2BView struct {
 	Template             string `json:"template"`
+	APIURL               string `json:"api_url"`
+	Domain               string `json:"domain"`
 	CredentialConfigured bool   `json:"credential_configured"`
 	// The fixed template build as Core read it when this selection was saved.
 	TemplateBuild SandboxE2BTemplateBuildView `json:"template_build"`

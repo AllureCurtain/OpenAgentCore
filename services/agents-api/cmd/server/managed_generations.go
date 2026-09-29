@@ -138,7 +138,7 @@ func (s *managedSetup) routeGenerations(candidate execution.PreparedRuntimeDeplo
 			return err
 		}
 		withCandidateKey := func(value store.SandboxSetup, refs []sandbox.Reference) error {
-			value.E2B = &store.SandboxE2BConfiguration{APIKey: setup.E2B.APIKey, Template: value.E2B.Template}
+			value.E2B = &store.SandboxE2BConfiguration{APIKey: setup.E2B.APIKey, Template: value.E2B.Template, APIURL: value.E2B.APIURL, Domain: value.E2B.Domain}
 			return verify(value, refs)
 		}
 		if err := withCandidateKey(current, nil); err != nil {
@@ -147,12 +147,14 @@ func (s *managedSetup) routeGenerations(candidate execution.PreparedRuntimeDeplo
 		if err := verify(setup, nil); err != nil {
 			return err
 		}
+		generations := map[uint64]store.SandboxSetup{current.Generation: current}
 		for after := int64(-1); ; {
 			page, err := db.SandboxGenerationPage(ctx, after)
 			if err != nil {
 				return err
 			}
 			for _, g := range page {
+				generations[g.Generation] = g
 				if err := withCandidateKey(g, nil); err != nil {
 					return err
 				}
@@ -167,13 +169,17 @@ func (s *managedSetup) routeGenerations(candidate execution.PreparedRuntimeDeplo
 			if err != nil {
 				return err
 			}
-			refs := make([]sandbox.Reference, 0, len(page))
+			refsByGeneration := make(map[uint64][]sandbox.Reference)
 			for _, a := range page {
-				refs = append(refs, sandbox.Reference{TenantID: a.TenantID, EnvironmentID: a.EnvironmentID, AllocationID: a.ID})
+				refsByGeneration[a.DeploymentGeneration] = append(refsByGeneration[a.DeploymentGeneration], sandbox.Reference{TenantID: a.TenantID, EnvironmentID: a.EnvironmentID, AllocationID: a.ID})
 				after = a.ID
 			}
-			if len(refs) > 0 {
-				if err := verify(setup, refs); err != nil {
+			for generation, refs := range refsByGeneration {
+				owner, ok := generations[generation]
+				if !ok {
+					return e2b.ErrRequestUnconfirmed
+				}
+				if err := withCandidateKey(owner, refs); err != nil {
 					return err
 				}
 			}
@@ -186,31 +192,8 @@ func (s *managedSetup) routeGenerations(candidate execution.PreparedRuntimeDeplo
 	return candidate, nil
 }
 
-// Metrics do not qualify a sandbox against the current build. The helper reads
-// only labelled receipts and provider metrics, so one batch can span generations.
-func (p *e2bGenerationRouter) ObserveBatch(ctx context.Context, targets []runtimeobs.Target) ([]runtimeobs.BatchResult, bool) {
-	result := make([]runtimeobs.BatchResult, len(targets))
-	failed := func(err error) ([]runtimeobs.BatchResult, bool) {
-		for i := range result {
-			result[i].Err = err
-		}
-		return result, true
-	}
-	if len(targets) > runtimeobs.MaxBatchTargets {
-		return failed(sandbox.ErrInvalid)
-	}
-	release, err := p.setup.e2bCalls.Enter(ctx)
-	if err != nil {
-		return failed(err)
-	}
-	defer release()
-	setup, err := p.store.GetSandboxSetup(ctx)
-	if err != nil {
-		return failed(err)
-	}
-	provider, err := p.setup.provider(setup)
-	if err != nil {
-		return failed(err)
-	}
-	return provider.(*e2b.Provider).ObserveBatch(ctx, targets)
+// A batch can contain allocations from different endpoint generations. Let the
+// observation worker route each allocation through its immutable generation.
+func (p *e2bGenerationRouter) ObserveBatch(_ context.Context, _ []runtimeobs.Target) ([]runtimeobs.BatchResult, bool) {
+	return nil, false
 }

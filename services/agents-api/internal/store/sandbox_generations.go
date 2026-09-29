@@ -23,6 +23,10 @@ func (s *Store) ClassifySandboxDeploymentChange(ctx context.Context, installatio
 			copy := *input.E2B
 			copy.ReplaceCredential = copy.ReplaceCredential || copy.APIKey != ""
 			input.E2B = &copy
+			// Omitted endpoint selectors retain the committed E2B connection.
+			if copy.APIURL == "" && copy.Domain == "" {
+				input.E2B.APIURL, input.E2B.Domain = d.E2bApiUrl, d.E2bDomain
+			}
 			if copy.APIKey == "" && !copy.ReplaceCredential {
 				key, err := s.credentialCipher.OpenSandboxDeployment(d.E2bCredential, installation, uint64(d.Generation))
 				if err != nil {
@@ -97,6 +101,7 @@ func (s *Store) GetSandboxAllocationSetup(ctx context.Context, ref sandbox.Refer
 		}
 		if result.E2B != nil {
 			result.E2B.Template = g.E2bTemplate
+			result.E2B.APIURL, result.E2B.Domain = g.E2bApiUrl, g.E2bDomain
 		}
 	}
 	return result, tx.Commit(ctx)
@@ -115,7 +120,7 @@ func (s *Store) SandboxGenerationPage(ctx context.Context, after int64) ([]Sandb
 			return nil, err
 		}
 		if r.ProviderKind == "e2b" {
-			v.E2B = &SandboxE2BConfiguration{Template: r.E2bTemplate}
+			v.E2B = &SandboxE2BConfiguration{Template: r.E2bTemplate, APIURL: r.E2bApiUrl, Domain: r.E2bDomain}
 		}
 		result = append(result, v)
 	}

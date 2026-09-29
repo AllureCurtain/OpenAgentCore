@@ -15,6 +15,8 @@ import (
 // store's separate deployment view and never serialize this request.
 type SandboxE2BInput struct {
 	APIKey   *string `json:"api_key,omitempty"`
+	APIURL   string  `json:"api_url,omitempty"`
+	Domain   string  `json:"domain,omitempty"`
 	Template string  `json:"template"`
 }
 
@@ -35,7 +37,7 @@ type SandboxDeploymentChangeInput struct {
 func (v SandboxDeploymentInput) request() store.SandboxDeploymentSetupRequest {
 	input := store.SandboxDeploymentSetupRequest{ExpectedGeneration: *v.ExpectedGeneration, Provider: v.Provider, DeploymentSpec: sandbox.DeploymentSpec{Resources: v.Resources, Runtime: v.Runtime}}
 	if v.E2B != nil {
-		input.E2B = &store.SandboxE2BConfiguration{Template: v.E2B.Template}
+		input.E2B = &store.SandboxE2BConfiguration{Template: v.E2B.Template, APIURL: v.E2B.APIURL, Domain: v.E2B.Domain}
 		if v.E2B.APIKey != nil {
 			input.E2B.APIKey = *v.E2B.APIKey
 			input.E2B.ReplaceCredential = true

@@ -548,9 +548,33 @@ definitions:
     required:
       - expected_generation
     type: object
+  api.SandboxE2BDiscoveryInput:
+    properties:
+      api_key:
+        type: string
+      api_url:
+        type: string
+      domain:
+        type: string
+    type: object
+  api.SandboxE2BDiscoveryResult:
+    properties:
+      builds:
+        items:
+          $ref: '#/definitions/e2b.ReadyBuild'
+        type: array
+      templates:
+        items:
+          $ref: '#/definitions/e2b.TemplateSummary'
+        type: array
+    type: object
   api.SandboxE2BInput:
     properties:
       api_key:
+        type: string
+      api_url:
+        type: string
+      domain:
         type: string
       template:
         type: string
@@ -865,6 +889,24 @@ definitions:
         $ref: '#/definitions/coremetrics.Range'
       service:
         $ref: '#/definitions/coremetrics.ServiceState'
+    type: object
+  e2b.ReadyBuild:
+    properties:
+      cpus:
+        type: integer
+      id:
+        type: string
+      memory_mib:
+        type: integer
+    type: object
+  e2b.TemplateSummary:
+    properties:
+      id:
+        type: string
+      names:
+        items:
+          type: string
+        type: array
     type: object
   sandbox.DeploymentSpec:
     properties:
@@ -1344,8 +1386,12 @@ definitions:
     type: object
   store.SandboxE2BView:
     properties:
+      api_url:
+        type: string
       credential_configured:
         type: boolean
+      domain:
+        type: string
       template:
         type: string
       template_build:
@@ -6384,6 +6430,83 @@ paths:
       security:
         - DeploymentAdminAuth: []
       summary: Start or escalate a durable sandbox deployment reset
+      tags:
+        - Sandbox Manager
+  /core/v1/sandbox/e2b/templates:
+    post:
+      consumes:
+        - application/json
+      description: Core key only. Uses a transient E2B credential and endpoint through the pinned SDK helper; returns safe template metadata. Does not save the credential or allocate compute.
+      parameters:
+        - description: Transient E2B connection
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/api.SandboxE2BDiscoveryInput'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.SandboxE2BDiscoveryResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: List templates visible to an E2B credential
+      tags:
+        - Sandbox Manager
+  /core/v1/sandbox/e2b/templates/{template_id}/builds:
+    post:
+      consumes:
+        - application/json
+      description: Core key only. Reads one template through the pinned SDK helper with a transient E2B credential. Returns ready builds only, without allocating compute.
+      parameters:
+        - description: Template ID
+          in: path
+          name: template_id
+          required: true
+          type: string
+        - description: Transient E2B connection
+          in: body
+          name: body
+          required: true
+          schema:
+            $ref: '#/definitions/api.SandboxE2BDiscoveryInput'
+      produces:
+        - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/api.SandboxE2BDiscoveryResult'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/api.CoreErrorResponse'
+      security:
+        - DeploymentAdminAuth: []
+      summary: List ready builds for an E2B template
       tags:
         - Sandbox Manager
   /core/v1/sandbox/enrollment-tokens:

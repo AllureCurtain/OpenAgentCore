@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { expectManagementBoundary, openConsole, writes } from "./console";
+import { expectManagementBoundary, openConsole, selectFixtureE2BBuild, writes } from "./console";
 
 test.afterEach(async ({ request }) => expectManagementBoundary(request));
 
@@ -25,8 +25,7 @@ test("sets up sandboxes with Core's address read-only, never sending it", async 
 test("explains an E2B rejection in the wizard, with the file to edit and the command to apply it", async ({ page, request }) => {
   await openConsole(page, request, "system?id=sandbox", { sandbox: "none", installation: "local" });
   await page.getByRole("button", { name: "E2B cloud" }).click();
-  await page.getByLabel("E2B API key").fill("fixture-private-key");
-  await page.getByLabel("Template build").fill("template:94be54a1-138c-4f30-bc87-b13686272dbe");
+  await selectFixtureE2BBuild(page);
   await page.getByRole("button", { name: "Next" }).click();
   const address = page.getByRole("definition").filter({ hasText: "http://127.0.0.1:8091" });
   await expect(address).toContainText("Only the Core machine can reach this address");

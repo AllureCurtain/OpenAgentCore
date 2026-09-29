@@ -58,6 +58,8 @@ export function SandboxDeploymentSettings({ deployment, disabled, fresh, onReset
     </dl>
     {deployment.provider === "e2b" ? <div className="sandbox-cloud-summary">
       <dl className="sandbox-summary">
+        <div><dt>{t("Sandbox API URL")}</dt><dd><code>{deployment.e2b?.api_url}</code></dd></div>
+        <div><dt>{t("Sandbox data-plane domain")}</dt><dd><code>{deployment.e2b?.domain}</code></dd></div>
         <div>
           <dt>{t("Template build")}<HelpTip>{deployment.e2b?.template || t("Unknown state")}</HelpTip></dt>
           <dd>{[
@@ -81,7 +83,7 @@ export function SandboxDeploymentSettings({ deployment, disabled, fresh, onReset
           key={editKey}
           coreUrl={deployment.core_url}
           expectedGeneration={deployment.generation}
-          current={deployment.provider ? { provider: deployment.provider, specification: deployment.specification, e2bTemplate: deployment.e2b?.template } : undefined}
+          current={deployment.provider ? { provider: deployment.provider, specification: deployment.specification, e2bTemplate: deployment.e2b?.template, e2bAPIURL: deployment.e2b?.api_url, e2bDomain: deployment.e2b?.domain } : undefined}
           disabled={disabled || !canEdit}
           editing
           onSubmit={async (input) => { if (await onUpdate(input)) setChanging(false); }}
