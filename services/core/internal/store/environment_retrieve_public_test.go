@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/api"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/identity"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/runtimedevice"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/store"
@@ -27,14 +26,11 @@ func TestEnvironmentRetrievalOfficialClient(t *testing.T) {
 	tenant, foreignTenant := uuid.NewString(), uuid.NewString()
 	principal := store.FixtureExecutorPrincipal(t, s, tenant)
 	token, peer, foreign := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{
+	auth := newTestAuthenticator(t, []testAPIKey{
 		{OrganizationID: principal.OrganizationID, ProjectID: tenant, SubjectKind: principal.SubjectKind, SubjectID: principal.SubjectID, TokenSHA256: runtimedevice.HashCredential(token), TenantID: tenant},
 		{OrganizationID: principal.OrganizationID, ProjectID: tenant, SubjectKind: principal.SubjectKind, SubjectID: principal.SubjectID, TokenSHA256: runtimedevice.HashCredential(peer), TenantID: tenant},
 		{OrganizationID: principal.OrganizationID, ProjectID: foreignTenant, SubjectKind: principal.SubjectKind, SubjectID: principal.SubjectID, TokenSHA256: runtimedevice.HashCredential(foreign), TenantID: foreignTenant},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if err := s.EnsureProjectScopes(t.Context(), []identity.ProjectScope{{TenantID: tenant, OrganizationID: principal.OrganizationID, ProjectID: tenant}, {TenantID: foreignTenant, OrganizationID: principal.OrganizationID, ProjectID: foreignTenant}}); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +48,7 @@ func TestEnvironmentRetrievalOfficialClient(t *testing.T) {
 			}
 		}
 	}()
-	handler, err := api.NewHandler(s, auth, "codex", api.WithExecution(s), api.WithEnvironmentRemoteURL("https://private-registry.example"))
+	handler, err := publicHandler(t, s, auth, "codex", storeExecution(t, s), executorURL("https://private-registry.example"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +87,7 @@ func TestEnvironmentRetrievalOfficialClient(t *testing.T) {
 	server.Close()
 	pool.Close()
 	reopened, reopenedPool := store.NewModelTestStore(t)
-	handler, err = api.NewHandler(reopened, auth, "codex")
+	handler, err = publicHandler(t, reopened, auth, "codex")
 	if err != nil {
 		t.Fatal(err)
 	}

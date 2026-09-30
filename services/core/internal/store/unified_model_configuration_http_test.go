@@ -17,15 +17,12 @@ import (
 func TestUnifiedModelConfigurationHTTP(t *testing.T) {
 	st, _ := store.NewManagedTestStore(t)
 	tenant, token, coreKey := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "model-configuration", TokenSHA256: runtimedevice.HashCredential(token), TenantID: tenant}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	auth := newTestAuthenticator(t, []testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "model-configuration", TokenSHA256: runtimedevice.HashCredential(token), TenantID: tenant}})
 	admin, err := api.NewDeploymentAuthenticator([]string{runtimedevice.HashCredential(coreKey)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := api.NewHandler(st, auth, "codex", api.WithProjectAPIKeys(st, admin), api.WithHarnesses([]string{"codex", "claude_sdk"}), api.WithHostedEnvironments(), api.WithExecution(st), api.WithEnvironmentRemoteURL("wss://core.example/api/v1/agent-daemon/ws"), api.WithModelProviderDefaults(st.DeploymentModelProvider))
+	handler, err := publicHandler(t, st, auth, "codex", storeExecution(t, st), managedSandboxes(t, st), withCoreKeys(admin), withHarnesses([]string{"codex", "claude_sdk"}))
 	if err != nil {
 		t.Fatal(err)
 	}

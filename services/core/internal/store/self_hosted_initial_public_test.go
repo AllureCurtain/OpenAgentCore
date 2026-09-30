@@ -32,22 +32,24 @@ func TestSelfHostedInitialCreationOfficialClient(t *testing.T) {
 	s, pool := store.NewModelTestStore(t)
 	tenant, foreignTenant := uuid.NewString(), uuid.NewString()
 	token, peer, foreign := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{
+	auth := newTestAuthenticator(t, []testAPIKey{
 		{OrganizationID: "test-org", ProjectID: tenant, SubjectKind: "service_account", SubjectID: "initial-creator", TokenSHA256: runtimedevice.HashCredential(token), TenantID: tenant},
 		{OrganizationID: "test-org", ProjectID: tenant, SubjectKind: "user", SubjectID: "different-creator", TokenSHA256: runtimedevice.HashCredential(peer), TenantID: tenant},
 		{OrganizationID: "test-org", ProjectID: foreignTenant, SubjectKind: "service_account", SubjectID: "initial-creator", TokenSHA256: runtimedevice.HashCredential(foreign), TenantID: foreignTenant},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	const origin = "https://offline-executor.example"
 	serve := func(s *store.Store, worker *execution.Worker) *httptest.Server {
 		t.Helper()
-		options := []api.Option{api.WithEnvironmentRemoteURL(origin)}
+		enabled := []func(*api.Dependencies){acceptUnavailable(t)}
 		if worker != nil {
-			options = append(options, api.WithExecution(worker))
+			enabled = append(enabled, workerExecution(worker), executorURL(origin))
+		} else {
+			// Without a Worker, Core keeps its executor URL but admits nothing.
+			enabled = append(enabled, func(d *api.Dependencies) {
+				d.Execution = &api.Execution{ExecutorURL: origin, Admission: unavailableAdmission{}, SessionArchive: strictStandIn{t}, Workspaces: strictStandIn{t}}
+			})
 		}
-		handler, err := api.NewHandler(s, auth, "codex", options...)
+		handler, err := publicHandler(t, s, auth, "codex", enabled...)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -181,7 +183,7 @@ func TestSelfHostedInitialCreationOfficialClient(t *testing.T) {
 		}
 	}
 	var pid uint32
-	err = reopenedPool.QueryRow(t.Context(), `SELECT pid FROM pg_locks WHERE locktype='advisory'
+	err := reopenedPool.QueryRow(t.Context(), `SELECT pid FROM pg_locks WHERE locktype='advisory'
 		AND database=(SELECT oid FROM pg_database WHERE datname=current_database())
 		AND classid=(706172736172::bigint >> 32)::oid
 		AND objid=(706172736172::bigint & 4294967295)::oid AND objsubid=1 AND granted`).Scan(&pid)
@@ -229,4 +231,19 @@ func publicInitialWorker(t *testing.T, s *store.Store) (*execution.Worker, func(
 	}
 	t.Cleanup(func() { stop(false) })
 	return worker, stop
+}
+
+// unavailableAdmission admits nothing, as a Core without a running Worker.
+type unavailableAdmission struct{}
+
+func (unavailableAdmission) CreateSession(context.Context, string, store.CreateSessionInput) (store.Session, error) {
+	return store.Session{}, execution.ErrExecutionUnavailable
+}
+
+func (unavailableAdmission) CreateSessionStream(context.Context, string, store.CreateSessionInput) (store.SessionCreation, error) {
+	return store.SessionCreation{}, execution.ErrExecutionUnavailable
+}
+
+func (unavailableAdmission) SubmitInputs(context.Context, string, string, string, []store.Input) ([]store.InputReceipt, error) {
+	return nil, execution.ErrExecutionUnavailable
 }

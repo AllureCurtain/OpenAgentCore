@@ -9,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/api"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/credentialcrypto"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/runtimedevice"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/store"
@@ -33,14 +32,11 @@ func TestMCPCredentialSelectionPublicPostgres(t *testing.T) {
 	}
 	s := store.NewWithCredentialCipher(pool, cipher)
 	tenantA, tokenA, tokenB := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{
+	auth := newTestAuthenticator(t, []testAPIKey{
 		{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "selection-a", TokenSHA256: runtimedevice.HashCredential(tokenA), TenantID: tenantA},
 		{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "selection-b", TokenSHA256: runtimedevice.HashCredential(tokenB), TenantID: uuid.NewString()},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	h, err := api.NewHandler(s, auth, "codex", api.WithExecution(s))
+	h, err := publicHandler(t, s, auth, "codex", storeExecution(t, s))
 	if err != nil {
 		t.Fatal(err)
 	}

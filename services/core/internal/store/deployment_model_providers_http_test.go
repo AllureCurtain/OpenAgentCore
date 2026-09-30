@@ -31,17 +31,12 @@ func TestDeploymentModelProvidersHTTP(t *testing.T) {
 	cipher, _ := credentialcrypto.New(bytes.Repeat([]byte{53}, 32))
 	st := store.NewWithCredentialCipher(pool, cipher)
 	tenant, projectKey, coreKey := uuid.NewString(), uuid.NewString(), uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "defaults-http", TokenSHA256: runtimedevice.HashCredential(projectKey), TenantID: tenant}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	auth := newTestAuthenticator(t, []testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "defaults-http", TokenSHA256: runtimedevice.HashCredential(projectKey), TenantID: tenant}})
 	admin, err := api.NewDeploymentAuthenticator([]string{runtimedevice.HashCredential(coreKey)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := api.NewHandler(st, auth, "codex", api.WithProjectAPIKeys(st, admin), api.WithHarnesses([]string{"codex", "mcode"}),
-		api.WithHostedEnvironments(), api.WithExecution(st), api.WithEnvironmentRemoteURL("wss://core.example/api/v1/agent-daemon/ws"),
-		api.WithModelProviderDefaults(st.DeploymentModelProvider))
+	handler, err := publicHandler(t, st, auth, "codex", storeExecution(t, st), managedSandboxes(t, st), withCoreKeys(admin), withHarnesses([]string{"codex", "mcode"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,11 +288,8 @@ func TestNoneSessionRetryAfterDeploymentDefaultChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 	tenant, token := uuid.NewString(), uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "none-retry", TokenSHA256: runtimedevice.HashCredential(token), TenantID: tenant}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	handler, err := api.NewHandler(st, auth, "codex", api.WithExecution(st), api.WithModelProviderDefaults(st.DeploymentModelProvider))
+	auth := newTestAuthenticator(t, []testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "none-retry", TokenSHA256: runtimedevice.HashCredential(token), TenantID: tenant}})
+	handler, err := publicHandler(t, st, auth, "codex", storeExecution(t, st))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,13 +351,10 @@ func TestNoneSessionRetryAfterDeploymentDefaultChanges(t *testing.T) {
 func TestDeploymentProviderResolutionPairsRevisionDuringReplacement(t *testing.T) {
 	st, pool := store.NewManagedTestStore(t)
 	tenant, token := uuid.NewString(), uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "tuple-test", TokenSHA256: runtimedevice.HashCredential(token), TenantID: tenant}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	auth := newTestAuthenticator(t, []testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "tuple-test", TokenSHA256: runtimedevice.HashCredential(token), TenantID: tenant}})
 	admin := adminaudit.WithSource(t.Context(), adminaudit.Source{CredentialID: "fixture-admin", RequestID: uuid.NewString(), TraceID: uuid.NewString()})
 	provider := v1.ModelProviderInput{Protocol: "responses", BaseURL: "https://original.example/v1", APIKey: "original-fixture-key"}
-	if _, err = st.SetDeploymentModelProvider(admin, "codex", v1.ModelConfigurationInput{ModelProvider: provider, Model: "fixture"}); err != nil {
+	if _, err := st.SetDeploymentModelProvider(admin, "codex", v1.ModelConfigurationInput{ModelProvider: provider, Model: "fixture"}); err != nil {
 		t.Fatal(err)
 	}
 	original, err := st.DeploymentModelProvider(t.Context(), "codex")
@@ -384,7 +373,7 @@ func TestDeploymentProviderResolutionPairsRevisionDuringReplacement(t *testing.T
 		_, err = st.SetDeploymentModelProvider(admin, harness, v1.ModelConfigurationInput{ModelProvider: replacement, Model: "fixture"})
 		return snapshot, err
 	}
-	handler, err := api.NewHandler(st, auth, "codex", api.WithExecution(st), api.WithModelProviderDefaults(resolver))
+	handler, err := publicHandler(t, st, auth, "codex", storeExecution(t, st), modelProviderDefaults(st, resolver))
 	if err != nil {
 		t.Fatal(err)
 	}

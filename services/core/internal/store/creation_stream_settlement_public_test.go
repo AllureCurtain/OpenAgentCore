@@ -11,15 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/api"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/runtimedevice"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/store"
 	"github.com/google/uuid"
 )
-
-// storeAdmission admits creation input through the Store without a Worker, so
-// reservations stay pending until the test settles them.
-type storeAdmission struct{ *store.Store }
 
 type sseLines struct {
 	lines chan string
@@ -120,11 +115,8 @@ func (s sseLines) open(t *testing.T) {
 func TestCreationStreamPublicLifetimes(t *testing.T) {
 	s, pool := store.NewModelTestStore(t)
 	tenant, token := uuid.NewString(), uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{{OrganizationID: "test-org", ProjectID: tenant, SubjectKind: "service_account", SubjectID: "test-runner", TokenSHA256: runtimedevice.HashCredential(token), TenantID: tenant}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	handler, err := api.NewHandler(s, auth, "codex", api.WithEnvironmentRemoteURL("https://offline-executor.example"), api.WithExecution(storeAdmission{s}))
+	auth := newTestAuthenticator(t, []testAPIKey{{OrganizationID: "test-org", ProjectID: tenant, SubjectKind: "service_account", SubjectID: "test-runner", TokenSHA256: runtimedevice.HashCredential(token), TenantID: tenant}})
+	handler, err := publicHandler(t, s, auth, "codex", storeExecution(t, s), executorURL("https://offline-executor.example"))
 	if err != nil {
 		t.Fatal(err)
 	}

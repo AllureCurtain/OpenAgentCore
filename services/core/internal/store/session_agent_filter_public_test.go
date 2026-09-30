@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/api"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/runtimedevice"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/store"
 	"github.com/google/uuid"
@@ -21,21 +20,18 @@ func TestSessionAgentFilterOfficialClient(t *testing.T) {
 	}
 	s, pool := store.NewTestStore(t)
 	token, foreign := uuid.NewString(), uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{
+	auth := newTestAuthenticator(t, []testAPIKey{
 		{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "test-runner", TokenSHA256: runtimedevice.HashCredential(token), TenantID: uuid.NewString()},
 		{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "test-runner", TokenSHA256: runtimedevice.HashCredential(foreign), TenantID: uuid.NewString()},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	h, err := api.NewHandler(s, auth, "codex", api.WithExecution(s))
+	h, err := publicHandler(t, s, auth, "codex", storeExecution(t, s))
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(h)
 	defer server.Close()
 	recoveredStore := store.New(pool)
-	h, err = api.NewHandler(recoveredStore, auth, "codex", api.WithExecution(recoveredStore))
+	h, err = publicHandler(t, recoveredStore, auth, "codex", storeExecution(t, recoveredStore))
 	if err != nil {
 		t.Fatal(err)
 	}

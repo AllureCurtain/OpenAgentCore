@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/MiniMax-AI/OpenAgentCore/internal/agentdaemon/proto"
-	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/api"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/runtimedevice"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/store"
 	"github.com/google/uuid"
@@ -56,14 +55,11 @@ func TestEnvironmentFileCreateRejectionsLeaveNoReceiptOrConsumption(t *testing.T
 		t.Fatal(err)
 	}
 	token, other := uuid.NewString(), uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{
+	auth := newTestAuthenticator(t, []testAPIKey{
 		{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "test-runner", TokenSHA256: runtimedevice.HashCredential(token), TenantID: h.tenant},
 		{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "tenant-b", TokenSHA256: runtimedevice.HashCredential(other), TenantID: uuid.NewString()},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	handler, err := api.NewHandler(h.s, auth, "codex", api.WithEnvironmentFileWriter(w), api.WithSourceFiles(h.s))
+	handler, err := publicHandler(t, h.s, auth, "codex", workerExecution(w))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/api"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/credentialcrypto"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/runtimedevice"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/store"
@@ -28,11 +27,8 @@ func TestUnstorableTextRejectsWithoutWritesPostgres(t *testing.T) {
 	}
 	s := store.NewWithCredentialCipher(pool, cipher)
 	token := uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "nul-owner", TokenSHA256: runtimedevice.HashCredential(token), TenantID: uuid.NewString()}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	h, err := api.NewHandler(s, auth, "codex", api.WithExecution(s), api.WithSkills(s), api.WithSourceFiles(s))
+	auth := newTestAuthenticator(t, []testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "nul-owner", TokenSHA256: runtimedevice.HashCredential(token), TenantID: uuid.NewString()}})
+	h, err := publicHandler(t, s, auth, "codex", storeExecution(t, s))
 	if err != nil {
 		t.Fatal(err)
 	}

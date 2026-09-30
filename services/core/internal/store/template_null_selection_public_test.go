@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/MiniMax-AI/OpenAgentCore/internal/agentplugin"
-	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/api"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/credentialcrypto"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/runtimedevice"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/store"
@@ -35,16 +34,13 @@ func TestTemplateNullSelectionOfficialClientPostgres(t *testing.T) {
 	s := store.NewWithCredentialCipher(pool, cipher)
 	reopenedStore := store.NewWithCredentialCipher(pool, cipher)
 	tenant, foreignTenant, token, foreign := uuid.NewString(), uuid.NewString(), uuid.NewString(), uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{
+	auth := newTestAuthenticator(t, []testAPIKey{
 		{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "selection-owner", TokenSHA256: runtimedevice.HashCredential(token), TenantID: tenant},
 		{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "selection-foreign", TokenSHA256: runtimedevice.HashCredential(foreign), TenantID: foreignTenant},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	serve := func(current *store.Store) *httptest.Server {
 		t.Helper()
-		h, err := api.NewHandler(current, auth, "codex", api.WithHostedEnvironments(), api.WithExecution(current), api.WithSourceFiles(current), api.WithSkills(current), fixtureDeploymentProvider())
+		h, err := publicHandler(t, current, auth, "codex", storeExecution(t, current), managedSandboxes(t, current), fixtureDeploymentProvider(current))
 		if err != nil {
 			t.Fatal(err)
 		}

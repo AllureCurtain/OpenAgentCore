@@ -7,7 +7,6 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/api"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/execution"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/runtimedevice"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/store"
@@ -21,10 +20,7 @@ func TestInitialSessionInputOfficialClient(t *testing.T) {
 	}
 	s, _ := store.NewTestStore(t)
 	token, foreign := uuid.NewString(), uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "test-runner", TokenSHA256: runtimedevice.HashCredential(token), TenantID: uuid.NewString()}, {OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "test-runner", TokenSHA256: runtimedevice.HashCredential(foreign), TenantID: uuid.NewString()}})
-	if err != nil {
-		t.Fatal(err)
-	}
+	auth := newTestAuthenticator(t, []testAPIKey{{OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "test-runner", TokenSHA256: runtimedevice.HashCredential(token), TenantID: uuid.NewString()}, {OrganizationID: "test-org", ProjectID: uuid.NewString(), SubjectKind: "service_account", SubjectID: "test-runner", TokenSHA256: runtimedevice.HashCredential(foreign), TenantID: uuid.NewString()}})
 	// Exercise real worker admission with dispatch paused for deterministic reads.
 	worker, err := execution.StartWorker(t.Context(), &execution.Dispatcher{Store: s})
 	if err != nil {
@@ -37,13 +33,13 @@ func TestInitialSessionInputOfficialClient(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	handler, err := api.NewHandler(s, auth, "codex", api.WithExecution(worker))
+	handler, err := publicHandler(t, s, auth, "codex", workerExecution(worker))
 	if err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer(handler)
 	defer server.Close()
-	unsupported, err := api.NewHandler(s, auth, "fake_alpha", api.WithExecution(worker))
+	unsupported, err := publicHandler(t, s, auth, "fake_alpha", workerExecution(worker))
 	if err != nil {
 		t.Fatal(err)
 	}

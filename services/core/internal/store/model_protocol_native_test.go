@@ -12,7 +12,6 @@ import (
 	"time"
 
 	v1 "github.com/MiniMax-AI/OpenAgentCore/contracts/agents-api/v1"
-	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/api"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/execution"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/runtimedevice"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/store"
@@ -78,12 +77,9 @@ func TestNativeModelProtocolPublicExecution(t *testing.T) {
 		}
 	}()
 	token := uuid.NewString()
-	auth, err := newTestAuthenticator([]testAPIKey{{OrganizationID: "test", ProjectID: h.tenant, SubjectKind: "service_account", SubjectID: "owner", TokenSHA256: runtimedevice.HashCredential(token), TenantID: h.tenant}})
-	if err != nil {
-		t.Fatal("cannot create fixture authenticator")
-	}
+	auth := newTestAuthenticator(t, []testAPIKey{{OrganizationID: "test", ProjectID: h.tenant, SubjectKind: "service_account", SubjectID: "owner", TokenSHA256: runtimedevice.HashCredential(token), TenantID: h.tenant}})
 	providerRevision := uuid.New()
-	handler, err := api.NewHandler(h.s, auth, options.Engine, api.WithExecution(worker), api.WithExecutionPolicy(h.d.Policy), api.WithModelProviderDefaults(func(context.Context, string) (*store.DeploymentModelProviderSnapshot, error) {
+	handler, err := publicHandler(t, h.s, auth, options.Engine, workerExecution(worker), withPolicy(h.d.Policy), modelProviderDefaults(h.s, func(context.Context, string) (*store.DeploymentModelProviderSnapshot, error) {
 		return &store.DeploymentModelProviderSnapshot{Model: options.Model, HarnessConfig: options.HarnessConfig, Provider: &options.Provider, Revision: providerRevision}, nil
 	}))
 	if err != nil {
