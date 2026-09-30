@@ -556,8 +556,16 @@ session = client.beta.agents.sessions.create(environment={"type": "none"}, input
 
 The HTTP path is `/vaults`, with the Beta header. A credential is used when an MCP
 server's URL matches its `mcp_server_url` exactly, or when the tool names its
-`credential_id`. Service-origin MCP works with Codex and Claude Code on `none`
-Sessions only.
+`credential_id`.
+
+An MCP tool's `connection_origin` decides who connects:
+
+| `connection_origin` | Connects from | Works with |
+| --- | --- | --- |
+| `service` (default) | Core's side, for `none` Sessions | Codex and Claude Code |
+| `environment` | Inside the workspace (managed or your own machine) | Codex, Claude Code and MiniMax Code. MiniMax Code needs a null allowlist and `required: false` |
+
+Current rules: [public MCP connection origin](../../contracts/agents-api/environments.md#public-mcp-connection-origin).
 
 ## Limits and differences from OpenAI
 
