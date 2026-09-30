@@ -16,7 +16,11 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+import re
 import secrets
+import shlex
+import shutil
+import signal
 import socket
 import stat
 import subprocess
@@ -36,10 +40,19 @@ import native_service
 SOURCE_COMMIT = None  # Set by the packaged entrypoint from its build revision.
 UNSUPPORTED_VERSION = ("This installation version or historical conversion is not supported; "
                        "preserve its data and reinstall into a new empty directory. Nothing was changed.")
+INCOMPLETE = ("This installation did not finish installing. Rerun the installer command; it removes what is left "
+              "and installs again.")
 
 
 class OacError(Exception):
     pass
+
+
+class ApplyFailed(OacError):
+    """apply wrote the files, but the services did not converge on them; cause says why."""
+    def __init__(self, message, cause):
+        super().__init__(message)
+        self.cause = cause
 
 
 def run(args, **kwargs):
@@ -140,6 +153,12 @@ def save_state(root, state):
     write_private(root / "state.json", json.dumps(state, indent=2) + "\n")
 
 
+def check_complete(state):
+    """Only the installer uses an installation before its first start has finished."""
+    if state.get("complete") is not True:
+        raise OacError(INCOMPLETE)
+
+
 @contextlib.contextmanager
 def locked(root):
     if (root / "state.json").exists():
@@ -150,6 +169,13 @@ def locked(root):
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise OacError("Another oac command is running for this installation") from None
+        try:
+            current = os.stat(root / ".oac.lock", follow_symlinks=False)
+        except FileNotFoundError:
+            current = None
+        if current is None or not os.path.samestat(current, os.fstat(descriptor)):
+            # The holder removed the installation, lock file included, after this command opened it.
+            raise OacError("Another oac command is running for this installation")
         if (root / "state.json").exists():
             load_state(root)
         yield
@@ -563,7 +589,7 @@ def check_paired_core(root, config, state, previous, args, interactive, out):
         out("web.core_url changes; apply checks which Core it reaches.")
         return state.get("core_installation_id")
     status, installation = paired_core(root, config)
-    if status == 401:
+    if status == 401 and state.get("complete") is True:
         out("Warning: Core rejects this Web host's Core key; the key is out of date. "
             "Copy secrets/core.key from the Core host, then run oac apply.")
     elif status == 404:
@@ -634,6 +660,7 @@ def apply(root, dry_run=False, yes=False, discard_edits=False, confirm_public_ur
     args = argparse.Namespace(dry_run=dry_run, yes=yes, confirm_public_url_change=confirm_public_url_change)
     interactive = sys.stdin.isatty() if interactive is None else interactive
     with locked(root):
+        check_complete(load_state(root))
         return _apply(root, args, discard_edits, start, interactive, out, retry=retry)
 
 
@@ -721,9 +748,9 @@ def _apply(root, args, discard_edits, start, interactive, out, rollback=True, re
         if line:
             out(line)
         if not (rollback and in_sync):
-            raise OacError(f"config.json not applied: {describe(error)}. The services were not all running with "
+            raise ApplyFailed(f"config.json not applied: {describe(error)}. The services were not all running with "
                               f"the previous files, so nothing was rolled back; run oac status, fix the cause "
-                              f"and {retry}") from None
+                              f"and {retry}", describe(error)) from None
         # Record the restored files as oac's own before writing them back; a restored
         # hand edit stays one.
         restored = {name: data for name, data in disk.items()
@@ -740,12 +767,93 @@ def _apply(root, args, discard_edits, start, interactive, out, rollback=True, re
             if ingress_config.enabled(config) and "gateway" in will_run:
                 ingress_config.reload(root, disk["Caddyfile"].decode())
         except (OacError, RuntimeError, subprocess.CalledProcessError) as second:
-            raise OacError(f"config.json not applied: {describe(error)}. The previous generated files were restored, "
+            raise ApplyFailed(f"config.json not applied: {describe(error)}. The previous generated files were restored, "
                               f"but the services could not be started with them either ({describe(second)}); run "
-                              f"oac status, fix the cause and {retry}") from None
-        raise OacError(f"config.json not applied: {describe(error)}. The previous generated files were restored "
-                          f"and the services converged on them; fix config.json and {retry}") from None
+                              f"oac status, fix the cause and {retry}", describe(error)) from None
+        raise ApplyFailed(f"config.json not applied: {describe(error)}. The previous generated files were restored "
+                          f"and the services converged on them; fix config.json and {retry}", describe(error)) from None
     out("Applied config.json.")
+
+
+# Removal -----------------------------------------------------------------------
+
+def _remove_last_files(root, state, keep_root):
+    """Finish the few final unlinks without a handled signal losing the recovery state."""
+    handlers = {}
+    try:
+        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            handlers[signum] = signal.signal(signum, signal.SIG_IGN)
+        try:
+            for name in ("state.json", "oac", ".oac.lock"):
+                if not (keep_root and name == ".oac.lock"):
+                    (root / name).unlink(missing_ok=True)
+            if not keep_root:
+                root.rmdir()
+        except (OSError, KeyboardInterrupt):
+            # A failed command unlink must leave both the command and its state for a retry.
+            if (root / "oac").exists() and not (root / "state.json").exists():
+                with contextlib.suppress(OSError):
+                    save_state(root, state)
+            raise
+    finally:
+        for signum, handler in handlers.items():
+            signal.signal(signum, handler)
+
+
+def remove(root, state, keep_root=False):
+    """Remove one installation: native Core's unit, its Compose project with its volumes, then its files.
+
+    state is the loaded state.json. Only this installation's own project and unit are
+    touched; loaded images are kept. keep_root keeps the directory and its .oac.lock, which
+    the caller holds, and removes everything else in it. The files stay while a service is
+    left, so state.json still names it. Nothing is printed, so a closed terminal can't stop
+    the removal. Raises OacError naming what is left and the commands that remove it.
+    """
+    root = Path(root)
+    if not root.is_absolute() or root.is_symlink() or root.resolve() != root:
+        raise OacError("The installation directory must be canonical and not a symlink; nothing was removed")
+    project = state.get("project")
+    if not isinstance(project, str) or not re.fullmatch(r"oac-[0-9a-f]{10}", project):
+        raise OacError("state.json names no Compose project of this installation; nothing was removed")
+    left = []
+    if native_service.is_native(state):
+        unit = native_service.unit_name(state)
+        try:
+            native_service.remove(state)
+        except (RuntimeError, KeyboardInterrupt):
+            left.append((f"native Core unit {unit}", f"systemctl --user disable --now {unit}"))
+    # -p without -f, outside any project directory and without COMPOSE_* settings: Compose
+    # reads no project file and acts on this project's labels alone.
+    down = ["docker", "compose", "-p", project, "down", "--volumes", "--remove-orphans"]
+    compose_names = sorted(name for name in os.environ if name.startswith("COMPOSE_"))
+    environment = {name: value for name, value in os.environ.items() if name not in compose_names}
+    try:
+        run(down, cwd="/", env=environment, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL)
+    except (subprocess.CalledProcessError, OSError, KeyboardInterrupt):
+        manual = shlex.join(["env", *(arg for name in compose_names for arg in ("-u", name)), *down])
+        left.append((f"Compose project {project} and its volumes", f"(cd / && {manual})"))
+    target = shlex.quote(str(root))
+    files = (f"the files in {root}", f"find {target} -mindepth 1 -delete" if keep_root else f"rm -rf {target}")
+    if left:
+        left.append(files)
+    else:
+        try:
+            for path in root.iterdir():
+                if path.name in ("state.json", "oac", ".oac.lock"):
+                    continue
+                if path.is_dir() and not path.is_symlink():
+                    shutil.rmtree(path)
+                else:
+                    path.unlink()
+            _remove_last_files(root, state, keep_root)
+        except (OSError, KeyboardInterrupt):
+            # A lock file alone, such as one another command just created, is harmless.
+            if root.is_dir() and any(path.name != ".oac.lock" for path in root.iterdir()):
+                left.append(files)
+    if left:
+        raise OacError("Removal did not finish. Left: " + "; ".join(what for what, _ in left) + ". Remove them with:\n"
+                       + "\n".join("  " + command for _, command in left))
 
 
 # Commands --------------------------------------------------------------------
@@ -852,6 +960,7 @@ def status(root, out=print):
         out(f'Reverse proxy: /v1 and /api/v1 go to {configuration.service_address(config, "core", connect=True)}; '
             f'everything else goes to {configuration.service_address(config, "web", connect=True)}')
     out("Service health does not prove model execution. This check makes no model requests.")
+    check_complete(state)
     if not healthy:
         raise OacError("One or more installed services are unavailable")
 
@@ -861,6 +970,7 @@ def start(root, out=print):
     with locked(root):
         check_directories(root)
         state = load_state(root)
+        check_complete(state)
         config = load_config_or_report(root, out)
         if config is not None:
             rendered, disk, _ = render_now(root, config, state)
@@ -901,6 +1011,7 @@ def rotate_core_key(root, yes=False, interactive=None, out=print):
     with locked(root):
         check_directories(root)
         state = load_state(root)
+        check_complete(state)
         if state["mode"] == "web-only":
             raise OacError("Core owns the Core key. Copy secrets/core.key from the Core host into this "
                               "installation, then run oac apply.")
