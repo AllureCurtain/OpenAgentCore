@@ -29,10 +29,10 @@ class NameGuardTests(unittest.TestCase):
                          [(1, 1, "AGENTS_API_PORT")])
 
     def test_exception_is_path_scoped_and_case_sensitive(self):
-        rule = self.rule("parsar", "provenance/*")
-        self.assertFalse(names.violations("provenance/source.json", "parsar", [rule]))
+        rule = self.rule("parsar", "history/*")
+        self.assertFalse(names.violations("history/source.json", "parsar", [rule]))
         self.assertTrue(names.violations("README.md", "parsar", [rule]))
-        self.assertTrue(names.violations("provenance/source.json", "PARSAR", [rule]))
+        self.assertTrue(names.violations("history/source.json", "PARSAR", [rule]))
 
     def test_detections_include_commands_settings_labels_and_display(self):
         for value in ("PaRsAr", "io.parsar.installation", "AGENTS_API_PORT", "CORE_CONSOLE_BIND", "AGENTS_CORE_WEB_ADDR",
@@ -84,6 +84,26 @@ class NameGuardTests(unittest.TestCase):
             self.assertNotIn("untracked.txt", result.stdout)
             self.assertNotIn("binary:", result.stdout)
             (root / "tracked.txt").write_text("OAC_RUNTIME_HOME\n")
+            self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
+
+    def test_exception_that_excuses_no_identifier_fails_the_scan(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subprocess.run(["git", "init", "-q", directory], check=True)
+            (root / "tracked.txt").write_text("PARSAR_HOME X-Core-Console-Actor\n")
+            subprocess.run(["git", "-C", directory, "add", "tracked.txt"], check=True)
+            rules = root / "rules.json"
+            used = {"path": "tracked.txt", "regex": "PARSAR_HOME", "reason": "Excuses the setting"}
+            command = [sys.executable, str(Path(names.__file__)), "--root", directory, "--allowlist", str(rules)]
+            for unused in ({"path": "missing/*", "regex": "parsar", "reason": "Matches no file"},
+                           {"path": "*", "regex": "X-Core-Console-Actor", "reason": "Matches only allowed text"}):
+                with self.subTest(unused=unused["regex"]):
+                    rules.write_text(json.dumps([used, unused]))
+                    result = subprocess.run(command, text=True, capture_output=True)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn(repr(unused["regex"]), result.stdout)
+                    self.assertNotIn("PARSAR_HOME", result.stdout)
+            rules.write_text(json.dumps([used]))
             self.assertEqual(subprocess.run(command, capture_output=True).returncode, 0)
 
     def test_persisted_domain_exception_does_not_allow_other_settings_or_paths(self):

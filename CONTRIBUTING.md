@@ -33,11 +33,11 @@ This guide owns how to work in the repository: documentation ownership, the repo
 
 ## Repository boundary
 
-This repository is the standalone execution substrate copied from Parsar at the revision in `provenance/source.json`. It holds the API and its migrations, the Runtime protocol and daemon, Harness adapters, shared execution packages, the standalone Core Web console and build/test tools.
+This repository is the standalone execution substrate, copied from the Parsar repository. It holds the API and its migrations, the Runtime protocol and daemon, Harness adapters, shared execution packages, the standalone Core Web console and build/test tools.
 
 Product users, workspaces, model catalogs, business assets, the Parsar product Web, product API and product migrations remain in Parsar. Do not import `server/`, `apps/parsar/`, product CLI/plugin packages or their deployment stack.
 
-Preserve copied Runtime and protocol behavior. Go import paths use this repository's module and do not require fetching the original repository. The source snapshot and per-file hashes are an audit trail; future Core development need not preserve them. Do not automatically sync or delete the original repository's Core.
+Preserve copied Runtime and protocol behavior. Go import paths use this repository's module and do not require fetching the original repository. Do not automatically sync or delete the original repository's Core.
 
 ### Product and execution service separation
 
@@ -116,7 +116,7 @@ It excludes Parsar product Web and server gates.
 | `OAC_TEST_DATABASE_URL` | A dedicated test database. The full gate fails when it is missing. |
 | `OAC_TEST_OFFICIAL_SDK_PYTHON` | The pinned official SDK interpreter |
 
-The role needs `CREATE DATABASE`: managed-provider tests create and drop isolated `oac_*_tests` databases because provider identity is deployment-wide. `PARSAR_AGENTS_API_TEST_DATABASE_URL` is retired; `make check-database` reports its replacement when only the old name is set. Tests must not bypass the production provider-switch guard.
+The role needs `CREATE DATABASE`: managed-provider tests create and drop isolated `oac_*_tests` databases because provider identity is deployment-wide. Tests must not bypass the production provider-switch guard.
 
 ### Contract and schema rules
 
@@ -168,6 +168,7 @@ Public project branding uses OpenAgentCore. The canonical vector mark is `docs/a
 
 - An exception covers only its matched text: an allowed repository import cannot hide a retired setting elsewhere on the line.
 - Keep exceptions narrow and explain the preserved contract or historical input.
+- The guard also fails on an exception that excuses no retired identifier. Remove an exception together with the last text it covered.
 
 These identities stay unchanged:
 

@@ -77,10 +77,7 @@ Node, Docker, the product service or frontend. An isolated source context enforc
 that boundary on every build. [Contributor rules](../../docs/maintainers.md#standalone-core-builds)
 define the allowed shared packages and required checks. Runtime database/key
 configuration and a separately installed execution daemon are still required;
-these binaries do not establish full protocol coverage. For a standalone Linux
-container, see [Run Core without the installer](../../docs/maintainers.md#run-core-without-the-installer).
-
-`make build-core-release` packages these commands and `oac-node` in a versioned Linux amd64 archive, with source/protocol identity, checksums, a license and [operator instructions](RELEASE.md). Build from a clean Git worktree with Go and Python 3.9+; output defaults to `~/.oac/build/oac-core-release` (or `OAC_DEV_RELEASE_DIR`). The extracted API needs no source checkout or compiler. The archive and the container are advanced paths for running Core alone; see [Maintainers and advanced deployments](../../docs/maintainers.md). Docker-hosted deployments use the Core distribution and its [installer](../../docs/getting-started/install.md), whose manifest carries the complete release; Docker nodes are added from Web.
+these binaries do not establish full protocol coverage.
 
 ## Database ownership
 
