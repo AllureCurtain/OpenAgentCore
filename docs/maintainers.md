@@ -128,7 +128,7 @@ The workflow runs three jobs on the tagged commit: `check` (the full `make check
 
 `install.sh` resolves the latest stable release once, or the release named by `--version`, verifies the control archive and runs that bundle's installer; the [installation guide](getting-started/install.md#install) covers its use.
 
-The `check` and `build` jobs share Go module and build caches under `~/.oac/cache/`, keyed by runner OS and architecture, the Go module files and the commit. An older cache only seeds downloads and compilation; every check still runs. New keys are saved only after a successful job.
+Go check and build jobs share Go module and compiler-cache directories under `~/.oac/cache/`, keyed by runner OS and architecture, all Go module files, the check/build partition and the commit. Partitioned keys prevent concurrent jobs from saving different compiler subsets under one key. Release builds can seed their cache from backend checks as well as earlier release builds. An older cache only seeds downloads and compilation; every check still runs. New keys are saved only after a successful job.
 
 Never move a release tag or overwrite published assets. If the `release` job fails, inspect the Release first: publication may have completed despite a lost response. Leave a complete published Release as it is. For an incomplete draft, delete that draft (the job refuses any existing Release or draft for the tag), then rerun the failed `release` job, which reuses the original Actions artifact. Do not rerun the build or recreate the tag to recover a failed upload.
 
@@ -152,7 +152,7 @@ With `draft_release=true` the result is an unpublished `build-<full SHA>` draft 
 
 | Workflow | Runs on | Covers |
 | --- | --- | --- |
-| `core-check` (`check.yml`) | Pushes to `main`, every pull request, releases | `make check` with a PostgreSQL service and the Playwright browser, then a daemon build |
+| `core-check` (`check.yml`) | Pushes to `main`, every pull request, releases | All `make check` checks in concurrent partitions, plus a daemon build; see the partitions below |
 | `api-acceptance` | Pushes to `main` and pull requests that touch Core, its contracts, clients, shared Go code or build scripts | Standalone commands and migration, the pinned official client over HTTP, and the standalone container |
 | `native-check` (`native.yml`) | Pull requests that touch native sources, shared dependencies or packaging inputs; manual runs; releases | Daemon, process lifecycle, Harness protocols and the installer bundle on Linux, macOS and Windows; uploads the native installers |
 | `actionlint` | Changes to workflows | Workflow syntax |
@@ -160,6 +160,28 @@ With `draft_release=true` the result is an unpublished `build-<full SHA>` draft 
 
 Changes limited to Web or to documentation outside `contracts/agents-api` do not start `native-check`. A newer `core-check`, `api-acceptance` or `native-check` run on the same branch or pull request cancels the older one.
 
+The full gate starts these partitions concurrently:
+
+| Job | Checks |
+| --- | --- |
+| `backend` | Dedicated PostgreSQL guard, sqlc freshness, Runtime/shared Go tests, Linux microsandbox helper, standalone Core build and service/client tests, daemon build |
+| `tooling` | Harness catalog, name guard, distribution/installer, Claude SDK packaging, optional example including browser acceptance, MiniMax companion scripts |
+| `web` | TypeScript checks, doctor and Web/client tests, Web build |
+| `web-acceptance` (two shards) | The complete Web Playwright suite, split by test files between two isolated runners |
+
+Each check has its own named step. Only the backend job needs a database. Each browser job starts its own fixture and Web server, retaining one Playwright worker per runner so tests never share mutable fixtures across concurrent jobs. Failed Web shards upload their reports and traces for seven days. The final `check` job runs after every partition and succeeds only when all results are `success`; failed, cancelled or skipped jobs cannot produce a green required gate. Releases use this same workflow. Local `make check` still runs every check and the unsharded Web suite; `make check-web-unit` and `make check-web-acceptance` expose its Web parts. `OAC_WEB_TEST_SHARD=1/2` selects a shard for focused CI validation.
+
+### CI runners and free allowance
+
+Linux jobs use Blacksmith's 2-vCPU Ubuntu 22.04 or 24.04 runners; native Windows uses its 2-vCPU Windows 2025 runner. Blacksmith has no 2-vCPU macOS runner, so native macOS uses the standard GitHub `macos-15` ARM64 runner. Release building and publication also use 2-vCPU Blacksmith runners.
+
+Set the repository Actions variable `OAC_USE_GITHUB_RUNNERS` to `true` to run all jobs on standard GitHub-hosted runners instead. Linux keeps its matching Ubuntu version, Windows uses `windows-2025`, and macOS continues using `macos-15`. Remove the variable or set it to `false` to return to Blacksmith's 2-vCPU defaults. For example, maintainers can switch when the organization's free allowance is used up, then restore Blacksmith after the allowance resets:
+
+```sh
+gh variable set OAC_USE_GITHUB_RUNNERS --body true --repo MiniMax-AI/OpenAgentCore
+```
+
+This is an explicit operator switch, not an automatic billing balance probe. Runner selection applies to newly scheduled runs. Check current allowance and platform conversion rates in [Blacksmith's runner documentation](https://docs.blacksmith.sh/blacksmith-runners/overview) before treating 2-vCPU usage as free; Windows minutes consume more allowance than Linux minutes. Standard GitHub runner usage follows the repository's visibility and GitHub plan. These workflows request no Blacksmith runner larger than 2 vCPU and no paid cache add-on.
 ## Run Core without the installer
 
 The standalone archive and container give you Core alone: no Web, no `oac` command and no `config.json`. They suit development, testing and operators who supervise Core themselves. Core reads only its environment; the [configuration appendix](configuration.md#appendix-core-environment-without-the-installer) lists the variables. `OAC_DATABASE_URL` and `OAC_CORE_KEY_DIGESTS_FILE` are required; set `OAC_PUBLIC_URL` to the origin machines use to reach Core, or Core runs without the daemon transport.
