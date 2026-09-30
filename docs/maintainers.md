@@ -121,16 +121,18 @@ manual input). A failed check never permits publication, even if its build succe
 The build may consume runner time before another job fails; this trades some failed-run
 cost for shorter successful releases.
 
-Both jobs use the same Go module and compiler-cache directories under
+Go check and build jobs use the same Go module and compiler-cache directories under
 `~/.oac/cache/`. Cache keys include runner OS/architecture, all Go module manifests
-and checksums (including the toolchain version), and the checked-out commit.
+and checksums (including the toolchain version), the job's check/build partition,
+and the checked-out commit. Partitioned keys prevent concurrent jobs from saving
+different compiler subsets under one key. Release builds can seed their cache
+from the backend checks as well as earlier release builds.
 A dependency-matched older cache is only a compiler/download seed: Go resolves
 inputs again, and all checks still run with their existing assertions and timeouts.
 No test result, installation state or release archive is accepted from this cache.
 Main-branch checks can populate the default-branch cache for later release runs;
 GitHub's branch/tag cache visibility rules still apply. New keys are saved only
-after successful jobs; concurrent writers for the same key may retain either
-job's valid cache. Missing or evicted entries affect speed, not correctness.
+after successful jobs. Missing or evicted entries affect speed, not correctness.
 
 Build and check jobs have read-only repository permissions. Only the publication
 job receives `contents: write`. Before publication it verifies archive checksums
@@ -173,7 +175,8 @@ Use the exact matched asset set; do not mix builds or resolve components through
 
 ### Continuous integration coverage
 
-CI coverage has three owners: `core-check` runs the complete `make check` gate;
+CI coverage has three owners: `core-check` runs the complete `make check` gate
+across independent jobs;
 `api-acceptance.yml` adds the pinned official-client, migration-command and container
 acceptance without repeating the full service test suite; `native.yml`
 builds and tests the daemon, process lifecycle, Harness protocols and installer
@@ -183,6 +186,51 @@ shared dependencies or packaging inputs trigger that matrix; documentation-only
 and unrelated Web changes do not. Manual native validation remains available.
 Superseded native runs on the same ref are cancelled. Workflow syntax validation
 and release qualification remain separate checks.
+
+The full gate starts these partitions concurrently:
+
+| Job | Checks |
+| --- | --- |
+| `backend` | Dedicated PostgreSQL guard, sqlc freshness, Runtime/shared Go tests, Linux microsandbox helper, standalone Core build and service/client tests, daemon build |
+| `tooling` | Harness catalog, docs, name guard, distribution/installer, Claude SDK packaging, optional example including browser acceptance, MiniMax companion scripts |
+| `web` | TypeScript checks, doctor and Web/client tests, Web build |
+| `web-acceptance` (two shards) | The complete Web Playwright suite, split by test files between two isolated runners |
+
+Each check has its own named step. Only the backend job needs a database. Each
+browser job starts its own fixture and Web server, retaining one Playwright worker
+per runner so tests never share mutable fixtures across concurrent jobs. Failed
+Web shards upload their reports and traces for seven days. The final `check` job
+runs after every partition and succeeds only when all results are `success`;
+failed, cancelled or skipped jobs cannot produce a green required gate. Releases
+use this same workflow. Local `make check` still runs every check and the unsharded
+Web suite; `make check-web-unit` and `make check-web-acceptance` expose its Web
+parts. `OAC_WEB_TEST_SHARD=1/2` selects a shard for focused CI validation.
+
+### CI runners and free allowance
+
+Linux jobs use Blacksmith's 2-vCPU Ubuntu 22.04 or 24.04 runners; native Windows
+uses its 2-vCPU Windows 2025 runner. Blacksmith has no 2-vCPU macOS runner, so
+native macOS uses the standard GitHub `macos-15` ARM64 runner. Release building and
+publication also use 2-vCPU Blacksmith runners.
+
+Set the repository Actions variable `OAC_USE_GITHUB_RUNNERS` to `true` to run all
+jobs on standard GitHub-hosted runners instead. Linux keeps its matching Ubuntu
+version, Windows uses `windows-2025`, and macOS continues using `macos-15`. Remove
+the variable or set it to `false` to return to Blacksmith's 2-vCPU defaults. For
+example, maintainers can switch when the organization's free allowance is used
+up, then restore Blacksmith after the allowance resets:
+
+```sh
+gh variable set OAC_USE_GITHUB_RUNNERS --body true --repo MiniMax-AI/OpenAgentCore
+```
+
+This is an explicit operator switch, not an automatic billing balance probe.
+Runner selection applies to newly scheduled runs. Check current allowance and
+platform conversion rates in [Blacksmith's runner documentation](https://docs.blacksmith.sh/blacksmith-runners/overview)
+before treating 2-vCPU usage as free; Windows minutes consume more allowance than
+Linux minutes. Standard GitHub runner usage follows the repository's visibility
+and GitHub plan. These workflows request no Blacksmith runner larger than 2 vCPU
+and no paid cache add-on.
 
 ## Run Core without the installer
 

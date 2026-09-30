@@ -89,12 +89,20 @@ check-claude-sdk: node-deps
 	pnpm --filter @parsar/claude-sdk-adapter test
 	$(MAKE) build-claude-sdk-runtime
 
-check-web: node-deps
+.PHONY: check-web-unit check-web-acceptance
+check-web: override OAC_WEB_TEST_SHARD :=
+check-web: check-web-unit check-web-acceptance
+
+check-web-unit: node-deps
 	pnpm typecheck
 	pnpm test:core-doctor
 	pnpm test:web
 	pnpm --filter @agents-core-web/web build
-	pnpm test:web:acceptance
+
+# CI shards run in separate jobs, each with its own fixture and Web server.
+# An unset shard keeps the complete local make check gate.
+check-web-acceptance: node-deps
+	pnpm test:web:acceptance $(if $(OAC_WEB_TEST_SHARD),--shard=$(OAC_WEB_TEST_SHARD))
 
 build-claude-sdk-runtime:
 	./scripts/build-claude-sdk-runtime.sh
