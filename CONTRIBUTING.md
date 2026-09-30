@@ -213,6 +213,10 @@ The Runtime is not a sandbox; see
 - Fix shared lifecycle, admission, cancellation, reuse and performance problems
   in the common protocol or flow, not with Harness-, Runtime- or vendor-specific
   branches in Core. Adapters may differ natively but keep shared semantics.
+- Public Harnesses explicitly implement every extension interface, returning the
+  shared Unsupported error when unqualified; required lifecycle obligations cannot
+  be skipped. Capability declarations must be complete. Follow the single
+  [Harness onboarding contract](contracts/agents-api/harness-onboarding.md).
 - Express compatibility through declared capabilities and validate selected
   combinations explicitly. Public MCP origin and credential authority follow the
   [Environment MCP contract](contracts/agents-api/environments.md#public-mcp-connection-origin);
@@ -241,7 +245,9 @@ The Runtime is not a sandbox; see
 
 Shared wire types and validators live only in `internal/agentdaemon/proto`.
 Change both peers together with an exact wire-version check; do not add a
-parallel schema or a historical wire fallback.
+parallel schema or a historical wire fallback. Capability completeness and
+interface coverage are mandatory extension gates under the
+[explicit declaration contract](docs/runtime-protocol.md#explicit-capability-declarations).
 
 ### Pre-release policy
 
