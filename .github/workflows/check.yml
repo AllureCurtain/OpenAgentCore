@@ -79,7 +79,7 @@ jobs:
       - name: Test microsandbox provider and Linux helper
         run: make check-microsandbox-provider
       - name: Build and test standalone Core and persistence
-        run: make check-agents-api
+        run: make check-core
       - name: Build execution daemon
         run: make build-daemon
 
