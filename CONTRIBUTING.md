@@ -23,6 +23,7 @@ copy, when a contract changes.
 | Environment ownership and capability preparation (Skills, Plugins, MCP, `packages.system`) | [Environments](contracts/agents-api/environments.md) |
 | Adding a Harness (steps) | [Harness onboarding](contracts/agents-api/harness-onboarding.md), `apps/parsar-daemon/internal/agent/harness.go` and `internal/harnessconfig/harness.go` |
 | Built-in Harness identifiers, configuration/profile bindings and display names | `internal/harnessconfig/builtin/catalog.json` and its [generated reference](contracts/agents-api/harness-catalog.md) |
+| Effective MCP bindings and credential authority | [Environment MCP](contracts/agents-api/environments.md#skills-plugins-and-environment-mcp) and `apps/parsar-daemon/internal/agent/mcp_binding.go` |
 | Harness qualification and acceptance | [Harness integration](contracts/agents-api/harnesses.md) |
 | Harness selection and Agent defaults | [Harness selection](contracts/agents-api/harness-selection.md) |
 | Adding a Sandbox Provider | [Sandbox Provider guide](docs/sandbox-provider.md) and `services/agents-api/internal/sandbox/sandbox_provider.go` |
@@ -273,6 +274,8 @@ broader compatibility target is complete from one merged batch.
 - Split growing files at an existing ownership boundary instead of adding
   unrelated responsibilities.
 - Use `internal/obs/log` for logs. Keep credentials out of source and logs.
+  Harness profiles must not copy Runtime tool environment values; see the
+  [environment contract](contracts/agents-api/environments.md#explicit-local-tool-environment).
 - Require absolute user-supplied working directories.
 - Keep test artifacts under `~/.oac/` and build output under
   `${OAC_DEV_HOME:-$HOME/.oac}`. Runtime state uses `${OAC_RUNTIME_HOME:-$HOME/.oac}`.
