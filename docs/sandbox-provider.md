@@ -202,18 +202,31 @@ A provider must not implement a competing preparation path.
 ## Register the provider kind
 
 `sandbox/providers/registry.go` is the sole registration table. Each entry binds
-an adapter's specification/resource validators, selection normalization, deployment
+an adapter's specification/resource validators, the required `ConfigurationAdapter`, deployment
 mode, defaults, the adapter-owned operation declaration, and local or direct constructor.
 `providers.Build` constructs node-local adapters; `providers.BuildDirect` constructs
 direct adapters. Neither allocates compute. There is no init-time registration or
 runtime plugin loading.
+
+### Registration validation
+
+`providers.ValidateRegistration` is the single wiring check. Lookup, constructor binding and the installer projection use it before configuration callbacks or constructors can run. Unknown provider names remain invalid input; malformed registered adapters return a safe `providercontract.ErrContract`, without including submitted configuration or native diagnostics.
+
+- A `nodes` registration requires only `BuildLocal`; a `direct` registration requires only `BuildDirect`. Missing, mixed or unknown modes are rejected.
+- Specification/resource validators, the configuration adapter and the complete operation declaration are mandatory. An incomplete registration cannot publish a partial installer projection.
+- The Runtime input policy must either accept the pinned Runtime or give the adapter's fixed reason for rejecting it; it cannot do both.
+- Current checkpoint suspension requires node mode and positive idle/retention defaults that fit Runtime durations. The two durations are independent. Providers without checkpoint support must not configure suspension defaults.
+
+The configuration adapter must be non-nil, including its concrete value. Each `ConfigurationRequirements` field needs an explicit valid decision: `Credential` and `PublicOrigin` use `Required` or `NotRequired`; `Discovery` uses the shared supported/Unsupported declaration with its safe reason. `ConfigurationDiscoverer` must be implemented even when discovery is unsupported. New requirement fields or discovery methods require an explicit validation update; they cannot inherit an existing decision. Configuration discovery is distinct from resource selection discovery. Requiring a credential does not itself promise the resource operation `VerifyCredential`.
+
+These checks establish registration completeness, not the correctness of native SDK behavior. Constructor and adapter contract tests still apply.
 
 For a new implementation:
 
 1. Implement the operation contracts above in the adapter package and add native contract tests.
 2. Add its configuration validators and optional read-only `SelectionDiscoverer`
    for native resource discovery. Normalization must copy input before changing it.
-   `RestoreSelection` must retain access to owned resources without requiring new
+   `ConfigurationAdapter.Decode` must retain access to owned resources without requiring new
    template validation. Put native credential verification behind
    `CredentialVerifier` when needed.
 3. Register its constructor, policies, operation declaration and defaults in `providers/registry.go`.
@@ -221,18 +234,31 @@ For a new implementation:
    The installer projection uses those registered policies and the common field
    bounds in `sandbox/deployment_contract.go`; regenerate it with
    `go run ./services/core/cmd/specification-contract -write`.
-4. If new configuration fields are necessary, extend the typed `sandbox.Selection`
-   envelope and its dedicated encrypted persistence fields, API DTO and operator
-   client. Do not replace typed configuration with unrestricted JSON. Field codecs
-   may map columns; Store must not parse native endpoints, templates or defaults.
+4. Implement `sandbox.ConfigurationAdapter` with a typed native configuration.
+   `DecodeInput` strictly parses separate `configuration` and write-only `credential`
+   objects. `Encode` creates whitelisted public selectors, read-only observations
+   and separate secret bytes; it must never pass request JSON through. `Decode`
+   restores stored selectors without remote admission. `ResolveChange`, `Equal`
+   and `WithCredential` own inheritance, identity and credential composition.
+   `Requirements` explicitly declares credential and public-origin needs plus
+   discovery support. Node providers accept only an empty public object, reject
+   credentials and explicitly return Unsupported for discovery and replacement.
+   Implement the separate `ConfigurationDiscoverer` interface even when unsupported.
+   Discovery owns query validation and safe catalog results, never mutations or
+   deployment admission. Core keeps admin authorization, input limits and deadlines.
+   A new kind requires no vendor column, API field or Store branch.
 5. Supply required installer/distribution artifacts and operator labels. A new
    provider must not add a Session/Turn scheduling path or a Store vendor switch.
 
 Preview and persistence use `providers.Normalize` and `providers.Describe`.
 `SelectionDiscoverer` resolves omitted native resource values before commit; the
 complete specification is validated again at persistence. Store owns transactions,
-credential encryption, generation fencing, resource ownership and typed column
-mapping. Database constraints validate structure, not the registration list.
+credential encryption, generation fencing, resource ownership and generic object storage. The adapter alone interprets
+`provider_config` and `provider_metadata`; `provider_credential` holds ciphertext
+bound to the installation and generation. Retained generations store their original
+public configuration and metadata, and compose the current credential through the
+adapter. No retained selector is rewritten by a credential replacement. Database
+constraints validate object structure, not the registration list.
 `providers.ResolveChange` owns configuration inheritance and comparison uses
 normalized selectors, so preview, retry and commit share the same defaults.
 

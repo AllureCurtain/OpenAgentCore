@@ -38,7 +38,7 @@ def sandbox_lines(config, selection, deployment, reachable):
     return lines
 
 
-def summary(root, config, addresses, fresh, selection, deployment, reachable, incomplete):
+def summary(root, config, addresses, fresh, selection, deployment, reachable, incomplete, moved=()):
     mode = config["mode"]
     status = ("Services are running; sandbox setup needs attention." if incomplete else
               "Installation complete." if fresh else "Installation settings checked. Use Status below to inspect service health.")
@@ -46,6 +46,8 @@ def summary(root, config, addresses, fresh, selection, deployment, reachable, in
     heading("Access")
     for address in addresses:
         print("  " + address)
+    for purpose, taken, port in moved:
+        print(f"  Port {taken} was in use; {purpose} uses {port}.")
     heading("Sign in" if mode != "core-only" else "Authentication")
     print(f"  Core key file: {root / 'secrets/core.key'}")
     if mode != "core-only":
@@ -54,7 +56,7 @@ def summary(root, config, addresses, fresh, selection, deployment, reachable, in
         paragraph("Use this key for the Core management API. Keep it private.")
     heading("Next")
     if ingress_config.enabled(config) and not config["public_url"]:
-        paragraph("Open Web at the server IP and sign in. In System → Domain and HTTPS, enter your DNS hostname; the installation requests and renews its certificate. DNS must point to this server and ports 80 and 443 must be reachable.")
+        paragraph("Open Web at the server IP and sign in. In System → Domain and HTTPS, enter your DNS hostname; the installation requests and renews its certificate. HTTPS then uses ports 80 and 443: DNS must point to this server, no other program on it may use those ports, and they must be reachable from the internet. Web checks DNS and the ports before it starts.")
     if mode != "core-only":
         paragraph("Create a Project and its API key on the Projects and keys page.")
     else:
