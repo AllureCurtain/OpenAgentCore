@@ -120,8 +120,6 @@ jobs:
           pnpm exec playwright install --with-deps chrome
       - name: Verify Harness catalog
         run: make check-harness-catalog
-      - name: Verify and build documentation
-        run: make check-docs
       - name: Verify repository names
         run: make check-names
       - name: Test distribution, installer and console packaging

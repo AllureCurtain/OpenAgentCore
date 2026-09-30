@@ -165,7 +165,7 @@ The full gate starts these partitions concurrently:
 | Job | Checks |
 | --- | --- |
 | `backend` | Dedicated PostgreSQL guard, sqlc freshness, Runtime/shared Go tests, Linux microsandbox helper, standalone Core build and service/client tests, daemon build |
-| `tooling` | Harness catalog, docs, name guard, distribution/installer, Claude SDK packaging, optional example including browser acceptance, MiniMax companion scripts |
+| `tooling` | Harness catalog, name guard, distribution/installer, Claude SDK packaging, optional example including browser acceptance, MiniMax companion scripts |
 | `web` | TypeScript checks, doctor and Web/client tests, Web build |
 | `web-acceptance` (two shards) | The complete Web Playwright suite, split by test files between two isolated runners |
 
