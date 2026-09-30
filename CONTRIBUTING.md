@@ -27,7 +27,7 @@ This guide owns how to work in the repository: documentation ownership, the repo
 | Operator installation, installation layout and configuration | [Installation](docs/getting-started/install.md), [installation options](docs/getting-started/install-options.md), [configuration](docs/configuration.md), [operations](docs/getting-started/operations.md) |
 | Core Web console server and sign-in | [Console server](docs/web/console-server.md) |
 | Web components, interaction and visual rules | [Web design](apps/web/DESIGN.md) and [Web product](apps/web/PRODUCT.md) |
-| Documentation website generation | [Docs app](apps/docs/README.md) |
+| Documentation website generation | Docs app |
 
 ## Repository boundary
 
@@ -48,10 +48,10 @@ Agents API is the primary infrastructure deliverable. Parsar is an ordinary clie
 
 ### Optional application example
 
-`example/parsar/` is an optional, independently started Agent workbench. Its [README](example/parsar/README.md) owns its product behavior. The boundary rules are:
+`example/parsar/` is an optional, independently started Agent workbench maintained in this repository, with no dependency on the external Parsar product repository. Its [README](example/parsar/README.md) owns its product behavior. The boundary rules are:
 
-- It calls only public `/v1` APIs. Its Project key stays server-side; it never holds a Core key or issues machine credentials. Core-only credential issuance stays in the operator console.
-- It may reuse product UI and keep a small product-owned SQLite database (Node's built-in module, Node 22.13+), outside the checkout and isolated by Core origin and Project key fingerprint. Provider keys never reach the browser.
+- It calls only public `/v1` APIs. Its Project key stays server-side; it never holds a Core key or issues machine credentials. Self-hosted connection displays the public Session installation command unchanged; Core owns bootstrap authorization and machine credential issuance.
+- It may keep a small product-owned SQLite database (Node's built-in module, Node 22.13+), outside the checkout and isolated by Core origin and Project key fingerprint. Provider keys never reach the browser.
 - Core owns Skills and all execution and history state. The example stores only Session references and pending creation requests with stable idempotency keys.
 - Product resources use `/app/` and never become Core API or database conventions.
 - It is excluded from Core distributions and cannot become a service dependency.
