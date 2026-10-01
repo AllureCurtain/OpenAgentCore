@@ -23,4 +23,4 @@ The landing page lives in `.vitepress/theme/`. `landing-content.ts` holds its En
 
 ## Publish
 
-`.github/workflows/website.yml` builds and tests the site for every pull request that touches its inputs, and deploys `main` to GitHub Pages. A repository administrator enables Pages once: **Settings → Pages → Source: GitHub Actions**. The build reads the Pages base path, so the site works both at `https://<owner>.github.io/<repository>/` and on a custom domain set under **Settings → Pages → Custom domain**.
+`make check-website` builds and tests the site. core-check runs it for changes under `website/` and to Node dependencies; `.github/workflows/website.yml` runs it for documentation-only pull requests and deploys `main` to GitHub Pages. A repository administrator enables Pages once: **Settings → Pages → Source: GitHub Actions**. The build reads the Pages base path, so the site works both at `https://<owner>.github.io/<repository>/` and on a custom domain set under **Settings → Pages → Custom domain**.

@@ -234,6 +234,19 @@ jobs:
       - name: Typecheck, test and build Web and clients
         run: make check-web-unit
 
+  website:
+    needs: plan
+    if: needs.plan.result == 'success' && contains(fromJSON(needs.plan.outputs.jobs || '[]'), 'website')
+    runs-on: ${{ vars.OAC_USE_GITHUB_RUNNERS == 'true' && 'ubuntu-22.04' || 'blacksmith-2vcpu-ubuntu-2204' }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - uses: ./.github/actions/node
+      - name: Build and test the website
+        run: make check-website
+
   web-acceptance:
     needs: [plan, web]
     if: needs.web.result == 'success' && needs.plan.result == 'success' && contains(fromJSON(needs.plan.outputs.jobs || '[]'), 'web-acceptance')
@@ -292,7 +305,7 @@ jobs:
   # Always report the required check, even when planning or a dependency fails.
   check:
     if: always()
-    needs: [plan, hygiene, distribution, backend, harness, example, web, web-acceptance, api, native, lint]
+    needs: [plan, hygiene, distribution, backend, harness, example, web, web-acceptance, website, api, native, lint]
     runs-on: ${{ vars.OAC_USE_GITHUB_RUNNERS == 'true' && 'ubuntu-22.04' || 'blacksmith-2vcpu-ubuntu-2204' }}
     timeout-minutes: 5
     steps:

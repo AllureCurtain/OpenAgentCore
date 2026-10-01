@@ -1,5 +1,5 @@
-# Builds the website (landing page and documentation) on every change to its
-# sources, and publishes it to GitHub Pages from main. The website reads the
+# Publishes the website (landing page and documentation) to GitHub Pages from
+# main, and builds it for documentation-only pull requests. The website reads the
 # existing docs/, contracts/ and docs.json in place; see website/README.md.
 name: website
 
@@ -16,17 +16,13 @@ on:
       - pnpm-workspace.yaml
       - .github/actions/node/**
       - .github/workflows/website.yml
+  # Changes under website/ are checked by core-check; documentation-only
+  # changes build the site here so broken links surface before merge.
   pull_request:
     paths:
-      - website/**
       - docs/**
       - contracts/**
       - docs.json
-      - package.json
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
-      - .github/actions/node/**
-      - .github/workflows/website.yml
   workflow_dispatch:
 
 permissions:
@@ -53,18 +49,14 @@ jobs:
           # Full history gives each page its last-updated date.
           fetch-depth: 0
       - uses: ./.github/actions/node
-      - name: Install website dependencies
-        run: pnpm install --frozen-lockfile --filter @oac/website...
       - name: Read the Pages base path
         id: pages
         if: env.PUBLISH == 'true'
         uses: actions/configure-pages@v6
-      - name: Build
-        run: pnpm --filter @oac/website build
+      - name: Build and test
+        run: make check-website
         env:
           WEBSITE_BASE: ${{ steps.pages.outputs.base_path }}
-      - name: Test navigation and build output
-        run: pnpm --filter @oac/website test
       - name: Upload the site
         if: env.PUBLISH == 'true'
         uses: actions/upload-pages-artifact@v5
