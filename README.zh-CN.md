@@ -12,6 +12,19 @@ OpenAI Agents API 的开源实现，支持多种原生执行引擎，可部署�
 
 </div>
 
+## 组件关系
+
+![OpenAgentCore 架构](docs/assets/architecture.png)
+
+应用和管理员使用以下 Core API：
+
+| API | 路径 | 调用方 |
+| --- | --- | --- |
+| **[Agents API](docs/api/public-agent-api.md)** | `/v1` | 你的应用，与 [OpenAI 的 Agents API](https://developers.openai.com/api/docs/guides/agents-api/overview) 协议一致 |
+| **[Core API](contracts/agents-api/admin-api.md)** | `/core/v1` | 管理员，通过 Web 调用 |
+
+持久化执行状态由 Core 保存；Runtime 在 Environment 中运行所选 Harness。各部件之间都通过既定协议连接， 任何一个都可以单独替换。详见[架构说明](docs/architecture.md)。
+
 ## 这是什么
 
 OpenAgentCore 在你自己的基础设施上运行 AI Agent，对外提供 OpenAI Agents API。
@@ -43,19 +56,6 @@ curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/
 4. 用 OpenAI SDK **[运行第一个 Session](docs/getting-started/quickstart.md)**。
 
 [安装指南](docs/getting-started/install.md)详细介绍每一步，以及 HTTPS 配置和本地快速试用。监听地址、端口等参数见[安装配置选项](docs/getting-started/install-options.md)。
-
-## 组件关系
-
-![OpenAgentCore 架构](docs/assets/architecture.png)
-
-应用和管理员使用以下 Core API：
-
-| API | 路径 | 调用方 |
-| --- | --- | --- |
-| **[Agents API](docs/api/public-agent-api.md)** | `/v1` | 你的应用，与 [OpenAI 的 Agents API](https://developers.openai.com/api/docs/guides/agents-api/overview) 协议一致 |
-| **[Core API](contracts/agents-api/admin-api.md)** | `/core/v1` | 管理员，通过 Web 调用 |
-
-持久化执行状态由 Core 保存；Runtime 在 Environment 中运行所选 Harness。各部件之间都通过既定协议连接， 任何一个都可以单独替换。详见[架构说明](docs/architecture.md)。
 
 ## 文档
 
