@@ -45,3 +45,9 @@ test('llms.txt lists every page', () => {
   const llms = readFileSync(resolve(dist, 'llms.txt'), 'utf8')
   for (const page of pages) assert.ok(llms.includes(`${page}.md)`), `${page} in llms.txt`)
 })
+
+test('Mermaid fences become diagrams, not code blocks', () => {
+  const source = readFileSync(html('docs/architecture'), 'utf8')
+  assert.match(source, /class="oac-mermaid/)
+  assert.doesNotMatch(source, /language-mermaid/)
+})
