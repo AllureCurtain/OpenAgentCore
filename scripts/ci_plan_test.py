@@ -21,6 +21,12 @@ class SelectionTests(unittest.TestCase):
     def test_installer_does_not_download_a_browser_or_run_database_tests(self):
         self.assertEqual(self.jobs("deploy/install/install.py", "scripts/install-release.test.py"), {"hygiene", "distribution"})
 
+    def test_compose_inputs_select_live_and_fixture_checks_without_image_builds(self):
+        for path in ("deploy/compose/compose.yaml", "deploy/compose/local.yaml", "deploy/compose/dokploy.toml",
+                     "scripts/compose-smoke.py", "deploy/install/test_compose.py"):
+            self.assertEqual(self.jobs(path), {"hygiene", "distribution", "compose"})
+            self.assertFalse(ci.select([path])["image"])
+
     def test_web_and_core_have_different_consumers(self):
         self.assertEqual(self.jobs("apps/web/src/app.tsx"), {"hygiene", "web", "web-acceptance"})
         plan = ci.select(["services/core/internal/store/sessions.go"])
@@ -257,6 +263,15 @@ class GateTests(unittest.TestCase):
         for state in ("failure", "cancelled", "skipped", "", None):
             with self.subTest(state=state), self.assertRaises(ValueError):
                 ci.check_results(plan, needs | {"web": {"result": state}})
+
+    def test_compose_smoke_must_succeed_when_selected(self):
+        plan = ci.select(["deploy/compose/compose.yaml"])
+        needs = {job: {"result": "success" if job in plan["jobs"] else "skipped"} for job in ci.JOBS}
+        needs["plan"] = {"result": "success"}
+        ci.check_results(plan, needs)
+        for state in ("failure", "cancelled", "skipped"):
+            with self.subTest(state=state), self.assertRaises(ValueError):
+                ci.check_results(plan, needs | {"compose": {"result": state}})
 
     def test_matrix_result_failure_is_not_hidden_by_other_jobs(self):
         plan = ci.full("test")

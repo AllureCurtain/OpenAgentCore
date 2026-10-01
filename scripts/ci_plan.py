@@ -8,7 +8,7 @@ import re
 from pathlib import Path, PurePosixPath
 import subprocess
 
-JOBS = ("hygiene", "distribution", "backend", "harness", "example", "web", "web-acceptance", "website", "api", "native", "lint")
+JOBS = ("hygiene", "distribution", "compose", "backend", "harness", "example", "web", "web-acceptance", "website", "api", "native", "lint")
 NODE_JOBS = ("harness", "example", "web", "web-acceptance", "website", "native")
 GO_JOBS = ("distribution", "backend", "api", "native")
 # Exact file matches keep new workflows/actions conservative until classified.
@@ -63,6 +63,8 @@ RULES = (
     (("packages/claude-sdk-adapter/", "packages/mcode-harness/"), WEB, ("harness", "native", "backend", "distribution")),
     (("packages/tsconfig/",), (".json",), ("harness", "native")),
     (("deploy/install/",), (".py", ".json", ".sh"), ("distribution",)),
+    (("deploy/compose/",), (".yaml", ".toml"), ("distribution", "compose")),
+    (("scripts/compose-smoke.py", "deploy/install/test_compose.py"), (".py",), ("distribution", "compose")),
     (("deploy/install-release.sh", "scripts/install-release.", "scripts/publish-core-release.",
       "scripts/core-distribution-manifest.", "scripts/build-core-distribution.sh", "scripts/config-reference.py",
       "scripts/build-web.sh"), SCRIPTS, ("distribution",)),
