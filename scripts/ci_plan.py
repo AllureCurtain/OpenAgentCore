@@ -4,7 +4,6 @@
 import argparse
 import json
 import os
-import re
 from pathlib import Path, PurePosixPath
 import subprocess
 
@@ -18,13 +17,11 @@ CI_INPUTS = {
     ".github/workflows/api-acceptance.yml": ("api", "lint"),
     ".github/workflows/native.yml": ("native", "lint"),
     ".github/workflows/actionlint.yml": ("lint",),
+    ".github/actionlint.yaml": ("lint",),
     ".github/workflows/ci-review.yml": ("lint",),
     ".github/workflows/website.yml": ("website", "lint"),
-    ".github/actionlint.yaml": ("lint",),
     ".github/actions/node/action.yml": (*NODE_JOBS, "lint"),
     "scripts/ci_plan.py": JOBS,
-    "scripts/ci_reuse.py": JOBS,
-    "scripts/ci_reuse_test.py": ("hygiene",),
     "scripts/ci_plan_test.py": ("hygiene",),
     "scripts/ci_metrics.py": ("hygiene",),
     "scripts/ci_metrics_test.py": ("hygiene",),
@@ -55,7 +52,7 @@ RULES = (
     (("apps/web/",), WEB, ("web", "web-acceptance")),
     (("services/web/",), (*GO, "Dockerfile"), ("distribution", "web", "web-acceptance")),
     (("example/",), WEB, ("example",)),
-    (("docs/", "contracts/"), (".md", ".svg", ".png", ".jpg", ".jpeg", ".webp"), ("website",)),
+    (("docs/", "contracts/"), ("",), ("website",)),
     (("website/",), (*WEB, ".vue", ".md"), ("website",)),
     (("services/core/",), CORE, ("backend", "api")),
     (("services/core/internal/nativeinstaller/",), GO, ("native", "distribution")),
@@ -164,19 +161,6 @@ def changed_paths(base, head):
 def event_plan(event_name, event, requested_ref=""):
     if requested_ref:
         return full("Explicit ref: full gate")
-    if event_name == "push":
-        try:
-            if event.get("ref") != "refs/heads/main" or event.get("forced") or event.get("deleted"):
-                return full("Non-main or rewritten push: full gate")
-            before, after = event["before"], event["after"]
-            if any(not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha) or sha == "0" * 40 for sha in (before, after)):
-                raise ValueError("Invalid push commits")
-            if git("rev-parse", "HEAD").decode().strip() != after:
-                raise ValueError("Checkout does not match push head")
-            git("merge-base", "--is-ancestor", before, after)
-            return select(changed_paths(before, after))
-        except (KeyError, TypeError, ValueError, UnicodeError, subprocess.CalledProcessError) as err:
-            return full(f"Push diff unavailable ({type(err).__name__}); full gate")
     if event_name != "pull_request":
         return full("Manual or reusable run: full gate")
     try:
@@ -204,13 +188,6 @@ def validate_plan(plan):
         raise ValueError("Invalid selected jobs")
     if plan["image"] and "api" not in selected:
         raise ValueError("Image checks require API acceptance")
-    if "execute" in plan or "reused" in plan:
-        execute, reused = plan.get("execute"), plan.get("reused")
-        if (not isinstance(execute, list) or any(not isinstance(j, str) for j in execute)
-                or len(execute) != len(set(execute)) or not isinstance(reused, dict)
-                or set(execute) & set(reused) or set(execute) | set(reused) != set(selected)
-                or "hygiene" not in execute):
-            raise ValueError("Invalid execution/reuse partition")
     return set(selected)
 
 
@@ -218,8 +195,7 @@ def check_results(plan, needs):
     selected = validate_plan(plan)
     if set(needs) != set(JOBS) | {"plan"} or needs["plan"].get("result") != "success":
         raise ValueError("Missing jobs or unsuccessful plan")
-    execute = set(plan.get("execute", selected))
-    failed = [job for job in JOBS if needs[job].get("result") != ("success" if job in execute else "skipped")]
+    failed = [job for job in JOBS if needs[job].get("result") != ("success" if job in selected else "skipped")]
     if failed:
         raise ValueError("Check results do not match the plan: " + ", ".join(failed))
 
@@ -233,14 +209,8 @@ def main():
     sub.add_parser("gate")
     args = parser.parse_args()
     if args.command == "gate":
-        plan = json.loads(os.environ["PLAN"])
-        check_results(plan, json.loads(os.environ["RESULTS"]))
-        if "execute" in plan:
-            from ci_reuse import Evidence
-            evidence = Evidence()
-            evidence.verify(plan)
-            evidence.record(plan)
-        print("All selected checks passed or have verified successful evidence.")
+        check_results(json.loads(os.environ["PLAN"]), json.loads(os.environ["RESULTS"]))
+        print("All checks selected by the plan passed.")
         return
     if args.base:
         plan = select(changed_paths(args.base, args.head))
@@ -250,15 +220,11 @@ def main():
         except (OSError, ValueError, KeyError):
             event = {}
         plan = event_plan(os.environ.get("GITHUB_EVENT_NAME"), event, os.environ.get("REQUESTED_REF", ""))
-    if os.environ.get("CI_REUSE") == "true" and not args.base:
-        from ci_reuse import Evidence
-        plan = Evidence().plan(plan)
-    validate_plan(plan)
     print(json.dumps(plan, indent=2))
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a") as f:
             f.write("plan=" + json.dumps(plan, separators=(",", ":")) + "\n")
-            f.write("jobs=" + json.dumps(plan.get("execute", plan["jobs"])) + "\n")
+            f.write("jobs=" + json.dumps(plan["jobs"]) + "\n")
             f.write("image=" + json.dumps(plan["image"]) + "\n")
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a") as f:

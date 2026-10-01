@@ -1,21 +1,22 @@
 # Actions secrets: MINIMAX_API_KEY, FEISHU_WEBHOOK_URL; optional FEISHU_WEBHOOK_SECRET.
-# workflow_run activates after this file reaches the default branch.
+# Review the merged source and existing PR checks without running CI again.
 name: CI review and Feishu notification
 
 on:
-  workflow_run:
-    workflows: [core-check]
+  pull_request_target:
     branches: [main]
-    types: [completed]
+    types: [closed]
 
 permissions:
   contents: read
   actions: read
+  checks: read
+  statuses: read
   pull-requests: read
 
 jobs:
   review:
-    if: github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main'
+    if: github.event.pull_request.merged == true
     runs-on: ${{ vars.OAC_USE_GITHUB_RUNNERS == 'true' && 'ubuntu-24.04' || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 30
     env:
@@ -26,7 +27,7 @@ jobs:
       # The triggering revision is already on main, so its rules and code are trusted.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
           fetch-depth: 2
           persist-credentials: false
       - name: Review and send Feishu card with Claude Code
@@ -54,16 +55,14 @@ jobs:
           allowed_non_write_users: '*'
           prompt: |
             你是 CI 的负责人，负责审核 CI 结果并给出结论。
-            仓库 ${{ github.repository }} 的 main 分支刚跑完一次 core-check CI：
-            - 运行 ID：${{ github.event.workflow_run.id }}（第 ${{ github.event.workflow_run.run_attempt }} 次尝试）
-            - 结论：${{ github.event.workflow_run.conclusion }}
-            - 运行链接：${{ github.event.workflow_run.html_url }}
-            - commit：${{ github.event.workflow_run.head_sha }}（已 checkout 到当前目录）
+            仓库 ${{ github.repository }} 的 PR #${{ github.event.pull_request.number }} 已合入 main：
+            - PR：https://github.com/${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+            - 合并 commit：${{ github.event.pull_request.merge_commit_sha }}（已 checkout 到当前目录）
+
+            用 gh pr checks ${{ github.event.pull_request.number }} --repo ${{ github.repository }} 查询这个 PR 已有的检查结果，必要时读取对应 Actions 日志。不要触发新的 CI，也不要把合并本身当作检查通过的证据；管理员可能绕过门禁。检查失败、缺失或尚未完成时如实报告。
 
             任务：给飞书群发一张中文卡片（Card 2.0）总结这次 CI，尽量 10 轮以内给出结论，工具调用尽可能的并行。
             环境里有 gh（已登录，GH_TOKEN）、git、node 和完整的仓库代码。
-
-            如果这个 commit 不是某个 PR 合入 main 产生的（例如直接 push），不发卡片，直接结束。
 
             卡片要让手机上的读者快速看懂，如果一切正常，表达的尽可能简单：
             1. 哪个 PR（github id + PR 标题 + 链接）

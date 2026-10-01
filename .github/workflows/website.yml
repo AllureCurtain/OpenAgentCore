@@ -1,21 +1,29 @@
-# Builds and tests the website once for core-check; main also deploys that artifact.
+# Publishes the website (landing page and documentation) to GitHub Pages from
+# main. Pull request validation belongs to core-check. The website reads the
+# existing docs/, contracts/ and docs.json in place; see website/README.md.
 name: website
 
 on:
-  workflow_call:
-    inputs:
-      ref:
-        type: string
-        required: true
-      publish:
-        type: boolean
-        default: false
+  push:
+    branches: [main]
+    paths:
+      - website/**
+      - docs/**
+      - contracts/**
+      - docs.json
+      - package.json
+      - pnpm-workspace.yaml
+      - .npmrc
+      - Makefile
+      - .github/actions/node/**
+      - .github/workflows/website.yml
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: website-${{ github.run_id }}
+  group: website-${{ github.ref }}
   # Never cancel a run that may be deploying main.
   cancel-in-progress: false
 
@@ -28,12 +36,10 @@ jobs:
       # configure-pages reads the site's base path.
       pages: read
     env:
-      PUBLISH: ${{ inputs.publish }}
+      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref }}
-          persist-credentials: false
           # Full history gives each page its last-updated date.
           fetch-depth: 0
       - uses: ./.github/actions/node
@@ -55,7 +61,7 @@ jobs:
 
   deploy:
     needs: build
-    if: inputs.publish
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ${{ vars.OAC_USE_GITHUB_RUNNERS == 'true' && 'ubuntu-24.04' || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 10
     permissions:
