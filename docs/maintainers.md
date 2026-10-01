@@ -144,7 +144,7 @@ With `draft_release=true` the result is an unpublished `build-<full SHA>` draft 
 
 ## Continuous integration
 
-Every PR runs `core-check` and reports the required status `check`. `scripts/ci_plan.py` owns the only path-to-check map. The planner compares the PR event's tested merge commit with its verified first parent, using NUL-delimited Git output with rename detection disabled so both old and new paths count. Its JSON plan and reasons appear in the run summary. Missing or inconsistent merge parents, unavailable diffs, empty changes, unknown files, CI changes and shared build/dependency inputs select the full gate. Deletions and mixed changes retain all affected groups. Main pushes and release calls always select every group.
+Every PR runs `core-check` and reports the required status `check`. `scripts/ci_plan.py` owns the only path-to-check map. The planner compares the PR event's tested merge commit with its verified first parent, using NUL-delimited Git output with rename detection disabled so both old and new paths count. Its JSON plan and reasons appear in the run summary. Missing or inconsistent merge parents, unavailable diffs, empty changes, unknown files, changes to the planner or orchestration/release workflows, and shared build inputs select the full gate. Deletions and mixed changes retain all affected groups. Main pushes and release calls always select every group.
 
 | Group | Checks and consumers |
 | --- | --- |
@@ -158,6 +158,10 @@ Every PR runs `core-check` and reports the required status `check`. `scripts/ci_
 | `api` | Reusable official-client acceptance against standalone commands and migrations; image acceptance when image/build/helper inputs change, and in every full gate |
 | `native` | Reusable Linux, macOS and Windows builds, filesystem/process/Harness checks and native installation; at most two platforms run concurrently |
 | `lint` | Reusable actionlint check, including local composite actions |
+
+Known workflow changes select their consumers: the CI review and actionlint workflows run hygiene and lint; native workflow changes add native checks; API acceptance workflow changes add API checks with container acceptance enabled. The shared Node action selects every job that uses it plus lint. A new or unclassified workflow/action selects the full gate until its consumers are declared in the planner. Planner tests and CI measurement scripts run hygiene; changing the planner itself runs the full gate.
+
+Go module and workspace inputs select backend, API (including the container), native and distribution checks. Node manifests, lockfiles and package-manager configuration select Harness, example, Web, Web acceptance and native checks. The root TypeScript configuration selects Web and example checks; the adapter TypeScript configuration retains the Node consumer group. Each selected set includes hygiene. Mixed changes accumulate their consumers, and every job reads the same plan instead of maintaining its own path list. For example, a notification-only PR skips database, browser and native jobs, while a notification plus Core change adds backend and API checks.
 
 Ordinary documentation runs hygiene only; generated catalog files and configuration reference sections retain their distribution freshness checks. Installer changes add distribution checks. Web changes add Web checks and both browser shards; Core/DB changes add backend and official-client acceptance. Shared contracts, SDKs, Runtime inputs and dependencies propagate to their consumers according to the planner. Generated catalog and protocol inputs include the installer, client and UI consumers. Do not duplicate path lists in reusable workflows or put a `paths` filter on the required workflow.
 
