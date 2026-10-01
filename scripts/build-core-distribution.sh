@@ -36,7 +36,7 @@ if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
   printf 'Build the distribution on Linux x86_64 with a glibc compatible with Debian 12\n' >&2
   exit 1
 fi
-for command in docker go node pnpm python3 curl tar sha256sum; do
+for command in docker go node pnpm python3 curl tar sha256sum pigz; do
   command -v "$command" >/dev/null
 done
 build_network="${CORE_DISTRIBUTION_BUILD_NETWORK:-default}"

@@ -15,7 +15,7 @@ git worktree add ../openagentcore-change -b codex/my-change main
 cd ../openagentcore-change
 ```
 
-Install Go at the version in [go.mod](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/go.mod), Node 22.13 or newer, pnpm at the version in [package.json](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/package.json), and Python 3.9 or newer. The complete gate runs on Linux and needs a dedicated PostgreSQL database, OpenSSL development libraries for the microsandbox helper, and a Playwright browser. Provider and Runtime builds have additional prerequisites in their component guides.
+Install Go at the version in [go.mod](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/go.mod), Node 22.13 or newer, pnpm at the version in [package.json](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/package.json), and Python 3.9 or newer. The complete gate runs on Linux and needs a dedicated PostgreSQL database, OpenSSL development libraries for the microsandbox helper, pigz for distribution compression, and a Playwright browser. Provider and Runtime builds have additional prerequisites in their component guides.
 
 ```sh
 pnpm install --frozen-lockfile
