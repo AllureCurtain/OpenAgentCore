@@ -79,7 +79,7 @@ Use the [protocol map](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/AGE
 
 ## Validate a change
 
-Run checks for the affected boundary while developing. The repository [required checks](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks) define completion, including `make check` and any changed native component's real acceptance.
+Choose focused checks for the current diff and its directly affected behavior using [Checks for a change](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#checks-for-a-change). The table below lists entry points for each boundary; choose the relevant tests within them.
 
 | Change | Focused validation |
 | --- | --- |
