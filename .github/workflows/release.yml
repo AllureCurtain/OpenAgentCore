@@ -133,6 +133,7 @@ jobs:
     runs-on: ${{ vars.OAC_USE_GITHUB_RUNNERS == 'true' && 'ubuntu-22.04' || 'blacksmith-2vcpu-ubuntu-2204' }}
     permissions:
       contents: write
+      packages: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -142,6 +143,14 @@ jobs:
         with:
           name: core-release-${{ needs.build.outputs.revision }}
           path: release-upload
+      - name: Sign in to GHCR for version releases
+        if: github.event_name == 'push'
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          export DOCKER_CONFIG="$RUNNER_TEMP/oac-release-docker"
+          echo "DOCKER_CONFIG=$DOCKER_CONFIG" >> "$GITHUB_ENV"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
       - name: Publish the version tag or create a manual draft
         env:
           GH_TOKEN: ${{ github.token }}
@@ -150,3 +159,6 @@ jobs:
           RELEASE_TAG: ${{ needs.build.outputs.release_tag }}
           RELEASE_MODE: ${{ github.event_name == 'push' && 'publish' || 'draft' }}
         run: python3 scripts/publish-core-release.py --assets release-upload
+      - name: Remove registry credentials
+        if: always() && github.event_name == 'push'
+        run: rm -f "$RUNNER_TEMP/oac-release-docker/config.json"
