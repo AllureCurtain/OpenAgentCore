@@ -14,9 +14,10 @@ class SelectionTests(unittest.TestCase):
     def jobs(self, *paths):
         return set(ci.select(paths)["jobs"])
 
-    def test_documents_only_need_repository_integrity(self):
-        for path in ("docs/maintainers.md", "README.md", "contracts/agents-api/admin-api.md", "docs/assets/logo.svg"):
-            self.assertEqual(self.jobs(path), {"hygiene"})
+    def test_published_documents_also_build_the_website(self):
+        for path in ("docs/maintainers.md", "contracts/agents-api/admin-api.md", "docs/assets/logo.svg", "docs.json"):
+            self.assertEqual(self.jobs(path), {"hygiene", "website"})
+        self.assertEqual(self.jobs("README.md"), {"hygiene"})
 
     def test_installer_does_not_download_a_browser_or_run_database_tests(self):
         self.assertEqual(self.jobs("deploy/install/install.py", "scripts/install-release.test.py"), {"hygiene", "distribution"})
@@ -75,8 +76,8 @@ class SelectionTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue({"backend", "api", "distribution"} <= self.jobs(path))
 
-    def test_shared_inputs_planner_and_empty_diffs_are_full(self):
-        for paths in ([], ["Makefile"], [".github/workflows/new.yml"],
+    def test_shared_inputs_and_planner_are_full(self):
+        for paths in (["Makefile"], [".github/workflows/new.yml"],
                       [".github/actions/new/action.yml"], [".github/workflows/check.yml"], [".github/workflows/release.yml"], ["scripts/ci_plan.py"], ["../outside"], ["/outside"]):
             self.assertEqual(set(ci.select(paths)["jobs"]), set(ci.JOBS))
             self.assertTrue(ci.select(paths)["image"])
@@ -85,7 +86,7 @@ class SelectionTests(unittest.TestCase):
         for workflow, selected in {
             "ci-review": {"hygiene", "lint"},
             "actionlint": {"hygiene", "lint"},
-            "website": {"hygiene", "lint"},
+            "website": {"hygiene", "website", "lint"},
             "native": {"hygiene", "native", "lint"},
             "api-acceptance": {"hygiene", "api", "lint"},
         }.items():
@@ -158,13 +159,13 @@ class SelectionTests(unittest.TestCase):
 
     def test_mixed_changes_accumulate(self):
         self.assertEqual(self.jobs("docs/maintainers.md", "deploy/install/install.py", "apps/web/src/app.tsx"),
-                         {"hygiene", "distribution", "web", "web-acceptance"})
+                         {"hygiene", "distribution", "web", "web-acceptance", "website"})
 
     def test_installer_pr_300_replay(self):
         self.assertEqual(self.jobs(
             "deploy/install-release.sh", "deploy/install/README.md", "deploy/install/install.py",
             "deploy/install/install_display.py", "deploy/install/test_install.py", "deploy/install/test_install_output.py",
-            "docs/getting-started/install.md", "scripts/install-release.test.py"), {"hygiene", "distribution"})
+            "docs/getting-started/install.md", "scripts/install-release.test.py"), {"hygiene", "distribution", "website"})
 
     def test_workflow_graph_cannot_silently_omit_or_add_a_gate_dependency(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/check.yml").read_text().split("jobs:\n", 1)[1]
@@ -177,7 +178,7 @@ class SelectionTests(unittest.TestCase):
     def test_only_matching_directory_and_suffix_trigger_product_checks(self):
         for path in ("services/core/notes.md", "apps/daemon/design.md", "internal/architecture.md",
                      "apps/web/notes.md", "scripts/build-core.sh.md", "new-component/source.rs",
-                     "docs/example.go", "services/core/code.go.bak"):
+                     "services/core/code.go.bak"):
             self.assertEqual(self.jobs(path), {"hygiene"}, path)
         self.assertEqual(self.jobs("services/core/code.go"), {"hygiene", "backend", "api"})
         self.assertEqual(self.jobs("apps/web/src/style.css"), {"hygiene", "web", "web-acceptance"})
@@ -197,6 +198,26 @@ class SelectionTests(unittest.TestCase):
         for path in filter(None, paths):
             if Path(path).suffix in {".go", ".sql", ".ts", ".tsx", ".mjs", ".sh", ".ps1"} or path.endswith("Dockerfile"):
                 self.assertNotEqual(self.jobs(path), {"hygiene"}, path)
+
+    def test_verified_empty_diff_only_needs_hygiene(self):
+        self.assertEqual(self.jobs(), {"hygiene"})
+
+    def test_actionlint_config_selects_lint(self):
+        self.assertEqual(self.jobs(".github/actionlint.yaml"), {"hygiene", "lint"})
+
+    def test_ci_and_deployment_have_distinct_triggers(self):
+        root = Path(__file__).resolve().parents[1]
+        check = (root / ".github/workflows/check.yml").read_text()
+        website = (root / ".github/workflows/website.yml").read_text()
+        review = (root / ".github/workflows/ci-review.yml").read_text()
+        self.assertIn("  pull_request:", check)
+        self.assertIn("  workflow_dispatch:", check)
+        self.assertNotIn("  push:", check)
+        self.assertIn("  push:", website)
+        self.assertNotIn("  pull_request:", website)
+        self.assertIn("pull_request.merged == true", review)
+        self.assertIn("ref: ${{ github.event.pull_request.merge_commit_sha }}", review)
+        self.assertNotIn("workflow_run", review)
 
     def test_non_pr_events_always_run_full(self):
         for event in ("push", "workflow_dispatch", "workflow_call"):
@@ -243,7 +264,7 @@ class GitDiffTests(unittest.TestCase):
                 paths = ci.changed_paths(base, "HEAD")
                 self.assertEqual(set(paths), {"docs/old.md", "services/core/deleted.go", "apps/web/renamed\nwith space.ts"})
                 plan = ci.event_plan("pull_request", {"pull_request": {"base": {"sha": base}, "head": {"sha": head}}})
-                self.assertEqual(set(plan["jobs"]), {"hygiene", "backend", "api", "web", "web-acceptance"})
+                self.assertEqual(set(plan["jobs"]), {"hygiene", "backend", "api", "web", "web-acceptance", "website"})
                 (clone / "old.md").write_text("untracked content cannot change the diff\n")
                 self.assertEqual(paths, ci.changed_paths(base, "HEAD"))
             finally:
@@ -297,73 +318,3 @@ class GateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class DocumentationPushTests(unittest.TestCase):
-    def setUp(self):
-        self.before, self.after = "a" * 40, "b" * 40
-        self.event = {"ref": "refs/heads/main", "before": self.before, "after": self.after, "forced": False, "deleted": False}
-
-    def plan(self, paths, event=None, ref=""):
-        with patch.object(ci, "git", side_effect=[self.after.encode(), b""]), patch.object(ci, "changed_paths", return_value=paths) as diff:
-            plan = ci.event_plan("push", self.event if event is None else event, ref)
-            return plan, diff
-
-    def test_doc_site_configuration_and_docs_only_push_skip_product_checks(self):
-        paths = ["docs.json", "docs/getting-started/index.md", "README.md"]
-        self.assertEqual(set(ci.select(paths)["jobs"]), {"hygiene"})
-        plan, diff = self.plan(paths)
-        self.assertEqual(set(plan["jobs"]), {"hygiene"})
-        diff.assert_called_once_with(self.before, self.after)
-
-    def test_generated_documentation_keeps_freshness_checks(self):
-        plan, _ = self.plan(["docs/configuration.md", "contracts/agents-api/harness-catalog.md"])
-        self.assertEqual(set(plan["jobs"]), {"hygiene", "distribution"})
-
-    def test_main_pushes_use_the_same_directory_suffix_rules_as_prs(self):
-        for paths in (["README.md", "services/core/cmd/server/main.go"], ["new.md"], [],
-                      ["apps/web/src/app.tsx"], ["docs.json", "scripts/generate-harness-catalog.py"]):
-            with self.subTest(paths=paths):
-                self.assertEqual(self.plan(paths)[0], ci.select(paths))
-
-    def test_releases_and_untrusted_pushes_keep_full_gate(self):
-        self.assertEqual(self.plan(["README.md"], ref=self.after)[0]["jobs"], list(ci.JOBS))
-        for fields in ({"ref": "refs/tags/v1"}, {"forced": True}, {"deleted": True}, {"before": "0" * 40}, {"before": "--bad"}, {"after": "c" * 40}):
-            with self.subTest(fields=fields):
-                self.assertEqual(self.plan(["README.md"], self.event | fields)[0]["jobs"], list(ci.JOBS))
-        with patch.object(ci, "git", side_effect=subprocess.CalledProcessError(1, "git")):
-            self.assertEqual(ci.event_plan("push", self.event)["jobs"], list(ci.JOBS))
-
-    def test_push_uses_entire_commit_range_and_fails_closed_on_shallow_history(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp) / "source"
-            repo.mkdir()
-            def git(*args):
-                return subprocess.check_output(["git", "-C", str(repo), *args], stderr=subprocess.DEVNULL).decode().strip()
-            git("init", "-b", "main")
-            git("config", "user.email", "ci-test@example.invalid")
-            git("config", "user.name", "CI test")
-            (repo / "README.md").write_text("base\n")
-            git("add", "."); git("commit", "-m", "base")
-            before = git("rev-parse", "HEAD")
-            (repo / "docs.json").write_text("{}\n")
-            git("add", "."); git("commit", "-m", "docs")
-            docs_head = git("rev-parse", "HEAD")
-            previous = Path.cwd()
-            try:
-                os.chdir(repo)
-                event = self.event | {"before": before, "after": docs_head}
-                self.assertEqual(ci.event_plan("push", event)["jobs"], ["hygiene"])
-                (repo / "services/core").mkdir(parents=True)
-                (repo / "services/core/code.go").write_text("package example\n")
-                git("add", "."); git("commit", "-m", "code")
-                (repo / "README.md").write_text("updated\n")
-                git("add", "."); git("commit", "-m", "docs again")
-                event["after"] = git("rev-parse", "HEAD")
-                self.assertEqual(set(ci.event_plan("push", event)["jobs"]), {"hygiene", "backend", "api"})
-                clone = Path(tmp) / "shallow"
-                subprocess.run(["git", "clone", "--depth=2", repo.as_uri(), str(clone)], check=True, capture_output=True)
-                os.chdir(clone)
-                self.assertEqual(ci.event_plan("push", event)["jobs"], list(ci.JOBS))
-            finally:
-                os.chdir(previous)

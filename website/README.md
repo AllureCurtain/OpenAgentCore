@@ -25,7 +25,7 @@ The landing page lives in `.vitepress/theme/`. `landing-content.ts` holds its En
 
 ## Publish
 
-`make check-website` builds and tests the site. core-check runs it for changes under `website/` and to Node dependencies; `.github/workflows/website.yml` runs it for documentation-only pull requests and deploys `main` to GitHub Pages. A repository administrator enables Pages once: **Settings → Pages → Source: GitHub Actions**.
+`make check-website` builds and tests the site. core-check runs it for pull requests that change the website, published documentation or relevant Node dependencies; `.github/workflows/website.yml` builds and deploys `main` to GitHub Pages. A repository administrator enables Pages once: **Settings → Pages → Source: GitHub Actions**.
 
 The publishing step reads `html_url` directly from the GitHub Pages API and passes it to the build as `WEBSITE_URL`. VitePress derives the base path from that URL, supporting both `https://<owner>.github.io/<repository>/` and a custom domain set under **Settings → Pages → Custom domain**. An empty or invalid URL stops the build. Local builds omit `WEBSITE_URL` to serve from `/`.
 

@@ -11,8 +11,7 @@ on:
         description: Retain native installers for a release build
         type: boolean
         default: false
-  push:
-    branches: [main]
+  workflow_dispatch:
   pull_request:
 
 permissions:
