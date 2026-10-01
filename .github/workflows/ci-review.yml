@@ -1,0 +1,60 @@
+name: CI review and Feishu notification
+
+on:
+  workflow_run:
+    workflows: [core-check, core-release, native-check]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: read
+
+jobs:
+  review:
+    runs-on: ${{ vars.OAC_USE_GITHUB_RUNNERS == 'true' && 'ubuntu-24.04' || 'blacksmith-2vcpu-ubuntu-2404' }}
+    timeout-minutes: 15
+    steps:
+      # Never check out the triggering revision in this privileged workflow.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Collect CI evidence and review rules
+        id: evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/ci_review.py collect
+      - name: Review with Claude Code
+        id: claude
+        if: steps.evidence.outputs.ready == 'true'
+        continue-on-error: true
+        timeout-minutes: 8
+        uses: anthropics/claude-code-action@12dd8d74c712f5f3669365b2369b558c495b1104 # v1
+        env:
+          ANTHROPIC_BASE_URL: https://api.minimax.cn/anthropic
+          ANTHROPIC_AUTH_TOKEN: ${{ secrets.MINIMAX_API_KEY }}
+          CLAUDE_CODE_AUTO_COMPACT_WINDOW: '524288'
+          ANTHROPIC_MODEL: MiniMax-M3.1-Flash-Preview[1m]
+          ANTHROPIC_DEFAULT_SONNET_MODEL: MiniMax-M3.1-Flash-Preview[1m]
+          ANTHROPIC_DEFAULT_OPUS_MODEL: MiniMax-M3.1-Flash-Preview[1m]
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: MiniMax-M3.1-Flash-Preview[1m]
+        with:
+          anthropic_api_key: ${{ secrets.MINIMAX_API_KEY }}
+          github_token: ${{ github.token }}
+          allowed_bots: '*'
+          allowed_non_write_users: '*'
+          prompt: ${{ steps.evidence.outputs.prompt }}
+          # Equals syntax preserves the empty tool list through the Action SDK parser.
+          claude_args: >-
+            --tools= --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+            --setting-sources user --max-turns 2
+            --json-schema '{"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"],"additionalProperties":false}'
+      - name: Publish summary and notify Feishu
+        if: always()
+        env:
+          REVIEW_OUTPUT: ${{ steps.claude.outputs.structured_output }}
+          REVIEW_OUTCOME: ${{ steps.claude.outcome }}
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+          FEISHU_WEBHOOK_SECRET: ${{ secrets.FEISHU_WEBHOOK_SECRET }}
+        run: python3 .github/scripts/ci_review.py notify
