@@ -158,6 +158,25 @@ class EvidenceTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ci.check_results(result, needs | {"api": {"result": "skipped"}})
 
+    def test_three_main_pushes_retain_work_from_replaced_pending_run(self):
+        # A completed; B changed docs but was replaced while pending by C,
+        # whose event diff only contains backend code.
+        self.e.event_name = "push"
+        self.e.event = {"ref": "refs/heads/main"}
+        plan = ci.select(["services/core/code.go"])
+        with patch.object(self.e, "receipt", return_value=self.receipt), patch.object(ci, "git", return_value=b""), patch.object(ci, "changed_paths", return_value=["docs/guide.md", "services/core/code.go"]) as changes:
+            selected = self.e.main_plan(plan, [self.run])
+        self.assertEqual(set(selected["jobs"]), {"hygiene", "backend", "api", "website"})
+        changes.assert_called_once_with(self.receipt["revision"], self.e.revision)
+
+    def test_main_without_verified_ancestor_runs_full(self):
+        self.e.event_name = "push"
+        self.e.event = {"ref": "refs/heads/main"}
+        plan = ci.select(["README.md"])
+        self.assertEqual(self.e.main_plan(plan, [])["jobs"], list(ci.JOBS))
+        with patch.object(self.e, "receipt", side_effect=ValueError("invalid")):
+            self.assertEqual(self.e.main_plan(plan, [self.run])["jobs"], list(ci.JOBS))
+
     def test_reuse_does_not_renew_expiry(self):
         verified = (reuse.now() - timedelta(hours=20)).isoformat()
         self.receipt["passed"]["backend"]["verified_at"] = verified
@@ -188,6 +207,12 @@ class WorkflowTests(unittest.TestCase):
         self.assertIn("  workflow_call:", site)
         self.assertNotIn("  pull_request:", site)
         self.assertNotIn("  push:", site)
+
+    def test_release_cross_run_artifact_download_has_read_permission(self):
+        root = Path(__file__).resolve().parents[1]
+        body = (root / ".github/workflows/release.yml").read_text().split("  build:\n")[1]
+        self.assertIn("      actions: read\n", body.split("    steps:")[0])
+        self.assertIn("run-id: ${{ needs.check.outputs.native-run-id }}", body)
 
     def test_browser_suite_can_follow_a_reused_unit_result(self):
         root = Path(__file__).resolve().parents[1]

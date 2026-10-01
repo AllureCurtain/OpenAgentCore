@@ -187,16 +187,35 @@ class Evidence:
             runs = [run] + [r for r in runs if r["id"] != run["id"]]
         return runs
 
+    def main_plan(self, plan, runs):
+        if self.event_name != "push" or self.event.get("ref") != "refs/heads/main" or os.environ.get("REQUESTED_REF"):
+            return plan
+        # GitHub replaces pending runs even with cancel-in-progress=false. Use
+        # the last verified main success so intermediate pushes remain covered.
+        for run in runs:
+            if run.get("event") != "push" or run.get("head_branch") != "main":
+                continue
+            try:
+                receipt = self.receipt(run)
+                ci.git("merge-base", "--is-ancestor", receipt["revision"], self.revision)
+                pending = ci.select(ci.changed_paths(receipt["revision"], self.revision))
+                return dict(plan, jobs=[j for j in ci.JOBS if j in set(plan["jobs"]) | set(pending["jobs"])],
+                            image=plan["image"] or pending["image"],
+                            reasons=plan["reasons"] + [f"Include changes since successful main run {run['id']}"] + pending["reasons"])
+            except (subprocess.SubprocessError, ValueError, KeyError, TypeError, zipfile.BadZipFile):
+                continue
+        return ci.full("No verified main baseline; execute the full plan")
+
     def plan(self, plan):
+        runs = []
+        if os.environ.get("CI_FORCE") != "true":
+            try:
+                runs = self.candidates()
+            except (subprocess.SubprocessError, ValueError, KeyError):
+                print("Evidence lookup unavailable; executing selected checks.")
+        plan = self.main_plan(plan, runs)
         keys = fingerprints(self.files, self.mode, plan["image"])
         result = dict(plan, execute=list(plan["jobs"]), reused={}, keys=keys)
-        if os.environ.get("CI_FORCE") == "true":
-            return result
-        try:
-            runs = self.candidates()
-        except (subprocess.SubprocessError, ValueError, KeyError):
-            print("Evidence lookup unavailable; executing selected checks.")
-            return result
         for run in runs:
             if not self.eligible(run) or run.get("conclusion") != "success":
                 continue
