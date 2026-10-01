@@ -310,7 +310,7 @@ class DocumentationPushTests(unittest.TestCase):
             return plan, diff
 
     def test_doc_site_configuration_and_docs_only_push_skip_product_checks(self):
-        paths = ["docs.json", ".mintignore", "docs/getting-started/index.md", "README.md"]
+        paths = ["docs.json", "docs/getting-started/index.md", "README.md"]
         self.assertEqual(set(ci.select(paths)["jobs"]), {"hygiene"})
         plan, diff = self.plan(paths)
         self.assertEqual(set(plan["jobs"]), {"hygiene"})

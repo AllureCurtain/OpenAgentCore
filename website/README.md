@@ -19,6 +19,8 @@ pnpm --dir website preview   # serve the build at http://127.0.0.1:4181
 - Each page's source Markdown is published next to its HTML (`/docs/architecture.md`), and the `README` paths declared in `docs.json` redirect to their section index.
 - Relative links from a page to a file that is not a published page, such as `CONTRIBUTING.md` or `openapi.yaml`, are rewritten to GitHub at build time, so the Markdown works unchanged on GitHub and on the site.
 
+Site appearance and metadata are configured in `.vitepress/config.mts` and `.vitepress/theme/`.
+
 The landing page lives in `.vitepress/theme/`. `landing-content.ts` holds its English and Chinese copy; every claim there must be backed by a page in `docs/` or `contracts/`, and its harness protocols follow [Model execution](../contracts/agents-api/model-execution.md).
 
 ## Publish
