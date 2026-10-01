@@ -281,6 +281,8 @@ jobs:
           lockfiles: |
             website/pnpm-lock.yaml
       - name: Build and test the website
+        env:
+          WEBSITE_URL: https://minimax-ai.github.io/OpenAgentCore/
         run: make check-website
 
   web-acceptance:
