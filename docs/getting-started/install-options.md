@@ -14,6 +14,37 @@ With the one-line command, append them after `bash -s --`. The release downloade
 
 The installer prints each stage, then a summary of addresses, sign-in details and next steps. Set `NO_COLOR=1` to disable colors. A failed step stops installation without a success message.
 
+## Docker Compose and hosting platforms
+
+Use the self-contained [Compose template](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml) with Docker Compose 2.26 or newer on Linux amd64. It pulls the existing, digest-pinned v0.0.3 images and starts PostgreSQL, Core, Web and an HTTP gateway. The one-time initialization service generates random secrets in persistent volumes and prepares the node installer; the migration service initializes the database before Core starts. [Compose configuration](../configuration.md#compose-installations) owns the settings and volumes.
+
+For a local trial, download `compose.yaml` and the [local port override](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/local.yaml) into one directory, then run:
+
+```sh
+docker compose -f compose.yaml -f local.yaml up -d --wait --wait-timeout 900
+docker compose -f compose.yaml run --rm credentials
+```
+
+The `credentials` command prints the generated Core key to your terminal without storing it in container logs. Open `http://localhost:8080` and use that key to sign in. All installation secrets are generated automatically; keep the same Compose project and its volumes when restarting.
+
+The first initialization downloads and verifies the release's approximately 385 MB control archive, retaining only the small node installation metadata. Later starts verify the saved files without downloading again. Image downloads are additional. An interrupted first initialization can be rerun; an existing database with missing installation secrets is refused.
+
+You can deploy before choosing a domain: leave `OAC_PUBLIC_URL` unset or empty, then follow [Compose configuration](../configuration.md#compose-installations) to set it and redeploy once the platform's domain is ready. The initial localhost origin allows services to start; Web accepts the configured host only, so platform-domain access becomes available after that redeployment.
+
+### Dokploy
+
+Create a Docker Compose application and paste `compose.yaml`. Set `OAC_PUBLIC_URL` to the public HTTPS origin, enable isolated deployment, and add a domain for service `gateway`, port `8080`. Enable **HTTPS** and select a certificate provider such as **Let's Encrypt** for that domain before deploying. Deploy without `local.yaml`; internal services publish no host ports. The [template metadata](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/dokploy.toml) supplies the generated domain and environment when packaging this Compose file for Dokploy's template catalog; HTTPS and its certificate provider still need to be enabled after import.
+
+### Coolify
+
+Create a **Docker Compose Empty** service and paste `compose.yaml`. Set `OAC_PUBLIC_URL` to the public HTTPS origin and assign that domain to `gateway` on port `8080`. Add Coolify's `exclude_from_hc: true` to the `init`, `migrate` and `credentials` service definitions so completed initialization and optional tooling do not affect its overall health. Save and deploy without `local.yaml`; Coolify supplies HTTPS.
+
+On either platform, open its server terminal and run `docker compose ls` to find the deployed project name and Compose file. Using those exact values and the deployment's `OAC_PUBLIC_URL`, run `docker compose -p <project-name> -f <compose-file> run --rm credentials`, then sign in at the configured origin. The [Dokploy domain guide](https://docs.dokploy.com/docs/core/docker-compose/domains) and [Coolify Compose guide](https://coolify.io/docs/services/configuration/docker-compose) describe their domain and service controls. These are importable deployment files; no hosted marketplace listing is published by this repository.
+
+After signing in, choose the sandbox backend and add nodes using [Nodes](./nodes.md). The Compose stack deploys the control plane; execution machines remain separate.
+
+Stop with `docker compose stop` using the same files and environment. Back up all [installation volumes](../configuration.md#compose-installations) together while the services are stopped. Follow the [installation version policy](./operations.md#installation-version-policy): a different release needs a new Compose project and fresh volumes.
+
 ## Process settings
 
 These flags seed the installation's `config.json` once. Their defaults, valid values and restart behavior are defined in the [configuration reference](../configuration.md#settings). After installation, edit that file and run `oac apply`; rerunning the installer only [repairs](./operations.md#installation-version-policy) the installation.

@@ -163,7 +163,8 @@ The planner compares the PR event's tested merge commit with its verified first 
 | Group | Checks and consumers |
 | --- | --- |
 | `hygiene` | Names, repository links, bundled documentation integrity, and CI planner/gate tests; runs for every change |
-| `distribution` | Harness catalog and installer schema, install/apply/recovery/cleanup tests, release/download and bundle contracts, Go console tests and build; needs no pnpm install or browser |
+| `distribution` | Harness catalog and installer schema, install/apply/recovery/cleanup tests, Compose parsing and initialization fixtures, release/download and bundle contracts, Go console tests and build; needs Docker Compose for template parsing, no pnpm install or browser |
+| `compose` | Real startup from empty volumes using the template's published images, sign-in and API access, file upload and node installer download, then URL reconfiguration and container recreation with preserved credentials and data; needs Docker and network access, no image build or model credentials |
 | `backend` | Parallel parts, each with a dedicated PostgreSQL guard: `runtime` (sqlc freshness, Runtime/shared Go tests, Linux microsandbox helper, daemon build), `core` (standalone Core build, Core service and client tests) and three `store` shards of the serial Core persistence integration package |
 | `harness` | Claude SDK tests and packaging, MiniMax companion scripts |
 | `example` | Optional application typecheck, tests, build and isolated browser acceptance |
@@ -174,6 +175,8 @@ The planner compares the PR event's tested merge commit with its verified first 
 | `lint` | Reusable actionlint check, including local composite actions |
 
 Known workflow changes select their consumers: the CI review and actionlint workflows run hygiene and lint; native workflow changes add native checks; API acceptance workflow changes add API checks with container acceptance enabled. The shared Node action selects every job that uses it plus lint. A new or unclassified workflow/action selects the full gate until its consumers are declared in the planner. Planner tests and CI measurement scripts run hygiene; changing the planner itself runs the full gate.
+
+Compose template and Compose test changes select both `distribution` fixtures and the `compose` smoke job. Run `python3 scripts/compose-smoke.py` locally with Docker available to repeat it. The script uses a unique project, an automatically assigned loopback port and artifacts under `~/.oac/tests/`; it removes its containers and volumes on exit. CI also performs cleanup after a failed or interrupted smoke step. Diagnostics show container status without printing HTTP response bodies or sign-in keys. This checks the declared release images and generic Compose behavior; it does not run a Dokploy/Coolify instance or execute a model.
 
 Go module and workspace inputs select backend, API (including the container), native and distribution checks. Node manifests, lockfiles and package-manager configuration select Harness, example, Web, Web acceptance and native checks. The root TypeScript configuration selects Web and example checks; the adapter TypeScript configuration retains the Node consumer group. Each selected set includes hygiene. Mixed changes accumulate their consumers, and every job reads the same plan instead of maintaining its own path list. For example, a notification-only PR skips database, browser and native jobs, while a notification plus Core change adds backend and API checks.
 
