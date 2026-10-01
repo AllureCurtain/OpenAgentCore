@@ -201,12 +201,12 @@ Measure completed runs with `python3 scripts/ci_metrics.py RUN_ID ...`. It repor
 
 ### CI runners and free allowance
 
-Linux jobs use Blacksmith's 2-vCPU Ubuntu 22.04 or 24.04 runners; native Windows uses its 2-vCPU Windows 2025 runner. Blacksmith has no 2-vCPU macOS runner, so native macOS uses the standard GitHub `macos-15` ARM64 runner. Release building and publication always share one GitHub-hosted `ubuntu-22.04` runner, independent of the runner switch.
+Linux check jobs use Blacksmith's 2-vCPU Ubuntu 22.04 or 24.04 runners; native Windows uses its 2-vCPU Windows 2025 runner. Blacksmith has no 2-vCPU macOS runner, so native macOS uses the standard GitHub `macos-15` ARM64 runner. Release building and publication always share one Blacksmith `blacksmith-4vcpu-ubuntu-2204` runner, independent of the runner switch. Custom runner labels used directly in `runs-on` are declared in `.github/actionlint.yaml` for workflow validation.
 
-Set the repository Actions variable `OAC_USE_GITHUB_RUNNERS` to `true` to run all jobs on standard GitHub-hosted runners instead. Linux keeps its matching Ubuntu version, Windows uses `windows-2025`, and macOS continues using `macos-15`. Remove the variable or set it to `false` to return switchable check jobs to Blacksmith's 2-vCPU defaults. For example, maintainers can switch when the organization's free allowance is used up, then restore Blacksmith after the allowance resets:
+Set the repository Actions variable `OAC_USE_GITHUB_RUNNERS` to `true` to run check jobs on standard GitHub-hosted runners instead. Linux keeps its matching Ubuntu version, Windows uses `windows-2025`, and macOS continues using `macos-15`. Remove the variable or set it to `false` to return switchable check jobs to Blacksmith's 2-vCPU defaults. For example, maintainers can switch when the organization's free allowance is used up, then restore Blacksmith after the allowance resets:
 
 ```sh
 gh variable set OAC_USE_GITHUB_RUNNERS --body true --repo MiniMax-AI/OpenAgentCore
 ```
 
-This is an explicit operator switch, not an automatic billing balance probe. Runner selection applies to newly scheduled runs. Check current allowance and platform conversion rates in [Blacksmith's runner documentation](https://docs.blacksmith.sh/blacksmith-runners/overview) before treating 2-vCPU usage as free; Windows minutes consume more allowance than Linux minutes. Standard GitHub runner usage follows the repository's visibility and GitHub plan. These workflows request no Blacksmith runner larger than 2 vCPU and no paid cache add-on.
+This is an explicit operator switch, not an automatic billing balance probe. Runner selection applies to newly scheduled runs. Check current allowance and platform conversion rates in [Blacksmith's runner documentation](https://docs.blacksmith.sh/blacksmith-runners/overview) before treating 2-vCPU usage as free; Windows minutes consume more allowance than Linux minutes. Standard GitHub runner usage follows the repository's visibility and GitHub plan. The release build uses a 4-vCPU runner; these workflows request no paid cache add-on.
