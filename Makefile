@@ -95,35 +95,46 @@ check-core-container: docker-build-core
 
 node-deps:
 	pnpm install --frozen-lockfile
+	pnpm --dir website install --frozen-lockfile
+	pnpm --dir packages/claude-sdk-adapter install --frozen-lockfile
 
-check-claude-sdk: node-deps
-	pnpm --filter @oac/claude-sdk-adapter test
+check-claude-sdk:
+	pnpm --dir packages/claude-sdk-adapter install --frozen-lockfile
+	pnpm --dir packages/claude-sdk-adapter test
 	$(MAKE) build-claude-sdk-runtime
 
 .PHONY: check-web-unit check-web-acceptance check-website
 check-web: override OAC_WEB_TEST_SHARD :=
 check-web: check-web-unit check-web-acceptance
 
-check-web-unit: node-deps
-	pnpm typecheck
+web-deps:
+	pnpm --filter @oac/web... install --frozen-lockfile
+
+example-deps:
+	pnpm --filter @oac/parsar-example... install --frozen-lockfile
+
+.PHONY: web-deps example-deps
+check-web-unit: web-deps
+	pnpm --filter @oac/web... typecheck
 	pnpm test:web
 	pnpm --filter @oac/web build
 
 # The website build also checks every published documentation link.
-check-website: node-deps
-	pnpm --filter @oac/website build
-	pnpm --filter @oac/website test
+check-website:
+	pnpm --dir website install --frozen-lockfile
+	pnpm --dir website build
+	pnpm --dir website test
 
 # CI shards run in separate jobs, each with its own fixture and Web server.
 # An unset shard keeps the complete local make check gate.
-check-web-acceptance: node-deps
+check-web-acceptance: web-deps
 	pnpm test:web:acceptance $(if $(OAC_WEB_TEST_SHARD),--shard=$(OAC_WEB_TEST_SHARD))
 
 build-claude-sdk-runtime:
 	./scripts/build-claude-sdk-runtime.sh
 
 .PHONY: check-example
-check-example: node-deps
+check-example: example-deps
 	pnpm --filter @oac/parsar-example typecheck
 	pnpm --filter @oac/parsar-example test
 	pnpm --filter @oac/parsar-example build

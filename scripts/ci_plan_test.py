@@ -110,11 +110,34 @@ class SelectionTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual(self.jobs(path), {"hygiene", "backend", "distribution", "api", "native"})
                 self.assertTrue(ci.select([path])["image"])
-        for path in ("package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc", "packages/tsconfig/base.json"):
+        for path in ("package.json", "pnpm-workspace.yaml", ".npmrc"):
             with self.subTest(path=path):
                 self.assertEqual(self.jobs(path), {"hygiene", "harness", "example", "web", "web-acceptance", "website", "native"})
                 self.assertFalse(ci.select([path])["image"])
         self.assertEqual(self.jobs("tsconfig.base.json"), {"hygiene", "example", "web", "web-acceptance"})
+
+    def test_module_locks_only_select_their_consumers(self):
+        cases = {
+            "website/pnpm-lock.yaml": {"website"},
+            "website/pnpm-workspace.yaml": {"website"},
+            "packages/claude-sdk-adapter/pnpm-workspace.yaml": {"harness", "native", "distribution"},
+            "apps/web/pnpm-lock.yaml": {"web", "web-acceptance"},
+            "apps/web/package.json": {"web", "web-acceptance"},
+            "example/parsar/pnpm-lock.yaml": {"example"},
+            "packages/agents-client/pnpm-lock.yaml": {"web", "web-acceptance", "example"},
+            "packages/claude-sdk-adapter/pnpm-lock.yaml": {"harness", "native", "distribution"},
+            "packages/claude-sdk-adapter/package.json": {"harness", "native", "distribution"},
+            "packages/tsconfig/base.json": {"harness", "native"},
+            "pnpm-lock.yaml": set(),
+        }
+        for path, jobs in cases.items():
+            with self.subTest(path=path):
+                self.assertEqual(self.jobs(path), jobs | {"hygiene"})
+        self.assertEqual(self.jobs("website/package.json", "website/pnpm-lock.yaml",
+                                  "website/.vitepress/theme/components/Mermaid.vue"),
+                         {"hygiene", "website"})
+        self.assertEqual(self.jobs("website/pnpm-lock.yaml", "apps/web/pnpm-lock.yaml"),
+                         {"hygiene", "website", "web", "web-acceptance"})
 
     def test_ci_tests_and_metrics_do_not_trigger_product_checks(self):
         for path in ("scripts/ci_plan_test.py", "scripts/ci_metrics.py", "scripts/ci_metrics_test.py"):

@@ -5,11 +5,11 @@ The website is the landing page plus the published documentation, built with [Vi
 ## Run it
 
 ```sh
-pnpm install --filter @oac/website...
-pnpm --filter @oac/website dev       # http://127.0.0.1:4180
-pnpm --filter @oac/website build     # website/.vitepress/dist
-pnpm --filter @oac/website test      # after build: navigation and output checks
-pnpm --filter @oac/website preview   # serve the build at http://127.0.0.1:4181
+pnpm --dir website install --frozen-lockfile
+pnpm --dir website dev       # http://127.0.0.1:4180
+pnpm --dir website build     # website/.vitepress/dist
+pnpm --dir website test      # after build: navigation and output checks
+pnpm --dir website preview   # serve the build at http://127.0.0.1:4181
 ```
 
 ## How documentation reaches the site

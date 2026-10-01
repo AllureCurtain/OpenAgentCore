@@ -28,7 +28,17 @@ CI_INPUTS = {
 }
 DEPENDENCY_INPUTS = {
     **dict.fromkeys(("go.mod", "go.sum", "go.work", "go.work.sum"), GO_JOBS),
-    **dict.fromkeys(("package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc"), NODE_JOBS),
+    **dict.fromkeys(("package.json", "pnpm-workspace.yaml", ".npmrc"), NODE_JOBS),
+    "pnpm-lock.yaml": ("hygiene",),
+    "apps/web/pnpm-lock.yaml": ("web", "web-acceptance"),
+    "example/parsar/pnpm-lock.yaml": ("example",),
+    "website/pnpm-lock.yaml": ("website",),
+    "website/pnpm-workspace.yaml": ("website",),
+    "packages/claude-sdk-adapter/pnpm-workspace.yaml": ("harness", "native", "distribution"),
+    "packages/agents-client/pnpm-lock.yaml": ("web", "web-acceptance", "example"),
+    "packages/agents-client/package.json": ("web", "web-acceptance", "example"),
+    "packages/claude-sdk-adapter/pnpm-lock.yaml": ("harness", "native", "distribution"),
+    "packages/claude-sdk-adapter/package.json": ("harness", "native", "distribution"),
     "tsconfig.base.json": ("web", "web-acceptance", "example"),
 }
 # Each rule requires BOTH a path prefix and a file suffix. Rules accumulate
@@ -38,7 +48,7 @@ WEB = (".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs", ".cjs", ".json", ".css", ".
 CORE = (*GO, ".sql", ".py", ".json", ".yaml", ".yml", ".sh", ".ps1", ".txt", ".in", ".lock", "Dockerfile")
 SCRIPTS = (".py", ".sh", ".mjs", ".go", ".json")
 RULES = (
-    (("apps/web/", "playwright.config.ts"), WEB, ("web", "web-acceptance")),
+    (("apps/web/",), WEB, ("web", "web-acceptance")),
     (("services/web/",), (*GO, "Dockerfile"), ("distribution", "web", "web-acceptance")),
     (("example/",), WEB, ("example",)),
     (("website/",), (*WEB, ".vue", ".md"), ("website",)),
@@ -51,7 +61,7 @@ RULES = (
     (("contracts/",), (*GO, ".json", ".yaml", ".yml"), ("backend", "api", "native", "web", "web-acceptance", "example", "distribution")),
     (("packages/agents-client/",), (*GO, *WEB), ("backend", "api", "web", "web-acceptance", "example")),
     (("packages/claude-sdk-adapter/", "packages/mcode-harness/"), WEB, ("harness", "native", "backend", "distribution")),
-    (("packages/tsconfig/",), (".json",), NODE_JOBS),
+    (("packages/tsconfig/",), (".json",), ("harness", "native")),
     (("deploy/install/",), (".py", ".json", ".sh"), ("distribution",)),
     (("deploy/compose/",), (".yaml", ".toml"), ("distribution", "compose")),
     (("scripts/compose-smoke.py", "deploy/install/test_compose.py"), (".py",), ("distribution", "compose")),

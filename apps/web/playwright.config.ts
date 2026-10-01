@@ -5,7 +5,7 @@ const webPort = Number(process.env.AGENTS_WEB_PORT ?? 4174);
 const reuseExistingServer = process.env.AGENTS_REUSE_E2E_SERVERS === "1";
 
 export default defineConfig({
-  testDir: "./apps/web/e2e",
+  testDir: "./e2e",
   fullyParallel: false,
   workers: 1,
   timeout: 45_000,
@@ -25,7 +25,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "node apps/web/e2e/fixture-console.mjs",
+      command: "node e2e/fixture-console.mjs",
       url: `http://127.0.0.1:${fixturePort}/__fixture/health`,
       reuseExistingServer,
       timeout: 15_000,
