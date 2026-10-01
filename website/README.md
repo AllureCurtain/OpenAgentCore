@@ -19,11 +19,13 @@ pnpm --dir website preview   # serve the build at http://127.0.0.1:4181
 - Each page's source Markdown is published next to its HTML (`/docs/architecture.md`), and the `README` paths declared in `docs.json` redirect to their section index.
 - Relative links from a page to a file that is not a published page, such as `CONTRIBUTING.md` or `openapi.yaml`, are rewritten to GitHub at build time, so the Markdown works unchanged on GitHub and on the site.
 
+Site appearance and metadata are configured in `.vitepress/config.mts` and `.vitepress/theme/`.
+
 The landing page lives in `.vitepress/theme/`. `landing-content.ts` holds its English and Chinese copy; every claim there must be backed by a page in `docs/` or `contracts/`, and its harness protocols follow [Model execution](../contracts/agents-api/model-execution.md).
 
 ## Publish
 
-`make check-website` builds and tests the site. core-check runs it for changes under `website/` and to Node dependencies; `.github/workflows/website.yml` runs it for documentation-only pull requests and deploys `main` to GitHub Pages. A repository administrator enables Pages once: **Settings → Pages → Source: GitHub Actions**.
+`make check-website` builds and tests the site. core-check runs it for pull requests that change the website, published documentation or relevant Node dependencies; `.github/workflows/website.yml` builds and deploys `main` to GitHub Pages. A repository administrator enables Pages once: **Settings → Pages → Source: GitHub Actions**.
 
 The publishing step reads `html_url` directly from the GitHub Pages API and passes it to the build as `WEBSITE_URL`. VitePress derives the base path from that URL, supporting both `https://<owner>.github.io/<repository>/` and a custom domain set under **Settings → Pages → Custom domain**. An empty or invalid URL stops the build. Local builds omit `WEBSITE_URL` to serve from `/`.
 
