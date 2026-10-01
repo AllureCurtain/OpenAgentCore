@@ -19,6 +19,7 @@ CI_INPUTS = {
     ".github/workflows/native.yml": ("native", "lint"),
     ".github/workflows/actionlint.yml": ("lint",),
     ".github/workflows/ci-review.yml": ("lint",),
+    ".github/workflows/website.yml": ("lint",),
     ".github/actions/node/action.yml": (*NODE_JOBS, "lint"),
     "scripts/ci_plan.py": JOBS,
     "scripts/ci_plan_test.py": ("hygiene",),

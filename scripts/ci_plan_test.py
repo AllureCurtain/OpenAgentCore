@@ -79,6 +79,7 @@ class SelectionTests(unittest.TestCase):
         for workflow, selected in {
             "ci-review": {"hygiene", "lint"},
             "actionlint": {"hygiene", "lint"},
+            "website": {"hygiene", "lint"},
             "native": {"hygiene", "native", "lint"},
             "api-acceptance": {"hygiene", "api", "lint"},
         }.items():
