@@ -69,8 +69,8 @@ class SelectionTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue({"backend", "api", "distribution"} <= self.jobs(path))
 
-    def test_unknown_inputs_planner_and_empty_diffs_are_full(self):
-        for paths in ([], ["new-component/source.rs"], ["Makefile"], [".github/workflows/new.yml"],
+    def test_shared_inputs_planner_and_empty_diffs_are_full(self):
+        for paths in ([], ["Makefile"], [".github/workflows/new.yml"],
                       [".github/actions/new/action.yml"], [".github/workflows/check.yml"], [".github/workflows/release.yml"], ["scripts/ci_plan.py"], ["../outside"], ["/outside"]):
             self.assertEqual(set(ci.select(paths)["jobs"]), set(ci.JOBS))
             self.assertTrue(ci.select(paths)["image"])
@@ -144,8 +144,29 @@ class SelectionTests(unittest.TestCase):
         dependencies = re.search(r"needs: \[(.+)\]", gate).group(1).split(", ")
         self.assertEqual(set(dependencies), set(ci.JOBS) | {"plan"})
 
-    def test_unknown_markdown_is_not_assumed_to_be_documentation(self):
-        self.assertEqual(self.jobs("new-engine/system-prompt.md"), set(ci.JOBS))
+    def test_only_matching_directory_and_suffix_trigger_product_checks(self):
+        for path in ("services/core/notes.md", "apps/daemon/design.md", "internal/architecture.md",
+                     "apps/web/notes.md", "scripts/build-core.sh.md", "new-component/source.rs",
+                     "docs/example.go", "services/core/code.go.bak"):
+            self.assertEqual(self.jobs(path), {"hygiene"}, path)
+        self.assertEqual(self.jobs("services/core/code.go"), {"hygiene", "backend", "api"})
+        self.assertEqual(self.jobs("apps/web/src/style.css"), {"hygiene", "web", "web-acceptance"})
+        self.assertEqual(self.jobs("services/core/migrations/123.sql"), {"hygiene", "backend", "api"})
+
+    def test_fixture_and_embedded_resources_keep_checks_regardless_of_suffix(self):
+        for path in ("services/core/tests/testdata/prompt.md", "services/core/tests/testdata/image.jpg"):
+            self.assertTrue({"backend", "api"} <= self.jobs(path))
+        self.assertTrue({"backend", "native"} <= self.jobs("apps/daemon/internal/agent/testdata/prompt.md"))
+        self.assertTrue({"backend", "api", "native", "distribution"} <= self.jobs("services/core/internal/nativeinstaller/assets/archive"))
+        self.assertTrue({"web", "web-acceptance"} <= self.jobs("apps/web/public/logo.svg"))
+        self.assertTrue({"distribution", "web", "web-acceptance"} <= self.jobs("services/web/Dockerfile"))
+
+    def test_tracked_program_sources_have_a_matching_rule(self):
+        root = Path(__file__).resolve().parents[1]
+        paths = subprocess.check_output(["git", "ls-files", "-z"], cwd=root).decode().split("\0")
+        for path in filter(None, paths):
+            if Path(path).suffix in {".go", ".sql", ".ts", ".tsx", ".mjs", ".sh", ".ps1"} or path.endswith("Dockerfile"):
+                self.assertNotEqual(self.jobs(path), {"hygiene"}, path)
 
     def test_non_pr_events_always_run_full(self):
         for event in ("push", "workflow_dispatch", "workflow_call"):
@@ -237,3 +258,73 @@ class GateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DocumentationPushTests(unittest.TestCase):
+    def setUp(self):
+        self.before, self.after = "a" * 40, "b" * 40
+        self.event = {"ref": "refs/heads/main", "before": self.before, "after": self.after, "forced": False, "deleted": False}
+
+    def plan(self, paths, event=None, ref=""):
+        with patch.object(ci, "git", side_effect=[self.after.encode(), b""]), patch.object(ci, "changed_paths", return_value=paths) as diff:
+            plan = ci.event_plan("push", self.event if event is None else event, ref)
+            return plan, diff
+
+    def test_doc_site_configuration_and_docs_only_push_skip_product_checks(self):
+        paths = ["docs.json", ".mintignore", "docs/getting-started/index.md", "README.md"]
+        self.assertEqual(set(ci.select(paths)["jobs"]), {"hygiene"})
+        plan, diff = self.plan(paths)
+        self.assertEqual(set(plan["jobs"]), {"hygiene"})
+        diff.assert_called_once_with(self.before, self.after)
+
+    def test_generated_documentation_keeps_freshness_checks(self):
+        plan, _ = self.plan(["docs/configuration.md", "contracts/agents-api/harness-catalog.md"])
+        self.assertEqual(set(plan["jobs"]), {"hygiene", "distribution"})
+
+    def test_main_pushes_use_the_same_directory_suffix_rules_as_prs(self):
+        for paths in (["README.md", "services/core/cmd/server/main.go"], ["new.md"], [],
+                      ["apps/web/src/app.tsx"], ["docs.json", "scripts/generate-harness-catalog.py"]):
+            with self.subTest(paths=paths):
+                self.assertEqual(self.plan(paths)[0], ci.select(paths))
+
+    def test_releases_and_untrusted_pushes_keep_full_gate(self):
+        self.assertEqual(self.plan(["README.md"], ref=self.after)[0]["jobs"], list(ci.JOBS))
+        for fields in ({"ref": "refs/tags/v1"}, {"forced": True}, {"deleted": True}, {"before": "0" * 40}, {"before": "--bad"}, {"after": "c" * 40}):
+            with self.subTest(fields=fields):
+                self.assertEqual(self.plan(["README.md"], self.event | fields)[0]["jobs"], list(ci.JOBS))
+        with patch.object(ci, "git", side_effect=subprocess.CalledProcessError(1, "git")):
+            self.assertEqual(ci.event_plan("push", self.event)["jobs"], list(ci.JOBS))
+
+    def test_push_uses_entire_commit_range_and_fails_closed_on_shallow_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "source"
+            repo.mkdir()
+            def git(*args):
+                return subprocess.check_output(["git", "-C", str(repo), *args], stderr=subprocess.DEVNULL).decode().strip()
+            git("init", "-b", "main")
+            git("config", "user.email", "ci-test@example.invalid")
+            git("config", "user.name", "CI test")
+            (repo / "README.md").write_text("base\n")
+            git("add", "."); git("commit", "-m", "base")
+            before = git("rev-parse", "HEAD")
+            (repo / "docs.json").write_text("{}\n")
+            git("add", "."); git("commit", "-m", "docs")
+            docs_head = git("rev-parse", "HEAD")
+            previous = Path.cwd()
+            try:
+                os.chdir(repo)
+                event = self.event | {"before": before, "after": docs_head}
+                self.assertEqual(ci.event_plan("push", event)["jobs"], ["hygiene"])
+                (repo / "services/core").mkdir(parents=True)
+                (repo / "services/core/code.go").write_text("package example\n")
+                git("add", "."); git("commit", "-m", "code")
+                (repo / "README.md").write_text("updated\n")
+                git("add", "."); git("commit", "-m", "docs again")
+                event["after"] = git("rev-parse", "HEAD")
+                self.assertEqual(set(ci.event_plan("push", event)["jobs"]), {"hygiene", "backend", "api"})
+                clone = Path(tmp) / "shallow"
+                subprocess.run(["git", "clone", "--depth=2", repo.as_uri(), str(clone)], check=True, capture_output=True)
+                os.chdir(clone)
+                self.assertEqual(ci.event_plan("push", event)["jobs"], list(ci.JOBS))
+            finally:
+                os.chdir(previous)
