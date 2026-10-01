@@ -57,7 +57,12 @@ def now():
 
 
 def fresh(timestamp):
-    age = now() - datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    if not isinstance(timestamp, str):
+        raise ValueError("Evidence timestamp must be a string")
+    parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError("Evidence timestamp must have a timezone")
+    age = now() - parsed
     return timedelta(0) <= age < MAX_AGE
 
 
@@ -84,7 +89,7 @@ class Evidence:
 
     def eligible(self, run):
         if (run["id"] == self.run_id or run.get("path") != ".github/workflows/check.yml"
-                or run.get("head_repository", {}).get("full_name") != self.repository):
+                or (run.get("head_repository") or {}).get("full_name") != self.repository):
             return False
         if run.get("event") == "push" and run.get("head_branch") == "main":
             return True
@@ -137,8 +142,11 @@ class Evidence:
             if self.event_name == "push" and files != self.files:
                 raise ValueError("Main can only promote the identical PR tree")
         expected = fingerprints(files, self.mode, receipt["image"])
+        if not isinstance(receipt["passed"], dict):
+            raise ValueError("Evidence checks must be an object")
         for job, item in receipt["passed"].items():
-            if job not in expected or item["key"] != expected[job] or not fresh(item["verified_at"]):
+            if (not isinstance(item, dict) or job not in expected
+                    or item.get("key") != expected[job] or not fresh(item.get("verified_at"))):
                 raise ValueError("Invalid or expired check evidence")
         return receipt
 
@@ -160,7 +168,7 @@ class Evidence:
         if (run.get("event") != "push" or run.get("head_branch") != "main"
                 or run.get("head_sha") != self.revision or run.get("conclusion") != "success"
                 or run.get("path") != ".github/workflows/check.yml"
-                or run.get("head_repository", {}).get("full_name") != self.repository):
+                or (run.get("head_repository") or {}).get("full_name") != self.repository):
             return False
         names = {a["name"] for a in self.artifacts(run_id) if not a["expired"]}
         return NATIVE_ARTIFACTS <= names

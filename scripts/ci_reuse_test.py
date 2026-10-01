@@ -82,7 +82,7 @@ class EvidenceTests(unittest.TestCase):
             z.writestr("evidence.json", json.dumps(self.receipt if receipt is None else receipt))
         artifacts = [{"name": "ci-evidence-1", "expired": False, "size_in_bytes": 100, "id": 1}]
         with patch.object(self.e, "artifacts", return_value=artifacts), patch.object(reuse, "api", return_value=archive.getvalue()), patch.object(reuse, "tree", return_value=self.e.files if files is None else files):
-            return self.e.receipt(self.run if run is None else run)
+            return reuse.Evidence.receipt(self.e, self.run if run is None else run)
 
     def test_success_and_producer_are_verified(self):
         self.assertEqual(self.read(), self.receipt)
@@ -101,6 +101,14 @@ class EvidenceTests(unittest.TestCase):
                        {"passed": {"backend": {"key": self.keys["backend"], "verified_at": (reuse.now() - timedelta(days=2)).isoformat()}}}):
             with self.subTest(fields=fields), self.assertRaises(ValueError):
                 self.read(receipt=self.receipt | fields)
+
+    def test_malformed_artifacts_fall_back_to_execution(self):
+        plan = ci.select(["services/core/code.go"])
+        for passed in ([], None, {"backend": []}, {"backend": {"key": self.keys["backend"], "verified_at": 42}},
+                       {"backend": {"key": self.keys["backend"], "verified_at": "2026-10-01T10:00:00"}}):
+            malformed = self.receipt | {"passed": passed}
+            with self.subTest(passed=passed), patch.object(self.e, "candidates", return_value=[self.run]), patch.object(self.e, "receipt", side_effect=lambda run: self.read(receipt=malformed)):
+                self.assertEqual(self.e.plan(plan)["execute"], plan["jobs"])
 
     def test_pr_scope_and_release_trust(self):
         pr = self.run | {"event": "pull_request", "head_branch": "feature"}
