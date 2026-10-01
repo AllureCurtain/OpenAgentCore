@@ -2,6 +2,7 @@ import { createRequire } from 'node:module'
 import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { defineConfig, type SiteConfig } from 'vitepress'
+import { mermaidFences } from './mermaid.mts'
 import { repositoryLinks } from './repository-links.mts'
 import { docsSidebar, legacyRedirects, pageTitle, readDocsJson, repoRoot } from './docs-nav.mts'
 
@@ -120,7 +121,10 @@ export default defineConfig({
   markdown: {
     theme: { light: 'github-light', dark: 'github-dark' },
     languageAlias: { caddyfile: 'nginx' },
-    config: (md) => repositoryLinks(md, { repoRoot, blobBase: `${repo}/blob/main`, treeBase: `${repo}/tree/main` }),
+    config: (md) => {
+      repositoryLinks(md, { repoRoot, blobBase: `${repo}/blob/main`, treeBase: `${repo}/tree/main` })
+      mermaidFences(md)
+    },
   },
 
   vite: {

@@ -4,6 +4,7 @@ import '@fontsource-variable/inter'
 import '@fontsource-variable/geist-mono'
 import Layout from './Layout.vue'
 import Landing from './components/Landing.vue'
+import Mermaid from './components/Mermaid.vue'
 import './style.css'
 
 export default {
@@ -11,5 +12,6 @@ export default {
   Layout,
   enhanceApp({ app }) {
     app.component('Landing', Landing)
+    app.component('Mermaid', Mermaid)
   },
 } satisfies Theme
