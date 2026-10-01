@@ -1,5 +1,5 @@
 # Publishes the website (landing page and documentation) to GitHub Pages from
-# main, and builds it for documentation-only pull requests. The website reads the
+# main. Pull request validation belongs to core-check. The website reads the
 # existing docs/, contracts/ and docs.json in place; see website/README.md.
 name: website
 
@@ -11,15 +11,12 @@ on:
       - docs/**
       - contracts/**
       - docs.json
+      - package.json
+      - pnpm-workspace.yaml
+      - .npmrc
+      - Makefile
       - .github/actions/node/**
       - .github/workflows/website.yml
-  # Changes under website/ are checked by core-check; documentation-only
-  # changes build the site here so broken links surface before merge.
-  pull_request:
-    paths:
-      - docs/**
-      - contracts/**
-      - docs.json
   workflow_dispatch:
 
 permissions:
@@ -28,7 +25,7 @@ permissions:
 concurrency:
   group: website-${{ github.ref }}
   # Never cancel a run that may be deploying main.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   build:

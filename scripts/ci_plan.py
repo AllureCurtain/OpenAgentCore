@@ -4,7 +4,6 @@
 import argparse
 import json
 import os
-import re
 from pathlib import Path, PurePosixPath
 import subprocess
 
@@ -18,8 +17,9 @@ CI_INPUTS = {
     ".github/workflows/api-acceptance.yml": ("api", "lint"),
     ".github/workflows/native.yml": ("native", "lint"),
     ".github/workflows/actionlint.yml": ("lint",),
+    ".github/actionlint.yaml": ("lint",),
     ".github/workflows/ci-review.yml": ("lint",),
-    ".github/workflows/website.yml": ("lint",),
+    ".github/workflows/website.yml": ("website", "lint"),
     ".github/actions/node/action.yml": (*NODE_JOBS, "lint"),
     "scripts/ci_plan.py": JOBS,
     "scripts/ci_plan_test.py": ("hygiene",),
@@ -39,6 +39,7 @@ DEPENDENCY_INPUTS = {
     "packages/agents-client/package.json": ("web", "web-acceptance", "example"),
     "packages/claude-sdk-adapter/pnpm-lock.yaml": ("harness", "native", "distribution"),
     "packages/claude-sdk-adapter/package.json": ("harness", "native", "distribution"),
+    "docs.json": ("website",),
     "tsconfig.base.json": ("web", "web-acceptance", "example"),
 }
 # Each rule requires BOTH a path prefix and a file suffix. Rules accumulate
@@ -51,6 +52,7 @@ RULES = (
     (("apps/web/",), WEB, ("web", "web-acceptance")),
     (("services/web/",), (*GO, "Dockerfile"), ("distribution", "web", "web-acceptance")),
     (("example/",), WEB, ("example",)),
+    (("docs/", "contracts/"), ("",), ("website",)),
     (("website/",), (*WEB, ".vue", ".md"), ("website",)),
     (("services/core/",), CORE, ("backend", "api")),
     (("services/core/internal/nativeinstaller/",), GO, ("native", "distribution")),
@@ -112,7 +114,7 @@ def full(reason):
 
 def select(paths):
     if not paths:
-        return full("Empty diff; run the full gate")
+        return {"version": 1, "jobs": ["hygiene"], "image": False, "reasons": ["Verified empty diff"]}
     jobs = {"hygiene"}
     image = False
     reasons = []
@@ -159,19 +161,6 @@ def changed_paths(base, head):
 def event_plan(event_name, event, requested_ref=""):
     if requested_ref:
         return full("Explicit ref: full gate")
-    if event_name == "push":
-        try:
-            if event.get("ref") != "refs/heads/main" or event.get("forced") or event.get("deleted"):
-                return full("Non-main or rewritten push: full gate")
-            before, after = event["before"], event["after"]
-            if any(not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha) or sha == "0" * 40 for sha in (before, after)):
-                raise ValueError("Invalid push commits")
-            if git("rev-parse", "HEAD").decode().strip() != after:
-                raise ValueError("Checkout does not match push head")
-            git("merge-base", "--is-ancestor", before, after)
-            return select(changed_paths(before, after))
-        except (KeyError, TypeError, ValueError, UnicodeError, subprocess.CalledProcessError) as err:
-            return full(f"Push diff unavailable ({type(err).__name__}); full gate")
     if event_name != "pull_request":
         return full("Manual or reusable run: full gate")
     try:
