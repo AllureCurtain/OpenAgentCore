@@ -150,7 +150,7 @@ Every PR runs `core-check` and reports the required status `check`. `scripts/ci_
 | --- | --- |
 | `hygiene` | Names, repository links, bundled documentation integrity, and CI planner/gate tests; runs for every change |
 | `distribution` | Harness catalog and installer schema, install/apply/recovery/cleanup tests, release/download and bundle contracts, Go console tests and build; needs no pnpm install or browser |
-| `backend` | Dedicated PostgreSQL guard, sqlc freshness, Runtime/shared Go tests, Linux microsandbox helper, standalone Core/service/client tests, daemon build |
+| `backend` | Parallel parts, each with a dedicated PostgreSQL guard: `runtime` (sqlc freshness, Runtime/shared Go tests, Linux microsandbox helper, daemon build), `core` (standalone Core build, Core service and client tests) and three `store` shards of the serial Core persistence integration package |
 | `harness` | Claude SDK tests and packaging, MiniMax companion scripts |
 | `example` | Optional application typecheck, tests, build and isolated browser acceptance |
 | `web` | TypeScript, Web/client tests and Web build |
@@ -178,7 +178,7 @@ python3 scripts/ci_plan.py plan --base origin/main --head HEAD
 make check-ci
 ```
 
-`make check` remains the full local entry point with an unsharded Web suite. `make check-web-unit` and `make check-web-acceptance OAC_WEB_TEST_SHARD=1/2` expose the Web parts. The selection tests cover mixed changes, shared consumers, renames/deletions, unknown inputs, shallow merge checkouts and failed/cancelled/missing results. Changes to the map or workflow graph also require actionlint and replay of representative PR diffs; exercise real documentation, installer, Web and Core runs before relying on new selection rules.
+`make check` remains the full local entry point with an unsharded Web suite and an unsharded store package. `make check-web-unit` and `make check-web-acceptance OAC_WEB_TEST_SHARD=1/2` expose the Web parts; `make check-core-packages` and `make check-core-store OAC_CORE_STORE_SHARD=1/3` expose the Core parts, with store tests assigned to shards by a stable hash of their names. The selection tests cover mixed changes, shared consumers, renames/deletions, unknown inputs, shallow merge checkouts and failed/cancelled/missing results. Changes to the map or workflow graph also require actionlint and replay of representative PR diffs; exercise real documentation, installer, Web and Core runs before relying on new selection rules.
 
 Measure completed runs with `python3 scripts/ci_metrics.py RUN_ID ...`. It reports the latest attempt's summed runner minutes, elapsed time and initial queue delay from that attempt's start, peak concurrent jobs, platform breakdown and job outcomes/failure fraction. Only jobs assigned a runner in that attempt contribute machine time and execution concurrency; jobs cancelled while queued retain their outcome and wall time. Earlier attempts are not included. Failed-job reruns can carry earlier successful results: their outcomes appear separately and their old execution time is excluded. A missing rerun start timestamp stops measurement because reused jobs cannot be separated reliably. Keep run/head/attempt identities with comparisons, and report cancellations and unfinished runs separately. Raw runner minutes are not billed minutes; use each platform's published conversion and allowance rules before estimating cost. A small successful sample is not a long-term failure-rate estimate. Main impact selection or scheduled full runs are outside this policy.
 
