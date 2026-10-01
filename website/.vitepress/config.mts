@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path'
 import { defineConfig, type SiteConfig } from 'vitepress'
 import { mermaidFences } from './mermaid.mts'
 import { repositoryLinks } from './repository-links.mts'
+import { siteBase } from './site-base.mts'
 import { docsSidebar, legacyRedirects, pageTitle, readDocsJson, repoRoot } from './docs-nav.mts'
 
 // Pages outside this package resolve Vue from here, not from the repository root.
@@ -13,14 +14,7 @@ const vueDir = dirname(require.resolve('vue/package.json'))
 const repo = 'https://github.com/MiniMax-AI/OpenAgentCore'
 const description = 'An open-source, self-hosted implementation of the OpenAI Agents API with multiple native harnesses.'
 
-// GitHub Pages passes its base path (for example `/OpenAgentCore/`, or `/` on a
-// custom domain) to the build; local builds serve from the root.
-const base = normalizeBase(process.env.WEBSITE_BASE)
-
-function normalizeBase(value: string | undefined): string {
-  const trimmed = (value ?? '').replace(/^\/+|\/+$/g, '')
-  return trimmed ? `/${trimmed}/` : '/'
-}
+const base = siteBase(process.env.WEBSITE_URL)
 
 // The canonical mark, inlined so the favicon has no second copy of the logo.
 const logoSvg = readFileSync(resolve(repoRoot, 'docs/assets/openagentcore-logo.svg'), 'utf8')
