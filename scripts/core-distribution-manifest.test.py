@@ -204,16 +204,27 @@ class DistributionTests(unittest.TestCase):
         native.write_bytes(b"native executable")
         native.chmod(0o555)
         self.manifest()
-        distribution.archive(self.bundle, "1700000000")
+        with mock.patch.object(distribution.os, "cpu_count", return_value=1):
+            distribution.archive(self.bundle, "1700000000")
         archive = self.bundle.with_name(self.bundle.name + ".tar.gz")
         first = archive.read_bytes()
-        distribution.archive(self.bundle, "1700000000")
+        with mock.patch.object(distribution.os, "cpu_count", return_value=4):
+            distribution.archive(self.bundle, "1700000000")
         self.assertEqual(first, archive.read_bytes())
         self.assertEqual(archive.with_name(archive.name + ".sha256").read_text(), distribution.sha256(archive) + "  " + archive.name + "\n")
         with tarfile.open(archive) as contents:
             self.assertEqual(contents.getmember(self.bundle.name + "/install.sh").mode, 0o755)
             self.assertEqual(contents.getmember(self.bundle.name + "/manifest.json").mode, 0o644)
             self.assertEqual(contents.getmember(self.bundle.name + "/native/bin/oac-core").mode, 0o555)
+
+    def test_compressor_failure_propagates(self):
+        real_popen = subprocess.Popen
+        with mock.patch.object(distribution.subprocess, "Popen", side_effect=lambda *args, **kwargs:
+                               real_popen(["python3", "-c", "raise SystemExit(7)"], **kwargs)):
+            with self.assertRaises(subprocess.CalledProcessError) as raised:
+                with distribution.compressed_output(self.stage / "failed.gz"):
+                    pass
+        self.assertEqual(raised.exception.returncode, 7)
 
     def test_bad_upstream_checksum_does_not_extract(self):
         archive = self.stage / "untrusted.tar.gz"

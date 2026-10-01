@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Verify matched distribution inputs and package independently fetched artifacts."""
 
-import gzip
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -253,6 +253,20 @@ def native_offline(bundle, stage):
         os.link(source, path.parent / (platform + ".tar.gz"))
 
 
+@contextmanager
+def compressed_output(path):
+    """Stream deterministic gzip with bounded parallel compression."""
+    command = ["pigz", "-n", "-6", "-p", str(min(4, os.cpu_count() or 1))]
+    with pathlib.Path(path).open("wb") as raw:
+        with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=raw) as compressor:
+            try:
+                yield compressor.stdin
+            finally:
+                compressor.stdin.close()
+            if compressor.wait():
+                raise subprocess.CalledProcessError(compressor.returncode, command)
+
+
 def package_artifacts(bundle, stage, revision):
     """Move optional payload out of Core; the manifest owns every asset digest."""
     assets = stage / "artifacts"
@@ -260,9 +274,8 @@ def package_artifacts(bundle, stage, revision):
     runtime = bundle / "images/runtime.tar"
     compressed = bundle / "images/runtime.tar.gz"
     unpacked = {"unpacked_sha256": sha256(runtime), "unpacked_size": runtime.stat().st_size}
-    with runtime.open("rb") as source, compressed.open("wb") as raw:
-        with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0, compresslevel=6) as output:
-            shutil.copyfileobj(source, output, 1024 * 1024)
+    with runtime.open("rb") as source, compressed_output(compressed) as output:
+        shutil.copyfileobj(source, output, 1024 * 1024)
     runtime.unlink()
     result = {}
     for logical, suffix in ARTIFACTS.items():
@@ -355,8 +368,8 @@ def archive(bundle, epoch, variant=""):
     if variant not in ("", "offline"):
         raise ValueError("Unknown distribution archive variant")
     output = bundle.with_name(bundle.name + ("-" + variant if variant else "") + ".tar.gz")
-    with output.open("wb") as raw, gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as compressed:
-        with tarfile.open(fileobj=compressed, mode="w", format=tarfile.PAX_FORMAT) as tar:
+    with compressed_output(output) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w|", format=tarfile.PAX_FORMAT) as tar:
             for path in sorted(bundle.rglob("*")):
                 if not path.is_file():
                     continue

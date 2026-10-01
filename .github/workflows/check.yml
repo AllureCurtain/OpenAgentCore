@@ -177,6 +177,8 @@ jobs:
           node-version: '22'
       - name: Verify Harness catalog and installer schema
         run: make check-harness-catalog
+      - name: Install distribution compressor
+        run: sudo apt-get update && sudo apt-get install -y pigz
       - name: Test distribution, installer and console packaging
         run: make check-distribution
 

@@ -2,6 +2,7 @@
 """Create and upload one draft, then publish its fixed ID without automatic retries."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import importlib.util
 import json
 import os
@@ -20,6 +21,18 @@ distribution = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(distribution)
 
 REPOSITORY = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+
+def parallel_each(function, items):
+    """Bound network transfers and propagate failures before publication."""
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = [pool.submit(function, item) for item in items]
+        try:
+            return [future.result() for future in as_completed(futures)]
+        except BaseException:
+            for future in futures:
+                future.cancel()
+            raise
 
 
 def api(repository, endpoint, *args):
@@ -137,8 +150,9 @@ def publish_images(assets, repository, revision, tag):
             if remote is not None and remote.get("config", {}).get("digest") != config:
                 raise ValueError("Registry tag already names a different image: " + reference)
             references[name] = (reference, config, local, remote)
-        result = {}
-        for name, (reference, config, local, remote) in references.items():
+        def push_image(item):
+            name, (reference, config, local, remote) = item
+            print("Publishing registry image " + name, flush=True)
             if remote is None:
                 subprocess.run(["docker", "tag", local, reference], check=True)
                 subprocess.run(["docker", "push", reference], check=True)
@@ -151,8 +165,9 @@ def publish_images(assets, repository, revision, tag):
             digest = details["Descriptor"]["digest"]
             if not distribution.DIGEST.fullmatch(digest):
                 raise ValueError("Invalid registry manifest digest")
-            result[name] = {"tag": reference, "digest": reference.rsplit(":", 1)[0] + "@" + digest}
-        return result
+            print("Verified registry image " + name, flush=True)
+            return name, {"tag": reference, "digest": reference.rsplit(":", 1)[0] + "@" + digest}
+        return dict(sorted(parallel_each(push_image, references.items())))
 
 
 def publish(assets, repository, revision, tag, mode):
@@ -217,7 +232,8 @@ def publish(assets, repository, revision, tag, mode):
     # Keep every operation bound to the ID returned by creation. No tag lookup,
     # overwrite, deletion or automatic retry can select another release.
     expected = {p.name: p.stat().st_size for p in files}
-    for path in files:
+    def upload(path):
+        print(f"Uploading {path.name} ({expected[path.name]} bytes)", flush=True)
         uploaded = api(repository, "https://uploads.github.com/repos/" + repository
                        + "/" + endpoint + "/assets?name=" + quote(path.name, safe=""),
                        "--method", "POST", "-H", "Content-Type: application/octet-stream",
@@ -225,6 +241,8 @@ def publish(assets, repository, revision, tag, mode):
         if (uploaded["state"] != "uploaded" or uploaded["name"] != path.name
                 or uploaded["size"] != expected[path.name]):
             raise ValueError("Asset upload was not confirmed; inspect the draft")
+        print("Uploaded " + path.name, flush=True)
+    parallel_each(upload, sorted(files, key=lambda path: expected[path.name], reverse=True))
     release = api(repository, endpoint)
     verify_draft(release, tag, revision)
     actual = release["assets"]

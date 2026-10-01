@@ -10,6 +10,7 @@ import pathlib
 import subprocess
 import tempfile
 import unittest
+import threading
 from unittest import mock
 from urllib.parse import unquote
 
@@ -115,6 +116,31 @@ class PublicationTests(unittest.TestCase):
 
     def writes(self):
         return [c for c in self.api.call_args_list if "--method" in c.args]
+
+    def test_uploads_overlap_and_inventory_waits_for_all_transfers(self):
+        barrier = threading.Barrier(4, timeout=5)
+        active = 0
+        peak = 0
+        lock = threading.Lock()
+        def response(repo, endpoint, *args):
+            nonlocal active, peak
+            if endpoint.startswith("https://uploads."):
+                with lock:
+                    active += 1
+                    peak = max(peak, active)
+                barrier.wait()
+                result = self.response(repo, endpoint, *args)
+                with lock:
+                    active -= 1
+                return result
+            if endpoint == "releases/7":
+                self.assertEqual(active, 0)
+                self.assertEqual(len(self.release["assets"]), 12)
+            return self.response(repo, endpoint, *args)
+        self.api.side_effect = response
+        self.publish()
+        self.assertEqual(peak, 4)
+        self.assertFalse(self.release["draft"])
 
     def test_version_tag_publishes_complete_fixed_id(self):
         self.publish()
@@ -224,7 +250,10 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             self.publish()
         self.assertTrue(self.release["draft"])
-        self.assertEqual(len(self.writes()), 2)
+        uploads = [c for c in self.writes() if c.args[1].startswith("https://uploads.")]
+        self.assertGreaterEqual(len(uploads), 1)
+        self.assertEqual(len({c.args[1] for c in uploads}), len(uploads))
+        self.images.assert_not_called()
         self.assertFalse(any("PATCH" in c.args or "DELETE" in c.args for c in self.writes()))
 
     def test_lost_publication_response_never_deletes_or_retries(self):
@@ -354,7 +383,7 @@ class RegistryTests(unittest.TestCase):
     def test_single_platform_indexes_are_verified_by_child_config(self):
         index = {"manifests": [{"digest": self.digest}]}
         image = {"config": {"digest": self.config}}
-        self.remote.side_effect = [index, image] * 8
+        self.remote.side_effect = lambda reference: image if "@" in reference else index
         result = self.publish()
         self.assertEqual(self.pushes(), [])
         self.assertEqual(result["core"]["digest"], "ghcr.io/minimax-ai/openagentcore/core@" + self.digest)
@@ -392,7 +421,26 @@ class RegistryTests(unittest.TestCase):
         self.run.side_effect = run
         with self.assertRaises(subprocess.CalledProcessError):
             self.publish()
-        self.assertEqual(len(self.pushes()), 1)
+        self.assertGreaterEqual(len(self.pushes()), 1)
+        self.assertEqual(len({command[-1] for command in self.pushes()}), len(self.pushes()))
+
+    def test_registry_pushes_overlap_after_all_preflight_checks(self):
+        barrier = threading.Barrier(4, timeout=5)
+        pushed = set()
+        lock = threading.Lock()
+        def remote(reference):
+            with lock:
+                return {"config": {"digest": self.config}} if reference in pushed else None
+        def run(command, **kwargs):
+            if command[1] == "push":
+                self.assertEqual(sum(c.args[0][1] == "load" for c in self.run.call_args_list), 4)
+                barrier.wait()
+                with lock:
+                    pushed.add(command[-1])
+        self.remote.side_effect = remote
+        self.run.side_effect = run
+        self.assertEqual(len(self.publish()), 4)
+        self.assertEqual(len(pushed), 4)
 
     def test_registry_auth_failure_is_not_missing_image(self):
         # Test the actual inspection function separately from the publication fixture.
