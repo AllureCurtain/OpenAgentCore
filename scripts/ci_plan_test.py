@@ -21,6 +21,11 @@ class SelectionTests(unittest.TestCase):
     def test_installer_does_not_download_a_browser_or_run_database_tests(self):
         self.assertEqual(self.jobs("deploy/install/install.py", "scripts/install-release.test.py"), {"hygiene", "distribution"})
 
+    def test_compose_templates_select_distribution_checks_without_image_builds(self):
+        for path in ("deploy/compose/compose.yaml", "deploy/compose/dokploy.toml"):
+            self.assertEqual(self.jobs(path), {"hygiene", "distribution"})
+            self.assertFalse(ci.select([path])["image"])
+
     def test_web_and_core_have_different_consumers(self):
         self.assertEqual(self.jobs("apps/web/src/app.tsx"), {"hygiene", "web", "web-acceptance"})
         plan = ci.select(["services/core/internal/store/sessions.go"])

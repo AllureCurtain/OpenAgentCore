@@ -163,7 +163,7 @@ The planner compares the PR event's tested merge commit with its verified first 
 | Group | Checks and consumers |
 | --- | --- |
 | `hygiene` | Names, repository links, bundled documentation integrity, and CI planner/gate tests; runs for every change |
-| `distribution` | Harness catalog and installer schema, install/apply/recovery/cleanup tests, release/download and bundle contracts, Go console tests and build; needs no pnpm install or browser |
+| `distribution` | Harness catalog and installer schema, install/apply/recovery/cleanup tests, Compose parsing and initialization fixtures, release/download and bundle contracts, Go console tests and build; needs Docker Compose for template parsing, no pnpm install or browser |
 | `backend` | Parallel parts, each with a dedicated PostgreSQL guard: `runtime` (sqlc freshness, Runtime/shared Go tests, Linux microsandbox helper, daemon build), `core` (standalone Core build, Core service and client tests) and three `store` shards of the serial Core persistence integration package |
 | `harness` | Claude SDK tests and packaging, MiniMax companion scripts |
 | `example` | Optional application typecheck, tests, build and isolated browser acceptance |

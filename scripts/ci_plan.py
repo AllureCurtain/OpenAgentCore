@@ -51,6 +51,7 @@ RULES = (
     (("packages/claude-sdk-adapter/", "packages/mcode-harness/"), WEB, ("harness", "native", "backend", "distribution")),
     (("packages/tsconfig/",), (".json",), NODE_JOBS),
     (("deploy/install/",), (".py", ".json", ".sh"), ("distribution",)),
+    (("deploy/compose/",), (".yaml", ".toml"), ("distribution",)),
     (("deploy/install-release.sh", "scripts/install-release.", "scripts/publish-core-release.",
       "scripts/core-distribution-manifest.", "scripts/build-core-distribution.sh", "scripts/config-reference.py",
       "scripts/build-web.sh"), SCRIPTS, ("distribution",)),
