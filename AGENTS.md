@@ -69,6 +69,7 @@ OpenAgentCore is pre-release. Replace superseded interfaces, execution paths and
 
 ## Working in this repository
 
+- For each new task, first check whether an existing idle Git worktree can be reused; create one only when needed, run `git pull --ff-only` on the base branch to get the latest code, and create a new feature branch before development.
 - [CONTRIBUTING.md](CONTRIBUTING.md): read before changing code. Documentation ownership, repository boundary, workflow, independent review, required checks and naming.
 - [Develop OpenAgentCore](docs/development.md): setup, the repository map, focused checks and [the guide for each extension boundary](docs/development.md#choose-an-extension-boundary).
 - [API index](docs/api/index.md): each route's caller and credential.
