@@ -240,7 +240,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3, 4]
     runs-on: ${{ vars.OAC_USE_GITHUB_RUNNERS == 'true' && 'ubuntu-22.04' || 'blacksmith-2vcpu-ubuntu-2204' }}
     timeout-minutes: 15
     steps:
@@ -253,7 +253,7 @@ jobs:
           make node-deps
           pnpm exec playwright install --with-deps chrome
       - name: Verify Web workflows against isolated fixtures
-        run: make check-web-acceptance OAC_WEB_TEST_SHARD=${{ matrix.shard }}/2
+        run: make check-web-acceptance OAC_WEB_TEST_SHARD=${{ matrix.shard }}/${{ strategy.job-total }}
       - name: Upload browser failure evidence
         if: failure()
         uses: actions/upload-artifact@v6
