@@ -85,6 +85,11 @@ jobs:
             core-go-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-backend-
             core-go-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/go.mod', '**/go.sum') }}-
       - uses: ./.github/actions/node
+        with:
+          lockfiles: |
+            apps/web/pnpm-lock.yaml
+            packages/agents-client/pnpm-lock.yaml
+            packages/claude-sdk-adapter/pnpm-lock.yaml
       - name: Install build prerequisites
         run: |
           sudo apt-get update

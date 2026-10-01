@@ -192,6 +192,10 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
       - uses: ./.github/actions/node
+        with:
+          lockfiles: |
+            packages/claude-sdk-adapter/pnpm-lock.yaml
+            packages/mcode-harness/package-lock.json
       - name: Test and package Harness adapters
         run: make check-claude-sdk check-mcode-harness
 
@@ -205,10 +209,14 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
       - uses: ./.github/actions/node
+        with:
+          lockfiles: |
+            example/parsar/pnpm-lock.yaml
+            packages/agents-client/pnpm-lock.yaml
       - name: Install dependencies and example acceptance browser
         run: |
-          make node-deps
-          pnpm exec playwright install --with-deps chrome
+          make example-deps
+          pnpm --filter @oac/parsar-example exec playwright install --with-deps chrome
       - name: Test and build optional example with browser acceptance
         run: make check-example
       - name: Upload browser failure evidence
@@ -233,6 +241,10 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
       - uses: ./.github/actions/node
+        with:
+          lockfiles: |
+            apps/web/pnpm-lock.yaml
+            packages/agents-client/pnpm-lock.yaml
       - name: Typecheck, test and build Web and clients
         run: make check-web-unit
 
@@ -246,6 +258,9 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
       - uses: ./.github/actions/node
+        with:
+          lockfiles: |
+            website/pnpm-lock.yaml
       - name: Build and test the website
         run: make check-website
 
@@ -263,10 +278,14 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
       - uses: ./.github/actions/node
+        with:
+          lockfiles: |
+            apps/web/pnpm-lock.yaml
+            packages/agents-client/pnpm-lock.yaml
       - name: Install dependencies and Web acceptance browser
         run: |
-          make node-deps
-          pnpm exec playwright install --with-deps chrome
+          make web-deps
+          pnpm --filter @oac/web exec playwright install --with-deps chrome
       - name: Verify Web workflows against isolated fixtures
         run: make check-web-acceptance OAC_WEB_TEST_SHARD=${{ matrix.shard }}/${{ strategy.job-total }}
       - name: Upload browser failure evidence
@@ -275,8 +294,8 @@ jobs:
         with:
           name: web-acceptance-${{ matrix.shard }}-${{ github.run_attempt }}
           path: |
-            playwright-report/
-            test-results/
+            apps/web/playwright-report/
+            apps/web/test-results/
           retention-days: 7
           compression-level: 0
           if-no-files-found: ignore

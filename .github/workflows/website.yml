@@ -11,9 +11,6 @@ on:
       - docs/**
       - contracts/**
       - docs.json
-      - package.json
-      - pnpm-lock.yaml
-      - pnpm-workspace.yaml
       - .github/actions/node/**
       - .github/workflows/website.yml
   # Changes under website/ are checked by core-check; documentation-only
@@ -49,6 +46,8 @@ jobs:
           # Full history gives each page its last-updated date.
           fetch-depth: 0
       - uses: ./.github/actions/node
+        with:
+          lockfiles: website/pnpm-lock.yaml
       - name: Read the Pages base path
         id: pages
         if: env.PUBLISH == 'true'

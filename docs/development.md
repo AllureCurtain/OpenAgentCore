@@ -18,7 +18,7 @@ cd ../openagentcore-change
 Install Go at the version in [go.mod](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/go.mod), Node 22.13 or newer, pnpm at the version in [package.json](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/package.json), and Python 3.9 or newer. The complete gate runs on Linux and needs a dedicated PostgreSQL database, OpenSSL development libraries for the microsandbox helper, pigz for distribution compression, and a Playwright browser. Provider and Runtime builds have additional prerequisites in their component guides.
 
 ```sh
-pnpm install --frozen-lockfile
+make node-deps
 python3 -m venv .venv
 .venv/bin/python -m pip install -r services/core/tests/requirements.txt
 .venv/bin/python - <<'PYTHON'
@@ -32,9 +32,15 @@ subprocess.check_call([
     "git+" + pin["repository"] + "@" + pin["commit"],
 ])
 PYTHON
-pnpm exec playwright install --with-deps chrome
+pnpm --filter @oac/web exec playwright install --with-deps chrome
 export OAC_TEST_OFFICIAL_SDK_PYTHON="$PWD/.venv/bin/python"
 ```
+
+### Node dependency boundaries
+
+Each pnpm module owns a `pnpm-lock.yaml` beside its `package.json`. Website and Claude SDK adapter are independent pnpm projects with their own workspace boundaries. The Web/example/client workspace uses `sharedWorkspaceLockfile: false`: it links declared workspace dependencies without sharing dependency resolution or a virtual store. Root scripts only orchestrate module commands and have no installed tool dependencies. Declare build and test tools in the module that imports or executes them. The MiniMax companion uses its own npm manifest and `package-lock.json` and is outside the pnpm workspace.
+
+Install one module with `pnpm --dir website install --frozen-lockfile`, or include its workspace dependencies with `pnpm --filter @oac/web... install --frozen-lockfile`. Add or update dependencies through the same package filter and commit that module's manifest and lockfile. `make node-deps` installs all pnpm modules for full local validation. Web and the example share `packages/agents-client` through explicit `workspace:*` dependencies; their checks install that client too. Component Make targets use filtered installs and checks. CI caches use only the job's dependency locks; the [CI selection policy](./maintainers.md#continuous-integration) owns which checks a change selects.
 
 Set `OAC_TEST_DATABASE_URL` privately to a dedicated PostgreSQL test database. Never point the test suite at an installation or product database. The [test database rules](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#test-database) list the required role permission.
 
