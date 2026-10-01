@@ -190,7 +190,7 @@ check-sandbox-provider-contract:
 
 .PHONY: check-docs check-ci
 check-docs:
-	PYTHONDONTWRITEBYTECODE=1 python3 scripts/core-distribution-manifest.test.py
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/core-distribution-manifest.test.py BundledDocsTests
 
 check-ci:
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s scripts -p 'ci_*test.py'
