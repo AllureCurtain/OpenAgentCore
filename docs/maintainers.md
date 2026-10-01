@@ -1,6 +1,8 @@
-# Build and release OpenAgentCore
+---
+title: "Build and release OpenAgentCore"
+---
 
-This guide is for maintainers who build and publish OpenAgentCore. To install Core and Web, use the [installation guide](getting-started/install.md). The rules the installer code follows are in [Installer design rules](../deploy/install/README.md); required checks are in [CONTRIBUTING](../CONTRIBUTING.md#required-checks).
+This guide is for maintainers who build and publish OpenAgentCore. To install Core and Web, use the [installation guide](./getting-started/install.md). The rules the installer code follows are in [Installer design rules](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/install/README.md); required checks are in [CONTRIBUTING](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks).
 
 ## Build a distribution
 
@@ -33,7 +35,7 @@ make build-core-distribution
 
 The build reuses the Core, Web, Runtime, SDK and helper builders. The manifest records the commit and source tree, image config and OCI manifest digests, the Runtime OCI manifest digest, the microsandbox runtime and firmware hashes, and the size and SHA-256 of every Runtime and node artifact; native installers carry only their SHA-256 in the [catalog](#native-installers). Output is the control archive and its `.sha256`, the optional offline archive, and the versioned Runtime, node and native installer assets. Nothing is published. Rebuilding into a directory that already holds this commit's distribution is refused.
 
-The control archive carries no Runtime image or node execution artifacts; the offline archive carries them. The [download contract](../deploy/install/README.md#download-contract) describes how nodes obtain them.
+The control archive carries no Runtime image or node execution artifacts; the offline archive carries them. The [download contract](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/install/README.md#download-contract) describes how nodes obtain them.
 
 A distribution carries the docs listed in `BUNDLED_DOCS` in `scripts/core-distribution-manifest.py`. Links between bundled docs stay relative; every other relative link is rewritten to the same file on GitHub at the bundle's commit. The build fails when a link or anchor does not resolve, and `make check-distribution` runs the same check on every tracked Markdown file outside `example/`. Update the list when you add or move a doc that the installer or its output refers to.
 
@@ -109,7 +111,7 @@ The helper is written to `~/.oac/build/microsandbox-provider/oac-microsandbox-pr
 
 `make build-core` builds `oac-core`, `oac-core-migrate`, `oac-core-device`, `oac-core-environment-key` and `oac-node` into `${OAC_DEV_HOME:-$HOME/.oac}/build/oac-core` (`OAC_DEV_CORE_BUILD_DIR` selects another absolute directory). The build copies only the source set listed in `scripts/build-core.sh` (the Core service, its contracts, the shared packages it needs and the root Go module files) into a temporary context and builds with CGO disabled, read-only modules and trimmed paths. It needs no Node, Docker or other application. When Core gains a shared dependency, add that package to the list; never copy the whole repository to make it compile.
 
-`make docker-build-core` builds the image `oac-core:dev` (`OAC_DEV_CORE_IMAGE` selects another name) from those five commands and the E2B helper. The base is the digest-pinned `debian:bookworm-slim` with CA certificates and the glibc runtime the helper needs; the default user is UID/GID 65532 and Core listens on `:8091`. The image is Linux amd64 only and is not pushed to a registry. Changes to the image or its build need `make check-core-container` in addition to the relevant source checks: it runs the official-client suite against the image with a read-only root filesystem and needs Linux Docker, a non-root user, and the [test database and pinned SDK](../services/core/README.md#official-client-verification) of the service checks (`OAC_TEST_DATABASE_URL` naming an `oac_*_tests` database with the migrations applied, and `OAC_TEST_OFFICIAL_SDK_PYTHON`).
+`make docker-build-core` builds the image `oac-core:dev` (`OAC_DEV_CORE_IMAGE` selects another name) from those five commands and the E2B helper. The base is the digest-pinned `debian:bookworm-slim` with CA certificates and the glibc runtime the helper needs; the default user is UID/GID 65532 and Core listens on `:8091`. The image is Linux amd64 only and is not pushed to a registry. Changes to the image or its build need `make check-core-container` in addition to the relevant source checks: it runs the official-client suite against the image with a read-only root filesystem and needs Linux Docker, a non-root user, and the [test database and pinned SDK](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/services/core/README.md#official-client-verification) of the service checks (`OAC_TEST_DATABASE_URL` naming an `oac_*_tests` database with the migrations applied, and `OAC_TEST_OFFICIAL_SDK_PYTHON`).
 
 ## Publish a version
 
@@ -124,7 +126,7 @@ Tags use `vMAJOR.MINOR.PATCH`, optionally with a prerelease suffix such as `-rc.
 
 The workflow runs `check` on the tagged commit, including the full local gate, official-client and image acceptance, and the native matrix with its packaging artifacts enabled. `build` starts after `check` succeeds and reuses those native artifacts. `build` prepares the pinned Runtime inputs, assembles the native catalog and builds the distribution with the offline archive, and adds `deploy/install-release.sh` as `install.sh` with its checksum. The `release` job runs only after `check` and `build` succeed. It is the only job with `contents: write`. It verifies the archive checksums and the native installer checksums against the catalog, resolves the repository's current name from GitHub before any write (Actions can keep an old name after a rename), refuses an existing Release or draft for the tag, uploads everything to a new draft on `uploads.github.com` bound to that draft's ID without retrying failed uploads, confirms the tag still points at the built commit, and publishes that draft by its ID. Images ship as archives; no registry is pushed. Downloads are anonymous.
 
-`install.sh` resolves the latest stable release once, or the release named by `--version`, verifies the control archive and runs that bundle's installer; the [installation guide](getting-started/install.md#install) covers its use.
+`install.sh` resolves the latest stable release once, or the release named by `--version`, verifies the control archive and runs that bundle's installer; the [installation guide](./getting-started/install.md#install) covers its use.
 
 Go check and build jobs share Go module and compiler-cache directories under `~/.oac/cache/`, keyed by runner OS and architecture, all Go module files, the check/build partition and the commit. Partitioned keys prevent concurrent jobs from saving different compiler subsets under one key. Release builds can seed their cache from backend checks as well as earlier release builds. An older cache only seeds downloads and compilation; every check still runs. New keys are saved only after a successful job.
 
