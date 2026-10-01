@@ -15,8 +15,9 @@ class SelectionTests(unittest.TestCase):
         return set(ci.select(paths)["jobs"])
 
     def test_documents_only_need_repository_integrity(self):
-        for path in ("docs/maintainers.md", "README.md", "contracts/agents-api/admin-api.md", "docs/assets/logo.svg"):
-            self.assertEqual(self.jobs(path), {"hygiene"})
+        for path in ("docs/maintainers.md", "contracts/agents-api/admin-api.md", "docs/assets/logo.svg"):
+            self.assertEqual(self.jobs(path), {"hygiene", "website"})
+        self.assertEqual(self.jobs("README.md"), {"hygiene"})
 
     def test_installer_does_not_download_a_browser_or_run_database_tests(self):
         self.assertEqual(self.jobs("deploy/install/install.py", "scripts/install-release.test.py"), {"hygiene", "distribution"})
@@ -76,7 +77,7 @@ class SelectionTests(unittest.TestCase):
                 self.assertTrue({"backend", "api", "distribution"} <= self.jobs(path))
 
     def test_shared_inputs_planner_and_empty_diffs_are_full(self):
-        for paths in ([], ["Makefile"], [".github/workflows/new.yml"],
+        for paths in (["Makefile"], [".github/workflows/new.yml"],
                       [".github/actions/new/action.yml"], [".github/workflows/check.yml"], [".github/workflows/release.yml"], ["scripts/ci_plan.py"], ["../outside"], ["/outside"]):
             self.assertEqual(set(ci.select(paths)["jobs"]), set(ci.JOBS))
             self.assertTrue(ci.select(paths)["image"])
@@ -85,7 +86,7 @@ class SelectionTests(unittest.TestCase):
         for workflow, selected in {
             "ci-review": {"hygiene", "lint"},
             "actionlint": {"hygiene", "lint"},
-            "website": {"hygiene", "lint"},
+            "website": {"hygiene", "website", "lint"},
             "native": {"hygiene", "native", "lint"},
             "api-acceptance": {"hygiene", "api", "lint"},
         }.items():
@@ -100,7 +101,7 @@ class SelectionTests(unittest.TestCase):
         consumers = {name for name, body in re.findall(
             r"^  ([a-z-]+):\n(.*?)(?=^  [a-z-]+:|\Z)", workflow, re.M | re.S)
             if "uses: ./.github/actions/node" in body}
-        for name, filename in (("api", "api-acceptance"), ("native", "native")):
+        for name, filename in (("api", "api-acceptance"), ("native", "native"), ("website", "website")):
             if "uses: ./.github/actions/node" in (root / f".github/workflows/{filename}.yml").read_text():
                 consumers.add(name)
         self.assertEqual(self.jobs(".github/actions/node/action.yml"), consumers | {"hygiene", "lint"})
@@ -158,13 +159,13 @@ class SelectionTests(unittest.TestCase):
 
     def test_mixed_changes_accumulate(self):
         self.assertEqual(self.jobs("docs/maintainers.md", "deploy/install/install.py", "apps/web/src/app.tsx"),
-                         {"hygiene", "distribution", "web", "web-acceptance"})
+                         {"hygiene", "distribution", "web", "web-acceptance", "website"})
 
     def test_installer_pr_300_replay(self):
         self.assertEqual(self.jobs(
             "deploy/install-release.sh", "deploy/install/README.md", "deploy/install/install.py",
             "deploy/install/install_display.py", "deploy/install/test_install.py", "deploy/install/test_install_output.py",
-            "docs/getting-started/install.md", "scripts/install-release.test.py"), {"hygiene", "distribution"})
+            "docs/getting-started/install.md", "scripts/install-release.test.py"), {"hygiene", "distribution", "website"})
 
     def test_workflow_graph_cannot_silently_omit_or_add_a_gate_dependency(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/check.yml").read_text().split("jobs:\n", 1)[1]
@@ -243,7 +244,7 @@ class GitDiffTests(unittest.TestCase):
                 paths = ci.changed_paths(base, "HEAD")
                 self.assertEqual(set(paths), {"docs/old.md", "services/core/deleted.go", "apps/web/renamed\nwith space.ts"})
                 plan = ci.event_plan("pull_request", {"pull_request": {"base": {"sha": base}, "head": {"sha": head}}})
-                self.assertEqual(set(plan["jobs"]), {"hygiene", "backend", "api", "web", "web-acceptance"})
+                self.assertEqual(set(plan["jobs"]), {"hygiene", "backend", "api", "web", "web-acceptance", "website"})
                 (clone / "old.md").write_text("untracked content cannot change the diff\n")
                 self.assertEqual(paths, ci.changed_paths(base, "HEAD"))
             finally:
@@ -311,14 +312,14 @@ class DocumentationPushTests(unittest.TestCase):
 
     def test_doc_site_configuration_and_docs_only_push_skip_product_checks(self):
         paths = ["docs.json", ".mintignore", "docs/getting-started/index.md", "README.md"]
-        self.assertEqual(set(ci.select(paths)["jobs"]), {"hygiene"})
+        self.assertEqual(set(ci.select(paths)["jobs"]), {"hygiene", "website"})
         plan, diff = self.plan(paths)
-        self.assertEqual(set(plan["jobs"]), {"hygiene"})
+        self.assertEqual(set(plan["jobs"]), {"hygiene", "website"})
         diff.assert_called_once_with(self.before, self.after)
 
     def test_generated_documentation_keeps_freshness_checks(self):
         plan, _ = self.plan(["docs/configuration.md", "contracts/agents-api/harness-catalog.md"])
-        self.assertEqual(set(plan["jobs"]), {"hygiene", "distribution"})
+        self.assertEqual(set(plan["jobs"]), {"hygiene", "distribution", "website"})
 
     def test_main_pushes_use_the_same_directory_suffix_rules_as_prs(self):
         for paths in (["README.md", "services/core/cmd/server/main.go"], ["new.md"], [],
@@ -353,14 +354,14 @@ class DocumentationPushTests(unittest.TestCase):
             try:
                 os.chdir(repo)
                 event = self.event | {"before": before, "after": docs_head}
-                self.assertEqual(ci.event_plan("push", event)["jobs"], ["hygiene"])
+                self.assertEqual(ci.event_plan("push", event)["jobs"], ["hygiene", "website"])
                 (repo / "services/core").mkdir(parents=True)
                 (repo / "services/core/code.go").write_text("package example\n")
                 git("add", "."); git("commit", "-m", "code")
                 (repo / "README.md").write_text("updated\n")
                 git("add", "."); git("commit", "-m", "docs again")
                 event["after"] = git("rev-parse", "HEAD")
-                self.assertEqual(set(ci.event_plan("push", event)["jobs"]), {"hygiene", "backend", "api"})
+                self.assertEqual(set(ci.event_plan("push", event)["jobs"]), {"hygiene", "website", "backend", "api"})
                 clone = Path(tmp) / "shallow"
                 subprocess.run(["git", "clone", "--depth=2", repo.as_uri(), str(clone)], check=True, capture_output=True)
                 os.chdir(clone)

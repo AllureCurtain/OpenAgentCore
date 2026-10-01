@@ -9,6 +9,10 @@ on:
         description: Full source commit SHA to build
         required: true
         type: string
+      force-checks:
+        description: Execute the full gate without reusing successful checks
+        default: false
+        type: boolean
       offline:
         description: Also create the full offline archive
         default: true
@@ -20,6 +24,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  pages: read
 
 concurrency:
   group: core-release-${{ github.event_name == 'push' && github.ref || inputs.ref }}
@@ -27,10 +33,16 @@ concurrency:
 
 jobs:
   check:
+    permissions:
+      contents: read
+      actions: read
+      pages: write
+      id-token: write
     uses: ./.github/workflows/check.yml
     with:
       ref: ${{ inputs.ref || github.sha }}
       native-artifacts: true
+      force: ${{ inputs.force-checks || false }}
 
   build:
     needs: check
@@ -109,6 +121,8 @@ jobs:
           bash scripts/prepare-release-runtimes.sh
       - uses: actions/download-artifact@v6
         with:
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.check.outputs.native-run-id }}
           pattern: oac-native-installer-*
           merge-multiple: true
           path: ${{ runner.temp }}/native-artifacts

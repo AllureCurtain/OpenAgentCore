@@ -11,21 +11,38 @@ on:
         description: Retain native installers for a release build
         type: boolean
         default: false
+      force:
+        description: Execute checks even when matching success evidence exists
+        type: boolean
+        default: false
+    outputs:
+      native-run-id:
+        description: Run containing the verified native installers
+        value: ${{ jobs.check.outputs.native-run-id }}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Execute the full gate without reusing results
+        type: boolean
+        default: true
   push:
     branches: [main]
   pull_request:
 
 permissions:
   contents: read
+  actions: read
+  pages: read
 
 concurrency:
   group: core-check-${{ github.workflow }}-${{ inputs.ref && github.run_id || github.ref }}
-  cancel-in-progress: true
+  # Finish main runs so their evidence and Pages deployment remain usable.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   plan:
     runs-on: ${{ vars.OAC_USE_GITHUB_RUNNERS == 'true' && 'ubuntu-22.04' || 'blacksmith-2vcpu-ubuntu-2204' }}
-    timeout-minutes: 5
+    timeout-minutes: 15
     outputs:
       plan: ${{ steps.select.outputs.plan }}
       jobs: ${{ steps.select.outputs.jobs }}
@@ -34,11 +51,17 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.ref || github.sha }}
-          fetch-depth: 2
+          fetch-depth: 0
+          persist-credentials: false
       - name: Select checks from the integrated change
         id: select
         env:
           REQUESTED_REF: ${{ inputs.ref }}
+          GH_TOKEN: ${{ github.token }}
+          CI_REUSE: 'true'
+          CI_FORCE: ${{ inputs.force || false }}
+          CI_NATIVE_ARTIFACTS: ${{ inputs.native-artifacts || false }}
+          OAC_USE_GITHUB_RUNNERS: ${{ vars.OAC_USE_GITHUB_RUNNERS }}
         run: python3 scripts/ci_plan.py plan
 
   hygiene:
@@ -270,22 +293,18 @@ jobs:
   website:
     needs: plan
     if: needs.plan.result == 'success' && contains(fromJSON(needs.plan.outputs.jobs || '[]'), 'website')
-    runs-on: ${{ vars.OAC_USE_GITHUB_RUNNERS == 'true' && 'ubuntu-22.04' || 'blacksmith-2vcpu-ubuntu-2204' }}
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ inputs.ref || github.sha }}
-      - uses: ./.github/actions/node
-        with:
-          lockfiles: |
-            website/pnpm-lock.yaml
-      - name: Build and test the website
-        run: make check-website
+    uses: ./.github/workflows/website.yml
+    with:
+      ref: ${{ inputs.ref || github.sha }}
+      publish: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && !inputs.ref }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
 
   web-acceptance:
     needs: [plan, web]
-    if: needs.web.result == 'success' && needs.plan.result == 'success' && contains(fromJSON(needs.plan.outputs.jobs || '[]'), 'web-acceptance')
+    if: always() && !cancelled() && needs.plan.result == 'success' && (needs.web.result == 'success' || fromJSON(needs.plan.outputs.plan).reused.web != null) && contains(fromJSON(needs.plan.outputs.jobs || '[]'), 'web-acceptance')
     strategy:
       fail-fast: false
       matrix:
@@ -333,7 +352,7 @@ jobs:
     uses: ./.github/workflows/native.yml
     with:
       ref: ${{ inputs.ref || github.sha }}
-      upload-artifacts: ${{ inputs.native-artifacts || false }}
+      upload-artifacts: ${{ inputs.native-artifacts || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
 
   lint:
     needs: plan
@@ -344,6 +363,8 @@ jobs:
 
   # Always report the required check, even when planning or a dependency fails.
   check:
+    outputs:
+      native-run-id: ${{ steps.gate.outputs.native-run-id }}
     if: always()
     needs: [plan, hygiene, distribution, compose, backend, harness, example, web, web-acceptance, website, api, native, lint]
     runs-on: ${{ vars.OAC_USE_GITHUB_RUNNERS == 'true' && 'ubuntu-22.04' || 'blacksmith-2vcpu-ubuntu-2204' }}
@@ -353,7 +374,18 @@ jobs:
         with:
           ref: ${{ inputs.ref || github.sha }}
       - name: Require every selected check to succeed
+        id: gate
         env:
+          GH_TOKEN: ${{ github.token }}
+          CI_NATIVE_ARTIFACTS: ${{ inputs.native-artifacts || false }}
+          OAC_USE_GITHUB_RUNNERS: ${{ vars.OAC_USE_GITHUB_RUNNERS }}
           PLAN: ${{ needs.plan.outputs.plan }}
           RESULTS: ${{ toJSON(needs) }}
         run: python3 scripts/ci_plan.py gate
+      - name: Retain verified check evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-evidence-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-evidence/evidence.json
+          retention-days: 2
+          if-no-files-found: error

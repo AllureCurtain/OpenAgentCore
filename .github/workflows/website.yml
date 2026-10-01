@@ -1,34 +1,23 @@
-# Publishes the website (landing page and documentation) to GitHub Pages from
-# main, and builds it for documentation-only pull requests. The website reads the
-# existing docs/, contracts/ and docs.json in place; see website/README.md.
+# Builds and tests the website once for core-check; main also deploys that artifact.
 name: website
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - website/**
-      - docs/**
-      - contracts/**
-      - docs.json
-      - .github/actions/node/**
-      - .github/workflows/website.yml
-  # Changes under website/ are checked by core-check; documentation-only
-  # changes build the site here so broken links surface before merge.
-  pull_request:
-    paths:
-      - docs/**
-      - contracts/**
-      - docs.json
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+      publish:
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: website-${{ github.ref }}
+  group: website-${{ github.run_id }}
   # Never cancel a run that may be deploying main.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -39,10 +28,12 @@ jobs:
       # configure-pages reads the site's base path.
       pages: read
     env:
-      PUBLISH: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' }}
+      PUBLISH: ${{ inputs.publish }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
           # Full history gives each page its last-updated date.
           fetch-depth: 0
       - uses: ./.github/actions/node
@@ -64,7 +55,7 @@ jobs:
 
   deploy:
     needs: build
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    if: inputs.publish
     runs-on: ${{ vars.OAC_USE_GITHUB_RUNNERS == 'true' && 'ubuntu-24.04' || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 10
     permissions:

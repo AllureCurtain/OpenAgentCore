@@ -19,9 +19,12 @@ CI_INPUTS = {
     ".github/workflows/native.yml": ("native", "lint"),
     ".github/workflows/actionlint.yml": ("lint",),
     ".github/workflows/ci-review.yml": ("lint",),
-    ".github/workflows/website.yml": ("lint",),
+    ".github/workflows/website.yml": ("website", "lint"),
+    ".github/actionlint.yaml": ("lint",),
     ".github/actions/node/action.yml": (*NODE_JOBS, "lint"),
     "scripts/ci_plan.py": JOBS,
+    "scripts/ci_reuse.py": JOBS,
+    "scripts/ci_reuse_test.py": ("hygiene",),
     "scripts/ci_plan_test.py": ("hygiene",),
     "scripts/ci_metrics.py": ("hygiene",),
     "scripts/ci_metrics_test.py": ("hygiene",),
@@ -39,6 +42,7 @@ DEPENDENCY_INPUTS = {
     "packages/agents-client/package.json": ("web", "web-acceptance", "example"),
     "packages/claude-sdk-adapter/pnpm-lock.yaml": ("harness", "native", "distribution"),
     "packages/claude-sdk-adapter/package.json": ("harness", "native", "distribution"),
+    "docs.json": ("website",),
     "tsconfig.base.json": ("web", "web-acceptance", "example"),
 }
 # Each rule requires BOTH a path prefix and a file suffix. Rules accumulate
@@ -51,6 +55,7 @@ RULES = (
     (("apps/web/",), WEB, ("web", "web-acceptance")),
     (("services/web/",), (*GO, "Dockerfile"), ("distribution", "web", "web-acceptance")),
     (("example/",), WEB, ("example",)),
+    (("docs/", "contracts/"), (".md", ".svg", ".png", ".jpg", ".jpeg", ".webp"), ("website",)),
     (("website/",), (*WEB, ".vue", ".md"), ("website",)),
     (("services/core/",), CORE, ("backend", "api")),
     (("services/core/internal/nativeinstaller/",), GO, ("native", "distribution")),
@@ -112,7 +117,7 @@ def full(reason):
 
 def select(paths):
     if not paths:
-        return full("Empty diff; run the full gate")
+        return {"version": 1, "jobs": ["hygiene"], "image": False, "reasons": ["Verified empty diff"]}
     jobs = {"hygiene"}
     image = False
     reasons = []
@@ -199,6 +204,13 @@ def validate_plan(plan):
         raise ValueError("Invalid selected jobs")
     if plan["image"] and "api" not in selected:
         raise ValueError("Image checks require API acceptance")
+    if "execute" in plan or "reused" in plan:
+        execute, reused = plan.get("execute"), plan.get("reused")
+        if (not isinstance(execute, list) or any(not isinstance(j, str) for j in execute)
+                or len(execute) != len(set(execute)) or not isinstance(reused, dict)
+                or set(execute) & set(reused) or set(execute) | set(reused) != set(selected)
+                or "hygiene" not in execute):
+            raise ValueError("Invalid execution/reuse partition")
     return set(selected)
 
 
@@ -206,7 +218,8 @@ def check_results(plan, needs):
     selected = validate_plan(plan)
     if set(needs) != set(JOBS) | {"plan"} or needs["plan"].get("result") != "success":
         raise ValueError("Missing jobs or unsuccessful plan")
-    failed = [job for job in JOBS if needs[job].get("result") != ("success" if job in selected else "skipped")]
+    execute = set(plan.get("execute", selected))
+    failed = [job for job in JOBS if needs[job].get("result") != ("success" if job in execute else "skipped")]
     if failed:
         raise ValueError("Check results do not match the plan: " + ", ".join(failed))
 
@@ -220,8 +233,14 @@ def main():
     sub.add_parser("gate")
     args = parser.parse_args()
     if args.command == "gate":
-        check_results(json.loads(os.environ["PLAN"]), json.loads(os.environ["RESULTS"]))
-        print("All checks selected by the plan passed.")
+        plan = json.loads(os.environ["PLAN"])
+        check_results(plan, json.loads(os.environ["RESULTS"]))
+        if "execute" in plan:
+            from ci_reuse import Evidence
+            evidence = Evidence()
+            evidence.verify(plan)
+            evidence.record(plan)
+        print("All selected checks passed or have verified successful evidence.")
         return
     if args.base:
         plan = select(changed_paths(args.base, args.head))
@@ -231,11 +250,15 @@ def main():
         except (OSError, ValueError, KeyError):
             event = {}
         plan = event_plan(os.environ.get("GITHUB_EVENT_NAME"), event, os.environ.get("REQUESTED_REF", ""))
+    if os.environ.get("CI_REUSE") == "true" and not args.base:
+        from ci_reuse import Evidence
+        plan = Evidence().plan(plan)
+    validate_plan(plan)
     print(json.dumps(plan, indent=2))
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a") as f:
             f.write("plan=" + json.dumps(plan, separators=(",", ":")) + "\n")
-            f.write("jobs=" + json.dumps(plan["jobs"]) + "\n")
+            f.write("jobs=" + json.dumps(plan.get("execute", plan["jobs"])) + "\n")
             f.write("image=" + json.dumps(plan["image"]) + "\n")
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with open(summary, "a") as f:
