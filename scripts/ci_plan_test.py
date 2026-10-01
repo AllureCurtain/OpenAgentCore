@@ -85,6 +85,7 @@ class SelectionTests(unittest.TestCase):
         for workflow, selected in {
             "ci-review": {"hygiene", "lint"},
             "actionlint": {"hygiene", "lint"},
+            "website": {"hygiene", "lint"},
             "native": {"hygiene", "native", "lint"},
             "api-acceptance": {"hygiene", "api", "lint"},
         }.items():
@@ -111,7 +112,7 @@ class SelectionTests(unittest.TestCase):
                 self.assertTrue(ci.select([path])["image"])
         for path in ("package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc", "packages/tsconfig/base.json"):
             with self.subTest(path=path):
-                self.assertEqual(self.jobs(path), {"hygiene", "harness", "example", "web", "web-acceptance", "native"})
+                self.assertEqual(self.jobs(path), {"hygiene", "harness", "example", "web", "web-acceptance", "website", "native"})
                 self.assertFalse(ci.select([path])["image"])
         self.assertEqual(self.jobs("tsconfig.base.json"), {"hygiene", "example", "web", "web-acceptance"})
 

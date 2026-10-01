@@ -100,7 +100,7 @@ check-claude-sdk: node-deps
 	pnpm --filter @oac/claude-sdk-adapter test
 	$(MAKE) build-claude-sdk-runtime
 
-.PHONY: check-web-unit check-web-acceptance
+.PHONY: check-web-unit check-web-acceptance check-website
 check-web: override OAC_WEB_TEST_SHARD :=
 check-web: check-web-unit check-web-acceptance
 
@@ -108,6 +108,11 @@ check-web-unit: node-deps
 	pnpm typecheck
 	pnpm test:web
 	pnpm --filter @oac/web build
+
+# The website build also checks every published documentation link.
+check-website: node-deps
+	pnpm --filter @oac/website build
+	pnpm --filter @oac/website test
 
 # CI shards run in separate jobs, each with its own fixture and Web server.
 # An unset shard keeps the complete local make check gate.
