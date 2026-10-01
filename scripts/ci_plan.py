@@ -8,8 +8,8 @@ import re
 from pathlib import Path, PurePosixPath
 import subprocess
 
-JOBS = ("hygiene", "distribution", "backend", "harness", "example", "web", "web-acceptance", "api", "native", "lint")
-NODE_JOBS = ("harness", "example", "web", "web-acceptance", "native")
+JOBS = ("hygiene", "distribution", "backend", "harness", "example", "web", "web-acceptance", "website", "api", "native", "lint")
+NODE_JOBS = ("harness", "example", "web", "web-acceptance", "website", "native")
 GO_JOBS = ("distribution", "backend", "api", "native")
 # Exact file matches keep new workflows/actions conservative until classified.
 CI_INPUTS = {
@@ -19,6 +19,7 @@ CI_INPUTS = {
     ".github/workflows/native.yml": ("native", "lint"),
     ".github/workflows/actionlint.yml": ("lint",),
     ".github/workflows/ci-review.yml": ("lint",),
+    ".github/workflows/website.yml": ("lint",),
     ".github/actions/node/action.yml": (*NODE_JOBS, "lint"),
     "scripts/ci_plan.py": JOBS,
     "scripts/ci_plan_test.py": ("hygiene",),
@@ -40,6 +41,7 @@ RULES = (
     (("apps/web/", "playwright.config.ts"), WEB, ("web", "web-acceptance")),
     (("services/web/",), (*GO, "Dockerfile"), ("distribution", "web", "web-acceptance")),
     (("example/",), WEB, ("example",)),
+    (("website/",), (*WEB, ".vue", ".md"), ("website",)),
     (("services/core/",), CORE, ("backend", "api")),
     (("services/core/internal/nativeinstaller/",), GO, ("native", "distribution")),
     (("services/core/deploy/", "services/core/tools/"), CORE, ("distribution",)),
