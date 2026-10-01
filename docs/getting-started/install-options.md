@@ -21,7 +21,6 @@ Use the self-contained [Compose template](https://github.com/MiniMax-AI/OpenAgen
 For a local trial, download `compose.yaml` and the [local port override](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/local.yaml) into one directory, then run:
 
 ```sh
-export OAC_PUBLIC_URL=http://localhost:8080
 docker compose -f compose.yaml -f local.yaml up -d --wait --wait-timeout 900
 docker compose -f compose.yaml run --rm credentials
 ```
@@ -29,6 +28,8 @@ docker compose -f compose.yaml run --rm credentials
 The `credentials` command prints the generated Core key to your terminal without storing it in container logs. Open `http://localhost:8080` and use that key to sign in. All installation secrets are generated automatically; keep the same Compose project and its volumes when restarting.
 
 The first initialization downloads and verifies the release's approximately 385 MB control archive, retaining only the small node installation metadata. Later starts verify the saved files without downloading again. Image downloads are additional. An interrupted first initialization can be rerun; an existing database with missing installation secrets is refused.
+
+You can deploy before choosing a domain: leave `OAC_PUBLIC_URL` unset or empty, then follow [Compose configuration](../configuration.md#compose-installations) to set it and redeploy once the platform's domain is ready. The initial localhost origin allows services to start; Web accepts the configured host only, so platform-domain access becomes available after that redeployment.
 
 ### Dokploy
 

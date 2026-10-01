@@ -21,10 +21,18 @@ COMPOSE = ROOT / 'deploy/compose/compose.yaml'
 
 class ComposeTests(unittest.TestCase):
     @classmethod
+    def render(cls, public_url=None):
+        env = dict(os.environ)
+        env.pop('OAC_PUBLIC_URL', None)
+        if public_url is not None:
+            env['OAC_PUBLIC_URL'] = public_url
+        return json.loads(subprocess.check_output(
+            ['docker', 'compose', '--env-file', os.devnull, '-f', str(COMPOSE),
+             '--profile', 'tools', 'config', '--format', 'json'], env=env))
+
+    @classmethod
     def setUpClass(cls):
-        env = {**os.environ, 'OAC_PUBLIC_URL': 'http://localhost:8080'}
-        cls.compose = json.loads(subprocess.check_output(
-            ['docker', 'compose', '-f', str(COMPOSE), '--profile', 'tools', 'config', '--format', 'json'], env=env))
+        cls.compose = cls.render()
 
     def setUp(self):
         base = Path.home() / '.oac/tests/compose'
@@ -132,6 +140,16 @@ class ComposeTests(unittest.TestCase):
         schema = json.loads((ROOT / 'deploy/install/config.schema.json').read_text())
         harnesses = schema['properties']['core']['properties']['harnesses']['default']
         self.assertEqual(services['core']['environment']['OAC_HARNESSES'].split(','), harnesses)
+
+    def test_public_url_can_be_configured_after_initial_startup(self):
+        for value in (None, '', 'https://oac.example.test', 'http://localhost:9080'):
+            with self.subTest(public_url=value):
+                configured = self.render(value)
+                expected = value or 'http://localhost:8080'
+                for name, setting in (('core', 'OAC_PUBLIC_URL'), ('migrate', 'OAC_PUBLIC_URL'),
+                                      ('web', 'OAC_WEB_ORIGIN')):
+                    self.assertEqual(configured['services'][name]['environment'][setting], expected)
+                self.assertEqual(configured['volumes'], self.compose['volumes'])
 
     def test_platform_network_injection_keeps_the_credentials_profile_valid(self):
         # Dokploy isolated deployments attach a project network to every service.

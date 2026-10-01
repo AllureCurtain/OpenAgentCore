@@ -1,5 +1,5 @@
 # OpenAgentCore v0.0.3. Images and installer payload are one matched release.
-# Set OAC_PUBLIC_URL to the HTTPS origin routed to gateway:8080 by your platform.
+# Set OAC_PUBLIC_URL to your platform's HTTPS origin when ready; startup defaults to localhost.
 x-ingress-image: &ingress-image ghcr.io/minimax-ai/openagentcore/ingress:v0.0.3@sha256:e485a8cae0b904389501f00bcee6a2c5b35be83412a9ff81a740f93b8cdbf326
 x-core: &core
   image: ghcr.io/minimax-ai/openagentcore/core:v0.0.3@sha256:6934a26d5cb7c878128ea8187ced446336345de7750c415be510740806663575
@@ -10,7 +10,7 @@ x-core: &core
   tmpfs: [/tmp:mode=1777]
   security_opt: [no-new-privileges:true]
   environment:
-    OAC_PUBLIC_URL: ${OAC_PUBLIC_URL:?Set the public HTTPS origin}
+    OAC_PUBLIC_URL: &public-url ${OAC_PUBLIC_URL:-http://localhost:8080}
     OAC_DATABASE_URL: postgres://agents_api@database:5432/agents_api?sslmode=disable
     OAC_DATABASE_PASSWORD_FILE: /run/database/password
     OAC_CREDENTIAL_KEY_FILE: /run/oac/credential.key
@@ -88,7 +88,7 @@ services:
     depends_on:
       init: {condition: service_completed_successfully}
     environment:
-      OAC_WEB_ORIGIN: ${OAC_PUBLIC_URL:?Set the public HTTPS origin}
+      OAC_WEB_ORIGIN: *public-url
       OAC_WEB_UPSTREAM: http://core:8091
       OAC_WEB_CORE_KEY_FILE: /run/oac/core.key
       OAC_WEB_NODE_PAYLOAD_DIR: /node-payload
