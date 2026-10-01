@@ -59,7 +59,7 @@ RULES = (
     (("scripts/build-agents-runtime.sh",), ("backend", "native", "distribution")),
     (("scripts/generate-harness-catalog", "scripts/harness-catalog/", "scripts/openapi-split/", "scripts/patch-agents-openapi.py",
       "scripts/extract-agents-api-upstream.py"), JOBS),
-    (("scripts/check-sqlc.py",), ("backend",)),
+    (("scripts/check-sqlc.py", "scripts/go-test-shard.py"), ("backend",)),
     (("scripts/check-names", "scripts/name-allowlist.json"), ("hygiene",)),
 )
 FULL_INPUTS = {"Makefile", ".gitignore", ".gitattributes", ".dockerignore"}
