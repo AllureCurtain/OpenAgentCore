@@ -2,7 +2,7 @@
 // an HTML page and a raw Markdown copy, legacy paths redirect, both landing
 // pages exist and llms.txt lists every page.
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { resolve } from 'node:path'
 import test from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -10,6 +10,8 @@ import { legacyRedirects, readDocsJson } from '../.vitepress/docs-nav.mts'
 
 const dist = fileURLToPath(new URL('../.vitepress/dist/', import.meta.url))
 const pages = readDocsJson().navigation.groups.flatMap((g) => g.pages)
+const basePath = new URL(process.env.WEBSITE_URL ?? 'http://localhost/').pathname
+const base = basePath.endsWith('/') ? basePath : `${basePath}/`
 
 function html(page) {
   return resolve(dist, `${page}.html`)
@@ -34,16 +36,32 @@ test('every documentation page has HTML and a Markdown copy', () => {
   }
 })
 
+test('generated navigation and assets stay under the site base and resolve to files', () => {
+  let checked = 0
+  for (const file of readdirSync(dist, { recursive: true }).filter((file) => file.endsWith('.html'))) {
+    const source = readFileSync(resolve(dist, file), 'utf8')
+    for (const [, href] of source.matchAll(/\b(?:href|src)="(\/[^"\s]*)"/g)) {
+      assert.ok(href.startsWith(base) && !href.startsWith('//'), `${file}: ${href} must start with ${base}`)
+      const path = decodeURI(href.split(/[?#]/)[0].slice(base.length))
+      const candidates = [resolve(dist, path), resolve(dist, `${path}.html`), resolve(dist, path, 'index.html')]
+      assert.ok(candidates.some((candidate) => existsSync(candidate) && statSync(candidate).isFile()), `${file}: ${href} must resolve to a generated file`)
+      checked++
+    }
+  }
+  assert.ok(checked > 0, 'generated pages must contain local navigation and assets')
+})
+
 test('legacy paths redirect', () => {
   for (const { from, to } of legacyRedirects()) {
     const source = readFileSync(resolve(dist, `${from}.html`), 'utf8')
-    assert.ok(source.includes(`url=`) && source.includes(to.replace(/^\//, '')), `${from} → ${to}`)
+    const target = `${base}${to.replace(/^\//, '')}`
+    assert.ok(source.includes(`content="0; url=${target}"`), `${from} → ${target}`)
   }
 })
 
 test('llms.txt lists every page', () => {
   const llms = readFileSync(resolve(dist, 'llms.txt'), 'utf8')
-  for (const page of pages) assert.ok(llms.includes(`${page}.md)`), `${page} in llms.txt`)
+  for (const page of pages) assert.ok(llms.includes(`](${base}${page}.md)`), `${page} in llms.txt uses ${base}`)
 })
 
 test('Mermaid fences become diagrams, not code blocks', () => {

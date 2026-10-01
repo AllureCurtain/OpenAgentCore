@@ -23,4 +23,8 @@ The landing page lives in `.vitepress/theme/`. `landing-content.ts` holds its En
 
 ## Publish
 
-`make check-website` builds and tests the site. `core-check` runs it for website, published documentation and dependency changes in pull requests. `.github/workflows/website.yml` builds and deploys main to GitHub Pages when site inputs change, and supports manual deployment. The publication build reads the main branch history and Pages configuration; PR builds validate changes before merge. A repository administrator enables Pages once: **Settings → Pages → Source: GitHub Actions**. The build reads the Pages base path, so the site works both at `https://<owner>.github.io/<repository>/` and on a custom domain set under **Settings → Pages → Custom domain**.
+`make check-website` builds and tests the site. core-check runs it for changes under `website/` and to Node dependencies; `.github/workflows/website.yml` runs it for documentation-only pull requests and deploys `main` to GitHub Pages. A repository administrator enables Pages once: **Settings → Pages → Source: GitHub Actions**.
+
+The publishing step reads `html_url` directly from the GitHub Pages API and passes it to the build as `WEBSITE_URL`. VitePress derives the base path from that URL, supporting both `https://<owner>.github.io/<repository>/` and a custom domain set under **Settings → Pages → Custom domain**. An empty or invalid URL stops the build. Local builds omit `WEBSITE_URL` to serve from `/`.
+
+Pull request checks build under the published `/OpenAgentCore/` path. Output tests verify that generated navigation, assets, redirects and `llms.txt` links use the configured path and that local HTML links resolve to generated files. To check a deployment path locally, run `WEBSITE_URL=https://example.com/OpenAgentCore/ make check-website`.
