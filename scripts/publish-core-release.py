@@ -8,6 +8,9 @@ import os
 import pathlib
 import re
 import subprocess
+import shutil
+import gzip
+import tempfile
 import tarfile
 from urllib.parse import quote
 
@@ -55,6 +58,101 @@ def verify_draft(release, tag, revision):
             or release["target_commitish"] != revision
             or type(release["id"]) is not int or release["id"] <= 0):
         raise ValueError("Release draft identity changed")
+
+
+IMAGE_NAMES = ("core", "web", "runtime", "ingress")
+
+
+def registry_manifest(reference):
+    result = subprocess.run(["docker", "manifest", "inspect", reference],
+                            text=True, capture_output=True)
+    if result.returncode:
+        # Authentication, transport and registry failures must not authorize a push.
+        if "manifest unknown" in result.stderr.lower() or "no such manifest:" in result.stderr.lower():
+            return None
+        raise RuntimeError("Cannot inspect registry image " + reference + ": " + result.stderr)
+    return json.loads(result.stdout)
+
+
+def registry_image(reference):
+    manifest = registry_manifest(reference)
+    selected = reference
+    if manifest is not None and "manifests" in manifest:
+        descriptors = manifest["manifests"]
+        if len(descriptors) != 1:
+            raise ValueError("Expected one Linux amd64 registry image: " + reference)
+        digest = descriptors[0]["digest"]
+        if not distribution.DIGEST.fullmatch(digest):
+            raise ValueError("Invalid registry image descriptor")
+        selected = reference.rsplit(":", 1)[0] + "@" + digest
+        manifest = registry_manifest(selected)
+        if manifest is None:
+            raise ValueError("Registry index refers to a missing image")
+    return manifest, selected
+
+
+def publish_images(assets, repository, revision, tag):
+    """Load the checked release archives; never rebuild or replace another image."""
+    image_tag = tag.replace("+", "_")
+    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}", image_tag):
+        raise ValueError("Release version exceeds the container tag format")
+    stem = "oac-" + revision + "-linux-amd64"
+    # Extract named regular members only, never archive-controlled paths.
+    with tempfile.TemporaryDirectory(prefix="oac-ghcr-") as directory:
+        directory = pathlib.Path(directory)
+        with tarfile.open(assets / (stem + ".tar.gz"), "r:gz") as archive:
+            manifest = json.load(archive.extractfile(stem + "/manifest.json"))
+            if manifest["source_commit"] != revision or manifest["platform"] != "linux/amd64":
+                raise ValueError("Registry images do not match the release")
+            for name in IMAGE_NAMES:
+                if name == "runtime":
+                    continue
+                member = archive.getmember(stem + "/images/" + name + ".tar")
+                if not member.isfile():
+                    raise ValueError("Expected a regular image archive")
+                with archive.extractfile(member) as source, (directory / (name + ".tar")).open("wb") as target:
+                    shutil.copyfileobj(source, target)
+        runtime = manifest["artifacts"]["images/runtime.tar.gz"]
+        filename = runtime["filename"]
+        if pathlib.Path(filename).name != filename:
+            raise ValueError("Invalid Runtime asset filename")
+        runtime_path = assets / filename
+        if runtime_path.is_symlink() or distribution.sha256(runtime_path) != runtime["sha256"]:
+            raise ValueError("Runtime image checksum mismatch")
+        with gzip.open(runtime_path, "rb") as source, (directory / "runtime.tar").open("wb") as target:
+            shutil.copyfileobj(source, target)
+        for name in IMAGE_NAMES:
+            expected = (manifest["images"][name], manifest["image_manifest_digests"][name])
+            if distribution.image_identities(directory / (name + ".tar"), expected[0]) != expected:
+                raise ValueError("Release image identity mismatch: " + name)
+        references = {}
+        # Validate every local image and every existing tag before the first push.
+        for name in IMAGE_NAMES:
+            path = directory / (name + ".tar")
+            subprocess.run(["docker", "load", "--input", str(path)], check=True)
+            config = manifest["images"][name]
+            local = distribution.resolve_image(config, manifest["image_manifest_digests"][name])
+            reference = "ghcr.io/" + repository.lower() + "/" + name + ":" + image_tag
+            remote, selected = registry_image(reference)
+            if remote is not None and remote.get("config", {}).get("digest") != config:
+                raise ValueError("Registry tag already names a different image: " + reference)
+            references[name] = (reference, config, local, remote)
+        result = {}
+        for name, (reference, config, local, remote) in references.items():
+            if remote is None:
+                subprocess.run(["docker", "tag", local, reference], check=True)
+                subprocess.run(["docker", "push", reference], check=True)
+            remote, selected = registry_image(reference)
+            if remote is None or remote.get("config", {}).get("digest") != config:
+                raise ValueError("Registry image verification failed: " + reference)
+            # Inspect the registry's descriptor, not the local Docker image ID.
+            details = json.loads(subprocess.check_output(
+                ["docker", "manifest", "inspect", "--verbose", selected], text=True))
+            digest = details["Descriptor"]["digest"]
+            if not distribution.DIGEST.fullmatch(digest):
+                raise ValueError("Invalid registry manifest digest")
+            result[name] = {"tag": reference, "digest": reference.rsplit(":", 1)[0] + "@" + digest}
+        return result
 
 
 def publish(assets, repository, revision, tag, mode):
@@ -136,6 +234,15 @@ def publish(assets, repository, revision, tag, mode):
         raise ValueError("Release asset inventory differs from the build")
     if mode == "draft":
         return
+    # GHCR is not transactional with Releases. Keep the Release a draft until
+    # every versioned image has been pushed and verified. Matching tags are reusable.
+    images = publish_images(assets, repository, revision, tag)
+    inventory = json.dumps({"source_commit": revision, "images": images}, indent=2) + "\n"
+    # Keep digest receipts in the Actions summary without changing release assets.
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+            summary.write("## GHCR images\n\n```json\n" + inventory + "```\n")
+    print(inventory)
     # Uploads can take minutes. Recheck immediately before the one publish request.
     verify_tag(repository, tag, revision)
     result = api(repository, endpoint, "--method", "PATCH", "-F", "draft=false")

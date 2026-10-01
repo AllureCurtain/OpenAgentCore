@@ -86,6 +86,11 @@ def built_image(metadata_file):
     # by its manifest digest; the other value never resolves to itself there.
     config = metadata.get("containerimage.config.digest")
     manifest = metadata.get("containerimage.digest", config)
+    print(resolve_image(config, manifest))
+
+
+def resolve_image(config, manifest):
+    """Resolve the archive identities in either supported Docker image store."""
     if not all(isinstance(value, str) and DIGEST.fullmatch(value) for value in (config, manifest)):
         raise ValueError("Build metadata lacks valid image digests")
     resolved = []
@@ -97,7 +102,7 @@ def built_image(metadata_file):
     if len(resolved) != 1:
         raise ValueError("The local image store does not identify the built image by exactly one of its digests")
     verify_image(resolved[0])
-    print(resolved[0])
+    return resolved[0]
 
 
 def image_identities(archive, build_id):
