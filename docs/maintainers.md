@@ -2,7 +2,7 @@
 title: "Build and release OpenAgentCore"
 ---
 
-This guide is for maintainers who build and publish OpenAgentCore. To install Core and Web, use the [installation guide](./getting-started/install.md). The rules the installer code follows are in [Installer design rules](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/install/README.md); required checks are in [CONTRIBUTING](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks).
+This guide is for maintainers who build and publish OpenAgentCore. To install Core and Web, use the [installation guide](./getting-started/install.md). The rules the installer code follows are in [Deployment](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/README.md) and [Node installer](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/node/README.md); required checks are in [CONTRIBUTING](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks).
 
 ## Build a distribution
 
@@ -35,7 +35,7 @@ make build-core-distribution
 
 The build reuses the Core, Web, Runtime, SDK and helper builders. The manifest records the commit and source tree, image config and OCI manifest digests, the Runtime OCI manifest digest, the microsandbox runtime and firmware hashes, and the size and SHA-256 of every Runtime and node artifact; native installers carry only their SHA-256 in the [catalog](#native-installers). Output is the control archive and its `.sha256`, the optional offline archive, and the versioned Runtime, node and native installer assets. Nothing is published. Rebuilding into a directory that already holds this commit's distribution is refused.
 
-The control archive carries no Runtime image or node execution artifacts; the offline archive carries them. The [download contract](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/install/README.md#download-contract) describes how nodes obtain them.
+The control archive carries no Runtime image or node execution artifacts; the offline archive carries them. The [download contract](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/node/README.md#download-contract) describes how nodes obtain them.
 
 A distribution carries the docs listed in `BUNDLED_DOCS` in `scripts/core-distribution-manifest.py`. Links between bundled docs stay relative; every other relative link is rewritten to the same file on GitHub at the bundle's commit. The build fails when a link or anchor does not resolve, and `make check-distribution` runs the same check on every tracked Markdown file outside `example/`. Update the list when you add or move a doc that the installer or its output refers to.
 

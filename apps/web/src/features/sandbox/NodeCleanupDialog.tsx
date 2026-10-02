@@ -19,7 +19,7 @@ export interface NodeCleanup {
 
 /**
  * After Remove: the command that removes the node's service and files from its
- * host (deploy/install/node_install.py `uninstall_system`).
+ * host (deploy/node/node_install.py `uninstall_system`).
  * The installer first confirms with Core, at the node's own address, that the
  * node is removed, which holds from the removal on. The command uses sudo unless the shell is already root. A node enrolled with an earlier address may find it gone; then
  * `--force` skips only that confirmation. Nothing deletes sandboxes, volumes or

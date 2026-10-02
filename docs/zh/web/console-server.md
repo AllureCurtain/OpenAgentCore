@@ -1,7 +1,7 @@
 ---
 title: "控制台服务器"
 source: docs/web/console-server.md
-source_hash: 297b6eb57f044c7494abba2b621beff939a98ab22b5ba190481b8e4ae352baba
+source_hash: 61ad8acb9905747f515aeb6956b086f80aef4cd953d600c07e1fbe28d4780ba9
 ---
 
 控制台服务器（`services/web`、`oac-web` 进程）提供构建后的控制台，使用 Core 密钥认证管理员，并将已登录浏览器的 `/core/v1` 请求携带该密钥转发到 Core。浏览器不持有 Core 密钥或任何 API 密钥。应用、节点和自托管执行器直接调用 Core；控制台不转发这些流量。
@@ -112,7 +112,7 @@ flowchart LR
 
 未设置 `OAC_WEB_INSTALLATION_SOCKET` 时（外部反向代理安装），`GET` 报告 `supported: false`，`POST` 返回 400 `domain_setup_unavailable`。安装程序不可达或响应无效时返回 502 `installation_unreachable`。
 
-System 页面仅提交一次主机名，在状态为 `checking` 或 `applying` 时每 2 秒轮询；安装程序要求时请求确认。设置期间，网络失败和 HTTP 502/503/504 响应不会停止轮询。30 秒内没有成功状态响应后，页面展示断连消息；下一次轮询成功即恢复。不重试写入。应用域名会重启控制台并结束全部会话；页面保留到新 HTTPS 地址的登录链接。只有 `ready` 状态确认 HTTPS；浏览器不探测新来源。安装程序负责证书、锁定与恢复（[托管 HTTPS](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/install/README.md#managed-https)）。
+System 页面仅提交一次主机名，在状态为 `checking` 或 `applying` 时每 2 秒轮询；安装程序要求时请求确认。设置期间，网络失败和 HTTP 502/503/504 响应不会停止轮询。30 秒内没有成功状态响应后，页面展示断连消息；下一次轮询成功即恢复。不重试写入。应用域名会重启控制台并结束全部会话；页面保留到新 HTTPS 地址的登录链接。只有 `ready` 状态确认 HTTPS；浏览器不探测新来源。安装程序负责证书、锁定与恢复（[托管 HTTPS](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/README.md#managed-https)）。
 
 安装程序在未配置公开 URL 时设置 `OAC_WEB_BOOTSTRAP=1`，让控制台也接受以字面 IP 地址访问的明文 HTTP 请求，并将 `http://<that address>` 视为来源，使运维人员能通过服务器 IP 登录。主机名仍必须符合 `OAC_WEB_ORIGIN`，因此 DNS 重绑定不能访问控制台。
 

@@ -100,7 +100,7 @@ if [[ "$(go env GOVERSION)" != "$required_go" ]]; then
 fi
 go run ./services/core/cmd/provider-artifacts
 for file in install_display.py node_output.py node_install.py provider_assets.py node_spec.py node_generations.py node_payload.py distribution.py; do
-  cp "deploy/install/$file" "$bundle/$file"
+  cp "deploy/node/$file" "$bundle/$file"
 done
 # Web owns the Standard sandbox sizes; the installer's first deployment uses this copy.
 cp apps/web/src/features/sandbox/standard-sizes.json "$bundle/standard-sizes.json"

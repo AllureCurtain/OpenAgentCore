@@ -169,7 +169,7 @@ def main():
         raise SystemExit("Stale Harness catalog projections; run make generate-harness-catalog:\n" + "\n".join(stale))
     providers = json.loads(subprocess.run(["go", "run", "./scripts/harness-catalog"], cwd=ROOT,
                                          text=True, check=True, capture_output=True).stdout)
-    projection(Path("deploy/install/harness_catalog.py"), render_installer(providers))
+    projection(Path("scripts/acceptance/harness_catalog.py"), render_installer(providers))
     if stale:
         raise SystemExit("Stale Harness catalog projections; run make generate-harness-catalog:\n" + "\n".join(stale))
 

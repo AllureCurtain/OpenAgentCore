@@ -19,7 +19,7 @@ import zipapp
 
 RUNTIME_ARCHIVE_SHA256 = "47c223e3ef5298abf05f47ed9f87981106e400d99bb3f1d042d4d6881346b18b"
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "deploy/install"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "deploy/node"))
 import provider_assets
 
 ARTIFACTS = {item["path"]: item["suffix"] for items in provider_assets.CATALOG.values() for item in items}

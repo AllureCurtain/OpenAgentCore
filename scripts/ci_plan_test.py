@@ -20,11 +20,11 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.jobs("README.md"), {"hygiene"})
 
     def test_installer_does_not_download_a_browser_or_run_database_tests(self):
-        self.assertEqual(self.jobs("deploy/install.sh", "deploy/install/node_payload.py"), {"hygiene", "distribution"})
+        self.assertEqual(self.jobs("deploy/install.sh", "deploy/node/node_payload.py"), {"hygiene", "distribution"})
 
     def test_compose_inputs_select_live_and_fixture_checks_without_image_builds(self):
         for path in ("deploy/compose/compose.yaml", "deploy/compose/ports.yaml", "deploy/compose/https.yaml", "deploy/compose/dokploy.toml",
-                     "scripts/compose-smoke.py", "scripts/render-compose.py", "deploy/install/test_compose.py"):
+                     "scripts/compose-smoke.py", "scripts/render-compose.py", "deploy/compose/test_compose.py"):
             self.assertEqual(self.jobs(path), {"hygiene", "distribution", "compose"})
             self.assertFalse(ci.select([path])["image"])
 
@@ -53,7 +53,7 @@ class SelectionTests(unittest.TestCase):
         spec.loader.exec_module(generator)
         with patch.object(generator, "go", side_effect=lambda source: source):
             outputs = generator.render(generator.load_catalog(generator.ROOT / generator.CATALOG))
-        for path in [*map(str, outputs), "deploy/install/harness_catalog.py", "docs/configuration.md",
+        for path in [*map(str, outputs), "scripts/acceptance/harness_catalog.py", "docs/configuration.md",
                      "docs/getting-started/install-options.md"]:
             with self.subTest(path=path):
                 self.assertIn("distribution", self.jobs(path))
@@ -163,8 +163,8 @@ class SelectionTests(unittest.TestCase):
 
     def test_installer_pr_300_replay(self):
         self.assertEqual(self.jobs(
-            "deploy/install.sh", "deploy/install/README.md", "deploy/install/node_install.py",
-            "deploy/install/install_display.py", "deploy/install/node_payload.py",
+            "deploy/install.sh", "deploy/README.md", "deploy/node/node_install.py",
+            "deploy/node/install_display.py", "deploy/node/node_payload.py",
             "docs/getting-started/install.md"), {"hygiene", "distribution", "website"})
 
     def test_workflow_graph_cannot_silently_omit_or_add_a_gate_dependency(self):
