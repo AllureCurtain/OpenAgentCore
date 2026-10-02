@@ -52,7 +52,9 @@ class PublicationTests(unittest.TestCase):
         self.context_repository = self.canonical_repository = "MiniMax-AI/OpenAgentCore"
         stack = contextlib.ExitStack()
         self.addCleanup(stack.close)
-        self.images = stack.enter_context(mock.patch.object(publisher, "publish_images", return_value={}))
+        self.images = stack.enter_context(mock.patch.object(publisher, "publish_images", return_value={
+            name: {"digest": "ghcr.io/minimax-ai/openagentcore/" + name + "@sha256:" + "ab" * 32}
+            for name in ("core", "web", "runtime", "ingress")}))
         self.api = stack.enter_context(mock.patch.object(publisher, "api", side_effect=self.response))
 
     def test_registry_failure_leaves_release_draft(self):
@@ -62,9 +64,11 @@ class PublicationTests(unittest.TestCase):
         self.assertTrue(self.release["draft"])
         self.assertFalse(any("PATCH" in call.args for call in self.writes()))
 
-    def test_draft_does_not_publish_images(self):
+    def test_draft_publishes_images_and_stays_unpublished(self):
         self.publish(tag="build-" + self.revision, mode="draft")
-        self.images.assert_not_called()
+        self.images.assert_called_once()
+        self.assertTrue(self.release["draft"])
+        self.assertEqual(len(self.release["assets"]), 16)
 
     def test_missing_native_asset_refuses_release_creation(self):
         (self.assets / f"oac-native-{self.revision}-windows-amd64.tar.gz").unlink()
@@ -135,7 +139,7 @@ class PublicationTests(unittest.TestCase):
                 return result
             if endpoint == "releases/7":
                 self.assertEqual(active, 0)
-                self.assertEqual(len(self.release["assets"]), 12)
+                self.assertIn(len(self.release["assets"]), (12, 16))
             return self.response(repo, endpoint, *args)
         self.api.side_effect = response
         self.publish()
@@ -146,7 +150,7 @@ class PublicationTests(unittest.TestCase):
         self.publish()
         self.assertFalse(self.release["draft"])
         self.assertFalse(self.release["prerelease"])
-        self.assertEqual(len(self.release["assets"]), 12)
+        self.assertEqual(len(self.release["assets"]), 16)
         self.assertEqual(self.api.call_args.args[1:],
                          ("releases/7", "--method", "PATCH", "-F", "draft=false"))
 

@@ -1,7 +1,7 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: afc0f02492f63e2032009fc7a79aa72051ca2c377d2e7788ef6f7d1d15f8b8de
+source_hash: eb30344d11d98506b56e62bf2fc668b37d4db050dfc7a0c02c486f4727d85874
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
@@ -112,22 +112,22 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 
 ## Compose 安装 {#compose-installations}
 
-[独立 Compose 模板](getting-started/install-options.md#docker-compose-and-hosting-platforms)使用其 Compose 定义和平台环境作为进程设置的来源。`OAC_PUBLIC_URL` 未设置或为空时，会选用 `http://localhost:8080`，从而允许在配置公共域名前启动。Core 和 Web 会收到同一个值。要允许公共访问，请将 `OAC_PUBLIC_URL` 设置为不带尾部斜杠的准确公共 HTTPS 源地址，并使用相同的项目和数据卷重新部署 Core 和 Web；更改环境变量需要重新创建容器，而不只是重启。请在添加节点或执行器之前配置公共源地址。平台负责 TLS，并将流量路由到 `gateway:8080`；Web 由安装程序管理的域设置不可用。
+发行版中的[独立 Compose 文件](getting-started/install-options.md#docker-compose-and-hosting-platforms)使用其 Compose 定义和平台环境作为进程设置的来源。`OAC_PUBLIC_URL` 未设置或为空时，会选用 `http://localhost:8080`，从而允许在配置公共域名前启动。Core 和 Web 会收到同一个值。要允许公共访问，请将 `OAC_PUBLIC_URL` 设置为不带尾部斜杠的准确公共 HTTPS 源地址，并使用相同的项目和数据目录重新部署 Core 和 Web；更改环境变量需要重新创建容器，而不只是重启。请在添加节点或执行器之前配置公共源地址。平台负责 TLS，并将流量路由到 `gateway:8080`；Web 由安装程序管理的域设置不可用。
 
 初始化服务首次生成机密信息和安装 ID，随后在后续部署中验证它们。每项机密信息都只有一个持久来源；Core 的密钥摘要派生自 Web 的登录密钥。对于现有安装，初始化绝不会替换缺失或已更改的机密信息。Core 会读取现有的进程环境和文件设置，因此安装程序专用的 `config.json`、`oac apply` 和启动时提供的设置快照不适用于此部署。
 
-| Compose 卷 | 内容 | 读取方 |
+| 数据目录路径 | 内容 | 读取方 |
 | --- | --- | --- |
-| `database` | PostgreSQL 数据 | PostgreSQL；初始化会检查它是否为空 |
-| `database-secret` | 生成的数据库密码 | PostgreSQL、迁移程序和 Core |
-| `core-config` | 凭据加密密钥、安装 ID、Core 密钥摘要和初始化回执 | 迁移程序和 Core |
-| `web-secret` | 生成的 Core 登录密钥 | Web 和显式 `credentials` 工具 |
-| `core-state` | 私有 Provider 状态 | Core |
-| `node-payload` | 已验证的节点安装元数据 | Web |
+| `database/` | PostgreSQL 数据 | PostgreSQL；初始化会检查它是否为空 |
+| `secrets/database/` | 生成的数据库密码 | PostgreSQL、迁移程序和 Core |
+| `secrets/core/` | 凭据加密密钥、安装 ID 和 Core 密钥摘要 | 迁移程序和 Core |
+| `secrets/web/` | 生成的 Core 登录密钥 | Web 和显式 `credentials` 工具 |
+| `state/` | 私有 Provider 状态 | Core |
+| `node-payload/` | 已验证的节点安装元数据 | Web |
 
-初始化会准备这些卷；应用服务以只读方式接收其中的机密卷。`credentials` 工具会禁用容器日志记录。只能在运维人员终端中获取其输出。数据库密码和凭据加密密钥绝不打印。
+初始化会准备该目录；应用服务以只读方式接收各自的机密目录。`credentials` 工具会禁用容器日志记录。只能在运维人员终端中获取其输出。数据库密码和凭据加密密钥绝不打印。
 
-Compose 项目名称用于限定卷的作用域。必须将该项目的定义和公共 URL 与每个卷一同保留。仅删除机密卷不会重置安装；如果数据库已经存在，初始化会拒绝重新开始。Core 还会将安装 ID 与其数据库绑定。运行时设置仍存储在 [Core 的数据库](#runtime-settings-web)中。
+`OAC_DATA_DIR` 选择该目录，默认是 Compose 文件旁的 `./data`。必须将该项目的定义和公共 URL 与该目录一同保留。仅删除机密目录不会重置安装；如果数据库已经存在，初始化会拒绝重新开始。Core 还会将安装 ID 与其数据库绑定。运行时设置仍存储在 [Core 的数据库](#runtime-settings-web)中。
 
 ## Docker 节点配置 {#docker-node-configuration}
 

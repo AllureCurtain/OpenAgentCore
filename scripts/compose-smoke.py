@@ -3,6 +3,7 @@
 
 import hashlib
 import http.cookiejar
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -14,8 +15,10 @@ import urllib.error
 import urllib.request
 import uuid
 
-
 ROOT = Path(__file__).resolve().parents[1]
+render_spec = importlib.util.spec_from_file_location("render_compose", ROOT / "scripts/render-compose.py")
+render_compose = importlib.util.module_from_spec(render_spec)
+render_spec.loader.exec_module(render_compose)
 
 
 def main():
@@ -26,6 +29,15 @@ def main():
     artifacts = Path.home() / '.oac/tests'
     artifacts.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix=project + '-', dir=artifacts))
+    data = directory / 'data'
+    data.mkdir(mode=0o700)
+    pins = json.loads((ROOT / 'deploy/compose/smoke-pins.json').read_text())
+    rendered = directory / 'compose.yaml'
+    rendered.write_text(render_compose.render({
+        'IMAGE_CORE': pins['core'], 'IMAGE_WEB': pins['web'], 'IMAGE_INGRESS': pins['ingress'],
+        'REVISION': pins['revision'], 'RELEASE_BASE': pins['release_base'],
+        'ARCHIVE_CHECKSUM': pins['archive_checksum'],
+    }))
     override = directory / 'ports.json'
 
     def publish(port):
@@ -34,10 +46,10 @@ def main():
         ]}}}))
 
     publish(0)
-    env = {**os.environ, 'COMPOSE_PROGRESS': 'plain'}
+    env = {**os.environ, 'COMPOSE_PROGRESS': 'plain', 'OAC_DATA_DIR': str(data)}
     env.pop('OAC_PUBLIC_URL', None)
     command = ['docker', 'compose', '--env-file', os.devnull, '-p', project,
-               '-f', str(ROOT / 'deploy/compose/compose.yaml'), '-f', str(override)]
+               '-f', str(rendered), '-f', str(override)]
 
     def compose(*args, timeout=120):
         result = subprocess.run(command + list(args), env=env, cwd=ROOT, capture_output=True, timeout=timeout)
@@ -85,7 +97,7 @@ def main():
 
     signal.signal(signal.SIGTERM, terminate)
     try:
-        print('Starting published images with an unset public URL and empty volumes', flush=True)
+        print('Starting published images with an unset public URL and an empty data directory', flush=True)
         compose('up', '-d', '--wait', '--wait-timeout', '600', timeout=900)
         address = 'http://' + compose('port', 'gateway', '8080').decode().strip()
         key = compose('run', '--rm', '-T', '--no-deps', 'credentials').decode().strip()
@@ -114,7 +126,7 @@ def main():
         assert uploaded['bytes'] == len(content), 'Upload was truncated'
         private_logs(key, project_key)
 
-        print('Configuring a reachable URL and recreating containers with the same volumes', flush=True)
+        print('Configuring a reachable URL and recreating containers with the same data directory', flush=True)
         # Retain the assigned port across recreation, without claiming a fixed host port.
         publish(address.rsplit(':', 1)[1])
         env['OAC_PUBLIC_URL'] = address

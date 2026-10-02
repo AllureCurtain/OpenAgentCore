@@ -1,7 +1,7 @@
 ---
 title: "安装选项与高级部署"
 source: docs/getting-started/install-options.md
-source_hash: 7178baf93a8d8b6e7f086d73033afe4ea14afcf41c88dbcc6031a3a6dd20ca17
+source_hash: 7f501e5b31bf499881b76cd05476f64a9b9746d0adc168d3cb71158c7ed94574
 ---
 
 [默认安装](install.md)无需任何选项。使用本页可以在现有反向代理后运行，或者在无法访问互联网时进行安装。
@@ -18,16 +18,16 @@ source_hash: 7178baf93a8d8b6e7f086d73033afe4ea14afcf41c88dbcc6031a3a6dd20ca17
 
 ## Docker Compose 与托管平台 {#docker-compose-and-hosting-platforms}
 
-在 Linux amd64 上使用 Docker Compose 2.26 或更高版本，并采用自带完整依赖的 [Compose 模板](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml)。它会拉取现有的、按摘要固定版本的 v0.0.3 镜像，并启动 PostgreSQL、Core、Web 和一个 HTTP 网关。一次性初始化服务会在持久化卷中生成随机机密信息并准备节点安装程序；迁移服务会在 Core 启动前初始化数据库。[Compose 配置](../configuration.md#compose-installations)负责管理各项设置和卷。
+在 Linux amd64 上使用发行版中的 `compose.yaml` 和 Docker Compose 2.26 或更高版本。发行流程会根据 [Compose 模板](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml)渲染该文件，固定该发行版的镜像摘要，并启动 PostgreSQL、Core、Web 和一个 HTTP 网关。数据通过目录 bind mount 挂载。一次性初始化服务会在该目录中生成随机机密信息并准备节点安装程序；迁移服务会在 Core 启动前初始化数据库。[Compose 配置](../configuration.md#compose-installations)负责管理各项设置和数据目录。
 
-进行本地试用时，请将 `compose.yaml` 和[本地端口覆盖](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/local.yaml)下载到同一个目录，然后运行：
+进行本地试用时，请将同一发行版的 `compose.yaml` 和 `ports.yaml` 下载到同一个目录，然后运行：
 
 ```sh
-docker compose -f compose.yaml -f local.yaml up -d --wait --wait-timeout 900
+docker compose -f compose.yaml -f ports.yaml up -d --wait --wait-timeout 900
 docker compose -f compose.yaml run --rm credentials
 ```
 
-`credentials` 命令会将生成的 Core 密钥打印到终端，而不会将其存储在容器日志中。打开 `http://localhost:8080` 并使用该密钥登录。所有安装机密信息都会自动生成；重启时请保留同一个 Compose 项目及其卷。
+`credentials` 命令会将生成的 Core 密钥打印到终端，而不会将其存储在容器日志中。打开 `http://localhost:8080` 并使用该密钥登录。所有安装机密信息都会自动生成；重启时请保留同一个 Compose 项目及其数据目录。
 
 首次初始化会下载并验证该发布版本中约 385 MB 的控制归档文件，仅保留较小的节点安装元数据。后续启动会验证已保存的文件，而不会再次下载。镜像需要额外下载。首次初始化中断后可以重新运行；如果现有数据库缺少安装机密信息，初始化会被拒绝。
 
@@ -35,17 +35,17 @@ docker compose -f compose.yaml run --rm credentials
 
 ### Dokploy {#dokploy}
 
-创建一个 Docker Compose 应用并粘贴 `compose.yaml`。将 `OAC_PUBLIC_URL` 设置为公共 HTTPS 源地址，启用隔离部署，并为 `gateway` 服务添加域名和端口 `8080`。部署前，为此域名启用 **HTTPS**，并选择 **Let's Encrypt** 等证书提供程序。部署时不要使用 `local.yaml`；内部服务不会发布主机端口。将此 Compose 文件打包到 Dokploy 模板目录时，[模板元数据](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/dokploy.toml)会提供生成的域名和环境；导入后仍需启用 HTTPS 及其证书提供程序。
+创建一个 Docker Compose 应用并粘贴 `compose.yaml`。将 `OAC_PUBLIC_URL` 设置为公共 HTTPS 源地址，启用隔离部署，并为 `gateway` 服务添加域名和端口 `8080`。部署前，为此域名启用 **HTTPS**，并选择 **Let's Encrypt** 等证书提供程序。部署时不要使用 `ports.yaml`；内部服务不会发布主机端口。将此 Compose 文件打包到 Dokploy 模板目录时，[模板元数据](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/dokploy.toml)会提供生成的域名和环境；导入后仍需启用 HTTPS 及其证书提供程序。
 
 ### Coolify {#coolify}
 
-创建一个 **Docker Compose Empty** 服务并粘贴 `compose.yaml`。将 `OAC_PUBLIC_URL` 设置为公共 HTTPS 源地址，并将该域名分配给 `gateway` 服务的端口 `8080`。将 Coolify 的 `exclude_from_hc: true` 添加到 `init`、`migrate` 和 `credentials` 的服务定义中，使已完成的初始化和可选工具不会影响其总体健康状态。保存并在不包含 `local.yaml` 的情况下部署；HTTPS 由 Coolify 提供。
+创建一个 **Docker Compose Empty** 服务并粘贴 `compose.yaml`。将 `OAC_PUBLIC_URL` 设置为公共 HTTPS 源地址，并将该域名分配给 `gateway` 服务的端口 `8080`。将 Coolify 的 `exclude_from_hc: true` 添加到 `init`、`migrate` 和 `credentials` 的服务定义中，使已完成的初始化和可选工具不会影响其总体健康状态。保存并在不包含 `ports.yaml` 的情况下部署；HTTPS 由 Coolify 提供。
 
 在这两个平台上，打开服务器终端并运行 `docker compose ls`，查找已部署的项目名称和 Compose 文件。使用这些完全一致的值以及该部署的 `OAC_PUBLIC_URL`，运行 `docker compose -p <project-name> -f <compose-file> run --rm credentials`，然后在已配置的源地址登录。[Dokploy 域名指南](https://docs.dokploy.com/docs/core/docker-compose/domains)和[Coolify Compose 指南](https://coolify.io/docs/services/configuration/docker-compose)介绍了各自的域和服务控制项。这些都是可导入的部署文件；本仓库不发布托管市场条目。
 
 登录后，使用 [Nodes](nodes.md)选择沙箱后端并添加节点。Compose 堆栈部署控制平面；执行机器仍需单独部署。
 
-使用相同的文件和环境运行 `docker compose stop` 以停止服务。停止服务后，将所有[安装卷](../configuration.md#compose-installations)一起备份。请遵循[安装版本策略](operations.md#installation-version-policy)：使用不同发布版本时，需要创建新的 Compose 项目并使用全新的卷。
+使用相同的文件和环境运行 `docker compose stop` 以停止服务。停止服务后，备份数据目录。请遵循[安装版本策略](operations.md#installation-version-policy)：使用不同发布版本时，需要创建新的 Compose 项目并使用全新的数据目录。
 
 ## 进程设置 {#process-settings}
 

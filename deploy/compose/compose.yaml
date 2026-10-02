@@ -1,8 +1,11 @@
-# OpenAgentCore v0.0.3. Images and installer payload are one matched release.
-# Set OAC_PUBLIC_URL to your platform's HTTPS origin when ready; startup defaults to localhost.
-x-ingress-image: &ingress-image ghcr.io/minimax-ai/openagentcore/ingress:v0.0.3@sha256:e485a8cae0b904389501f00bcee6a2c5b35be83412a9ff81a740f93b8cdbf326
+# Release template. scripts/render-compose.py fills the __OAC_*__ tokens with this
+# release's image digests, source revision and node-metadata checksum.
+# Do not run this file until it has been rendered.
+# Data is bind-mounted from ${OAC_DATA_DIR:-./data}. Set OAC_PUBLIC_URL when the
+# platform domain is ready; startup defaults to localhost.
+x-ingress-image: &ingress-image __OAC_IMAGE_INGRESS__
 x-core: &core
-  image: ghcr.io/minimax-ai/openagentcore/core:v0.0.3@sha256:6934a26d5cb7c878128ea8187ced446336345de7750c415be510740806663575
+  image: __OAC_IMAGE_CORE__
   platform: linux/amd64
   user: "65532:65532"
   read_only: true
@@ -20,9 +23,17 @@ x-core: &core
     OAC_NATIVE_INSTALLER_DIR: /opt/oac/native-installers
     OAC_HARNESSES: claude_sdk,codex,mcode
   volumes:
-    - core-config:/run/oac:ro
-    - database-secret:/run/database:ro
-    - core-state:/state
+    - type: bind
+      source: ${OAC_DATA_DIR:-./data}/secrets/core
+      target: /run/oac
+      read_only: true
+    - type: bind
+      source: ${OAC_DATA_DIR:-./data}/secrets/database
+      target: /run/database
+      read_only: true
+    - type: bind
+      source: ${OAC_DATA_DIR:-./data}/state
+      target: /state
 
 services:
   init:
@@ -35,12 +46,9 @@ services:
       - source: init-script
         target: /init.py
     volumes:
-      - core-config:/data/core
-      - web-secret:/data/web
-      - database-secret:/data/database
-      - core-state:/data/state
-      - node-payload:/data/payload
-      - database:/data/database-data:ro
+      - type: bind
+        source: ${OAC_DATA_DIR:-./data}
+        target: /data
 
   database:
     image: postgres:16-alpine@sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551
@@ -53,8 +61,13 @@ services:
       POSTGRES_DB: agents_api
       POSTGRES_PASSWORD_FILE: /run/database/password
     volumes:
-      - database:/var/lib/postgresql/data
-      - database-secret:/run/database:ro
+      - type: bind
+        source: ${OAC_DATA_DIR:-./data}/database
+        target: /var/lib/postgresql/data
+      - type: bind
+        source: ${OAC_DATA_DIR:-./data}/secrets/database
+        target: /run/database
+        read_only: true
     healthcheck:
       test: [CMD-SHELL, "pg_isready -h 127.0.0.1 -U agents_api -d agents_api"]
       interval: 2s
@@ -79,7 +92,7 @@ services:
       migrate: {condition: service_completed_successfully}
 
   web:
-    image: ghcr.io/minimax-ai/openagentcore/web:v0.0.3@sha256:d1eb4cc8870aebd080773fd16db92a5a1db205e0aab10066d4db16f1284a88f5
+    image: __OAC_IMAGE_WEB__
     platform: linux/amd64
     user: "65532:65532"
     restart: unless-stopped
@@ -93,8 +106,14 @@ services:
       OAC_WEB_CORE_KEY_FILE: /run/oac/core.key
       OAC_WEB_NODE_PAYLOAD_DIR: /node-payload
     volumes:
-      - web-secret:/run/oac:ro
-      - node-payload:/node-payload:ro
+      - type: bind
+        source: ${OAC_DATA_DIR:-./data}/secrets/web
+        target: /run/oac
+        read_only: true
+      - type: bind
+        source: ${OAC_DATA_DIR:-./data}/node-payload
+        target: /node-payload
+        read_only: true
 
   gateway:
     image: *ingress-image
@@ -137,15 +156,10 @@ services:
     logging: {driver: none}
     command: [cat, /run/oac/core.key]
     volumes:
-      - web-secret:/run/oac:ro
-
-volumes:
-  database:
-  database-secret:
-  core-config:
-  web-secret:
-  core-state:
-  node-payload:
+      - type: bind
+        source: ${OAC_DATA_DIR:-./data}/secrets/web
+        target: /run/oac
+        read_only: true
 
 configs:
   gateway-config:
@@ -182,11 +196,12 @@ configs:
       import urllib.request
       import uuid
 
-      REVISION = 'cc7e1aad3bde47598d161d6372e2e211bb61d9cd'
-      BASE = 'https://github.com/MiniMax-AI/OpenAgentCore/releases/download/v0.0.3/'
+      REVISION = '__OAC_REVISION__'
+      BASE = '__OAC_RELEASE_BASE__'
       ARCHIVE = 'oac-' + REVISION + '-linux-amd64'
-      CHECKSUM = '579d2d43accfc45a0a8567db5bc33b407c48b05b0d731bea3fed73e6ade558ae'
+      CHECKSUM = '__OAC_ARCHIVE_CHECKSUM__'
       MEMBERS = ('manifest.json', 'SHA256SUMS', 'node-install.pyz', 'runtime/seccomp.json')
+      OWNERS = {'database': 70, 'secrets': 65532, 'state': 65532, 'caddy': 65532, 'domain': 65532, 'node-payload': 65532}
 
       def digest(data):
           return hashlib.sha256(data).hexdigest()
@@ -217,55 +232,61 @@ configs:
               raise RuntimeError('Release identity mismatch')
           return files
 
-      def write(path, data):
+      def write(path, data, owner=65532):
           path.parent.mkdir(parents=True, exist_ok=True)
           temporary = path.with_name(path.name + '.tmp')
           temporary.write_bytes(data)
           temporary.chmod(0o600)
-          os.chown(temporary, 65532, 65532)
+          os.chown(temporary, owner, owner)
           os.replace(temporary, path)
 
       def initialize(root, fetch=download):
-          for name in ('core', 'web', 'database', 'state', 'payload'):
+          root.chmod(0o700)
+          for name, owner in OWNERS.items():
               directory = root / name
               directory.mkdir(exist_ok=True)
               directory.chmod(0o700)
+              os.chown(directory, owner, owner)
+          for name in ('core', 'web', 'database'):
+              directory = root / 'secrets' / name
+              directory.mkdir(exist_ok=True)
+              directory.chmod(0o700)
               os.chown(directory, 65532, 65532)
-          with (root / 'core/.init.lock').open('w') as lock:
+          with (root / 'secrets/.init.lock').open('w') as lock:
               fcntl.flock(lock, fcntl.LOCK_EX)
-              marker = root / 'core/installation.json'
+              marker = root / 'installation.json'
               if marker.exists():
                   receipt = json.loads(marker.read_text())
                   if receipt['source_commit'] != REVISION:
-                      raise RuntimeError('This volume belongs to another release; create a new installation')
+                      raise RuntimeError('This data directory belongs to another release; create a new installation')
                   for name, checksum in receipt['files'].items():
                       if digest((root / name).read_bytes()) != checksum:
-                          raise RuntimeError('Installation files changed; restore the matching volumes')
+                          raise RuntimeError('Installation files changed; restore the matching data directory')
                   print('Existing installation verified', flush=True)
                   return
-              if any((root / 'database-data').iterdir()) or any((root / 'state').iterdir()):
-                  raise RuntimeError('Existing data requires its original installation volumes')
+              if any((root / 'database').iterdir()) or any((root / 'state').iterdir()):
+                  raise RuntimeError('Existing data requires its original installation files')
               files = fetch()
-              prefix = 'payload/releases/' + REVISION + '/'
+              prefix = 'node-payload/releases/' + REVISION + '/'
               for name, data in files.items():
                   write(root / (prefix + name), data)
-              write(root / 'payload/active.json', json.dumps({'source_commit': REVISION}).encode())
-              # Parent directories of the public payload must be traversable by Web.
-              for path in (root / 'payload').rglob('*'):
+              write(root / 'node-payload/active.json', json.dumps({'source_commit': REVISION}).encode())
+              for path in (root / 'node-payload').rglob('*'):
                   if path.is_dir():
                       path.chmod(0o755)
+                      os.chown(path, 65532, 65532)
               generators = {
-                  'web/core.key': lambda: secrets.token_hex(32),
-                  'database/password': lambda: secrets.token_hex(32),
-                  'core/credential.key': lambda: base64.b64encode(secrets.token_bytes(32)).decode(),
-                  'core/installation.id': lambda: str(uuid.uuid4()),
+                  'secrets/web/core.key': lambda: secrets.token_hex(32),
+                  'secrets/database/password': lambda: secrets.token_hex(32),
+                  'secrets/core/credential.key': lambda: base64.b64encode(secrets.token_bytes(32)).decode(),
+                  'secrets/core/installation.id': lambda: str(uuid.uuid4()),
               }
               for name, generate in generators.items():
                   if not (root / name).exists():
                       write(root / name, (generate() + '\n').encode())
-              key = (root / 'web/core.key').read_text().strip()
-              write(root / 'core/core-key-digests.json', json.dumps([digest(key.encode())]).encode())
-              names = [*generators, 'core/core-key-digests.json', 'payload/active.json',
+              key = (root / 'secrets/web/core.key').read_text().strip()
+              write(root / 'secrets/core/core-key-digests.json', json.dumps([digest(key.encode())]).encode())
+              names = [*generators, 'secrets/core/core-key-digests.json', 'node-payload/active.json',
                        *(prefix + name for name in MEMBERS)]
               receipt = {'source_commit': REVISION, 'files': {name: digest((root / name).read_bytes()) for name in names}}
               write(marker, json.dumps(receipt).encode())

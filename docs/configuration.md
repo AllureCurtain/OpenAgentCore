@@ -108,22 +108,22 @@ Set a default in **System** → **Default model configuration**, or use `PUT /co
 
 ## Compose installations
 
-The [standalone Compose template](./getting-started/install-options.md#docker-compose-and-hosting-platforms) uses its Compose definition and the platform's environment as the source of process settings. An unset or empty `OAC_PUBLIC_URL` selects `http://localhost:8080`, allowing startup before a public domain is configured. Core and Web receive that same value. For public access, set `OAC_PUBLIC_URL` to the exact public HTTPS origin without a trailing slash and redeploy Core and Web with the same project and volumes; changing an environment variable requires container recreation, not just a restart. Configure the public origin before adding nodes or executors. The platform owns TLS and routes to `gateway:8080`; Web's installer-managed domain setup is unavailable.
+The [standalone Compose file](./getting-started/install-options.md#docker-compose-and-hosting-platforms) from a release uses its Compose definition and the platform's environment as the source of process settings. An unset or empty `OAC_PUBLIC_URL` selects `http://localhost:8080`, allowing startup before a public domain is configured. Core and Web receive that same value. For public access, set `OAC_PUBLIC_URL` to the exact public HTTPS origin without a trailing slash and redeploy Core and Web with the same project and data directory; changing an environment variable requires container recreation, not just a restart. Configure the public origin before adding nodes or executors. The platform owns TLS and routes to `gateway:8080`; Web's installer-managed domain setup is unavailable.
 
 The initialization service generates secrets and the installation ID once, then verifies them on subsequent deployments. Each secret has one persistent source; Core's key digest is derived from Web's sign-in key. Initialization never replaces missing or changed secrets on an existing installation. Core reads its existing process environment and file settings, so the installer-specific `config.json`, `oac apply` and startup settings snapshot do not apply to this deployment.
 
-| Compose volume | Content | Readers |
+| Data directory path | Content | Readers |
 | --- | --- | --- |
-| `database` | PostgreSQL data | PostgreSQL; initialization checks whether it is empty |
-| `database-secret` | Generated database password | PostgreSQL, migrator and Core |
-| `core-config` | Credential encryption key, installation ID, Core key digest and initialization receipt | Migrator and Core |
-| `web-secret` | Generated Core sign-in key | Web and the explicit `credentials` tool |
-| `core-state` | Private Provider state | Core |
-| `node-payload` | Verified node installation metadata | Web |
+| `database/` | PostgreSQL data | PostgreSQL; initialization checks whether it is empty |
+| `secrets/database/` | Generated database password | PostgreSQL, migrator and Core |
+| `secrets/core/` | Credential encryption key, installation ID and Core key digest | Migrator and Core |
+| `secrets/web/` | Generated Core sign-in key | Web and the explicit `credentials` tool |
+| `state/` | Private Provider state | Core |
+| `node-payload/` | Verified node installation metadata | Web |
 
-Initialization prepares these volumes; application services receive their secret volumes read-only. The `credentials` tool disables container logging. Retrieve its output only in an operator terminal. Database passwords and credential encryption keys are never printed.
+Initialization prepares this directory; application services receive their secret directories read-only. The `credentials` tool disables container logging. Retrieve its output only in an operator terminal. Database passwords and credential encryption keys are never printed.
 
-The Compose project name scopes the volumes. Preserve every volume together with that project's definition and public URL. Removing only secret volumes does not reset an installation; initialization refuses to start over an existing database. Core also binds the installation ID to its database. Runtime settings continue to live in [Core's database](#runtime-settings-web).
+`OAC_DATA_DIR` selects the directory and defaults to `./data` beside the Compose file. Preserve it together with that project's definition and public URL. Removing only the secret directories does not reset an installation; initialization refuses to start over an existing database. Core also binds the installation ID to its database. Runtime settings continue to live in [Core's database](#runtime-settings-web).
 
 ## Docker node configuration
 

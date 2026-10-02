@@ -3,6 +3,7 @@
 import base64
 import copy
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -14,9 +15,24 @@ import unittest
 from unittest.mock import patch
 import uuid
 
-
 ROOT = Path(__file__).resolve().parents[2]
-COMPOSE = ROOT / 'deploy/compose/compose.yaml'
+spec = importlib.util.spec_from_file_location("render_compose", ROOT / "scripts/render-compose.py")
+render_compose = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(render_compose)
+
+
+def rendered_compose(directory):
+    text = render_compose.render({
+        'IMAGE_CORE': 'ghcr.io/example/core@sha256:' + 'a' * 64,
+        'IMAGE_WEB': 'ghcr.io/example/web@sha256:' + 'b' * 64,
+        'IMAGE_INGRESS': 'ghcr.io/example/ingress@sha256:' + 'c' * 64,
+        'REVISION': 'd' * 40,
+        'RELEASE_BASE': 'https://example.com/releases/v1/',
+        'ARCHIVE_CHECKSUM': 'e' * 64,
+    })
+    path = Path(directory) / 'compose.yaml'
+    path.write_text(text)
+    return path
 
 
 class ComposeTests(unittest.TestCase):
@@ -24,14 +40,18 @@ class ComposeTests(unittest.TestCase):
     def render(cls, public_url=None):
         env = dict(os.environ)
         env.pop('OAC_PUBLIC_URL', None)
+        env['OAC_DATA_DIR'] = '/tmp/oac-compose-fixture'
         if public_url is not None:
             env['OAC_PUBLIC_URL'] = public_url
         return json.loads(subprocess.check_output(
-            ['docker', 'compose', '--env-file', os.devnull, '-f', str(COMPOSE),
+            ['docker', 'compose', '--env-file', os.devnull, '-f', str(cls.compose_file),
              '--profile', 'tools', 'config', '--format', 'json'], env=env))
 
     @classmethod
     def setUpClass(cls):
+        cls.temporary = tempfile.TemporaryDirectory()
+        cls.addClassCleanup(cls.temporary.cleanup)
+        cls.compose_file = rendered_compose(cls.temporary.name)
         cls.compose = cls.render()
 
     def setUp(self):
@@ -40,7 +60,6 @@ class ComposeTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(dir=base)
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        (self.root / 'database-data').mkdir()
         self.code = {'__name__': 'compose_initializer'}
         exec(self.compose['configs']['init-script']['content'], self.code)
         self.files = {name: b'fixture' for name in self.code['MEMBERS']}
@@ -55,25 +74,26 @@ class ComposeTests(unittest.TestCase):
     def test_fresh_installation_and_restart_keep_identity_and_keys(self):
         self.initialize()
         saved = {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob('*') if p.is_file()}
-        key = saved['web/core.key'].strip()
+        key = saved['secrets/web/core.key'].strip()
         self.assertEqual(len(key), 64)
-        self.assertEqual(json.loads(saved['core/core-key-digests.json']), [hashlib.sha256(key).hexdigest()])
-        self.assertEqual(len(base64.b64decode(saved['core/credential.key'])), 32)
-        uuid.UUID(saved['core/installation.id'].decode().strip())
-        for name in ('web/core.key', 'database/password', 'core/credential.key'):
+        self.assertEqual(json.loads(saved['secrets/core/core-key-digests.json']), [hashlib.sha256(key).hexdigest()])
+        self.assertEqual(len(base64.b64decode(saved['secrets/core/credential.key'])), 32)
+        uuid.UUID(saved['secrets/core/installation.id'].decode().strip())
+        for name in ('secrets/web/core.key', 'secrets/database/password', 'secrets/core/credential.key'):
             self.assertEqual((self.root / name).stat().st_mode & 0o777, 0o600)
         self.initialize(lambda: self.fail('A completed installation must not download again'))
         self.assertEqual(saved, {str(p.relative_to(self.root)): p.read_bytes() for p in self.root.rglob('*') if p.is_file()})
 
     def test_existing_data_without_installation_secrets_is_refused(self):
-        (self.root / 'database-data/PG_VERSION').write_text('16')
+        (self.root / 'database').mkdir()
+        (self.root / 'database/PG_VERSION').write_text('16')
         with self.assertRaisesRegex(RuntimeError, 'original installation'):
             self.initialize(lambda: self.fail('Must refuse before downloading'))
-        self.assertFalse((self.root / 'web/core.key').exists())
+        self.assertFalse((self.root / 'secrets/web/core.key').exists())
 
     def test_changed_or_missing_keys_and_another_release_are_refused(self):
         self.initialize()
-        path = self.root / 'database/password'
+        path = self.root / 'secrets/database/password'
         original = path.read_bytes()
         path.write_bytes(b'different')
         with self.assertRaisesRegex(RuntimeError, 'files changed'):
@@ -88,10 +108,10 @@ class ComposeTests(unittest.TestCase):
 
     def test_interrupted_fresh_initialization_retains_generated_keys(self):
         self.initialize()
-        key = (self.root / 'web/core.key').read_bytes()
-        (self.root / 'core/installation.json').unlink()
+        key = (self.root / 'secrets/web/core.key').read_bytes()
+        (self.root / 'installation.json').unlink()
         self.initialize()
-        self.assertEqual(key, (self.root / 'web/core.key').read_bytes())
+        self.assertEqual(key, (self.root / 'secrets/web/core.key').read_bytes())
 
     def archive(self):
         output = io.BytesIO()
@@ -133,9 +153,9 @@ class ComposeTests(unittest.TestCase):
             self.assertNotIn('ports', service)
             self.assertIn('@sha256:', service['image'])
             for volume in service.get('volumes', []):
-                self.assertNotIn('docker.sock', volume['source'])
-                self.assertEqual(volume['type'], 'volume')
-        self.assertEqual({v['source'] for v in services['web']['volumes']}, {'web-secret', 'node-payload'})
+                self.assertNotIn('docker.sock', json.dumps(volume))
+                self.assertEqual(volume['type'], 'bind')
+        self.assertEqual({v['target'] for v in services['web']['volumes']}, {'/run/oac', '/node-payload'})
         self.assertEqual(services['credentials']['logging']['driver'], 'none')
         schema = json.loads((ROOT / 'deploy/install/config.schema.json').read_text())
         harnesses = schema['properties']['core']['properties']['harnesses']['default']
@@ -149,7 +169,11 @@ class ComposeTests(unittest.TestCase):
                 for name, setting in (('core', 'OAC_PUBLIC_URL'), ('migrate', 'OAC_PUBLIC_URL'),
                                       ('web', 'OAC_WEB_ORIGIN')):
                     self.assertEqual(configured['services'][name]['environment'][setting], expected)
-                self.assertEqual(configured['volumes'], self.compose['volumes'])
+                self.assertEqual(
+                    {service: [item.get('target') for item in spec.get('volumes', [])]
+                     for service, spec in configured['services'].items()},
+                    {service: [item.get('target') for item in spec.get('volumes', [])]
+                     for service, spec in self.compose['services'].items()})
 
     def test_platform_network_injection_keeps_the_credentials_profile_valid(self):
         # Dokploy isolated deployments attach a project network to every service.

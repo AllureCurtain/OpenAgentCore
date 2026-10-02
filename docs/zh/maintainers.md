@@ -1,7 +1,7 @@
 ---
 title: "构建并发布 OpenAgentCore"
 source: docs/maintainers.md
-source_hash: 11e24e329928f4803518aeaf95a202dcbc98ff1c007860c2f94b1ca96adb5d6a
+source_hash: 7e5fcad21f6b4aa9f88f9d1dd19024aec6cdea009a7c2e879431f5a604fd6bac
 ---
 
 本指南面向负责构建和发布 OpenAgentCore 的维护者。要安装 Core 和 Web，请使用 [安装指南](getting-started/install.md)。安装器代码遵循的规则见 [安装器设计规则](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/install/README.md)；必需检查见 [CONTRIBUTING](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks)。
@@ -132,21 +132,21 @@ git push origin v1.2.3
 
 ### 容器注册表 {#container-registry}
 
-版本发布会将 Linux amd64 镜像发布为 `ghcr.io/minimax-ai/openagentcore/<component>:<version>`，其中 `<component>` 为 `core`、`web`、`runtime` 或 `ingress`。例如，`ghcr.io/minimax-ai/openagentcore/core:v1.2.3`。PostgreSQL 使用其上游镜像，不会重新发布。注册表镜像从发布归档中加载，不会重新构建。仅当现有标签的镜像配置摘要与本次发布相同时才复用该标签；如果镜像不同，则停止发布。不会发布浮动 `latest` 标签。SemVer 构建元数据在容器标签中使用 `_` 代替 `+`；长度超过 128 个字符的版本字符串无法发布到 GHCR。手动草稿构建不会推送镜像。
+版本发布和手动的 `build-<full SHA>` 草稿都会将 Linux amd64 镜像发布为 `ghcr.io/minimax-ai/openagentcore/<component>:<version>`，其中 `<component>` 为 `core`、`web`、`runtime` 或 `ingress`。例如，`ghcr.io/minimax-ai/openagentcore/core:v1.2.3`。草稿使用标签 `build-<full SHA>`。PostgreSQL 使用其上游镜像，不会重新发布。注册表镜像从发布归档中加载，不会重新构建。仅当现有标签的镜像配置摘要与本次发布相同时才复用该标签；如果镜像不同，则停止发布。不会发布浮动 `latest` 标签。SemVer 构建元数据在容器标签中使用 `_` 代替 `+`；长度超过 128 个字符的版本字符串无法发布到 GHCR。镜像验证之后，发布器会上传为该发行版渲染的 `compose.yaml` 和 `ports.yaml` 及其校验和。草稿 Release 保持未发布。
 
 合并的构建/发布作业使用具有 `packages: write` 权限的 `GITHUB_TOKEN`。首次发布时，GitHub 会将每个容器软件包创建为私有：软件包管理员必须先在各自的软件包设置中将全部四个软件包改为 **Public**，用户才能匿名拉取。请参阅 [GitHub container visibility](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)。更改可见性后，请验证未认证拉取。仅更改仓库可见性并不会使新的容器软件包变为公开。
 
-GHCR 和 GitHub Releases 不共享事务。发布失败后，GHCR 中可能仍会保留一些匹配的版本标签；请保留这些镜像，并使用原始构件按照下文的草稿恢复流程操作。除清单缺失以外，注册表故障都会停止发布。作业摘要会记录按摘要固定的引用；安装归档及其校验和保持不变。这些镜像仍需要[配置](configuration.md)中描述的配置、机密和路由；发布镜像不会提供平台部署模板。
+GHCR 和 GitHub Releases 不共享事务。发布失败后，GHCR 中可能仍会保留一些匹配的版本标签；请保留这些镜像，并使用原始构件按照下文的草稿恢复流程操作。除清单缺失以外，注册表故障都会停止发布。作业摘要会记录按摘要固定的引用。这些镜像和渲染后的 Compose 文件仍需要[配置](configuration.md)中描述的配置、机密和路由。
 
 `install.sh` 会解析一次最新稳定版，或解析 `--version` 指定的发布版，验证控制归档并运行该捆绑包的安装器；其用法见[安装指南](getting-started/install.md#install)。
 
 Go 检查和构建作业共享 `~/.oac/cache/` 下的 Go 模块和编译器缓存目录，缓存键由运行器 OS 和架构、全部 Go 模块文件、检查/构建分区以及提交确定。分区键可防止并发作业在同一个键下保存不同的编译器子集。发布构建既可以使用后端检查的缓存，也可以使用更早发布构建的缓存。较旧的缓存只会为下载和编译提供初始内容；每项检查仍会运行。发布作业还会缓存 npm 软件包下载内容和固定版本的 microsandbox 归档，并在每次构建时验证后者的校验和。Actions 缓存可见性遵循 GitHub ref 的作用域；特定标签的缓存不会与其他发布标签共享。只有作业成功后才会保存新键。
 
-绝不移动发布标签或覆盖已发布的资源。发布失败时，请先检查 Release：即使响应丢失，发布也可能已经完成。对于完整的已发布 Release，请保持原样。对于不完整的草稿，仅在检查后将其删除，然后使用 `gh run download RUN_ID --name core-release-REVISION --dir ASSET_DIRECTORY` 下载原始 `core-release-<revision>` Actions 构建产物，并使用该确切源代码修订版本的检出运行 `python3 scripts/publish-core-release.py --assets ASSET_DIRECTORY`。将 `GH_REPO`、`GH_TOKEN`、`RELEASE_REVISION`、`RELEASE_TAG` 和 `RELEASE_MODE` 设置为原始发布输入，并将 Docker 登录到 GHCR 以发布版本。该脚本会重新验证资源，并拒绝使用已有 Release。恢复上传失败时，绝不能重新运行合并的构建作业，也绝不能重新创建标签。
+绝不移动发布标签或覆盖已发布的资源。发布失败时，请先检查 Release：即使响应丢失，发布也可能已经完成。对于完整的已发布 Release，请保持原样。对于不完整的草稿，仅在检查后将其删除，然后使用 `gh run download RUN_ID --name core-release-REVISION --dir ASSET_DIRECTORY` 下载原始 `core-release-<revision>` Actions 构建产物，并使用该确切源代码修订版本的检出运行 `python3 scripts/publish-core-release.py --assets ASSET_DIRECTORY`。将 `GH_REPO`、`GH_TOKEN`、`RELEASE_REVISION`、`RELEASE_TAG` 和 `RELEASE_MODE` 设置为原始发布输入，并将 Docker 登录到 GHCR。该脚本会重新验证资源，并拒绝使用已有 Release。恢复上传失败时，绝不能重新运行合并的构建作业，也绝不能重新创建标签。
 
 ### 构建候选版本但不发布 {#build-a-candidate-without-publishing}
 
-手动运行需要完整的提交 SHA，会执行相同的检查和构建，默认生成离线归档，并且绝不发布：
+手动运行需要完整的提交 SHA，会执行相同的检查和构建，默认生成离线归档，并且不会发布 Release：
 
 ```sh
 revision=$(git rev-parse HEAD)
@@ -154,7 +154,7 @@ gh workflow run core-release --repo MiniMax-AI/OpenAgentCore --ref main \
   -f ref="$revision" -f offline=true -f draft_release=true
 ```
 
-设置 `draft_release=true` 时，结果是未发布的 `build-<full SHA>` 草稿 Release；设置 `draft_release=false` 时，文件会保留在 Actions 构建产物中。请使用完全匹配的构件集合；绝不能混用构建结果，也绝不能通过 `latest` 解析组件。
+设置 `draft_release=true` 时，结果是未发布的 `build-<full SHA>` 草稿 Release，其镜像会以该标签推送；设置 `draft_release=false` 时，文件会保留在 Actions 构建产物中。请使用完全匹配的构件集合；绝不能混用构建结果，也绝不能通过 `latest` 解析组件。
 
 ## 持续集成 {#continuous-integration}
 

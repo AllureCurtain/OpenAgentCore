@@ -1,0 +1,5 @@
+# Host installation publishes Web. Hosting platforms omit this file.
+services:
+  gateway:
+    ports:
+      - "${OAC_HOST:-127.0.0.1}:${OAC_WEB_PORT:-8080}:8080"

@@ -1,0 +1,8 @@
+{
+  "core": "ghcr.io/minimax-ai/openagentcore/core:v0.0.3@sha256:6934a26d5cb7c878128ea8187ced446336345de7750c415be510740806663575",
+  "web": "ghcr.io/minimax-ai/openagentcore/web:v0.0.3@sha256:d1eb4cc8870aebd080773fd16db92a5a1db205e0aab10066d4db16f1284a88f5",
+  "ingress": "ghcr.io/minimax-ai/openagentcore/ingress:v0.0.3@sha256:e485a8cae0b904389501f00bcee6a2c5b35be83412a9ff81a740f93b8cdbf326",
+  "revision": "cc7e1aad3bde47598d161d6372e2e211bb61d9cd",
+  "release_base": "https://github.com/MiniMax-AI/OpenAgentCore/releases/download/v0.0.3/",
+  "archive_checksum": "579d2d43accfc45a0a8567db5bc33b407c48b05b0d731bea3fed73e6ade558ae"
+}
