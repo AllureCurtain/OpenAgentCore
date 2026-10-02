@@ -19,6 +19,8 @@ pnpm --dir website preview   # serve the build at http://127.0.0.1:4181
 - Each page's source Markdown is published next to its HTML (`/docs/architecture.md`), and the `README` paths declared in `docs.json` redirect to their section index.
 - Relative links from a page to a file that is not a published page, such as `CONTRIBUTING.md` or `openapi.yaml`, are rewritten to GitHub at build time, so the Markdown works unchanged on GitHub and on the site.
 
+The visual system combines warm paper surfaces, green accents, ruled sections and ASCII artwork. Landing headings use self-hosted Space Grotesk; body text uses Inter and code uses Geist Mono. Chinese text uses the system Chinese sans-serif stack. Both light and dark themes share the same hierarchy.
+
 Site appearance and metadata are configured in `.vitepress/config.mts` and `.vitepress/theme/`.
 
 The landing page lives in `.vitepress/theme/`. `landing-content.ts` holds its English and Chinese copy; every claim there must be backed by a page in `docs/` or `contracts/`, and its harness protocols follow [Model execution](../contracts/agents-api/model-execution.md).

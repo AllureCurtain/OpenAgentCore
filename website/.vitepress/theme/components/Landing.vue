@@ -390,7 +390,7 @@ onBeforeUnmount(() => {
 <style>
 /* ---------- palette ---------- */
 .landing {
-  --l-bg: #f4f6f1;
+  --l-bg: #f3efe3;
   --l-panel: rgba(255, 255, 255, 0.72);
   --l-hover: rgba(21, 128, 61, 0.06);
   --l-text: #0b1510;
@@ -416,6 +416,7 @@ onBeforeUnmount(() => {
   --l-str: #a3e6b8;
   --l-fn: #7dd3fc;
   --l-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --l-display: 'Space Grotesk Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --l-sans: 'Inter Variable', Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
 
   position: relative;
@@ -425,7 +426,7 @@ onBeforeUnmount(() => {
   font-family: var(--l-sans);
 }
 .dark .landing {
-  --l-bg: #080b0a;
+  --l-bg: #111712;
   --l-panel: rgba(18, 24, 21, 0.72);
   --l-hover: rgba(74, 222, 128, 0.06);
   --l-text: #e8f1eb;
@@ -462,7 +463,7 @@ onBeforeUnmount(() => {
   inset: 0;
   pointer-events: none;
   background-image: linear-gradient(var(--l-grid) 1px, transparent 1px), linear-gradient(90deg, var(--l-grid) 1px, transparent 1px);
-  background-size: 48px 48px;
+  background-size: 96px 96px;
   mask-image: linear-gradient(to bottom, #000 0, #000 70%, transparent);
 }
 .bg-grid::after {
@@ -510,7 +511,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   height: 42px;
   padding: 0 18px;
-  border-radius: 8px;
+  border-radius: 2px;
   font: 500 14px/1 var(--l-mono);
   border: 1px solid var(--l-line-strong);
   color: var(--l-text);
@@ -572,7 +573,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   margin: 0;
-  font: 700 clamp(44px, 6vw, 78px) / 1 var(--l-mono);
+  font: 700 clamp(44px, 6vw, 78px) / 0.98 var(--l-display);
   letter-spacing: -0.045em;
   white-space: nowrap;
 }
@@ -595,7 +596,7 @@ onBeforeUnmount(() => {
   margin-top: 26px;
   padding: 6px 6px 6px 14px;
   border: 1px solid var(--l-line);
-  border-radius: 10px;
+  border-radius: 3px;
   background: var(--l-code-bg);
 }
 .install code {
@@ -776,7 +777,7 @@ h3 {
   padding: 0;
   list-style: none;
   border: 1px solid var(--l-line);
-  border-radius: 12px;
+  border-radius: 3px;
   background: var(--l-panel);
   overflow: hidden;
 }
@@ -828,7 +829,7 @@ h3 {
 .pillars li {
   padding: 20px;
   border: 1px solid var(--l-line);
-  border-radius: 12px;
+  border-radius: 3px;
   background: var(--l-panel);
   transition: border-color 0.2s, transform 0.2s;
 }
@@ -855,7 +856,7 @@ h3 {
 /* 03 */
 .figure {
   border: 1px solid var(--l-line);
-  border-radius: 14px;
+  border-radius: 3px;
   background: var(--l-panel);
   overflow: hidden;
 }
@@ -981,13 +982,13 @@ h3 {
 .rules li {
   padding: 20px;
   border: 1px solid var(--l-line);
-  border-radius: 12px;
+  border-radius: 3px;
   background: var(--l-panel);
 }
 .art {
   margin: 0 0 18px;
   padding: 14px 16px;
-  border-radius: 8px;
+  border-radius: 2px;
   background: var(--l-code-bg);
   color: #4ade80;
   font: 12.5px/1.7 var(--l-mono);
@@ -1010,7 +1011,7 @@ h3 {
 }
 .window {
   border: 1px solid var(--l-line);
-  border-radius: 12px;
+  border-radius: 3px;
   overflow: hidden;
   background: var(--l-panel);
   box-shadow: 0 40px 100px -50px var(--l-glow);
@@ -1048,7 +1049,7 @@ h3 {
   margin-top: 36px;
   overflow-x: auto;
   border: 1px solid var(--l-line);
-  border-radius: 12px;
+  border-radius: 3px;
   background: var(--l-panel);
 }
 .compare {
@@ -1157,7 +1158,7 @@ h3 {
   position: relative;
   padding: 20px;
   border: 1px dashed var(--l-line-strong);
-  border-radius: 12px;
+  border-radius: 3px;
 }
 .layer {
   display: inline-block;
@@ -1179,7 +1180,7 @@ h3 {
 .docs-group {
   padding: 18px;
   border: 1px solid var(--l-line);
-  border-radius: 12px;
+  border-radius: 3px;
   background: var(--l-panel);
 }
 .docs-group h3 {
@@ -1293,9 +1294,29 @@ h3 {
 @media (max-width: 560px) {
   .wrap { padding: 0 18px; }
   .pillars, .roadmap, .docs-grid { grid-template-columns: minmax(0, 1fr); }
-  .eyebrow { flex-wrap: wrap; border-radius: 12px; line-height: 1.5; }
+  .eyebrow { flex-wrap: wrap; border-radius: 3px; line-height: 1.5; }
   .hero-title { font-size: clamp(38px, 12vw, 56px); }
   .lede { font-size: 16px; }
   .compare tbody th { white-space: normal; }
+}
+
+/* Editorial typography and ruled sections retain the terminal demonstrations. */
+.hero-title .accent { font-style: italic; }
+.cursor { font-style: normal; }
+.eyebrow { border-radius: 0; background: transparent; border: 0; border-left: 3px solid var(--l-accent); padding-left: 12px; }
+.sec { border-top: 1px solid var(--l-line-strong); padding-bottom: 80px; }
+.sec-head { align-items: center; }
+.idx { background: var(--l-accent); color: var(--l-bg); padding: 7px 10px; }
+h2, .motto { font-family: var(--l-display); letter-spacing: -0.045em; }
+h3 { font-family: var(--l-display); }
+.hero-art { border: 1px solid var(--l-line-strong); background: var(--l-panel); transform: rotate(1deg); }
+.ticker { background: var(--l-text); color: var(--l-bg); border-top: 3px solid var(--l-accent); }
+.ticker-run span { color: inherit; }
+.btn.primary { box-shadow: 3px 3px 0 var(--l-text); }
+.btn.primary:hover { box-shadow: 5px 5px 0 var(--l-text); }
+.btn:focus-visible, .copy:focus-visible { outline: 2px solid var(--l-accent); outline-offset: 5px; }
+@media (max-width: 640px) {
+  .hero-art { transform: none; }
+  .hero-title { letter-spacing: -0.05em; }
 }
 </style>
