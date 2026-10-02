@@ -196,7 +196,6 @@ def core_environment(root, config, state):
         "OAC_CREDENTIAL_KEY_FILE": RUN + "/credential.key",
         "OAC_CORE_KEY_DIGESTS_FILE": RUN + "/core-key-digests.json",
         "OAC_INSTALLATION_ID": state["installation_id"],
-        "OAC_SETTINGS_FILE": RUN + "/settings.json",
         "OAC_PROVIDER_ROOT": "/opt/oac",
         "OAC_PROVIDER_STATE_ROOT": "/state",
         "OAC_DEFAULT_HARNESS": core["default_harness"],
@@ -242,7 +241,7 @@ def compose_config(root, config, state, candidate=None):
     mounts = [bind(root / "secrets" / name, f"{RUN}/{name}") for name in ("credential.key", "database.password")]
     if (root / "native-installers/catalog.json").is_file():
         mounts.append(bind(root / "native-installers", "/opt/oac/native-installers"))
-    mounts += [bind(root / "generated" / name, f"{RUN}/{name}") for name in ("core-key-digests.json", "settings.json")]
+    mounts += [bind(root / "generated" / name, f"{RUN}/{name}") for name in ("core-key-digests.json",)]
     if config["core"]["runtime_history"] is not None:
         mounts.append(bind(root / "generated/runtime-history.json", f"{RUN}/runtime-history.json"))
     shared = {"image": images["core"], "user": identity,
@@ -318,7 +317,7 @@ def render(root, config, state, applied_at, candidate=None):
     core_env = environment_text(core_environment(root, config, state), edit_hint(root))
     files["core.env"] = core_env
     # Only settings Core itself restarts for enter its inputs, so a Web setting change
-    # leaves Core running. Its snapshot then refreshes on Core's next restart.
+    # leaves Core running. Core reports the environment it loaded on its next start.
     core_settings = [item for item in settings["settings"] if "core" in item["restarts"]]
     external = {
         "core": json.dumps({

@@ -1,7 +1,7 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: eb30344d11d98506b56e62bf2fc668b37d4db050dfc7a0c02c486f4727d85874
+source_hash: db56d5e0f22c082460cb761e8f8062a7458a8aa536b28b25d7da682631b29dd3
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
@@ -11,7 +11,7 @@ Core 安装的每项设置都恰好只有一个归属位置。共有两类：
 | [进程设置](#process-settings-config-json) | 公共 URL、端口、日志、Harness、执行并发度、审计保留期、OAuth 来源、数据库连接池、Runtime 历史记录导出 | 安装目录中的 `config.json`（默认 `~/.oac/core`） | 通过 Web 域设置或 `oac domain` 配置托管 HTTPS；否则编辑该文件，然后运行 `oac apply` | `oac apply` 会重启读取了这些已更改设置的服务 |
 | [运行时设置](#runtime-settings-web) | 沙箱后端和大小、节点、项目和密钥、默认模型、执行器凭据 | Core 的 PostgreSQL 数据库 | 在 Web 中修改，或使用 Core 密钥调用 Core API（`/core/v1`） | 保存时无需重启 Core；节点会异步准备 Runtime 变更 |
 
-Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置，并在 **Startup settings** 下以只读方式显示进程设置、`config.json` 的路径以及 apply 命令。机密信息存放在 [`secrets/`](#installation-directory) 中，每项仅保存一份。`generated/` 中的文件派生自 `config.json`。没有任何配置文件定义项目或 API 密钥。
+Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置，并在 **Startup settings** 下以只读方式显示 Core 加载的进程设置。机密信息存放在 [`secrets/`](#installation-directory) 中，每项仅保存一份。`generated/` 中的文件派生自 `config.json`。没有任何配置文件定义项目或 API 密钥。
 
 ## 进程设置：config.json {#process-settings-config-json}
 
@@ -25,7 +25,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 ### oac apply 的工作方式 {#how-oac-apply-works}
 
 1. 它会验证 `config.json`，如果某个值无效，则不会进行任何更改。`ingress` 在安装后固定；要更改它，请安装到新目录。它还会检查更改后的 `host`、端口或托管入口 `public_url` 所新增的监听器（[端口](getting-started/install-options.md#ports)）；如果 `host` 不是本机的地址，或其他程序占用了其中一个端口，它也不会进行任何更改；安装自身的监听器不计入。
-2. 它会把 Core、Web 和 Compose 读取的文件写入 `generated/`：`compose.json`、`core.env`、`core-key-digests.json`、`settings.json`，以及在使用时写入 `runtime-history.json` 和托管的 `Caddyfile`。不要编辑这些文件。手工编辑某个生成文件后，`apply` 会中止，直到你将相应更改写入 `config.json` 并运行 `oac apply --discard-edits`；该命令会将编辑过的副本保留为 `generated/<file>.edited-<time>`。
+2. 它会把 Core、Web 和 Compose 读取的文件写入 `generated/`：`compose.json`、`core.env`、`core-key-digests.json`，以及在使用时写入 `runtime-history.json` 和托管的 `Caddyfile`。`settings.json` 是安装程序记录的上次应用的值；Core 不读取它。不要编辑这些文件。手工编辑某个生成文件后，`apply` 会中止，直到你将相应更改写入 `config.json` 并运行 `oac apply --discard-edits`；该命令会将编辑过的副本保留为 `generated/<file>.edited-<time>`。
 3. 它会比较所写入的内容与实际运行的内容。每个容器都携带其输入的摘要（`io.oac.inputs` 标签），而 `apply` 只会重新创建或重启输入不同的服务：先 Core，再 Web。下方的 **Restarts** 列说明了各项设置会影响哪些服务；有关重启会中断哪些操作，请参阅[停止和重启](getting-started/operations.md#stop-and-restart)。
 4. 只要有任何服务正在运行，`apply` 还会启动已停止的服务。执行 `oac stop` 后，它只写入文件，该安装会保持停止状态。
 5. 如果 Core 在启动时拒绝某个值，`apply` 会打印 Core 的启动错误。如果所有服务此前都使用旧文件运行，它会恢复这些文件并再次启动服务；否则，它会报告失败，并由下一次 `apply` 完成工作。
@@ -46,7 +46,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 
 ### 设置 {#settings}
 
-`core.runtime_history.headers` 可以包含导出凭据。这些凭据保存在权限为 `0600` 的 `config.json` 和 Core 读取的生成文件中，绝不会出现在 `oac` 输出或 Core 的设置快照中。模型提供商不属于进程设置；请参阅[默认模型](#default-models)。
+`core.runtime_history.headers` 可以包含导出凭据。这些凭据保存在权限为 `0600` 的 `config.json` 和 Core 读取的生成文件中，绝不会出现在 `oac` 输出或安装报告中。模型提供商不属于进程设置；请参阅[默认模型](#default-models)。
 
 以下配置参考表是由脚本自动生成的引用内容，保留英文原文。
 
@@ -83,7 +83,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 | `ingress` | `"managed"` \| `"external"` | `"external"` | fixed | none | managed provides automatic HTTPS and Web domain setup; install.sh selects it by default. external uses your existing proxy. Fixed after installation. |
 [//]: # (END config-reference)
 
-该配置模式为 [`deploy/install/config.schema.json`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/install/config.schema.json)；每个安装都会在 `generated/config.schema.json` 中保留一份副本，供编辑器使用。Core 会在 `GET /core/v1/installation` 提供非机密设置快照，其中包含 `config.json` 的路径和 apply 命令。有关 Core 如何收集和保留 Runtime 历史记录，请参阅[保留的历史记录](../../contracts/agents-api/zh/runtime-observability.md#retained-history-and-optional-export)。
+该配置模式为 [`deploy/install/config.schema.json`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/install/config.schema.json)；每个安装都会在 `generated/config.schema.json` 中保留一份副本，供编辑器使用。Core 会在 `GET /core/v1/installation` 报告它加载的进程设置。`oac-core check-config` 会在不启动 Core 的情况下校验同一组环境变量。敏感设置只报告是否已配置。有关 Core 如何收集和保留 Runtime 历史记录，请参阅[保留的历史记录](../../contracts/agents-api/zh/runtime-observability.md#retained-history-and-optional-export)。
 
 ## 运行时设置：Web {#runtime-settings-web}
 
@@ -114,7 +114,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 
 发行版中的[独立 Compose 文件](getting-started/install-options.md#docker-compose-and-hosting-platforms)使用其 Compose 定义和平台环境作为进程设置的来源。`OAC_PUBLIC_URL` 未设置或为空时，会选用 `http://localhost:8080`，从而允许在配置公共域名前启动。Core 和 Web 会收到同一个值。要允许公共访问，请将 `OAC_PUBLIC_URL` 设置为不带尾部斜杠的准确公共 HTTPS 源地址，并使用相同的项目和数据目录重新部署 Core 和 Web；更改环境变量需要重新创建容器，而不只是重启。请在添加节点或执行器之前配置公共源地址。平台负责 TLS，并将流量路由到 `gateway:8080`；Web 由安装程序管理的域设置不可用。
 
-初始化服务首次生成机密信息和安装 ID，随后在后续部署中验证它们。每项机密信息都只有一个持久来源；Core 的密钥摘要派生自 Web 的登录密钥。对于现有安装，初始化绝不会替换缺失或已更改的机密信息。Core 会读取现有的进程环境和文件设置，因此安装程序专用的 `config.json`、`oac apply` 和启动时提供的设置快照不适用于此部署。
+初始化服务首次生成机密信息和安装 ID，随后在后续部署中验证它们。每项机密信息都只有一个持久来源；Core 的密钥摘要派生自 Web 的登录密钥。对于现有安装，初始化绝不会替换缺失或已更改的机密信息。Core 读取进程环境和文件设置，因此安装程序专用的 `config.json` 和 `oac apply` 不适用于此部署。
 
 | 数据目录路径 | 内容 | 读取方 |
 | --- | --- | --- |
@@ -179,8 +179,7 @@ Core 只读取其环境。安装程序会根据 `config.json` 生成 `generated/
 | `OAC_CREDENTIAL_KEY_FILE` | `secrets/credential.key` |
 | `OAC_CORE_KEY_DIGESTS_FILE` | `generated/core-key-digests.json`：一个包含 Core 密钥 SHA-256 的 JSON 数组 |
 | `OAC_INSTALLATION_ID` | `state.json` 中的安装 ID，采用规范 UUID 格式。它会启用沙箱部署和节点路由，并要求设置 `OAC_PUBLIC_URL` 和 `OAC_CORE_KEY_DIGESTS_FILE`。如果 ID 与数据库记录的 ID 不一致，Core 会拒绝它，因此必须将两者一同保留 |
-| `OAC_SETTINGS_FILE` | `generated/settings.json`，即 Core 在 `GET /core/v1/installation` 提供的快照；Core 不会据此执行操作 |
-| `OAC_EXECUTION_CONCURRENCY`、`OAC_DEFAULT_HARNESS`、`OAC_WRITE_AUDIT_RETENTION`、`OAC_OAUTH_TRUSTED_ORIGINS` | 对应的[进程设置](#settings)；省略或为空时，默认 Harness 使用 `core.default_harness` 中记录的默认值 |
+| `OAC_EXECUTION_CONCURRENCY`、`OAC_DEFAULT_HARNESS`、`OAC_WRITE_AUDIT_RETENTION`、`OAC_OAUTH_TRUSTED_ORIGINS` | 对应的[进程设置](#settings)；省略或为空时，默认 Harness 使用 `core.default_harness` 中记录的默认值。`oac-core check-config` 会在不启动 Core 的情况下校验它们 |
 | `OAC_HARNESSES` | 使用安装程序时来自 `core.harnesses`。独立启动 Core 时，未设置则仅启用默认 Harness；以逗号分隔的显式名称会补充到其中。条目会去除首尾空白并去重；未知名称会阻止启动 |
 | `OAC_HISTORY_SETTINGS_FILE` | `generated/runtime-history.json`：设置后的 [`core.runtime_history`](#settings) 对象 |
 | `OAC_LOG_LEVEL`、`OAC_LOG_FORMAT`、`OAC_LOG_ADD_SOURCE` | `log.*`；Web 也读取这三个设置 |

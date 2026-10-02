@@ -24,6 +24,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -53,6 +54,7 @@ import (
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/persistence/postgres/skillpg"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/persistence/postgres/templatepg"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/persistence/postgres/vaultpg"
+	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/processconfig"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/projects"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/runtime"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/runtimeenrollment"
@@ -70,6 +72,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "check-config" {
+		if err := processconfig.Check(); err != nil {
+			fmt.Fprintln(os.Stderr, err.Error())
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		log.Bg().Error("oac-core startup failed", "error", err)
 		os.Exit(1)
@@ -77,15 +86,15 @@ func main() {
 }
 
 func run() error {
-	log.Init(log.ConfigFromEnv())
-	if err := validateProcessConfiguration(); err != nil {
+	if err := processconfig.Check(); err != nil {
 		return err
 	}
-	public, err := publicURL()
+	log.Init(log.ConfigFromEnv())
+	public, err := processconfig.PublicURL()
 	if err != nil {
 		return err
 	}
-	concurrency, err := executionConcurrency()
+	concurrency, err := processconfig.ExecutionConcurrency()
 	if err != nil {
 		return err
 	}

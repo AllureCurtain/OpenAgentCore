@@ -55,8 +55,9 @@ export const system: TranslationShape<typeof english> = {
   },
   startup: {
     title: "启动设置",
-    help: "Core 启动时从 config.json 读取这些设置。控制台只显示它们。",
-    none: "Core 不是通过 config.json 启动的，没有可显示的启动设置。",
+    help: "Core 报告它加载的进程设置。敏感设置只显示是否已设置。",
+    none: "Core 没有报告启动设置。",
+    effective: "这些是这个 Core 进程加载的设置。",
     where: "在 <path/> 中修改，然后运行 <command/>",
     copyPath: "复制路径",
     copyCommand: "复制命令",
