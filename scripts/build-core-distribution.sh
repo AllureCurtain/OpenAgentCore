@@ -151,7 +151,11 @@ cp -R apps/web/dist "$stage/web/dist"
 cp services/web/Dockerfile "$stage/web/Dockerfile"
 build_image web "$stage/web"
 
-build_image ingress -f deploy/distribution/Ingress.Dockerfile deploy/distribution
+mkdir -p "$stage/ingress"
+cp deploy/distribution/Ingress.Dockerfile "$stage/ingress/Dockerfile"
+cp deploy/distribution/init.py "$stage/ingress/init.py"
+cp "$stage/core/bin/oac" "$stage/ingress/oac"
+build_image ingress "$stage/ingress"
 
 CGO_ENABLED=0 go build -mod=readonly -trimpath -o "$stage/oac-daemon" ./apps/daemon/cmd/oac-daemon
 cp "$stage/oac-daemon" "$bundle/native/bin/oac-daemon"

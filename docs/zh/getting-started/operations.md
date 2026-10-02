@@ -1,7 +1,7 @@
 ---
 title: "管理你的安装"
 source: docs/getting-started/operations.md
-source_hash: 72181b0cd4b37fdc8418b22355c8f9ef96e4835b6320ddff3e1c38a94feac337
+source_hash: b6985d35c3ec93602a87080d61eba43973e0b4f3bedbbec2aba5c5772772013f
 ---
 
 安装运维人员负责 Core 主机、存储和可用性。节点主机运行各自的服务；参阅[节点](nodes.md)。设置见[配置参考](../configuration.md)。
@@ -11,22 +11,21 @@ source_hash: 72181b0cd4b37fdc8418b22355c8f9ef96e4835b6320ddff3e1c38a94feac337
 每个安装目录中都有自己的管理命令，无需发行包或 root：
 
 ```sh
-~/.oac/core/oac status
+docker compose -f ~/.oac/core/compose.yaml ps
 ```
 
 | 命令 | 功能 |
 | --- | --- |
-| `oac status` | 展示 Compose 服务状态、公开 URL 和域名状态 |
-| `oac start` | 启动服务 |
-| `oac stop` | 停止服务。保留数据、节点和沙箱 |
+| `docker compose ps` | 在安装目录中展示服务 |
+| `docker compose start` | 启动服务 |
+| `docker compose stop` | 停止服务。保留数据、节点和沙箱 |
 | `oac apply` | 先运行 `oac-core check-config`，再执行 `docker compose up -d --wait`。校验失败时不改动任何服务 |
 | `oac domain HOSTNAME` | 托管 HTTPS：把公开 URL 设为 `https://HOSTNAME`，对应 Web 的 **Configure domain and HTTPS** |
 | `oac core-key [--show]` | 打印 Core 密钥路径；加上 `--show` 时打印密钥本身 |
 | `oac rotate-core-key` | 替换 Core 密钥并重启 Core 和 Web |
-| `oac backup DEST` | 停止服务，打包安装目录，然后重新启动 |
-| `oac uninstall --yes` | 移除安装、容器和镜像 |
+| `docker compose down --rmi all` | 移除容器和镜像。然后删除安装目录 |
 
-第二个安装使用自己的命令，例如 `~/.oac/second/oac status`。
+第二个安装使用自己的目录，例如 `~/.oac/second`。
 
 ## 服务健康状态 {#service-health}
 
@@ -34,7 +33,7 @@ source_hash: 72181b0cd4b37fdc8418b22355c8f9ef96e4835b6320ddff3e1c38a94feac337
 
 | 观察 | 能证明什么 |
 | --- | --- |
-| `oac status`、PostgreSQL 健康状态 | 数据库接受就绪检查 |
+| `docker compose ps` | 数据库接受就绪检查 |
 | Core `/healthz` | Core 进程存活 |
 | 经过认证的 API 读取 | 调用者的密钥适用于该资源 |
 | Environment 连接 | Runtime 传输已连接 |
@@ -54,8 +53,8 @@ docker compose -f "$HOME/.oac/core/compose.yaml" logs --tail 200 core
 计划重启前，先等待活动工作结束：
 
 ```sh
-~/.oac/core/oac stop
-~/.oac/core/oac start
+docker compose -f ~/.oac/core/compose.yaml stop
+docker compose -f ~/.oac/core/compose.yaml start
 ```
 
 停止 Core 不会停止节点或沙箱。节点服务、microVM 和 Docker 容器继续运行；停止不是回收计算资源的方法。Core 重启不会透明地继续被中断的原生工具调用。重连后查询同一 Session；不要创建新 Session 来重放结果不确定的工作。Session 事件流仅提供实时事件；通过读取 Session、Turn 和 Items 恢复。
@@ -132,7 +131,7 @@ Core 记录每次公开资源写入所使用的密钥；历史保留策略为 [`
 
 - 安装目录，尤其是 `data/`。`data/secrets/core/credential.key` 必须与数据库一起保留，否则无法解密存储的凭据。
 
-`oac backup DEST` 会停止服务，打包安装目录，然后重新启动。
+先 `docker compose stop`，打包安装目录，再 `docker compose start`。
 - 各节点主机上的状态目录 `/var/lib/oac-node/.oac/nodes/<installation-id>/` 及提供商存储：Docker 卷或 microsandbox 存储。恢复方法见[节点主机故障时](nodes.md#when-a-node-host-fails)。
 - 安装所使用的发行包，用于修复同一版本。
 
@@ -141,16 +140,17 @@ Core 记录每次公开资源写入所使用的密钥；历史保留策略为 [`
 ## 卸载 {#uninstall}
 
 ```sh
-~/.oac/core/oac uninstall --yes
+docker compose -f ~/.oac/core/compose.yaml down --rmi all --remove-orphans
+rm -rf ~/.oac/core
 ```
 
-它移除 Compose 项目、容器、镜像和安装目录。没有 `--yes` 时什么都不改。
+`down` 移除容器和镜像。`rm` 删除安装目录。只有确定要删数据时才执行第一条。
 
-全部数据随之删除：Project 和 API 密钥、Session 历史、存储的凭据和 Core 密钥。要保留数据，请用 `oac stop` 停止安装，或先[备份](#back-up)。
+全部数据随之删除：Project 和 API 密钥、Session 历史、存储的凭据和 Core 密钥。要保留数据，请用 `docker compose stop` 停止安装，或先[备份](#back-up)。
 
 卸载不停止沙箱：节点沙箱在节点继续运行，E2B 沙箱在 E2B 继续运行并计费。Core 仍运行时，归档它们的 Session，或[重置部署](nodes.md#change-the-sandbox-configuration)并等待完成；命令展示 Core 正在使用的沙箱数量。
 
-其他主机上的节点继续运行。按常规方式卸载时，先在 Web 移除，见[移除节点](nodes.md#remove-a-node)。`oac uninstall` 后 Core 已不存在：在各节点主机使用安装时[所用发行包](#installation-version-policy)的 `node-install.pyz`，执行带 `--force` 的节点卸载命令。`oac uninstall` 输出含安装 ID 的命令。
+其他主机上的节点继续运行。按常规方式卸载时，先在 Web 移除，见[移除节点](nodes.md#remove-a-node)。安装目录删除后，它们的 Core 已不存在：在各节点主机使用当时发布版的 `node-install.pyz`，执行带 `--force` 的节点卸载命令。安装 ID 在 `data/secrets/core/installation.id`。
 
 ## 安装版本策略 {#installation-version-policy}
 
@@ -175,13 +175,13 @@ Core 记录每次公开资源写入所使用的密钥；历史保留策略为 [`
 | `configuration check failed; no service was changed` | `.env` 中有 Core 拒绝的值。消息只包含变量名。修正 `.env` 后再次运行 `oac apply` |
 | `Docker Compose 2.26 or newer is required` | 更新 Docker Compose 插件 |
 | `The services did not start: …` | 新安装首次启动失败，安装程序[删除了所创建内容](install.md#install)。上方输出 Compose 或 Core 错误；修复后执行同一命令 |
-| `Removal did not finish. Left: …` | 清理失败安装的安装程序或 `oac uninstall` 未能删除全部内容。执行输出的命令移除残留，或修复原因后重新执行原命令 |
+| `Removal did not finish. Left: …` | 首次启动失败后没能删干净。执行输出的命令移除残留，或修复原因后重新执行原命令 |
 | `This installation did not finish installing …` | 安装程序在报告服务运行前停止。重新执行安装命令，[清理残留](install.md#install)后重新安装，或[卸载](#uninstall) |
 | 域名配置时 `… already in use on this server. Automatic HTTPS cannot run beside another program …` | 其他程序占用 80 或 443。用输出的 `ss` 定位、停止并重试；自动 HTTPS 无法共享[这些端口](install-options.md#ports) |
 | 域名配置时 `HTTPS verification failed …` | DNS 指向其他位置、防火墙或 NAT 阻止 80/443 入站，或证书申请失败；参阅[配置域名和 HTTPS](install.md#configure-the-domain-and-https) |
-| Web 返回 403 `Forbidden` | 严格使用 `oac status` 输出的控制台地址；反向代理必须传递原始 Host |
+| Web 返回 403 `Forbidden` | 打开 `.env` 里的主机和端口；反向代理必须传递原始 Host |
 | `/v1` 或 `/api/v1` 返回 404 | 路径被发送到 Web；将其路由到 Core（[反向代理](install-options.md#https-and-the-reverse-proxy)） |
-| Web 显示 Core 不可用（502） | Core 停止或失败：先 `oac status`，再查看 Core 日志 |
+| Web 显示 Core 不可用（502） | Core 停止或失败：先 `docker compose ps`，再查看 Core 日志 |
 | 创建 Session 返回 400 `model_provider_required` | 缺少模型提供商：为 Harness 设置[默认模型](../configuration.md#default-models)，或显式提供；自托管 Session 始终自带提供商 |
 | Add node 不展示命令 | 参阅[添加节点前](nodes.md#before-you-add-a-node) |
 | 节点未就绪 | 参阅[节点问题排查](nodes.md#troubleshooting) |

@@ -67,7 +67,7 @@ Applications, nodes and sandboxes reach Core at one HTTPS address, the public UR
 1. Point the hostname's A/AAAA records to this host, allow inbound ports 80 and 443 from the internet, and keep other programs off [those ports](./install-options.md#ports).
 2. In Web, open **System**, choose **Configure domain and HTTPS**, enter the hostname, such as `core.example.com`, and choose **Apply**.
 
-The installation checks DNS, requests a certificate, and checks that `https://HOSTNAME` reaches this installation before switching Core and Web to it. Then open the HTTPS address and sign in again. Certificates renew automatically. If DNS or the certificate fails, the previous address stays in use: correct the reported problem and retry the same hostname. `oac status` shows a failed attempt and how long to wait before the next one.
+The installation checks DNS, requests a certificate, and checks that `https://HOSTNAME` reaches this installation before switching Core and Web to it. Then open the HTTPS address and sign in again. Certificates renew automatically. If DNS or the certificate fails, the previous address stays in use: correct the reported problem and retry the same hostname. `data/domain/status.json` shows a failed attempt and how long to wait before the next one.
 
 The same operation from a terminal:
 

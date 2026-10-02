@@ -9,22 +9,21 @@ The installation operator owns the Core host, its storage and its availability. 
 Each installation has its own management command in its directory. It needs neither the bundle nor root:
 
 ```sh
-~/.oac/core/oac status
+docker compose -f ~/.oac/core/compose.yaml ps
 ```
 
 | Command | What it does |
 | --- | --- |
-| `oac status` | Shows Compose service status, the public URL and the domain state |
-| `oac start` | Starts the services |
-| `oac stop` | Stops the services. Data, nodes and sandboxes are kept |
+| `docker compose ps` | Shows the services. Run it in the installation directory |
+| `docker compose start` | Starts the services |
+| `docker compose stop` | Stops the services. Data, nodes and sandboxes are kept |
 | `oac apply` | Runs `oac-core check-config`, then `docker compose up -d --wait`. A failed check changes no service |
 | `oac domain HOSTNAME` | Managed HTTPS: sets the public URL to `https://HOSTNAME`, as **Configure domain and HTTPS** in Web does |
 | `oac core-key [--show]` | Prints the Core key path, or the key itself with `--show` |
 | `oac rotate-core-key` | Replaces the Core key and restarts Core and Web |
-| `oac backup DEST` | Stops the services, archives the installation directory, then starts them |
-| `oac uninstall --yes` | Removes the installation, its containers and its images |
+| `docker compose down --rmi all` | Removes the containers and images. Delete the installation directory afterwards |
 
-For a second installation, use its own command, such as `~/.oac/second/oac status`.
+For a second installation, use its directory, such as `~/.oac/second`.
 
 ## Service health
 
@@ -32,7 +31,7 @@ Use these observations for different questions:
 
 | Observation | What it establishes |
 | --- | --- |
-| `oac status`, PostgreSQL health | The database accepts its readiness check |
+| `docker compose ps` | The database accepts its readiness check |
 | Core `/healthz` | Core's process is alive |
 | An authenticated API read | The caller's key works for that resource |
 | Environment connection | The Runtime transport is connected |
@@ -52,8 +51,8 @@ Don't paste `docker compose config`, `docker inspect` or raw logs into public is
 Let active work settle before a planned restart:
 
 ```sh
-~/.oac/core/oac stop
-~/.oac/core/oac start
+docker compose -f ~/.oac/core/compose.yaml stop
+docker compose -f ~/.oac/core/compose.yaml start
 ```
 
 Stopping Core stops no node and no sandbox. Node services, their microVMs and Docker containers keep running; stopping is not a way to reclaim compute. A Core restart does not continue an interrupted native tool call transparently. After reconnecting, query the same Session; don't create a new Session to replay uncertain work. Session event streams are live only; recover through Session, Turn and Items reads.
@@ -131,23 +130,24 @@ Back up these together; a restore needs all of them:
 - the installation directory, especially `data/`. `data/secrets/core/credential.key` must stay with the database, or stored credentials can't be decrypted.
 - each node's state directory on its host, `/var/lib/oac-node/.oac/nodes/<installation-id>/`, with its provider storage: Docker volumes or microsandbox's store. See [when a node host fails](./nodes.md#when-a-node-host-fails) for restoring them.
 
-`oac backup DEST` stops the services, archives the installation directory, and starts them again.
+Stop with `docker compose stop`, archive the installation directory, then `docker compose start`.
 
 Never prune Docker volumes or delete native harness history to make a retry pass. A deleted Session does not prove that all provider resources were reclaimed.
 
 ## Uninstall
 
 ```sh
-~/.oac/core/oac uninstall --yes
+docker compose -f ~/.oac/core/compose.yaml down --rmi all --remove-orphans
+rm -rf ~/.oac/core
 ```
 
-It removes the Compose project, its containers and images, and the installation directory. Without `--yes` it changes nothing.
+`down` removes the containers and images. `rm` removes the installation directory. Do the first only when you mean to delete the data.
 
-All data goes with it: Projects and API keys, Session history, stored credentials and the Core key. To keep the data, stop the installation with `oac stop` instead, or [back it up](#back-up) first.
+All data goes with it: Projects and API keys, Session history, stored credentials and the Core key. To keep the data, stop the installation with `docker compose stop` instead, or [back it up](#back-up) first.
 
 Uninstall stops no sandbox: node sandboxes keep running on their nodes, and E2B sandboxes keep running, and billing, at E2B. While Core is still up, archive their Sessions or [reset the deployment](./nodes.md#change-the-sandbox-configuration) and let it complete; the command shows how many sandboxes Core has in use.
 
-Nodes on other hosts keep running. To uninstall them the usual way, remove them in Web first, as in [Remove a node](./nodes.md#remove-a-node). After `oac uninstall` their Core is gone: on each node host, run the node uninstall command with `--force`, using `node-install.pyz` from the [bundle you installed from](#installation-version-policy). `oac uninstall` prints that command with the installation ID.
+Nodes on other hosts keep running. To uninstall them the usual way, remove them in Web first, as in [Remove a node](./nodes.md#remove-a-node). After the installation directory is gone, their Core is gone: on each node host, run the node uninstall command with `--force`, using `node-install.pyz` from the release that installed them. The installation ID is `data/secrets/core/installation.id`.
 
 ## Installation version policy
 
@@ -172,13 +172,13 @@ Mutating `oac` commands hold `.oac.lock`. If another command holds it, retry aft
 | `configuration check failed; no service was changed` | `.env` has a value Core rejects. The message names the variable and not the value. Fix `.env` and run `oac apply` again |
 | `Docker Compose 2.26 or newer is required` | Update the Docker Compose plugin |
 | `The services did not start: …` | A new installation's first start failed, and the installer [removed what it created](./install.md#install). Compose's or Core's error is printed above it; fix the cause and run the same command again |
-| `Removal did not finish. Left: …` | The installer, cleaning up a failed new installation, or `oac uninstall` could not remove everything. Run the printed commands to remove what is left, or fix the cause and run the same command again |
+| `Removal did not finish. Left: …` | A failed first start could not remove everything. Run the printed commands to remove what is left, or fix the cause and run the same command again |
 | `This installation did not finish installing …` | The installer stopped before reporting that the services were running. Rerun the installer command, which [removes what is left](./install.md#install) and installs again, or [uninstall](#uninstall) it |
 | `… already in use on this server. Automatic HTTPS cannot run beside another program …` during domain setup | Another program holds port 80 or 443. Stop it, using the printed `ss` command to find it, and retry; automatic HTTPS cannot share [these ports](./install-options.md#ports) |
 | `HTTPS verification failed …` during domain setup | DNS points elsewhere, a firewall or NAT blocks inbound ports 80 and 443, or the certificate request failed; see [Configure the domain and HTTPS](./install.md#configure-the-domain-and-https) |
-| Web answers 403 `Forbidden` | Open exactly the console address `oac status` prints; a reverse proxy must pass the original Host |
+| Web answers 403 `Forbidden` | Open the host and port in `.env`; a reverse proxy must pass the original Host |
 | `/v1` or `/api/v1` answers 404 | Those paths reach Web; route them to Core ([reverse proxy](./install-options.md#https-and-the-reverse-proxy)) |
-| Web shows that Core is unavailable (502) | Core is stopped or failing: `oac status`, then Core's log |
+| Web shows that Core is unavailable (502) | Core is stopped or failing: `docker compose ps`, then Core's log |
 | Session creation returns 400 `model_provider_required` | No model provider: set a [default model](../configuration.md#default-models) for the harness, or pass one; self-hosted Sessions always pass their own |
 | Add node shows no command | See [Before you add a node](./nodes.md#before-you-add-a-node) |
 | A node is not ready | See [node troubleshooting](./nodes.md#troubleshooting) |

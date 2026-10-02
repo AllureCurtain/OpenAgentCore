@@ -1,7 +1,7 @@
 ---
 title: "安装 Core 和 Web"
 source: docs/getting-started/install.md
-source_hash: 38efb059c81cef0d19b0090e6723ee5e6bdb008cf60204ba4b4f86bf1396da16
+source_hash: bcb0539c717a1365e52d6dff700a5db471b141f6fb00f44a6146e5a25d7cac65
 ---
 
 一条命令即可在 Linux 主机上安装 Core、Web 控制台和 PostgreSQL。Web 是管理员控制台：使用 Core 密钥登录，为安装配置域名、设置默认模型并签发 Project API 密钥。应用随后使用这些密钥调用 Core API，Session 在你添加的节点上的沙箱中运行，也可以在 E2B 上运行。
@@ -69,7 +69,7 @@ curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/
 1. 将主机名的 A/AAAA 记录指向这台主机，允许来自互联网的 80 和 443 端口入站流量，并确保其他程序不占用[这些端口](install-options.md#ports)。
 2. 在 Web 中打开 **System**，选择 **Configure domain and HTTPS**，输入主机名，例如 `core.example.com`，然后选择 **Apply**。
 
-安装检查 DNS、申请证书，并在把 Core 和 Web 切换过去之前确认 `https://HOSTNAME` 能访问本安装。随后打开 HTTPS 地址并重新登录。证书自动续期。如果 DNS 或证书处理失败，继续使用原地址：修复报告的问题后，用同一主机名重试。`oac status` 会显示失败的尝试，以及下次重试前需要等待多久。
+安装检查 DNS、申请证书，并在把 Core 和 Web 切换过去之前确认 `https://HOSTNAME` 能访问本安装。随后打开 HTTPS 地址并重新登录。证书自动续期。如果 DNS 或证书处理失败，继续使用原地址：修复报告的问题后，用同一主机名重试。`data/domain/status.json` 会显示失败的尝试，以及下次重试前需要等待多久。
 
 终端中的对应操作：
 

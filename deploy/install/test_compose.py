@@ -60,10 +60,13 @@ class ComposeTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory(dir=base)
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.code = {'__name__': 'compose_initializer'}
-        exec(self.compose['configs']['init-script']['content'], self.code)
+        os.environ['OAC_REVISION'] = 'd' * 40
+        os.environ['OAC_RELEASE_BASE'] = 'https://example.com/releases/v1/'
+        os.environ['OAC_ARCHIVE_CHECKSUM'] = 'e' * 64
+        self.code = {'__name__': 'oac_init'}
+        exec((ROOT / 'deploy/distribution/init.py').read_text(), self.code)
         self.files = {name: b'fixture' for name in self.code['MEMBERS']}
-        self.files['manifest.json'] = json.dumps({'source_commit': self.code['REVISION'], 'platform': 'linux/amd64'}).encode()
+        self.files['manifest.json'] = json.dumps({'source_commit': os.environ['OAC_REVISION'], 'platform': 'linux/amd64'}).encode()
         chown = patch('os.chown')
         chown.start()
         self.addCleanup(chown.stop)
@@ -102,7 +105,7 @@ class ComposeTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             self.initialize()
         path.write_bytes(original)
-        self.code['REVISION'] = 'f' * 40
+        os.environ['OAC_REVISION'] = 'f' * 40
         with self.assertRaisesRegex(RuntimeError, 'another release'):
             self.initialize()
 
@@ -117,27 +120,27 @@ class ComposeTests(unittest.TestCase):
         output = io.BytesIO()
         with tarfile.open(fileobj=output, mode='w:gz') as archive:
             for name, data in self.files.items():
-                info = tarfile.TarInfo(self.code['ARCHIVE'] + '/' + name)
+                info = tarfile.TarInfo('oac-' + os.environ['OAC_REVISION'] + '-linux-amd64/' + name)
                 info.size = len(data)
                 archive.addfile(info, io.BytesIO(data))
             data = b'ignored image data' * 1000
-            info = tarfile.TarInfo(self.code['ARCHIVE'] + '/images/core.tar')
+            info = tarfile.TarInfo('oac-' + os.environ['OAC_REVISION'] + '-linux-amd64/images/core.tar')
             info.size = len(data)
             archive.addfile(info, io.BytesIO(data))
         return output.getvalue()
 
     def test_streamed_release_is_fully_verified_and_only_metadata_is_retained(self):
         data = self.archive()
-        self.code['CHECKSUM'] = hashlib.sha256(data).hexdigest()
+        os.environ['OAC_ARCHIVE_CHECKSUM'] = hashlib.sha256(data).hexdigest()
         with patch('urllib.request.urlopen', return_value=io.BytesIO(data)):
             self.assertEqual(self.code['download'](), self.files)
-        self.code['CHECKSUM'] = '0' * 64
+        os.environ['OAC_ARCHIVE_CHECKSUM'] = '0' * 64
         with patch('urllib.request.urlopen', return_value=io.BytesIO(data)):
             with self.assertRaisesRegex(RuntimeError, 'checksum mismatch'):
                 self.code['download']()
         del self.files['node-install.pyz']
         data = self.archive()
-        self.code['CHECKSUM'] = hashlib.sha256(data).hexdigest()
+        os.environ['OAC_ARCHIVE_CHECKSUM'] = hashlib.sha256(data).hexdigest()
         with patch('urllib.request.urlopen', return_value=io.BytesIO(data)):
             with self.assertRaisesRegex(RuntimeError, 'checksum mismatch'):
                 self.code['download']()
@@ -157,6 +160,9 @@ class ComposeTests(unittest.TestCase):
                 self.assertEqual(volume['type'], 'bind')
         self.assertEqual({v['target'] for v in services['web']['volumes']}, {'/run/oac', '/node-payload', '/domain'})
         self.assertEqual(services['credentials']['logging']['driver'], 'none')
+        self.assertEqual(services['init']['command'], ['python3', '/usr/local/bin/oac-init'])
+        self.assertEqual(services['init']['environment']['OAC_REVISION'], 'd' * 40)
+        self.assertNotIn('init-script', self.compose.get('configs', {}))
         self.assertEqual(services['core']['environment']['OAC_HARNESSES'].split(','), ['claude_sdk', 'codex', 'mcode'])
         self.assertEqual(services['core']['environment']['OAC_DEFAULT_HARNESS'], 'codex')
 

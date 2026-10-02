@@ -11,16 +11,12 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 )
-
-// buildRevision is set by the release build. The host binary is copied from that image.
-var buildRevision = "development"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -40,8 +36,11 @@ func main() {
 	}
 }
 
+// buildRevision is set by the release build.
+var buildRevision = "development"
+
 func usage() {
-	fmt.Fprintln(os.Stderr, "Usage: oac status|start|stop|apply|core-key|rotate-core-key|backup|uninstall|domain|setup-sandbox|domain-serve")
+	fmt.Fprintf(os.Stderr, "oac (%s)\nUsage: oac apply|core-key|rotate-core-key|domain|setup-sandbox|domain-serve\n", buildRevision)
 }
 
 func run(ctx context.Context, command string, args []string) error {
@@ -55,25 +54,12 @@ func run(ctx context.Context, command string, args []string) error {
 	in := installation{root: root, data: dataDir(root)}
 	runner := execRunner{dir: root}
 	switch command {
-	case "status":
-		return status(ctx, in, runner)
-	case "start":
-		return withLock(root, func() error { return runner.Run(ctx, "start") })
-	case "stop":
-		return withLock(root, func() error { return runner.Run(ctx, "stop") })
 	case "apply":
 		return withLock(root, func() error { return apply(ctx, runner) })
 	case "core-key":
 		return coreKeyCommand(ctx, in, runner, args)
 	case "rotate-core-key":
 		return withLock(root, func() error { return rotateCoreKey(ctx, in, runner) })
-	case "backup":
-		if len(args) != 1 {
-			return errors.New("Usage: oac backup DEST")
-		}
-		return withLock(root, func() error { return backup(ctx, root, runner, args[0]) })
-	case "uninstall":
-		return withLock(root, func() error { return uninstall(ctx, root, runner, args) })
 	case "domain":
 		return domainCommand(in, args)
 	case "domain-serve":
@@ -126,23 +112,6 @@ func apply(ctx context.Context, runner Runner) error {
 		return errors.New("configuration check failed; no service was changed")
 	}
 	return runner.Run(ctx, "up", "-d", "--wait")
-}
-
-func status(ctx context.Context, in installation, runner Runner) error {
-	public, _ := envValue(in.envPath(), "OAC_PUBLIC_URL")
-	if public == "" {
-		public = "http://localhost:8080"
-	}
-	fmt.Println("Public URL:", public)
-	if buildRevision != "" && buildRevision != "development" {
-		fmt.Println("Revision:", buildRevision)
-	}
-	domain := in.readStatus()
-	fmt.Printf("Domain: %s\n", domain.State)
-	if domain.Message != nil {
-		fmt.Println(*domain.Message)
-	}
-	return runner.Run(ctx, "ps")
 }
 
 func coreKeyCommand(ctx context.Context, in installation, runner Runner, args []string) error {
@@ -198,46 +167,6 @@ func writeSecret(path, contents string) error {
 	return os.Rename(temporary, path)
 }
 
-func backup(ctx context.Context, root string, runner Runner, dest string) error {
-	if err := runner.Run(ctx, "stop"); err != nil {
-		return err
-	}
-	started := false
-	defer func() {
-		if !started {
-			_ = runner.Run(context.Background(), "start")
-		}
-	}()
-	if err := archiveInstall(root, dest); err != nil {
-		return err
-	}
-	started = true
-	return runner.Run(ctx, "start")
-}
-
-func archiveInstall(root, dest string) error {
-	archive := exec.Command("tar", "-C", filepath.Dir(root), "-czf", dest, filepath.Base(root))
-	archive.Stdout, archive.Stderr = os.Stdout, os.Stderr
-	if err := archive.Run(); err != nil {
-		return errors.New("backup archive failed")
-	}
-	return nil
-}
-
-func uninstall(ctx context.Context, root string, runner Runner, args []string) error {
-	if len(args) != 1 || args[0] != "--yes" {
-		fmt.Fprintln(os.Stderr, "This deletes the installation directory, its containers and its images.")
-		fmt.Fprintln(os.Stderr, "Run oac uninstall --yes to continue.")
-		return errors.New("uninstallation was not confirmed")
-	}
-	_ = runner.Run(ctx, "down", "--rmi", "all", "--remove-orphans")
-	if err := os.RemoveAll(root); err != nil {
-		return err
-	}
-	fmt.Println("Installation removed.")
-	return nil
-}
-
 func domainCommand(in installation, args []string) error {
 	var hostname, confirm string
 	for i := 0; i < len(args); i++ {
@@ -280,7 +209,7 @@ func domainClient(in installation, hostname, confirm string) error {
 	defer transport.CloseIdleConnections()
 	response, err := transport.RoundTrip(request)
 	if err != nil {
-		return errors.New("domain service is unavailable; run oac status")
+		return errors.New("domain service is unavailable; run docker compose ps")
 	}
 	defer response.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(response.Body, 4096))

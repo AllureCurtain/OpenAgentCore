@@ -25,7 +25,7 @@ Installer flags in [installation options](./getting-started/install-options.md) 
 2. It runs `docker compose up -d --wait`. Compose recreates only the services whose configuration changed.
 3. If the check fails, no container is recreated. See [stop and restart](./getting-started/operations.md#stop-and-restart) for what a restart interrupts.
 
-`oac status` shows the public URL and the domain state.
+`docker compose ps` shows the services. Domain state is `data/domain/status.json`.
 
 ### Changing the public URL {#changing-the-public-url}
 

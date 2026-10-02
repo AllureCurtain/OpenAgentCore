@@ -1,7 +1,7 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: 26bb855071735e9e4771467610ba0311d81dd24663a3e23032c93b9650a8c30f
+source_hash: 2ec894c01b08c10493b83d5947a603fdf1a1f179701cc8109e6c012ae0843f5c
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
@@ -27,7 +27,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 2. 它运行 `docker compose up -d --wait`。Compose 只重新创建配置有变化的服务。
 3. 校验失败时，不会重新创建任何容器。重启会中断哪些操作，见[停止和重启](getting-started/operations.md#stop-and-restart)。
 
-`oac status` 显示公开 URL 和域名状态。
+`docker compose ps` 展示服务。域名状态在 `data/domain/status.json`。
 
 ### 更改公共 URL {#changing-the-public-url}
 

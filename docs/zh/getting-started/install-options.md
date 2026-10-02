@@ -114,7 +114,7 @@ docker compose -f compose.yaml run --rm credentials
 - **不对流进行缓冲或设置超时。** `/v1` 会流式传输 Session 事件。
 - **接受大文件上传。** 源文件最大可达 512 MiB；具体限制由 Core 执行。
 
-按照默认配置，让 Core 和 Web 在回环地址上监听，并在 Core 主机上运行反向代理。`oac status` 会使用你的地址和端口打印这些路由。
+按照默认配置，让网关在回环地址上监听，并在 Core 主机上运行反向代理。
 
 **Caddy** 会自行获取证书，默认传递 Host 并支持 WebSockets：
 
