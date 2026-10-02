@@ -63,7 +63,7 @@ OpenAgentCore is pre-release. Replace superseded interfaces, execution paths and
 - Do not hard-wrap prose. Write each paragraph, list item and blockquote on one line; editors wrap it for display.
 - User-facing documentation uses Web's exact page and action names.
 - Application examples read the endpoint and key from `OPENAI_BASE_URL` and `OPENAI_API_KEY`.
-- Write documentation and code comments in English. The root README also has a Chinese version; user-facing product copy may be bilingual.
+- Maintain authored documentation under `docs/` and `contracts/agents-api/` in English and Simplified Chinese in the same change. English files keep their paths; Chinese translations mirror them under `docs/zh/` and `contracts/agents-api/zh/`. Preserve protocol identifiers, executable examples and English heading anchors. Each translation records its English `source` and SHA-256 `source_hash` in frontmatter; website checks reject missing or stale translations. Generated references remain owned by their generators and are excluded from manual translation. Keep code comments in English. The root README also has a Chinese version; user-facing product copy may be bilingual.
 - Markdown in `docs/`, component guides and `contracts/` is the authored source. Generated files, such as the OpenAPI documents and the [Harness catalog reference](contracts/agents-api/harness-catalog.md), are never edited by hand: change the source and regenerate.
 - Update the owning document in the same branch as the rule, workflow or generated contract it describes.
 
