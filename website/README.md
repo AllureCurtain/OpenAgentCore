@@ -25,6 +25,21 @@ Site appearance and metadata are configured in `.vitepress/config.mts` and `.vit
 
 The landing page lives in `.vitepress/theme/`. `landing-content.ts` holds its English and Chinese copy; every claim there must be backed by a page in `docs/` or `contracts/`, and its harness protocols follow [Model execution](../contracts/agents-api/model-execution.md).
 
+### Ecosystem logo wall
+
+`components/LogoWall.vue` places two full-width white logo rows between section 10 and the closing section. The wall is transparent and borderless, allowing the landing page's background and grid to continue through it. Harness and model brands occupy the first row; cloud and compute brands occupy the second. They scroll in opposite directions, pause on hover or row keyboard focus, and have an explicit pause control. Reduced-motion preferences disable animation and leave both rows manually scrollable. Labels and controls use the landing page's English and Chinese copy.
+
+`.vitepress/theme/ecosystem-logos.ts` owns the brand list. These are ecosystem illustrations; supported Harness combinations remain defined by [Model execution](../contracts/agents-api/model-execution.md), and host requirements by [Installation](../docs/getting-started/install.md). Brand artwork does not establish deployment qualification or a partnership.
+
+SVG files are bundled under `.vitepress/theme/assets/logos/` and rendered in white with CSS, preserving their proportions. Their sources are:
+
+- AI brands, AWS, Azure, Google Cloud, Alibaba Cloud, Tencent Cloud, Huawei Cloud, Volcengine, Baidu AI Cloud and DigitalOcean: [Lobe Icons](https://github.com/lobehub/lobe-icons), from `@lobehub/icons-static-svg` version `1.95.1`, using the matching filename in its `icons/` directory. MIT license: `LICENSE-lobe-icons.txt` beside the assets.
+- Docker: [SVGL's Docker SVG](https://github.com/pheralb/svgl/blob/main/static/library/docker.svg). MIT license: `LICENSE-svgl.txt` beside the assets.
+- Hetzner: [Simple Icons' Hetzner SVG](https://github.com/simple-icons/simple-icons/blob/develop/icons/hetzner.svg). CC0 notice: `LICENSE-simple-icons.txt` beside the assets.
+- E2B: the medium white symbol from [E2B's official brand assets](https://changelog.e2b.dev/brand), file `e2b-symbol-white-m.svg`. Preserve its proportions and clear space according to that source's usage guidance.
+
+Brand names and marks belong to their respective owners. Keep provenance and license notices with any added or replaced artwork.
+
 ## Publish
 
 `make check-website` builds and tests the site. `make check-docs` checks repository Markdown links, including explicit heading IDs used by translations. core-check runs it for pull requests that change the website, published documentation or relevant Node dependencies; `.github/workflows/website.yml` builds and deploys `main` to GitHub Pages. A repository administrator enables Pages once: **Settings → Pages → Source: GitHub Actions**.

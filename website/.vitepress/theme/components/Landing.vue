@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { withBase } from 'vitepress'
 import AsciiCanvas from './AsciiCanvas.vue'
 import ComposeLab from './ComposeLab.vue'
+import LogoWall from './LogoWall.vue'
 import TypeTerminal, { type TermLine } from './TypeTerminal.vue'
 import { copy, installCommand, repoUrl, type Lang } from '../landing-content'
 import { data as docsGroups } from '../docs.data.mts'
@@ -353,7 +354,7 @@ onBeforeUnmount(() => {
     </section>
 
     <!-- 10 Docs -->
-    <section class="sec">
+    <section class="sec docs-section">
       <div class="wrap">
         <header class="sec-head" data-reveal><span class="idx">// {{ t.docs.index }}</span><span class="kicker">{{ t.docs.kicker }}</span></header>
         <h2 data-reveal>{{ t.docs.title }}</h2>
@@ -373,6 +374,8 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </section>
+
+    <LogoWall :lang="lang" />
 
     <!-- Outro -->
     <section class="outro">
@@ -1235,7 +1238,7 @@ h3 {
 /* outro */
 .outro {
   position: relative;
-  margin-top: 120px;
+  margin-top: 24px;
   padding-bottom: 96px;
   border-top: 1px solid var(--l-line);
 }
@@ -1308,6 +1311,7 @@ h3 {
 .cursor { font-style: normal; }
 .eyebrow { border-radius: 0; background: transparent; border: 0; border-left: 3px solid var(--l-accent); padding-left: 12px; }
 .sec { border-top: 1px solid var(--l-line-strong); padding-bottom: 80px; }
+.sec.docs-section { padding-bottom: 32px; }
 .sec-head { align-items: center; }
 .idx { background: var(--l-accent); color: var(--l-bg); padding: 7px 10px; }
 h2, .motto { font-family: var(--l-display); letter-spacing: -0.045em; }

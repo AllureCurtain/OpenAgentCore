@@ -103,6 +103,7 @@ export interface LandingCopy {
     lede: (pages: number) => string
     open: string
   }
+  ecosystem: { title: string; agents: string; compute: string; pause: string; resume: string }
   outro: { line: string; primary: string; secondary: string }
 }
 
@@ -264,6 +265,7 @@ const en: LandingCopy = {
     lede: (pages) => `${pages} pages, listed straight from the repository's docs.json. New guides appear here when they are added.`,
     open: 'open',
   },
+  ecosystem: { title: 'One core. An open ecosystem.', agents: 'Harnesses & models', compute: 'Cloud & compute', pause: 'Pause', resume: 'Resume' },
   outro: { line: 'Products differ in interaction, model and engine. They can share one execution layer.', primary: 'Get started', secondary: 'Star on GitHub' },
 }
 
@@ -418,6 +420,7 @@ const zh: LandingCopy = {
     lede: (pages) => `共 ${pages} 页，直接读取仓库的 docs.json 生成。新增文档会自动出现在这里。支持中英文阅读。`,
     open: '打开',
   },
+  ecosystem: { title: '一个内核，开放的生态。', agents: 'Harness 与模型', compute: '云计算与沙箱', pause: '暂停', resume: '继续' },
   outro: { line: '产品可以有不同的交互、模型和执行引擎，共用同一层执行基础设施。', primary: '开始使用', secondary: '在 GitHub 上 Star' },
 }
 
