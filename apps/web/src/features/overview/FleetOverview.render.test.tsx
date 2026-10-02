@@ -1,14 +1,14 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { FleetTopology } from "./FleetTopology";
+import { FleetOverview } from "./FleetOverview";
 import { node } from "./test-fixtures";
 
-describe("fleet topology popovers", () => {
+describe("fleet overview popovers", () => {
   it("opens Core and each node in a popover rather than navigating", () => {
     const noop = () => undefined;
     const html = renderToStaticMarkup(
-      <FleetTopology
+      <FleetOverview
         nodes={[node("a", { name: "worker-a" }), node("b", { online: false })]}
         coreLabel="Running"
         coreTone="ok"

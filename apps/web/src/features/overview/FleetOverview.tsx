@@ -1,6 +1,6 @@
 import type { SandboxNode } from "@oac/agents-client";
 import { useQuery } from "@tanstack/react-query";
-import { Cloud, Network } from "lucide-react";
+import { ChevronRight, Cloud, Network, Server } from "lucide-react";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -14,21 +14,19 @@ import { coreMetricsQuery } from "../metrics/metrics-queries";
 import { NodeRolloutStatus } from "../sandbox/NodeRolloutStatus";
 import { seconds } from "../sandbox/NodeList";
 
-/** Row pitch of the node columns, in pixels. */
-const ROW = 72;
-/** Nodes drawn around Core; the rest are counted and listed on the Nodes page. */
-export const TOPOLOGY_LIMIT = 8;
+/** Nodes shown in the overview; the rest are counted and listed on the Nodes page. */
+export const FLEET_LIMIT = 4;
 
 const healthTone: Record<NodeHealth, Tone> = { available: "ok", degraded: "warning", offline: "danger" };
 const healthRank: Record<NodeHealth, number> = { offline: 0, degraded: 1, available: 2 };
 
-/** The nodes to draw: all of them, or the unhealthy ones first when they do not fit. */
-export function topologyNodes(nodes: readonly SandboxNode[]): SandboxNode[] {
-  if (nodes.length <= TOPOLOGY_LIMIT) return [...nodes];
+/** The nodes to show: all of them, or the unhealthy ones first when they do not fit. */
+export function overviewNodes(nodes: readonly SandboxNode[]): SandboxNode[] {
+  if (nodes.length <= FLEET_LIMIT) return [...nodes];
   return nodes
     .map((node, index) => ({ node, index }))
     .sort((a, b) => healthRank[nodeHealth(a.node)] - healthRank[nodeHealth(b.node)] || a.index - b.index)
-    .slice(0, TOPOLOGY_LIMIT)
+    .slice(0, FLEET_LIMIT)
     .map(({ node }) => node);
 }
 
@@ -39,12 +37,8 @@ export interface CloudHost {
   template: string | null;
 }
 
-/**
- * Core in the middle, sandbox nodes left and right of it. Lines are solid and
- * animated for connected nodes and dashed for offline ones. Core and each node
- * open a popover with a glance at their state and the pages that go deeper.
- */
-export function FleetTopology({ nodes, cloud, coreLabel, coreTone, stale, onOpenNode, onOpenBackend, onOpenSandboxMetrics, onOpenCoreMetrics }: {
+/** A compact fleet inventory with on-demand operational details. */
+export function FleetOverview({ nodes, cloud, coreLabel, coreTone, stale, onOpenNode, onOpenBackend, onOpenSandboxMetrics, onOpenCoreMetrics }: {
   nodes: readonly SandboxNode[];
   /** An E2B deployment: Core links to E2B's cloud instead of to machines. */
   cloud?: CloudHost | null;
@@ -59,44 +53,15 @@ export function FleetTopology({ nodes, cloud, coreLabel, coreTone, stale, onOpen
 }) {
   const { t, i18n } = useTranslation("overview");
   const locale = i18n.resolvedLanguage;
-  const shown = cloud ? [] : topologyNodes(nodes);
-  const leftCount = Math.ceil(shown.length / 2);
-  const rightCount = shown.length - leftCount;
-  const height = Math.max(216, leftCount * ROW + 24);
-  const middle = height / 2;
-  const placed = shown.map((node, index) => {
-    const left = index % 2 === 0;
-    const count = left ? leftCount : rightCount;
-    const y = middle + (Math.floor(index / 2) - (count - 1) / 2) * ROW;
-    return { node, left, y, health: nodeHealth(node) };
-  });
+  const shown = cloud ? [] : overviewNodes(nodes);
   return (
-    <div className={stale ? "fleet-topology fleet-topology-stale" : "fleet-topology"} style={{ height }}>
-      <svg className="fleet-topology-lines" viewBox={`0 0 1000 ${height}`} preserveAspectRatio="none" aria-hidden="true">
-        {cloud ? (
-          <g className="fleet-link fleet-link-available">
-            <path d={`M 500 ${middle} L 700 ${middle}`} className="fleet-link-edge" />
-            <path d={`M 500 ${middle} L 700 ${middle}`} className="fleet-link-flow" />
-          </g>
-        ) : null}
-        {placed.map(({ node, left, y, health }) => {
-          const end = left ? 300 : 700;
-          const bend = left ? 380 : 620;
-          const path = `M 500 ${middle} C ${bend} ${middle}, ${bend} ${y}, ${end} ${y}`;
-          return (
-            <g key={node.id} className={`fleet-link fleet-link-${health}`}>
-              <path d={path} className="fleet-link-edge" />
-              {health !== "offline" ? <path d={path} className="fleet-link-flow" /> : null}
-            </g>
-          );
-        })}
-      </svg>
+    <div className="fleet-inventory">
       <ConsolePopover
         trigger={(
-          <button type="button" className="fleet-core" aria-label={`${t("fleet.core")}, ${coreLabel}`}>
-            <Network size={20} strokeWidth={1.4} aria-hidden="true" />
-            <strong>{t("fleet.core")}</strong>
-            <StatusDot tone={coreTone} label={coreLabel} />
+          <button type="button" className="fleet-row fleet-core-row" aria-label={`${t("fleet.core")}, ${coreLabel}`}>
+            <Network size={18} strokeWidth={1.75} aria-hidden="true" />
+            <span className="fleet-row-info"><strong>{t("fleet.core")}</strong><StatusDot tone={coreTone} label={coreLabel} /></span>
+            <ChevronRight size={14} aria-hidden="true" />
           </button>
         )}
         title={t("fleet.core")}
@@ -110,14 +75,12 @@ export function FleetTopology({ nodes, cloud, coreLabel, coreTone, stale, onOpen
           trigger={(
             <button
               type="button"
-              className="fleet-node fleet-node-right"
-              style={{ top: middle }}
+              className="fleet-row"
               aria-label={t("fleet.cloud.open", { running: formatInteger(cloud.running, locale) })}
             >
-              <strong className="fleet-node-name"><Cloud size={14} strokeWidth={1.5} aria-hidden="true" />{t("fleet.cloud.name")}</strong>
-              <span className="fleet-node-foot">
-                <StatusDot tone="ok" label={t("fleet.cloud.running", { count: cloud.running })} />
-              </span>
+              <Cloud size={18} strokeWidth={1.75} aria-hidden="true" />
+              <span className="fleet-row-info"><strong>{t("fleet.cloud.name")}</strong><StatusDot tone="ok" label={t("fleet.cloud.running", { count: cloud.running })} /></span>
+              <ChevronRight size={14} aria-hidden="true" />
             </button>
           )}
           title={t("fleet.cloud.name")}
@@ -133,26 +96,25 @@ export function FleetTopology({ nodes, cloud, coreLabel, coreTone, stale, onOpen
           </Facts>
         </ConsolePopover>
       ) : null}
-      {placed.map(({ node, left, y, health }) => {
+      {shown.map((node) => {
+        const health = nodeHealth(node);
         const name = node.name || node.id;
         const state = t(`nodeHealth.${health}`);
         const slots = `${formatInteger(node.active, locale)} / ${formatInteger(node.max_active, locale)}`;
         return (
           <ConsolePopover
             key={node.id}
-            side={left ? "right" : "left"}
+            side="left"
             trigger={(
               <button
                 type="button"
-                className={left ? "fleet-node fleet-node-left" : "fleet-node fleet-node-right"}
-                style={{ top: y }}
+                className="fleet-row fleet-node-row"
                 aria-label={t("fleet.open", { name, state, slots })}
               >
-                <strong className="fleet-node-name">{name}</strong>
-                <span className="fleet-node-foot">
-                  <StatusDot tone={healthTone[health]} label={state} />
-                  <span className="fleet-node-slots">{slots}</span>
-                </span>
+                <Server size={18} strokeWidth={1.75} aria-hidden="true" />
+                <span className="fleet-row-info"><strong>{name}</strong><StatusDot tone={healthTone[health]} label={state} /></span>
+                <span className="fleet-node-slots">{slots}</span>
+                <ChevronRight size={14} aria-hidden="true" />
               </button>
             )}
             title={name}
