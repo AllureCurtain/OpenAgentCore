@@ -24,7 +24,7 @@ Signing in opens the Overview. While any step is still to do, its **Getting star
 | Resources | Agents, Environment templates, Skills, Files, Vaults | Inspection and permitted deletion, with the Project and the creating key of each resource |
 | Platform | Projects and keys | Create, rename and archive Projects; issue and revoke keys; each Project's usage, write history and how to call the API |
 | Platform | Nodes | Add, edit and remove Docker or microsandbox nodes; each node's readiness, capacity and allocations |
-| Platform | System | The installation's public address, API base URL, ID and source commit; **Domain and HTTPS**; each harness's default model; **Sandbox configuration**; Core's `config.json` startup settings, read-only, with where to change them |
+| Platform | System | The installation's public address, API base URL, ID and source commit; **Domain and HTTPS**; each harness's default model; **Sandbox configuration**; the startup settings Core loaded, read-only |
 
 Missing data is shown as missing (—), never as zero. [Console API usage](./console-api-usage.md) lists what each page reads and how its figures are bounded.
 

@@ -1,7 +1,7 @@
 ---
 title: "安装选项与高级部署"
 source: docs/getting-started/install-options.md
-source_hash: ff12b2b05537794e3174951653fb0de944e14f2e342ef8d5b0cad57f7a07b1ef
+source_hash: 1a75154d296f09acd2ea06e357eebbf489c788252e9df247a7e2bf343d8a0616
 ---
 
 [默认安装](install.md)无需任何选项。使用本页可以在现有反向代理后运行，或者在无法访问互联网时进行安装。
@@ -61,11 +61,11 @@ docker compose -f compose.yaml run --rm credentials
 | `--external-proxy` | `OAC_INGRESS` |
 [//]: # (END install-flags)
 
-`--config FILE` 会改为从 JSON 文件初始化 `config.json`，而不再使用这些设置标志；两者不能结合使用。`--config` 文档遵循 schema 默认值，因此若要使用托管 HTTPS，请在其中设置 `ingress: "managed"` 和 `host: "0.0.0.0"`。
+`--external-proxy` 把 `OAC_INGRESS` 设为 `external`，并且不发布 80 和 443。默认是托管安装。
 
 ## 安装操作 {#installation-actions}
 
-这些选项用于选择安装位置或执行初始设置；不会保存在 `config.json` 中。
+`--install-dir` 选择安装目录。它不是进程设置。
 
 | 选项 | 用途 |
 | --- | --- |
@@ -75,32 +75,31 @@ docker compose -f compose.yaml run --rm credentials
 
 ## 沙箱后端 {#sandbox-backend}
 
-服务健康之后，安装程序会按 Web 的 [`standard-sizes.json`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/apps/web/src/features/sandbox/standard-sizes.json) 中的 Standard 尺寸保存 microsandbox。该选择保存在 Core 的数据库中，而不是 `config.json` 中，修复安装时不会更改它。如果 Core 拒绝该选择，安装程序会打印 Core 返回的消息并退出；服务会继续运行，你可以在 Web 中选择后端。
+服务健康之后，安装程序会按 Web 的 [`standard-sizes.json`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/apps/web/src/features/sandbox/standard-sizes.json) 中的 Standard 尺寸保存 microsandbox。该选择保存在 Core 的数据库中。如果 Core 拒绝该选择，安装程序会打印 Core 返回的消息并退出；服务会继续运行，你可以在 Web 中选择后端。
 
 要使用 Docker 或 E2B，或使用其他尺寸，请打开 **System** → **Manage sandbox configuration**，然后[重置部署](nodes.md#change-the-sandbox-configuration)。Docker 沙箱与每个节点共用该节点的内核，其节点服务账户[等效于 root](nodes.md#what-the-installer-sets-up)。E2B 需要一个非回环的公共 HTTPS URL，因为 E2B 沙箱会从 E2B 云端调用 Core。按照 [E2B 指南](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/services/core/deploy/e2b/README.md)准备模板。
 
 ## 监听器与访问 {#listeners-and-access}
 
-默认安装会选择 `--ingress managed` 和 `--host 0.0.0.0`。其网关会在 `--web-port` 上发布 Web（默认为 8080），并在启用 HTTPS 后发布端口 80 和 443。Core 的 `--core-port` 保持为回环地址，PostgreSQL 保持私有。`--host` 接受 IPv4 或 IPv6 地址，但不能包含端口、协议方案或区域。请在浏览器中使用服务器的具体 IP 地址，而不是通配地址。托管入口需要本地 Docker Unix 套接字。
+默认安装是托管 HTTPS，并且 `--host 0.0.0.0`。网关在 `--web-port`（8080）和 80、443 上发布 Web。Core 的管理 API 留在 `127.0.0.1:8091`。PostgreSQL 保持私有。`--host` 是不含端口、协议或区域的 IPv4 或 IPv6 地址。请在浏览器中使用服务器的具体 IP，而不是通配地址。
 
-`--ingress external` 会改用你自己的反向代理。随后 Core 和 Web 会在 `--host` 上监听，默认是回环地址。外部非回环监听器需要基于 HTTPS 的 `public_url` 和[反向代理](#https-and-the-reverse-proxy)，并且无法使用 Web 的域名设置：请在 `config.json` 中设置 `public_url`，然后运行 `oac apply`。
+`--external-proxy` 不发布 80 或 443，也不启动域名设置。把反向代理指向网关，在 `.env` 中设置 `OAC_PUBLIC_URL`，然后运行 `oac apply`。Web 的 **Configure domain and HTTPS** 不可用。
 
-`--public-url` 会为无人值守设置初始化一个基于 DNS 的 HTTPS 源地址；使用托管入口时，证书和连接检查必须通过。安装完成后，入口模式便固定不变。
+`--public-url` 设置 `OAC_PUBLIC_URL`。托管安装会在服务健康后运行 `oac domain`，因此主机名必须已经解析到这台主机。入口模式在一次安装中固定。
 
 ### 端口 {#ports}
 
-在验证捆绑包或加载镜像之前，安装程序会检查 `--host` 以及安装将要监听的每个端口：Web 和 Core 的端口，以及使用托管入口和 `--public-url` 时的端口 80 和 443。
+安装程序在下载镜像之前检查将要发布的端口：`--web-port`，以及 80 和 443，除非传入 `--external-proxy`。
 
-- `--host` 必须是本机的地址，或者是 `0.0.0.0` 之类的通配地址。
-- 通过 `--web-port`、`--core-port` 或 `--config` 文件设置的端口必须处于空闲状态；由回环地址型 `--public-url` 指定的端口也必须空闲，例如 `http://localhost:8080` 中的 8080。否则，安装程序会停止，指出该端口，并打印用于查找占用进程的 `ss` 命令。
-- 未指定 Web 或 Core 端口时，会从其默认值向上选择第一个空闲端口，最多增加 20，并且绝不会改用同一安装的其他端口。安装程序会将所选端口写入 `config.json`，并在摘要中指出该端口，例如 `Port 8080 was in use; Web uses 8081.`
-- 托管入口仅将端口 80 和 443 用于 HTTPS，并且绝不会移动这些端口。通过 `--public-url` 或 [Web 中的域名设置](install.md#configure-the-domain-and-https)设置 `public_url` 后，网关才会发布这两个端口；主机上的任何其他程序都不得使用它们。如果安装时其中任一端口已被占用，请先释放该端口，不使用 `--public-url` 进行安装并稍后设置域名，或者使用 `--ingress external` 进行安装并采用你自己的[反向代理](#https-and-the-reverse-proxy)。
+- `--host` 是这些端口绑定的地址。`0.0.0.0` 在所有 IPv4 接口发布 Web。`127.0.0.1` 只在本机发布 Web。
+- 端口被占用时安装停止，不会改用其他端口。
+- 托管安装会立即发布 80 和 443。如果其中之一被占用，请释放它，或使用 `--external-proxy` 安装。
 
-安装完成后，`oac apply` 会[检查端口](../configuration.md#how-oac-apply-works)：检查发生更改的 `host` 或端口；当 `public_url` 启用 HTTPS 时，还会检查端口 80 和 443。Web 中的域名设置和 `oac domain` 会在启动前检查主机名能否解析，以及是否有其他程序占用端口 80 或 443，并指出正在使用的端口。
+`OAC_HOST` 或 `OAC_WEB_PORT` 变化时，`oac apply` 会重新创建网关。`oac domain` 在申请证书之前检查主机名能否解析。
 
 ## HTTPS 与反向代理 {#https-and-the-reverse-proxy}
 
-使用外部入口时，Core 和 Web 共用一个公共源地址。你的反向代理负责终止 TLS，并按路径进行路由：
+使用 `--external-proxy` 时，请用 `--host 127.0.0.1` 安装，并把反向代理指向网关，默认是 `127.0.0.1:8080`。网关已经把 `/v1` 和 `/api/v1` 转到 Core，其余转到 Web。
 
 | 路径 | 目标 | 调用方 |
 | --- | --- | --- |
@@ -110,7 +109,7 @@ docker compose -f compose.yaml run --rm credentials
 
 反向代理必须：
 
-- **保留 Host。** Web 仅接受其公共 URL 中指定的主机。
+- **保留 Host。** Web 仅接受 `OAC_PUBLIC_URL` 中的主机。
 - **传递 WebSocket 升级请求**，包括 `/api/v1` 上的升级请求。
 - **不对流进行缓冲或设置超时。** `/v1` 会流式传输 Session 事件。
 - **接受大文件上传。** 源文件最大可达 512 MiB；具体限制由 Core 执行。
@@ -121,54 +120,11 @@ docker compose -f compose.yaml run --rm credentials
 
 ```caddyfile
 core.example {
-	@core path /v1 /v1/* /api/v1/*
-	handle @core {
-		reverse_proxy 127.0.0.1:8091
-	}
-	handle {
-		reverse_proxy 127.0.0.1:8080
-	}
+	reverse_proxy 127.0.0.1:8080
 }
 ```
 
-以 **nginx** 为例，在 `http` 块内的 `/etc/nginx/conf.d/oac.conf` 中配置：
-
-```nginx
-map $http_upgrade $connection_upgrade {
-    default upgrade;
-    ''      close;
-}
-
-server {
-    listen 80;
-    server_name core.example;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name core.example;
-    ssl_certificate     /etc/letsencrypt/live/core.example/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/core.example/privkey.pem;
-
-    client_max_body_size 0;          # Core enforces its own upload limits
-    proxy_http_version 1.1;
-    proxy_set_header Host $http_host;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_buffering off;             # server-sent events on /v1
-    proxy_request_buffering off;
-    proxy_read_timeout 1h;           # long-lived WebSockets and streams
-    proxy_send_timeout 1h;
-
-    location = /v1    { proxy_pass http://127.0.0.1:8091; }
-    location /v1/     { proxy_pass http://127.0.0.1:8091; }
-    location /api/v1/ { proxy_pass http://127.0.0.1:8091; }
-    location /        { proxy_pass http://127.0.0.1:8080; }
-}
-```
-
-然后在 `~/.oac/core/config.json` 中设置 `public_url`，并运行 `~/.oac/core/oac apply`。检查路由：
+然后在 `~/.oac/core/.env` 中设置 `OAC_PUBLIC_URL=https://core.example`，并运行 `~/.oac/core/oac apply`。检查路由：
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' -H 'OpenAI-Beta: agents=v1' https://core.example/v1/agents
@@ -185,19 +141,13 @@ curl -s -o /dev/null -w '%{http_code}\n' -H 'OpenAI-Beta: agents=v1' https://cor
 ```caddyfile
 http://:8443 {
 	bind 127.0.0.1
-	@core path /v1 /v1/* /api/v1/*
-	handle @core {
-		reverse_proxy 127.0.0.1:8091
-	}
-	handle {
-		reverse_proxy 127.0.0.1:8080
-	}
+	reverse_proxy 127.0.0.1:8080
 }
 ```
 
 1. 启动代理：`caddy run --config Caddyfile`。
 2. 启动隧道：`cloudflared tunnel --url http://127.0.0.1:8443`。它会打印一个地址，例如 `https://random-words.trycloudflare.com`。
-3. 在 `~/.oac/core/config.json` 中将该地址设置为 `public_url`，并运行 `~/.oac/core/oac apply`。
+3. 在 `~/.oac/core/.env` 中将该地址设置为 `OAC_PUBLIC_URL`，并运行 `~/.oac/core/oac apply`。
 
 每当 `cloudflared` 重启时，该地址都会改变；随后必须重新添加绑定到旧地址的节点。吞吐量较低，因此节点首次下载 Runtime（约 500 MB）时可能很慢；请参阅[慢速链接](nodes.md#rerun-expiry-and-slow-links)。
 ## 离线主机 {#offline-hosts}

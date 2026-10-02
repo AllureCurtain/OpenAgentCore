@@ -10,9 +10,7 @@ Pass options to the downloaded script:
 ./install.sh --public-url https://core.example
 ```
 
-With the one-line command, append them after `bash -s --`. The release downloader also accepts `--version TAG` to select a published release; otherwise it selects the latest stable release. It verifies the bundle's SHA-256 before extracting it and keeps the verified bundle for [repair](./operations.md#installation-version-policy).
-
-The installer prints each stage, then a summary of addresses, sign-in details and next steps. Set `NO_COLOR=1` to disable colors. A failed step stops installation without a success message.
+With the one-line command, append them after `bash -s --`. `--version TAG` selects a published release; otherwise the script selects the latest stable release and verifies each Compose file's SHA-256. A failed step stops installation without a success message.
 
 ## Docker Compose and hosting platforms
 
@@ -58,11 +56,11 @@ These flags are written to `.env` once. After installation, edit that file and r
 | `--external-proxy` | `OAC_INGRESS` |
 [//]: # (END install-flags)
 
-`--config FILE` seeds `config.json` from a JSON file instead of these setting flags; they cannot be combined. A `--config` document follows the schema defaults, so set `ingress: "managed"` and `host: "0.0.0.0"` in it for managed HTTPS.
+`--external-proxy` sets `OAC_INGRESS` to `external` and does not publish ports 80 and 443. Managed is the default.
 
 ## Installation actions
 
-These options choose an installation location or perform initial setup; they are not saved in `config.json`.
+`--install-dir` chooses where the installation is created. It is not a process setting.
 
 | Option | Purpose |
 | --- | --- |
@@ -72,100 +70,48 @@ Several installations can share a machine when they use distinct installation di
 
 ## Sandbox backend
 
-After the services are healthy, the installer saves microsandbox at the Standard size in Web's [`standard-sizes.json`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/apps/web/src/features/sandbox/standard-sizes.json). The choice is stored in Core's database, not in `config.json`, and a repair does not change it. If Core refuses the choice, the installer prints Core's message and exits; the services keep running and you choose the backend in Web.
+After the services are healthy, the installer saves microsandbox at the Standard size in Web's [`standard-sizes.json`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/apps/web/src/features/sandbox/standard-sizes.json). The choice is stored in Core's database. If Core refuses the choice, the installer prints Core's message and exits; the services keep running and you choose the backend in Web.
 
 To use Docker or E2B, or another size, open **System** → **Manage sandbox configuration** and [reset the deployment](./nodes.md#change-the-sandbox-configuration). Docker shares each node's kernel with its sandboxes, and its node service account is [root-equivalent](./nodes.md#what-the-installer-sets-up). E2B needs a public HTTPS URL that is not loopback, because E2B's sandboxes call Core from E2B's cloud. Prepare an E2B template with the [E2B guide](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/services/core/deploy/e2b/README.md).
 
 ## Listeners and access
 
-The default installation selects `--ingress managed` and `--host 0.0.0.0`. Its gateway publishes Web on `--web-port` (8080 by default), and [ports 80 and 443](#ports) once HTTPS is on. Core's `--core-port` stays on loopback and PostgreSQL stays private. `--host` accepts IPv4 or IPv6, without a port, scheme or zone. Use a concrete server IP in the browser, not a wildcard. Managed ingress needs a local Docker Unix socket.
+The default installation is managed HTTPS and `--host 0.0.0.0`. The gateway publishes Web on `--web-port` (8080) and [ports 80 and 443](#ports). Core's admin API stays on `127.0.0.1:8091`. PostgreSQL stays private. `--host` is an IPv4 or IPv6 address, without a port, scheme or zone. Use a concrete server IP in the browser, not a wildcard.
 
-`--ingress external` uses your own reverse proxy instead. Core and Web then listen on `--host`, loopback by default. External non-loopback listeners require an HTTPS `public_url` and a [reverse proxy](#https-and-the-reverse-proxy), and Web's domain setup is unavailable: set `public_url` in `config.json` and run `oac apply`.
+`--external-proxy` does not publish 80 or 443 and does not start domain setup. Point your proxy at the gateway, set `OAC_PUBLIC_URL` in `.env`, and run `oac apply`. Web's **Configure domain and HTTPS** is unavailable.
 
-`--public-url` seeds a DNS-based HTTPS origin for unattended setup; with managed ingress, the certificate and connectivity checks must pass. The ingress mode is fixed for an installation.
+`--public-url` sets `OAC_PUBLIC_URL`. On a managed install it also runs `oac domain` after the services are healthy, so the hostname must already resolve to this host. The ingress mode is fixed for an installation.
 
 ### Ports
 
-Before it verifies the bundle or loads images, the installer checks `--host` and every port the installation will listen on: Web's, Core's, and 80 and 443 with managed ingress and `--public-url`.
+The installer checks the ports it will publish before it downloads images: `--web-port`, and 80 and 443 unless you pass `--external-proxy`.
 
-- `--host` must be an address of this machine, or a wildcard such as `0.0.0.0`.
-- A port set with `--web-port`, `--core-port` or in the `--config` file must be free, and so must a port that a loopback `--public-url` names, such as 8080 in `http://localhost:8080`. Otherwise the installer stops, names the port and prints the `ss` command that finds the program holding it.
-- A Web or Core port you leave out moves to the first free port above its default, at most 20 above, and never to another port of the same installation. The installer writes the chosen port to `config.json` and names it in the summary, for example `Port 8080 was in use; Web uses 8081.`
-- Managed ingress uses ports 80 and 443 only for HTTPS and never moves them. The gateway publishes them once `public_url` is set, from `--public-url` or [domain setup in Web](./install.md#configure-the-domain-and-https), and no other program on the host may use them. If either is in use at installation, free it, install without `--public-url` and set up the domain later, or install with `--ingress external` and use your own [reverse proxy](#https-and-the-reverse-proxy).
+- `--host` is the address those ports bind. `0.0.0.0` publishes Web on every IPv4 interface. `127.0.0.1` keeps Web on this machine.
+- A busy port stops installation. It does not move to another port.
+- Managed installs publish 80 and 443 immediately. If either is in use, free it or install with `--external-proxy`.
 
-After installation, `oac apply` [checks the ports](../configuration.md#how-oac-apply-works) of a changed `host` or port, and 80 and 443 when `public_url` turns HTTPS on. Domain setup in Web and `oac domain` check, before they start, that the hostname resolves and that no other program holds port 80 or 443, and name the port that is in use.
+`oac apply` recreates the gateway when `OAC_HOST` or `OAC_WEB_PORT` changes. `oac domain` checks that the hostname resolves before it requests a certificate.
 
 ## HTTPS and the reverse proxy
 
-With external ingress, Core and Web share one public origin. Your reverse proxy terminates TLS and routes by path:
-
-| Path | Goes to | Callers |
-| --- | --- | --- |
-| `/v1`, `/v1/*` | Core, `127.0.0.1:8091` by default | Applications, with a Project API key |
-| `/api/v1/*` | Core, `127.0.0.1:8091` | Nodes, sandboxes and self-hosted machines. Uses WebSockets |
-| Everything else | Web, `127.0.0.1:8080` by default | Browsers, and node installers at `/node-install/*` |
+With `--external-proxy`, install with `--host 127.0.0.1` and point your reverse proxy at the gateway, `127.0.0.1:8080` by default. The gateway already routes `/v1` and `/api/v1` to Core and everything else to Web.
 
 The proxy must:
 
-- **Preserve Host.** Web accepts only the host of its public URL.
+- **Preserve Host.** Web accepts only the host of `OAC_PUBLIC_URL`.
 - **Pass WebSocket upgrades** on `/api/v1`.
 - **Not buffer or time out streams.** `/v1` streams Session events.
 - **Accept large uploads.** Source files may reach 512 MiB; Core enforces the limits.
-
-Run the proxy on the Core host while Core and Web listen on loopback, the default. `oac status` prints these routes with your addresses and ports.
 
 **Caddy** obtains the certificate itself and passes Host and WebSockets by default:
 
 ```caddyfile
 core.example {
-	@core path /v1 /v1/* /api/v1/*
-	handle @core {
-		reverse_proxy 127.0.0.1:8091
-	}
-	handle {
-		reverse_proxy 127.0.0.1:8080
-	}
+	reverse_proxy 127.0.0.1:8080
 }
 ```
 
-**nginx**, for example in `/etc/nginx/conf.d/oac.conf` inside the `http` block:
-
-```nginx
-map $http_upgrade $connection_upgrade {
-    default upgrade;
-    ''      close;
-}
-
-server {
-    listen 80;
-    server_name core.example;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl;
-    server_name core.example;
-    ssl_certificate     /etc/letsencrypt/live/core.example/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/core.example/privkey.pem;
-
-    client_max_body_size 0;          # Core enforces its own upload limits
-    proxy_http_version 1.1;
-    proxy_set_header Host $http_host;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    proxy_buffering off;             # server-sent events on /v1
-    proxy_request_buffering off;
-    proxy_read_timeout 1h;           # long-lived WebSockets and streams
-    proxy_send_timeout 1h;
-
-    location = /v1    { proxy_pass http://127.0.0.1:8091; }
-    location /v1/     { proxy_pass http://127.0.0.1:8091; }
-    location /api/v1/ { proxy_pass http://127.0.0.1:8091; }
-    location /        { proxy_pass http://127.0.0.1:8080; }
-}
-```
-
-Then set `public_url` in `~/.oac/core/config.json` and run `~/.oac/core/oac apply`. Check the routing:
+Then set `OAC_PUBLIC_URL=https://core.example` in `~/.oac/core/.env` and run `~/.oac/core/oac apply`. Check the routing:
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' -H 'OpenAI-Beta: agents=v1' https://core.example/v1/agents
@@ -182,22 +128,16 @@ A [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/con
 ```caddyfile
 http://:8443 {
 	bind 127.0.0.1
-	@core path /v1 /v1/* /api/v1/*
-	handle @core {
-		reverse_proxy 127.0.0.1:8091
-	}
-	handle {
-		reverse_proxy 127.0.0.1:8080
-	}
+	reverse_proxy 127.0.0.1:8080
 }
 ```
 
 1. Start the proxy: `caddy run --config Caddyfile`.
 2. Start the tunnel: `cloudflared tunnel --url http://127.0.0.1:8443`. It prints an address such as `https://random-words.trycloudflare.com`.
-3. Set that address as `public_url` in `~/.oac/core/config.json` and run `~/.oac/core/oac apply`.
+3. Set that address as `OAC_PUBLIC_URL` in `~/.oac/core/.env` and run `~/.oac/core/oac apply`.
 
 The address changes whenever `cloudflared` restarts; nodes bound to the old address must then be added again. Throughput is low, so a node's first Runtime download (about 500 MB) can be slow; see [slow links](./nodes.md#rerun-expiry-and-slow-links).
 
 ## Offline hosts
 
-Transfer the release's `*-linux-amd64-offline.tar.gz` and its `.sha256` file, verify and extract them, then run the bundled `./install.sh`. The offline bundle also carries the node and Runtime files, so Web serves them to nodes without release access.
+This installer does not install from an offline bundle. It downloads Compose files and container images from the release.

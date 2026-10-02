@@ -1,5 +1,9 @@
-# Host installation publishes Web. Hosting platforms omit this file.
+# Host installation publishes the gateway, and Core's admin API on loopback.
+# Hosting platforms omit this file. The gateway routes /v1 and /api/v1.
 services:
   gateway:
     ports:
       - "${OAC_HOST:-127.0.0.1}:${OAC_WEB_PORT:-8080}:8080"
+  core:
+    ports:
+      - "127.0.0.1:8091:8091"

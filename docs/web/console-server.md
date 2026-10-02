@@ -106,7 +106,7 @@ With `OAC_WEB_NODE_PAYLOAD_DIR` set, the console serves the matched distribution
 | `GET` | No body | The domain status |
 | `POST` | `{"hostname":"core.example.com"}`, optionally with `"confirm_public_url_change":"https://core.example.com"` | 202 and the status; the installer checks and applies the domain in the background |
 
-The status has `supported`, `state` (`unconfigured`, `checking`, `applying`, `ready` or `failed`), and nullable `public_url`, `target_url` and `message`. Installer errors use `{"error":{"code":"…","message":"…"}}`. Changing an address that nodes or executors already use returns 409 `public_url_confirmation_required` until the request confirms the new URL; pending `config.json` edits, an installation that is not applied or not running, hand-edited generated files, and another installation operation holding the lock (`installation_busy`) also return 409.
+The status has `supported`, `state` (`unconfigured`, `checking`, `applying`, `ready` or `failed`), and nullable `public_url`, `target_url` and `message`. Installer errors use `{"error":{"code":"…","message":"…"}}`. Changing an address that nodes or executors already use returns 409 `public_url_confirmation_required` until the request confirms the new URL. An installation that is not running also returns 409.
 
 Without `OAC_WEB_INSTALLATION_SOCKET` (external reverse proxy installations), `GET` reports `supported: false` and `POST` returns 400 `domain_setup_unavailable`. An unreachable installer or an invalid answer returns 502 `installation_unreachable`.
 

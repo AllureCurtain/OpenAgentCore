@@ -1,7 +1,7 @@
 ---
 title: "构建并发布 OpenAgentCore"
 source: docs/maintainers.md
-source_hash: 7e5fcad21f6b4aa9f88f9d1dd19024aec6cdea009a7c2e879431f5a604fd6bac
+source_hash: 02a3f465e4e2e3192f375765825b98a6edff26fdd3b6e27a4511f81f556464db
 ---
 
 本指南面向负责构建和发布 OpenAgentCore 的维护者。要安装 Core 和 Web，请使用 [安装指南](getting-started/install.md)。安装器代码遵循的规则见 [安装器设计规则](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/install/README.md)；必需检查见 [CONTRIBUTING](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks)。
@@ -138,7 +138,7 @@ git push origin v1.2.3
 
 GHCR 和 GitHub Releases 不共享事务。发布失败后，GHCR 中可能仍会保留一些匹配的版本标签；请保留这些镜像，并使用原始构件按照下文的草稿恢复流程操作。除清单缺失以外，注册表故障都会停止发布。作业摘要会记录按摘要固定的引用。这些镜像和渲染后的 Compose 文件仍需要[配置](configuration.md)中描述的配置、机密和路由。
 
-`install.sh` 会解析一次最新稳定版，或解析 `--version` 指定的发布版，验证控制归档并运行该捆绑包的安装器；其用法见[安装指南](getting-started/install.md#install)。
+`install.sh` 会下载最新稳定版的 Compose 文件，或 `--version` 指定的发布版，校验 SHA-256 后启动该发布版。用法见[安装指南](getting-started/install.md#install)。
 
 Go 检查和构建作业共享 `~/.oac/cache/` 下的 Go 模块和编译器缓存目录，缓存键由运行器 OS 和架构、全部 Go 模块文件、检查/构建分区以及提交确定。分区键可防止并发作业在同一个键下保存不同的编译器子集。发布构建既可以使用后端检查的缓存，也可以使用更早发布构建的缓存。较旧的缓存只会为下载和编译提供初始内容；每项检查仍会运行。发布作业还会缓存 npm 软件包下载内容和固定版本的 microsandbox 归档，并在每次构建时验证后者的校验和。Actions 缓存可见性遵循 GitHub ref 的作用域；特定标签的缓存不会与其他发布标签共享。只有作业成功后才会保存新键。
 

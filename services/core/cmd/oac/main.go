@@ -75,10 +75,7 @@ func run(ctx context.Context, command string, args []string) error {
 	case "uninstall":
 		return withLock(root, func() error { return uninstall(ctx, root, runner, args) })
 	case "domain":
-		if len(args) != 1 {
-			return errors.New("Usage: oac domain HOSTNAME")
-		}
-		return domainClient(in, args[0])
+		return domainCommand(in, args)
 	case "domain-serve":
 		return serveDomain(ctx, in, liveEffects(in.data, runner))
 	case "setup-sandbox":
@@ -241,12 +238,35 @@ func uninstall(ctx context.Context, root string, runner Runner, args []string) e
 	return nil
 }
 
-func domainClient(in installation, hostname string) error {
+func domainCommand(in installation, args []string) error {
+	var hostname, confirm string
+	for i := 0; i < len(args); i++ {
+		if args[i] == "--confirm" && i+1 < len(args) {
+			confirm = args[i+1]
+			i++
+			continue
+		}
+		if hostname != "" || strings.HasPrefix(args[i], "-") {
+			return errors.New("Usage: oac domain HOSTNAME [--confirm https://HOSTNAME]")
+		}
+		hostname = args[i]
+	}
+	if hostname == "" {
+		return errors.New("Usage: oac domain HOSTNAME [--confirm https://HOSTNAME]")
+	}
+	return domainClient(in, hostname, confirm)
+}
+
+func domainClient(in installation, hostname, confirm string) error {
 	key, err := readKeyViaFile(in.data)
 	if err != nil {
 		return errors.New("cannot read the Core key; run oac core-key --show from the installation account")
 	}
-	payload, _ := json.Marshal(map[string]string{"hostname": hostname})
+	body := map[string]string{"hostname": hostname}
+	if confirm != "" {
+		body["confirm_public_url_change"] = confirm
+	}
+	payload, _ := json.Marshal(body)
 	request, err := http.NewRequest(http.MethodPost, "http://localhost/domain", strings.NewReader(string(payload)))
 	if err != nil {
 		return err
@@ -263,7 +283,7 @@ func domainClient(in installation, hostname string) error {
 		return errors.New("domain service is unavailable; run oac status")
 	}
 	defer response.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
+	raw, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
 	if response.StatusCode == 202 {
 		fmt.Println("Requesting and verifying HTTPS. This can take a few minutes.")
 		return nil
@@ -273,7 +293,7 @@ func domainClient(in installation, hostname string) error {
 			Message string `json:"message"`
 		} `json:"error"`
 	}
-	_ = json.Unmarshal(body, &failure)
+	_ = json.Unmarshal(raw, &failure)
 	if failure.Error.Message == "" {
 		failure.Error.Message = "Domain setup failed"
 	}

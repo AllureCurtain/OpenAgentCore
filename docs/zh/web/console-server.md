@@ -1,7 +1,7 @@
 ---
 title: "控制台服务器"
 source: docs/web/console-server.md
-source_hash: 745ee484725bf07d2f56300d36f2ff41f0fbbe2c3aaafd63af083f502c1f44f0
+source_hash: 71ad694c632ac38da9efb1208efd501a6de819876489836a01d6e9951bb966bc
 ---
 
 控制台服务器（`services/web`、`oac-web` 进程）提供构建后的控制台，使用 Core 密钥认证管理员，并将已登录浏览器的 `/core/v1` 请求携带该密钥转发到 Core。浏览器不持有 Core 密钥或任何 API 密钥。应用、节点和自托管执行器直接调用 Core；控制台不转发这些流量。
@@ -108,7 +108,7 @@ flowchart LR
 | `GET` | 无请求体 | 域名状态 |
 | `POST` | `{"hostname":"core.example.com"}`，可附加 `"confirm_public_url_change":"https://core.example.com"` | 202 和状态；安装程序在后台检查并应用域名 |
 
-状态包含 `supported`、`state`（`unconfigured`、`checking`、`applying`、`ready` 或 `failed`），以及可为 null 的 `public_url`、`target_url` 和 `message`。安装程序错误使用 `{"error":{"code":"…","message":"…"}}`。修改节点或执行器已使用的地址时，在请求确认新 URL 前返回 409 `public_url_confirmation_required`；待应用的 `config.json` 修改、未应用或未运行的安装、手动修改的生成文件，以及其他安装操作持有锁（`installation_busy`）也返回 409。
+状态包含 `supported`、`state`（`unconfigured`、`checking`、`applying`、`ready` 或 `failed`），以及可为 null 的 `public_url`、`target_url` 和 `message`。安装程序错误使用 `{"error":{"code":"…","message":"…"}}`。修改节点或执行器已使用的地址时，在请求确认新 URL 前返回 409 `public_url_confirmation_required`。安装未运行时也返回 409。
 
 未设置 `OAC_WEB_INSTALLATION_SOCKET` 时（外部反向代理安装），`GET` 报告 `supported: false`，`POST` 返回 400 `domain_setup_unavailable`。安装程序不可达或响应无效时返回 502 `installation_unreachable`。
 

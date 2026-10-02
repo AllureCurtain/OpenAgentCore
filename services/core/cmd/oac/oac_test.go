@@ -83,6 +83,12 @@ func TestConfigureSuccessWritesThePublicURL(t *testing.T) {
 	}
 }
 
+func TestDomainCommandUsageNamesTheConfirmFlag(t *testing.T) {
+	if err := domainCommand(installation{}, []string{"core.example", "--confirm"}); err == nil || !strings.Contains(err.Error(), "--confirm") {
+		t.Fatal(err)
+	}
+}
+
 func TestApplyDoesNotStartWhenTheConfigurationCheckFails(t *testing.T) {
 	var calls [][]string
 	runner := scriptedRunner{run: func(args ...string) error {

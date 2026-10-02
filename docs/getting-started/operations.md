@@ -41,8 +41,8 @@ Use these observations for different questions:
 Service health does not show that a harness or a model works. Use Session, Turn, Items and Usage reads for execution, and Web's **Nodes** page for node connection, readiness and placement. For local diagnosis, use the installation's own Compose file:
 
 ```sh
-docker compose -f "$HOME/.oac/core/generated/compose.json" ps --all
-docker compose -f "$HOME/.oac/core/generated/compose.json" logs --tail 200 core
+docker compose -f "$HOME/.oac/core/compose.yaml" ps --all
+docker compose -f "$HOME/.oac/core/compose.yaml" logs --tail 200 core
 ```
 
 Don't paste `docker compose config`, `docker inspect` or raw logs into public issue reports.
@@ -62,13 +62,13 @@ A Web restart, including one caused by `oac apply`, signs everyone out of the co
 
 ## Core key
 
-Each installation has one administrator credential, the Core key. The installer generates a 64-character random key in `<install dir>/secrets/core.key`, by default `~/.oac/core/secrets/core.key`. The Core key:
+Each installation has one administrator credential, the Core key. The installer generates a 64-character random key in `data/secrets/web/core.key`. Read it with `oac core-key --show`; the file is owned by the container user. The Core key:
 
 - signs in to Web. The browser gets an HttpOnly session cookie, never the key;
 - authorizes Core API (`/core/v1`) requests sent as `Authorization: Bearer <Core key>`;
 - never authorizes the Agents API (`/v1`). Applications use Project API keys, which in turn can't call `/core/v1`.
 
-Keep it private: `secrets/` is mode `0700` and its files `0600`. Web and, with managed ingress, the `installation` service read `core.key`; Core reads only its SHA-256 from `generated/core-key-digests.json`, which `oac apply` derives from the key. A Core key has at least 32 characters and no whitespace. Web limits failed sign-ins.
+Keep it private. Web and the `domain` service read `data/secrets/web/core.key`. Core reads only its SHA-256 from `data/secrets/core/core-key-digests.json`. A Core key has at least 32 characters and no whitespace. Web limits failed sign-ins.
 
 ### Script the Core API
 
@@ -77,7 +77,7 @@ Run scripts on the Core host against Core's loopback port. This helper reads the
 ```sh
 core() {  # core METHOD PATH [JSON body]
   curl -fsS -X "$1" "http://127.0.0.1:8091/core/v1$2" \
-    -H @<(printf 'Authorization: Bearer %s\n' "$(cat ~/.oac/core/secrets/core.key)") \
+    -H @<(printf 'Authorization: Bearer %s\n' "$(~/.oac/core/oac core-key --show)") \
     -H 'Content-Type: application/json' ${3:+-d "$3"}
 }
 ```
@@ -101,7 +101,7 @@ The [Core administration API](../../contracts/agents-api/admin-api.md) lists eve
 ~/.oac/core/oac rotate-core-key
 ```
 
-It refuses while `config.json` has changes that are not applied or a generated file was edited by hand: run `oac apply` first. It asks for confirmation (`--yes` skips it), stops Web, writes a new key to `secrets/core.key` and regenerates the digest file. On a running installation it then restarts Core, starts Web and checks that Core accepts the new key and refuses the old one; a stopped installation only gets the new files and uses the new key at the next `oac start`. The old key stops working as soon as Core restarts, and every console session ends: sign in again and update your scripts. If the command stops early, `secrets/core.key` holds the key to use; run `oac apply` to finish.
+It writes a new key to `data/secrets/web/core.key`, regenerates `data/secrets/core/core-key-digests.json`, and restarts Core and Web. The old key stops working as soon as Core restarts, and every console session ends: sign in again and update your scripts.
 
 ## Projects and API keys
 
@@ -124,28 +124,26 @@ Back up these together; a restore needs all of them:
 - the PostgreSQL volume `<project>_database`. It holds Projects, key digests, nodes, default models, encrypted credentials and all execution history, including large objects. A logical dump:
 
   ```sh
-  docker compose -f "$HOME/.oac/core/generated/compose.json" exec -T database \
+  docker compose -f "$HOME/.oac/core/compose.yaml" exec -T database \
     pg_dump -U agents_api agents_api > oac-backup.sql
   ```
 
-- the installation directory: `config.json`, `state.json` (installation ID) and `secrets/`. `credential.key` must stay with the database, or stored credentials can't be decrypted; never regenerate it to get past an error.
-- `state/e2b/`, when E2B is used: receipts Core needs to clean up E2B sandboxes.
+- the installation directory, especially `data/`. `data/secrets/core/credential.key` must stay with the database, or stored credentials can't be decrypted.
 - each node's state directory on its host, `/var/lib/oac-node/.oac/nodes/<installation-id>/`, with its provider storage: Docker volumes or microsandbox's store. See [when a node host fails](./nodes.md#when-a-node-host-fails) for restoring them.
-- the bundle you installed from, to repair the same release.
+
+`oac backup DEST` stops the services, archives the installation directory, and starts them again.
 
 Never prune Docker volumes or delete native harness history to make a retry pass. A deleted Session does not prove that all provider resources were reclaimed.
 
 ## Uninstall
 
 ```sh
-~/.oac/core/oac uninstall
+~/.oac/core/oac uninstall --yes
 ```
 
-It removes the installation from this host: its Compose project with the containers, networks and database volume, the images the installer loaded, and the installation directory, including `secrets/` and the `oac` command itself. It keeps an image that has a tag or that another container uses, such as one of another installation of the same release, and says so.
+It removes the Compose project, its containers and images, and the installation directory. Without `--yes` it changes nothing.
 
-All data goes with it: Projects and API keys, Session history, stored credentials and the Core key. The database volume is useless without `secrets/`, so it is never kept on its own. To keep the data, stop the installation with `oac stop` instead, or [back it up](#back-up) first.
-
-The command lists what it removes and, when Core answers, the registered nodes. Confirm by typing the installation directory, or pass `--yes`, which a run without a terminal requires. It holds the installation lock and needs only `state.json`, so it also removes an installation that did not finish installing or lost `config.json`. It removes the directory last; if it stops part way, run it again.
+All data goes with it: Projects and API keys, Session history, stored credentials and the Core key. To keep the data, stop the installation with `oac stop` instead, or [back it up](#back-up) first.
 
 Uninstall stops no sandbox: node sandboxes keep running on their nodes, and E2B sandboxes keep running, and billing, at E2B. While Core is still up, archive their Sessions or [reset the deployment](./nodes.md#change-the-sandbox-configuration) and let it complete; the command shows how many sandboxes Core has in use.
 
@@ -157,9 +155,9 @@ An installation runs one release for its whole life. In-place version upgrades a
 
 To move to a new release, install it into a new, empty directory, with its own database, Core key and nodes, and add nodes from its Web. Keep the old installation, its data and its nodes until their work is finished. Nodes run the program of the console that added them and are never upgraded in place; Core accepts only nodes that speak its own node protocol.
 
-Repair the current release by rerunning `./install.sh --install-dir DIR` from the exact same bundle; the downloader keeps it under `~/.oac/releases/`. Repair reloads missing images, restores the `oac` command, applies `config.json` and starts the services. It preserves identity, settings, secrets and history, accepts only `--install-dir`, and refuses a bundle from another release. An installation the installer never reported as running is not repaired but [removed and installed again](./install.md#install).
+`install.sh` refuses a directory that is not empty. If the first start fails, it deletes the directory it created, and the same command can be run again. An installation that has already started is left in place.
 
-The installer and mutating `oac` commands hold the same installation lock, `.oac.lock`, including during repair and interrupted apply recovery. If another command holds it, retry after that command finishes; never remove or replace `.oac.lock` to get past a busy installation. Reinstallation never deletes another installation's files, database, Runtime resources or Session history.
+Mutating `oac` commands hold `.oac.lock`. If another command holds it, retry after that command finishes. Never delete `.oac.lock` to get past a busy installation.
 
 ## Troubleshooting
 
@@ -168,16 +166,11 @@ The installer and mutating `oac` commands hold the same installation lock, `.oac
 | `Core installation requires Linux amd64 with Docker access` | Use Linux amd64 and an account with Docker access; root and ordinary users are supported |
 | `Installation failed: inspect prerequisites and private deployment files` | A prerequisite failed without its own message, most often Docker: check that `docker info` and `docker compose version` work for this user |
 | `Docker Compose 2.26.0 or newer is required …` | Update the Docker Compose plugin |
-| `Port N (…) is already in use on ADDRESS …` | Another program holds a port the installation needs. Find it with the printed `ss` command and stop it, or choose another port: `--web-port` or `--core-port` at [installation](./install-options.md#ports), or the port in `config.json` before `oac apply` |
-| `ADDRESS (…) is not an address of this machine …` | Set `--host`, or `host` in `config.json`, to one of the machine's IP addresses or a wildcard such as `0.0.0.0` |
-| `Automatic HTTPS needs ports 80 and 443 …` | Free the port the message names, install without `--public-url` and set up the domain later, or install with `--ingress external` and use your own [reverse proxy](./install-options.md#https-and-the-reverse-proxy) |
-| `Installation directory is not empty …` | Use an empty `--install-dir` |
-| `This installation is configured by …/config.json …` | Flags only seed a new installation: edit `config.json` and run `oac apply`. To start over with other flags, [uninstall](#uninstall) it first |
-| `This installation version is not supported …` | The target installation's state format or source revision does not match this release. Keep it, and install into another empty `--install-dir` ([version policy](#installation-version-policy)) |
-| `generated/<file> was edited by hand` | Put the change in `config.json`, then `oac apply --discard-edits` |
-| `config.json has changes that are not applied` | Run `oac apply` |
-| `Core rejects secrets/core.key …` | Run `oac apply`, which restarts Core with the key's digest |
-| `config.json not applied: …` | `oac apply` printed Core's startup error above; fix `config.json` and apply again |
+| `Port N is already in use.` | Another program holds that port. Stop it, or choose another `--web-port`. The installer does not move to a different port |
+| `Port 80 is already in use. Free it or rerun with --external-proxy.` | Managed HTTPS needs 80 and 443. Free them, or install with `--external-proxy` |
+| `Installation directory is not empty` | Use an empty `--install-dir`, or [uninstall](#uninstall) the existing installation first |
+| `configuration check failed; no service was changed` | `.env` has a value Core rejects. The message names the variable and not the value. Fix `.env` and run `oac apply` again |
+| `Docker Compose 2.26 or newer is required` | Update the Docker Compose plugin |
 | `The services did not start: …` | A new installation's first start failed, and the installer [removed what it created](./install.md#install). Compose's or Core's error is printed above it; fix the cause and run the same command again |
 | `Removal did not finish. Left: …` | The installer, cleaning up a failed new installation, or `oac uninstall` could not remove everything. Run the printed commands to remove what is left, or fix the cause and run the same command again |
 | `This installation did not finish installing …` | The installer stopped before reporting that the services were running. Rerun the installer command, which [removes what is left](./install.md#install) and installs again, or [uninstall](#uninstall) it |
@@ -194,10 +187,10 @@ The installer and mutating `oac` commands hold the same installation lock, `.oac
 
 | Listener | Managed ingress (default) | External ingress |
 | --- | --- | --- |
-| Web | Reached only through the `gateway` service, which publishes `ports.web` (8080) on `host` (all IPv4 interfaces by default), plus [80 and 443](./install-options.md#ports) once HTTPS is on | `host:ports.web` (loopback by default), behind your reverse proxy |
-| Core | `127.0.0.1:ports.core` (8091); the gateway routes `/v1` and `/api/v1` to it | `host:ports.core`, behind your reverse proxy |
+| Web and the API | The `gateway` publishes `OAC_WEB_PORT` (8080) on `OAC_HOST`, plus [80 and 443](./install-options.md#ports) | The gateway publishes `OAC_WEB_PORT` on `OAC_HOST`. Your proxy should use `127.0.0.1` |
+| Core admin API | `127.0.0.1:8091`. The gateway routes `/v1` and `/api/v1` | `127.0.0.1:8091`. The gateway routes `/v1` and `/api/v1` |
 | PostgreSQL | No published port | No published port |
 
-Web signs administrators in with the Core key, checks the origin of every request, and forwards signed-in `/core/v1` requests to Core with the Core key, which stays on the server. It answers 404 on `/v1` and `/api/v1` whatever credential a request carries, serves only the non-secret node payload at `/node-install/`, and has no Docker or KVM access. Machine routes under `/api/v1` use their own enrollment and connection credentials. With managed ingress, the `installation` service applies domain changes through the Docker socket; Web reaches it only over a private Unix socket, and it checks the Core key on every request.
+Web signs administrators in with the Core key, checks the origin of every request, and forwards signed-in `/core/v1` requests to Core with the Core key, which stays on the server. It answers 404 on `/v1` and `/api/v1` whatever credential a request carries, serves only the non-secret node payload at `/node-install/`, and has no Docker or KVM access. Machine routes under `/api/v1` use their own enrollment and connection credentials. With managed ingress, the `domain` service applies domain changes through the Docker socket; Web reaches it only over a private Unix socket, and it checks the Core key on every request.
 
 Sandboxes are the isolation boundary ([Runtime and outer isolation](../concepts.md#runtime-and-outer-isolation)). Docker sandboxes share the node's kernel, and a Docker node is [root-equivalent](./nodes.md#what-the-installer-sets-up) on its host; microsandbox gives each sandbox a microVM with an explicit [network policy](./nodes.md#what-the-installer-sets-up). Core itself has no Docker socket or KVM access.

@@ -19,7 +19,7 @@ This page follows the default path. Every flag, existing reverse proxies and off
 - Linux amd64 and curl.
 - Docker Engine with Docker Compose 2.26.0 or newer (`docker compose version`).
 - An account that can run `docker` and write to its home directory. Ordinary users and root both work; the installer never calls sudo.
-- A free port each for initial Web access (8080) and Core (8091, on loopback), and free ports 80 and 443 once you turn on HTTPS; see [ports](./install-options.md#ports). Docker must be able to publish them; the installer does not change host policy.
+- Free port 8080 for Web, and free ports 80 and 443 for managed HTTPS. Core's admin API uses `127.0.0.1:8091`. See [ports](./install-options.md#ports). Docker must be able to publish them; the installer does not change host policy.
 - A DNS hostname that points to this host, before you connect applications, nodes, E2B or self-hosted machines. You can install and sign in first.
 
 The Core host needs no KVM; nodes that run microsandbox do.
@@ -36,18 +36,18 @@ If DNS already points to this host, pass the address to set up HTTPS during inst
 curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/install.sh | bash -s -- --public-url https://core.example
 ```
 
-The script picks the latest stable release, verifies its checksum and runs the bundled installer, which:
+The script downloads that release's Compose files, checks their SHA-256, and:
 
-1. checks its settings and the ports it needs, then the host, and loads the Core, Web, PostgreSQL and HTTPS gateway images;
-2. creates the [installation directory](../configuration.md#installation-directory), `~/.oac/core`, with the Core key, `config.json` and the `oac` management command;
-3. starts the services with Docker Compose. The gateway serves Web on all IPv4 interfaces, at the port the installer prints; Core stays on loopback and PostgreSQL stays private;
+1. checks Linux amd64, Docker Compose 2.26 or newer, and that the ports it will publish are free;
+2. creates the [installation directory](../configuration.md#installation-directory), `~/.oac/core`, writes `.env`, and copies the `oac` command out of the Core image;
+3. starts the services with Docker Compose. The gateway serves Web on all IPv4 interfaces at port 8080. Core's admin API stays on `127.0.0.1:8091`. PostgreSQL is not published;
 4. selects the microsandbox sandbox backend at the Standard size. It adds no node.
 
-It creates no Project or key and makes no model request. It ends by printing the console address, the API base URL and the next steps.
+With `--public-url https://HOSTNAME` on a managed install, it then runs `oac domain`. DNS and ports 80 and 443 must already reach this host.
 
-Downloads retry temporary network failures automatically. The terminal shows download progress and activity during long steps.
+It creates no Project or key and makes no model request. It ends by printing the console address and how to read the Core key.
 
-If installation fails or is interrupted before the services first become healthy, fix the reported cause and rerun the same command. The installer removes its temporary download, new service project, volumes and installation files; loaded Docker images remain reusable. A rerun first clears an incomplete installation or download left by a forced exit or power loss. It never clears another active installation process or an unrelated directory. Once the services have started successfully, failures preserve the installation and its data; use [same-release repair](./operations.md#installation-version-policy).
+If installation fails before the services become healthy, the installer removes the directory it created. Fix the reported cause and rerun the same command. Once the services have started, a later failure keeps the installation and its data. A new release is a new directory; see [version policy](./operations.md#installation-version-policy).
 
 For insufficient space or quota, free space on the filesystem named by the error. Image-loading failures can also require space in Docker's storage, which may be on a different filesystem.
 
@@ -57,17 +57,17 @@ For insufficient space or quota, free space on the filesystem named by the error
 2. Sign in with the [Core key](./operations.md#core-key), the installation's administrator credential. Web has no user accounts.
 
    ```sh
-   cat ~/.oac/core/secrets/core.key
+   ~/.oac/core/oac core-key --show
    ```
 
 ## Configure the domain and HTTPS
 
-Applications, nodes and sandboxes reach Core at one HTTPS address, the public URL. The initial HTTP address serves only Web.
+Applications, nodes and sandboxes reach Core at one HTTPS address, the public URL. The HTTP address on port 8080 keeps serving Web and the API.
 
 1. Point the hostname's A/AAAA records to this host, allow inbound ports 80 and 443 from the internet, and keep other programs off [those ports](./install-options.md#ports).
 2. In Web, open **System**, choose **Configure domain and HTTPS**, enter the hostname, such as `core.example.com`, and choose **Apply**.
 
-The installation checks DNS and the ports, requests a certificate and checks that the HTTPS address reaches this installation before switching Core and Web to it. Then open the HTTPS address and sign in again; the initial HTTP address redirects there. Certificates renew automatically. If DNS or the certificate fails, the previous address stays in use: correct the reported problem and retry. Retry an interrupted switch with the same hostname, or check it with `oac status` and finish it with `oac apply`.
+The installation checks DNS, requests a certificate, and checks that `https://HOSTNAME` reaches this installation before switching Core and Web to it. Then open the HTTPS address and sign in again. Certificates renew automatically. If DNS or the certificate fails, the previous address stays in use: correct the reported problem and retry the same hostname. `oac status` shows a failed attempt and how long to wait before the next one.
 
 The same operation from a terminal:
 

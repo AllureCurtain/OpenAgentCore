@@ -61,8 +61,10 @@ fi
 port_busy() {
   local port="$1"
   if command -v ss >/dev/null; then
-    ss -ltn | awk '{print $4}' | grep -Eq "(^|:|\\])${port}$"
-    return
+    if ss -ltn | awk '{print $4}' | grep -Eq "(^|:|\\])${port}$"; then
+      return 0
+    fi
+    return 1
   fi
   (echo >/dev/tcp/127.0.0.1/"$port") >/dev/null 2>&1
 }
@@ -136,6 +138,11 @@ umask 077
 kept=1
 trap - EXIT
 (cd "$install_dir" && ./oac setup-sandbox)
+if [[ "$ingress" == managed && "$public_url" == https://* ]]; then
+  domain_host="${public_url#https://}"
+  domain_host="${domain_host%%/*}"
+  (cd "$install_dir" && ./oac domain "$domain_host")
+fi
 address="http://${host_address}:$web_port"
 if [[ -n "$public_url" ]]; then address="$public_url"; fi
 if [[ "$host_address" == 0.0.0.0 || "$host_address" == "::" ]]; then address="http://<this-host>:$web_port"; fi
