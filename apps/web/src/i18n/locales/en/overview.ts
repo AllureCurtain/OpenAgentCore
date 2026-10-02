@@ -143,6 +143,7 @@ export const overview = {
       daemons: "Connected daemons",
       database: "Database latency p95",
     },
+    more: "{{count}} more nodes on the Nodes page",
     more_one: "{{count}} more node on the Nodes page",
     more_other: "{{count}} more nodes on the Nodes page",
     unconfigured: "This console has no sandbox administration.",

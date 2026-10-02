@@ -144,6 +144,8 @@ export const overview = {
       database: "数据库延迟 p95",
     },
     more: "另有 {{count}} 个节点，在节点页查看",
+    more_one: "另有 {{count}} 个节点，在节点页查看",
+    more_other: "另有 {{count}} 个节点，在节点页查看",
     unconfigured: "此控制台未配置沙箱管理。",
     loading: "正在加载节点…",
     failed: "无法加载节点。",
