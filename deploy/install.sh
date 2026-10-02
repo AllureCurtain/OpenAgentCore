@@ -93,7 +93,7 @@ trap cleanup EXIT
 mkdir -p "$install_dir"
 chmod 700 "$install_dir"
 files=(compose.yaml ports.yaml)
-if [[ "$ingress" == managed ]]; then files+=(ports-https.yaml); fi
+if [[ "$ingress" == managed ]]; then files+=(https.yaml); fi
 for name in "${files[@]}"; do
   curl --fail --silent --show-error --location "$asset_base/$name" --output "$install_dir/$name"
   curl --fail --silent --show-error --location "$asset_base/$name.sha256" --output "$install_dir/$name.sha256"
@@ -102,12 +102,10 @@ done
 
 project="oac-$(od -An -N5 -tx1 /dev/urandom | tr -d ' \n')"
 compose_file="compose.yaml:ports.yaml"
-profiles=""
 socket=""
 bootstrap=0
 if [[ "$ingress" == managed ]]; then
-  compose_file="compose.yaml:ports.yaml:ports-https.yaml"
-  profiles="managed"
+  compose_file="compose.yaml:ports.yaml:https.yaml"
   socket="/domain/api.sock"
   bootstrap=1
 fi
@@ -116,7 +114,6 @@ umask 077
 {
   echo "COMPOSE_PROJECT_NAME=$project"
   echo "COMPOSE_FILE=$compose_file"
-  if [[ -n "$profiles" ]]; then echo "COMPOSE_PROFILES=$profiles"; fi
   echo "OAC_INSTALL_DIR=$install_dir"
   echo "OAC_DATA_DIR=$install_dir/data"
   echo "OAC_HOST=$host_address"

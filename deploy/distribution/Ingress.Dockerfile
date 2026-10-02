@@ -1,5 +1,6 @@
-# Gateway, one-time data initialization, and the domain service. This is the only
-# image with a Docker client. Core and Web never receive Docker access.
+# Gateway and one-time data initialization. With managed HTTPS the gateway also
+# serves domain setup; this is the only image with a Docker client. Core and Web
+# never receive Docker access.
 # scripts/build-core-distribution.sh builds this from a context that also contains
 # the oac binary.
 FROM caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d AS caddy

@@ -1,7 +1,7 @@
 ---
 title: "管理你的安装"
 source: docs/getting-started/operations.md
-source_hash: b6985d35c3ec93602a87080d61eba43973e0b4f3bedbbec2aba5c5772772013f
+source_hash: 77864c5e43ca3c567cf157b33cbaef4077730ff8e5821339cc890ec11511e50b
 ---
 
 安装运维人员负责 Core 主机、存储和可用性。节点主机运行各自的服务；参阅[节点](nodes.md)。设置见[配置参考](../configuration.md)。
@@ -69,7 +69,7 @@ Web 重启（包括 `oac apply` 引起的重启）会让所有控制台用户退
 - 通过 `Authorization: Bearer <Core key>` 授权 Core API（`/core/v1`）请求；
 - 不授权 Agents API（`/v1`）。应用使用 Project API 密钥，后者也不能调用 `/core/v1`。
 
-请保密。Web 和 `domain` 服务读取 `data/secrets/web/core.key`。Core 只读取 `data/secrets/core/core-key-digests.json` 中的 SHA-256。Core 密钥至少 32 字符且不含空白。Web 限制失败登录。
+请保密。Web 以及托管入口下的 `gateway` 读取 `data/secrets/web/core.key`。Core 只读取 `data/secrets/core/core-key-digests.json` 中的 SHA-256。Core 密钥至少 32 字符且不含空白。Web 限制失败登录。
 
 ### 用脚本调用 Core API {#script-the-core-api}
 
@@ -194,6 +194,6 @@ rm -rf ~/.oac/core
 | Core 管理 API | `127.0.0.1:8091`。网关路由 `/v1` 和 `/api/v1` | `127.0.0.1:8091`。网关路由 `/v1` 和 `/api/v1` |
 | PostgreSQL | 不发布端口 | 不发布端口 |
 
-Web 使用 Core 密钥让管理员登录，检查每个请求来源，并用保留在服务器上的 Core 密钥将已登录的 `/core/v1` 请求转发到 Core。无论请求携带何种凭据，`/v1` 和 `/api/v1` 均返回 404；Web 仅在 `/node-install/` 提供不含密钥的节点文件，没有 Docker 或 KVM 访问权限。`/api/v1` 机器路由使用独立注册和连接凭据。托管入口中，`domain` 服务通过 Docker 套接字应用域名变更；Web 仅通过私有 Unix 套接字访问它，每次请求都检查 Core 密钥。
+Web 使用 Core 密钥让管理员登录，检查每个请求来源，并用保留在服务器上的 Core 密钥将已登录的 `/core/v1` 请求转发到 Core。无论请求携带何种凭据，`/v1` 和 `/api/v1` 均返回 404；Web 仅在 `/node-install/` 提供不含密钥的节点文件，没有 Docker 或 KVM 访问权限。`/api/v1` 机器路由使用独立注册和连接凭据。托管入口中，`gateway` 通过 Docker 套接字应用域名变更；Web 仅通过私有 Unix 套接字访问它，每次请求都检查 Core 密钥。
 
 沙箱是隔离边界（[Runtime 与外层隔离](../concepts.md#runtime-and-outer-isolation)）。Docker 沙箱共享节点内核，Docker 节点在主机上[等同于 root 权限](nodes.md#what-the-installer-sets-up)；microsandbox 为每个沙箱提供具有显式[网络策略](nodes.md#what-the-installer-sets-up)的 microVM。Core 自身无 Docker 套接字或 KVM 访问权限。

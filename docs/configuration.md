@@ -31,7 +31,7 @@ Installer flags in [installation options](./getting-started/install-options.md) 
 
 `OAC_PUBLIC_URL` is the one origin that applications, nodes, sandboxes and self-hosted executors use. Core derives the daemon WebSocket URL, the self-hosted `remote_url` and each sandbox's connection address from it. Until a domain is set, a managed installation serves Web over HTTP on `OAC_WEB_PORT`. That HTTP address keeps serving after HTTPS is on.
 
-With managed ingress, change it in Web (**System** → **Configure domain and HTTPS**) or with `oac domain HOSTNAME`. The domain service checks DNS, writes the hostname into `data/caddy/site.caddy`, reloads the gateway, and requires `https://HOSTNAME/_oac/installation/verify` to return this installation's ID. It then writes `OAC_PUBLIC_URL` and recreates Core and Web. With external ingress, update your reverse proxy first, then edit `OAC_PUBLIC_URL` and run `oac apply`.
+With managed ingress, change it in Web (**System** → **Configure domain and HTTPS**) or with `oac domain HOSTNAME`. The gateway checks DNS, writes the hostname into `data/caddy/site.caddy`, reloads the gateway, and requires `https://HOSTNAME/_oac/installation/verify` to return this installation's ID. It then writes `OAC_PUBLIC_URL` and recreates Core and Web. With external ingress, update your reverse proxy first, then edit `OAC_PUBLIC_URL` and run `oac apply`.
 
 When nodes, hosted sandboxes or self-hosted executors are bound to the current address, repeat the command as `oac domain HOSTNAME --confirm https://HOSTNAME`. Afterwards:
 
@@ -49,7 +49,7 @@ When nodes, hosted sandboxes or self-hosted executors are bound to the current a
 | `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. Managed domain setup writes the HTTPS origin and recreates Core and Web |
 | `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
-| `OAC_INGRESS` | unset | `managed` publishes ports 80 and 443 and starts the domain service. `external` leaves TLS to your proxy. Fixed after installation |
+| `OAC_INGRESS` | unset | `managed` publishes ports 80 and 443 and serves domain setup from the gateway. `external` leaves TLS to your proxy. Fixed after installation |
 | `OAC_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `OAC_LOG_FORMAT` | `auto` | `auto`, `text` or `json` |
 | `OAC_LOG_ADD_SOURCE` | unset | `1` adds source locations |
@@ -128,7 +128,7 @@ The installer creates the installation directory, `~/.oac/core` by default, with
 | Path | Content | Changed by |
 | --- | --- | --- |
 | `.env` | [Process settings](#process-settings-configjson). The file you edit | You, then `oac apply`; managed domain setup writes `OAC_PUBLIC_URL` |
-| `compose.yaml`, `ports.yaml`, `ports-https.yaml` | The release's service definition. Do not edit them | The release |
+| `compose.yaml`, `ports.yaml`, `https.yaml` | The release's service definition. Do not edit them | The release |
 | `oac` | The [management command](./getting-started/operations.md#the-oac-command), copied from the Core image | The installer |
 | `data/secrets/web/core.key` | The [Core key](./getting-started/operations.md#core-key) | `oac rotate-core-key` |
 | `data/secrets/core/credential.key` | Encryption key for what Core stores sealed in the database | Nothing. Keep it with the database |
@@ -136,12 +136,12 @@ The installer creates the installation directory, `~/.oac/core` by default, with
 | `data/secrets/database/password` | PostgreSQL password | Nothing. PostgreSQL reads it only when the database is created |
 | `data/database/` | PostgreSQL data | PostgreSQL |
 | `data/caddy/` | Certificates and `site.caddy`, the managed hostname | `oac domain` and the gateway |
-| `data/domain/` | Domain status and the control socket | The `domain` service |
+| `data/domain/` | Domain status and the control socket | `gateway` |
 | `data/node-payload/` | Node files Web serves at `/node-install/` | Initialization |
 | `data/state/` | Private Provider state, including E2B receipts | Core |
 | `.oac.lock` | The installation lock | Mutating `oac` commands |
 
-The Compose project is named `oac-<10 hex digits>`. Its services are `init`, `database`, `migrate`, `core`, `web` and `gateway`, plus `domain` when ingress is managed. `gateway` routes to Core and Web and publishes `OAC_WEB_PORT`. Managed installs also publish [80 and 443](./getting-started/install-options.md#ports). Host installs publish Core's admin API on `127.0.0.1:8091`. `domain` is the only service with the Docker socket. Apart from Docker's storage, nothing is written outside the installation directory.
+The Compose project is named `oac-<10 hex digits>`. Its services are `init`, `database`, `migrate`, `core`, `web` and `gateway`. `gateway` routes to Core and Web and publishes `OAC_WEB_PORT`. Managed installs also publish [80 and 443](./getting-started/install-options.md#ports). Host installs publish Core's admin API on `127.0.0.1:8091`. With managed ingress, `https.yaml` gives `gateway` the Docker socket for domain setup; no other service has it. Apart from Docker's storage, nothing is written outside the installation directory.
 
 ## Appendix: Core environment without the installer
 

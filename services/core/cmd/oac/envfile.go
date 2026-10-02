@@ -8,7 +8,7 @@ import (
 )
 
 // updateEnv replaces or appends keys in a dotenv file and keeps every other line.
-// The replacement keeps the previous owner and mode so a root domain service
+// The replacement keeps the previous owner and mode so a root gateway
 // does not take the file away from the installation account.
 func updateEnv(path string, values map[string]string) error {
 	info, err := os.Stat(path)

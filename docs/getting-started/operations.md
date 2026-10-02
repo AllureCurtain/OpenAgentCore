@@ -67,7 +67,7 @@ Each installation has one administrator credential, the Core key. The installer 
 - authorizes Core API (`/core/v1`) requests sent as `Authorization: Bearer <Core key>`;
 - never authorizes the Agents API (`/v1`). Applications use Project API keys, which in turn can't call `/core/v1`.
 
-Keep it private. Web and the `domain` service read `data/secrets/web/core.key`. Core reads only its SHA-256 from `data/secrets/core/core-key-digests.json`. A Core key has at least 32 characters and no whitespace. Web limits failed sign-ins.
+Keep it private. Web and, with managed ingress, `gateway` read `data/secrets/web/core.key`. Core reads only its SHA-256 from `data/secrets/core/core-key-digests.json`. A Core key has at least 32 characters and no whitespace. Web limits failed sign-ins.
 
 ### Script the Core API
 
@@ -191,6 +191,6 @@ Mutating `oac` commands hold `.oac.lock`. If another command holds it, retry aft
 | Core admin API | `127.0.0.1:8091`. The gateway routes `/v1` and `/api/v1` | `127.0.0.1:8091`. The gateway routes `/v1` and `/api/v1` |
 | PostgreSQL | No published port | No published port |
 
-Web signs administrators in with the Core key, checks the origin of every request, and forwards signed-in `/core/v1` requests to Core with the Core key, which stays on the server. It answers 404 on `/v1` and `/api/v1` whatever credential a request carries, serves only the non-secret node payload at `/node-install/`, and has no Docker or KVM access. Machine routes under `/api/v1` use their own enrollment and connection credentials. With managed ingress, the `domain` service applies domain changes through the Docker socket; Web reaches it only over a private Unix socket, and it checks the Core key on every request.
+Web signs administrators in with the Core key, checks the origin of every request, and forwards signed-in `/core/v1` requests to Core with the Core key, which stays on the server. It answers 404 on `/v1` and `/api/v1` whatever credential a request carries, serves only the non-secret node payload at `/node-install/`, and has no Docker or KVM access. Machine routes under `/api/v1` use their own enrollment and connection credentials. With managed ingress, `gateway` applies domain changes through the Docker socket; Web reaches it only over a private Unix socket, and it checks the Core key on every request.
 
 Sandboxes are the isolation boundary ([Runtime and outer isolation](../concepts.md#runtime-and-outer-isolation)). Docker sandboxes share the node's kernel, and a Docker node is [root-equivalent](./nodes.md#what-the-installer-sets-up) on its host; microsandbox gives each sandbox a microVM with an explicit [network policy](./nodes.md#what-the-installer-sets-up). Core itself has no Docker socket or KVM access.

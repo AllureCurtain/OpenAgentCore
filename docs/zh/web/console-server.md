@@ -1,7 +1,7 @@
 ---
 title: "控制台服务器"
 source: docs/web/console-server.md
-source_hash: 71ad694c632ac38da9efb1208efd501a6de819876489836a01d6e9951bb966bc
+source_hash: 297b6eb57f044c7494abba2b621beff939a98ab22b5ba190481b8e4ae352baba
 ---
 
 控制台服务器（`services/web`、`oac-web` 进程）提供构建后的控制台，使用 Core 密钥认证管理员，并将已登录浏览器的 `/core/v1` 请求携带该密钥转发到 Core。浏览器不持有 Core 密钥或任何 API 密钥。应用、节点和自托管执行器直接调用 Core；控制台不转发这些流量。
@@ -18,7 +18,7 @@ flowchart LR
   database[("PostgreSQL")]
   application["Application / official SDK"]
   machine["Nodes and Runtime daemons"]
-  installer["Installer domain service"]
+  installer["Gateway domain setup"]
 
   browser -->|"same origin: /console/*, /core/v1/*; session cookie"| console
   console -->|"/core/v1/* with the Core key"| core

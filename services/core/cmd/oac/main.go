@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strings"
@@ -40,7 +41,7 @@ func main() {
 var buildRevision = "development"
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "oac (%s)\nUsage: oac apply|core-key|rotate-core-key|domain|setup-sandbox|domain-serve\n", buildRevision)
+	fmt.Fprintf(os.Stderr, "oac (%s)\nUsage: oac apply|core-key|rotate-core-key|domain|setup-sandbox|gateway\n", buildRevision)
 }
 
 func run(ctx context.Context, command string, args []string) error {
@@ -62,8 +63,8 @@ func run(ctx context.Context, command string, args []string) error {
 		return withLock(root, func() error { return rotateCoreKey(ctx, in, runner) })
 	case "domain":
 		return domainCommand(in, args)
-	case "domain-serve":
-		return serveDomain(ctx, in, liveEffects(in.data, runner))
+	case "gateway":
+		return serveGateway(ctx, in, liveEffects(in.data, runner))
 	case "setup-sandbox":
 		return setupSandbox(ctx, root, runner)
 	default:
@@ -209,7 +210,7 @@ func domainClient(in installation, hostname, confirm string) error {
 	defer transport.CloseIdleConnections()
 	response, err := transport.RoundTrip(request)
 	if err != nil {
-		return errors.New("domain service is unavailable; run docker compose ps")
+		return errors.New("domain setup is unavailable; run docker compose ps and check the gateway")
 	}
 	defer response.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
@@ -235,6 +236,41 @@ func readKeyViaFile(data string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(raw)), nil
+}
+
+// gatewayCaddy is the managed gateway's proxy command; a variable for tests.
+var gatewayCaddy = []string{"/usr/local/bin/caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"}
+
+// serveGateway runs Caddy without root beside the domain API. The container
+// stops when either one stops.
+func serveGateway(ctx context.Context, in installation, effects Effects) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	caddy := exec.Command(gatewayCaddy[0], gatewayCaddy[1:]...)
+	caddy.Stdout, caddy.Stderr = os.Stdout, os.Stderr
+	if os.Geteuid() == 0 {
+		caddy.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: 65532, Gid: 65532, Groups: []uint32{}}}
+	}
+	if err := caddy.Start(); err != nil {
+		return err
+	}
+	exited := make(chan error, 1)
+	go func() { exited <- caddy.Wait() }()
+	served := make(chan error, 1)
+	go func() { served <- serveDomain(ctx, in, effects) }()
+	select {
+	case err := <-exited:
+		cancel()
+		<-served
+		if err == nil {
+			err = errors.New("the gateway proxy stopped")
+		}
+		return err
+	case err := <-served:
+		_ = caddy.Process.Signal(syscall.SIGTERM)
+		<-exited
+		return err
+	}
 }
 
 func serveDomain(ctx context.Context, in installation, effects Effects) error {

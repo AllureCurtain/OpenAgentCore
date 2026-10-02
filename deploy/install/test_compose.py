@@ -179,6 +179,19 @@ class ComposeTests(unittest.TestCase):
                     {service: [item.get('target') for item in spec.get('volumes', [])]
                      for service, spec in self.compose['services'].items()})
 
+    def test_managed_https_runs_domain_setup_inside_the_gateway(self):
+        env = dict(os.environ, OAC_DATA_DIR='/tmp/oac-compose-fixture', OAC_INSTALL_DIR='/tmp/oac-install-fixture')
+        managed = json.loads(subprocess.check_output(
+            ['docker', 'compose', '--env-file', os.devnull, '-f', str(self.compose_file),
+             '-f', str(ROOT / 'deploy/compose/https.yaml'), 'config', '--format', 'json'], env=env))
+        services = managed['services']
+        self.assertEqual(sorted(services), ['core', 'database', 'gateway', 'init', 'migrate', 'web'])
+        self.assertEqual(services['gateway']['command'], ['/usr/local/bin/oac', 'gateway'])
+        self.assertEqual({port['published'] for port in services['gateway']['ports']}, {'80', '443'})
+        for name, service in services.items():
+            sockets = [v for v in service.get('volumes', []) if v.get('source') == '/var/run/docker.sock']
+            self.assertEqual(len(sockets), 1 if name == 'gateway' else 0, name)
+
     def test_platform_network_injection_keeps_the_credentials_profile_valid(self):
         # Dokploy isolated deployments attach a project network to every service.
         transformed = copy.deepcopy(self.compose)

@@ -23,7 +23,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.jobs("deploy/install.sh", "deploy/install/node_payload.py"), {"hygiene", "distribution"})
 
     def test_compose_inputs_select_live_and_fixture_checks_without_image_builds(self):
-        for path in ("deploy/compose/compose.yaml", "deploy/compose/ports.yaml", "deploy/compose/ports-https.yaml", "deploy/compose/dokploy.toml",
+        for path in ("deploy/compose/compose.yaml", "deploy/compose/ports.yaml", "deploy/compose/https.yaml", "deploy/compose/dokploy.toml",
                      "scripts/compose-smoke.py", "scripts/render-compose.py", "deploy/install/test_compose.py"):
             self.assertEqual(self.jobs(path), {"hygiene", "distribution", "compose"})
             self.assertFalse(ci.select([path])["image"])

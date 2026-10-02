@@ -143,6 +143,65 @@ func TestRotateCoreKeyDigestDoesNotEchoTheKey(t *testing.T) {
 	}
 }
 
+func gatewayInstall(t *testing.T, proxy ...string) installation {
+	t.Helper()
+	root, err := os.MkdirTemp("", "oac-gw")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	in := installation{root: root, data: filepath.Join(root, "data")}
+	if err := os.MkdirAll(filepath.Join(in.data, "secrets", "web"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(in.data, "secrets", "web", "core.key"), []byte(strings.Repeat("k", 64)+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	previous := gatewayCaddy
+	gatewayCaddy = proxy
+	t.Cleanup(func() { gatewayCaddy = previous })
+	return in
+}
+
+func TestGatewayStopsWhenTheProxyExits(t *testing.T) {
+	in := gatewayInstall(t, "/bin/sh", "-c", "exit 3")
+	done := make(chan error, 1)
+	go func() { done <- serveGateway(t.Context(), in, Effects{}) }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("gateway kept running without its proxy")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("gateway did not stop after its proxy exited")
+	}
+}
+
+func TestGatewayStopsTheProxyOnShutdown(t *testing.T) {
+	in := gatewayInstall(t, "/bin/sh", "-c", "trap 'exit 0' TERM; while :; do sleep 0.05; done")
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- serveGateway(ctx, in, Effects{}) }()
+	socket := filepath.Join(in.data, "domain", "api.sock")
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		if _, err := os.Stat(socket); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("domain socket did not appear")
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("gateway did not stop its proxy")
+	}
+}
+
 type scriptedRunner struct {
 	run func(args ...string) error
 }

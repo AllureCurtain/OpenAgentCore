@@ -168,55 +168,15 @@ services:
         - python3
         - -c
         - |
-          import urllib.request
+          import os, stat, urllib.request
           client = urllib.request.build_opener(urllib.request.ProxyHandler({}))
           for host in ('core:8091', 'web:8080', '127.0.0.1:8080'):
               with client.open('http://' + host + '/healthz', timeout=3) as response:
                   assert response.status == 200
+          if os.environ.get('OAC_DATA_MOUNT'):
+              assert stat.S_ISSOCK(os.stat('/data/domain/api.sock').st_mode)
       interval: 5s
       timeout: 10s
-      retries: 30
-
-  # The only service with the Docker socket. It accepts one Core-key request:
-  # set the managed domain. Hosting platforms leave this profile disabled.
-  domain:
-    image: *ingress-image
-    platform: linux/amd64
-    profiles: ["managed"]
-    user: "0:0"
-    restart: unless-stopped
-    read_only: true
-    init: true
-    tmpfs: [/tmp:mode=1777]
-    security_opt: [no-new-privileges:true]
-    working_dir: ${OAC_INSTALL_DIR:-/install}
-    command: [/usr/local/bin/oac, domain-serve]
-    environment:
-      OAC_INSTALL_DIR: ${OAC_INSTALL_DIR:-/install}
-      OAC_DATA_MOUNT: /data
-      DOCKER_HOST: unix:///var/run/docker.sock
-      HOME: /tmp
-      DOCKER_CONFIG: /tmp
-    depends_on:
-      init: {condition: service_completed_successfully}
-      gateway: {condition: service_healthy}
-    configs:
-      - source: gateway-config
-        target: /etc/caddy/Caddyfile
-    volumes:
-      - type: bind
-        source: /var/run/docker.sock
-        target: /var/run/docker.sock
-      - type: bind
-        source: ${OAC_INSTALL_DIR:-/install}
-        target: ${OAC_INSTALL_DIR:-/install}
-      - type: bind
-        source: ${OAC_DATA_DIR:-./data}
-        target: /data
-    healthcheck:
-      test: ["CMD", "/bin/sh", "-c", "test -S /data/domain/api.sock"]
-      interval: 2s
-      timeout: 5s
       retries: 30
 
   # Explicit operator action; the key is printed only to the attached terminal.
@@ -239,6 +199,7 @@ configs:
     content: |
       {
       	admin unix//data/caddy/admin.sock
+      	storage file_system /data/caddy/storage
       }
       http://:8080 {
       	import /etc/oac/routes.caddy

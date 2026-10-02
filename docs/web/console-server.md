@@ -16,7 +16,7 @@ flowchart LR
   database[("PostgreSQL")]
   application["Application / official SDK"]
   machine["Nodes and Runtime daemons"]
-  installer["Installer domain service"]
+  installer["Gateway domain setup"]
 
   browser -->|"same origin: /console/*, /core/v1/*; session cookie"| console
   console -->|"/core/v1/* with the Core key"| core
