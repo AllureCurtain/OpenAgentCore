@@ -415,7 +415,7 @@ const zh: LandingCopy = {
     index: '10',
     kicker: '文档',
     title: '一切细节，都在文档里。',
-    lede: (pages) => `共 ${pages} 页，直接读取仓库的 docs.json 生成。新增文档会自动出现在这里。文档正文为英文。`,
+    lede: (pages) => `共 ${pages} 页，直接读取仓库的 docs.json 生成。新增文档会自动出现在这里。支持中英文阅读。`,
     open: '打开',
   },
   outro: { line: '产品可以有不同的交互、模型和执行引擎，共用同一层执行基础设施。', primary: '开始使用', secondary: '在 GitHub 上 Star' },

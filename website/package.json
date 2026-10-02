@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vitepress dev --host 127.0.0.1 --port 4180",
-    "build": "vitepress build",
+    "build": "pnpm check-translations && vitepress build",
     "preview": "vitepress preview --host 127.0.0.1 --port 4181",
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "check-translations": "node --test tests/translations.test.mjs"
   },
   "dependencies": {
     "@fontsource-variable/geist-mono": "^5.3.0",

@@ -26,6 +26,9 @@ const consoleTab = ref<'overview' | 'metrics'>('overview')
 const archAlt = computed(() => t.value.architecture.tabs.find((tab) => tab.id === archTab.value)!.alt)
 const consoleAlt = computed(() => t.value.observe.tabs.find((tab) => tab.id === consoleTab.value)!.alt)
 
+const localizedDocs = computed(() => docsGroups.map(group => ({ ...group, group: props.lang === 'zh' ? group.zhGroup : group.group, pages: group.pages.map(page => props.lang === 'zh' ? page.zh : page) })))
+function localLink(path: string) { return withBase(props.lang === 'zh' ? `/zh${path}` : path) }
+
 const pageCount = docsGroups.reduce((n, g) => n + g.pages.length, 0)
 
 const copied = ref(false)
@@ -119,8 +122,8 @@ onBeforeUnmount(() => {
           </h1>
           <p class="lede">{{ t.hero.lede }}</p>
           <div class="ctas">
-            <a class="btn primary" :href="withBase('/docs/getting-started/quickstart')">{{ t.hero.primary }} <span aria-hidden="true">→</span></a>
-            <a class="btn ghost" :href="withBase('/docs/getting-started/')">{{ t.hero.secondary }}</a>
+            <a class="btn primary" :href="localLink('/docs/getting-started/quickstart')">{{ t.hero.primary }} <span aria-hidden="true">→</span></a>
+            <a class="btn ghost" :href="localLink('/docs/getting-started/')">{{ t.hero.secondary }}</a>
             <a class="btn ghost icon" :href="repoUrl" target="_blank" rel="noreferrer" aria-label="GitHub">
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z" /></svg>
               GitHub
@@ -177,7 +180,7 @@ onBeforeUnmount(() => {
         <header class="sec-head" data-reveal><span class="idx">// {{ t.compose.index }}</span><span class="kicker">{{ t.compose.kicker }}</span></header>
         <h2 data-reveal>{{ t.compose.title }}</h2>
         <p class="sec-lede" data-reveal>{{ t.compose.lede }}</p>
-        <div data-reveal><ComposeLab :t="t.compose" /></div>
+        <div data-reveal><ComposeLab :t="t.compose" :lang="lang" /></div>
         <ul class="pillars">
           <li v-for="(p, i) in t.pillars" :key="p.tag" data-reveal :style="{ '--i': i }">
             <span class="tag">[{{ p.tag }}]</span>
@@ -212,13 +215,13 @@ onBeforeUnmount(() => {
         </div>
         <div class="boundaries" data-reveal>
           <p class="mono-label">{{ t.architecture.boundariesTitle }}</p>
-          <a v-for="(b, i) in t.architecture.boundaries" :key="b.link" class="boundary" :href="withBase(b.link)" :style="{ '--i': i }">
+          <a v-for="(b, i) in t.architecture.boundaries" :key="b.link" class="boundary" :href="localLink(b.link)" :style="{ '--i': i }">
             <span class="b-from">{{ b.from }}</span>
             <span class="b-wire" aria-hidden="true"><i /></span>
             <span class="b-to">{{ b.to }}</span>
             <span class="b-doc">{{ b.doc }} <span aria-hidden="true">↗</span></span>
           </a>
-          <a class="more" :href="withBase('/docs/architecture')">{{ t.architecture.more }} →</a>
+          <a class="more" :href="localLink('/docs/architecture')">{{ t.architecture.more }} →</a>
         </div>
       </div>
     </section>
@@ -322,8 +325,8 @@ onBeforeUnmount(() => {
               </li>
             </ol>
             <div class="ctas">
-              <a class="btn primary" :href="withBase('/docs/getting-started/install')">{{ t.start.cta }} →</a>
-              <a class="btn ghost" :href="withBase('/docs/getting-started/quickstart')">{{ t.start.trial }}</a>
+              <a class="btn primary" :href="localLink('/docs/getting-started/install')">{{ t.start.cta }} →</a>
+              <a class="btn ghost" :href="localLink('/docs/getting-started/quickstart')">{{ t.start.trial }}</a>
             </div>
           </div>
           <div data-reveal>
@@ -356,7 +359,7 @@ onBeforeUnmount(() => {
         <h2 data-reveal>{{ t.docs.title }}</h2>
         <p class="sec-lede" data-reveal>{{ t.docs.lede(pageCount) }}</p>
         <div class="docs-grid">
-          <section v-for="(group, gi) in docsGroups" :key="group.group" class="docs-group" data-reveal :style="{ '--i': gi }">
+          <section v-for="(group, gi) in localizedDocs" :key="group.group" class="docs-group" data-reveal :style="{ '--i': gi }">
             <h3><span class="dir">{{ String(gi + 1).padStart(2, '0') }}/</span>{{ group.group }}</h3>
             <ul>
               <li v-for="page in group.pages" :key="page.link">
@@ -379,7 +382,7 @@ onBeforeUnmount(() => {
       <div class="wrap outro-copy">
         <p>{{ t.outro.line }}</p>
         <div class="ctas center">
-          <a class="btn primary" :href="withBase('/docs/getting-started/')">{{ t.outro.primary }} →</a>
+          <a class="btn primary" :href="localLink('/docs/getting-started/')">{{ t.outro.primary }} →</a>
           <a class="btn ghost" :href="repoUrl" target="_blank" rel="noreferrer">★ {{ t.outro.secondary }}</a>
         </div>
       </div>
