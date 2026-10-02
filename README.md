@@ -14,12 +14,12 @@ An open-source, self-hosted implementation of the OpenAI Agents API with multipl
 
 ## What it is
 
-OpenAgentCore runs AI agents on your own infrastructure behind the OpenAI Agents API.
+OpenAgentCore runs AI agents on your own infrastructure behind the [OpenAI Agents API](https://developers.openai.com/api/docs/guides/agents-api/overview).
 
-- **Same API as OpenAI.** Point the [official OpenAI SDK](https://developers.openai.com/api/docs/guides/agents/sdk), or plain HTTP, at your installation. No new client to learn.
-- **Your choice of agent.** Each Session runs a native harness: Codex, Claude Code or MiniMax Code, with the model provider you configure.
-- **Your choice of machine.** Agents work in a managed sandbox (Docker, microsandbox or E2B), or on your own Linux, macOS or Windows machine.
-- **Every part is replaceable.** Sandboxes, harnesses and model providers plug in through defined protocols.
+- **Same API as OpenAI.** Point the [OpenAI Agent API](https://developers.openai.com/api/docs/guides/agents/sdk), or plain HTTP, at your installation. No new client to learn.
+- **Your choice of agent.** Each [Session](docs/api/public-agent-api.md) runs a [native harness](contracts/agents-api/harness-onboarding.md): [Codex](https://github.com/openai/codex), [Claude Code](https://code.claude.com/docs/en/overview) or [MiniMax Code](https://github.com/MiniMax-AI/minimax-code), with the [model provider you configure](contracts/agents-api/model-execution.md).
+- **Your choice of machine.** Agents work in a [managed sandbox](contracts/agents-api/sandbox-deployment.md) ([Docker](https://www.docker.com/), [microsandbox](https://github.com/zerocore-ai/microsandbox) or [E2B](https://e2b.dev/)), or on your own Linux, macOS or Windows machine.
+- **Every part is replaceable.** [Sandboxes](docs/sandbox-provider.md), [harnesses](contracts/agents-api/harness-onboarding.md) and [model providers](contracts/agents-api/model-execution.md) plug in through [defined protocols](AGENTS.md#protocols-at-every-boundary).
 
 ## How it fits together
 
