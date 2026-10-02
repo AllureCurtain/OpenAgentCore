@@ -67,6 +67,7 @@ RULES = (
     (("deploy/install/",), (".py", ".json", ".sh"), ("distribution",)),
     (("deploy/compose/",), (".yaml", ".toml", ".json"), ("distribution", "compose")),
     (("scripts/compose-smoke.py", "scripts/render-compose.py", "deploy/install/test_compose.py"), (".py",), ("distribution", "compose")),
+    (("services/core/cmd/oac/", "deploy/distribution/Ingress.Dockerfile"), (*GO, "Dockerfile"), ("compose",)),
     (("deploy/install.sh", "scripts/publish-core-release.",
       "scripts/core-distribution-manifest.", "scripts/build-core-distribution.sh",
       "scripts/build-web.sh"), SCRIPTS, ("distribution",)),

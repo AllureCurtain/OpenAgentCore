@@ -50,10 +50,7 @@ services:
     platform: linux/amd64
     restart: "no"
     security_opt: [no-new-privileges:true]
-    command: [python3, /init.py]
-    configs:
-      - source: init-script
-        target: /init.py
+    command: [/usr/local/bin/oac, init]
     environment:
       OAC_REVISION: __OAC_REVISION__
       OAC_RELEASE_BASE: __OAC_RELEASE_BASE__
@@ -163,18 +160,7 @@ services:
         source: ${OAC_DATA_DIR:-./data}/caddy
         target: /data/caddy
     healthcheck:
-      test:
-        - CMD
-        - python3
-        - -c
-        - |
-          import os, stat, urllib.request
-          client = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-          for host in ('core:8091', 'web:8080', '127.0.0.1:8080'):
-              with client.open('http://' + host + '/healthz', timeout=3) as response:
-                  assert response.status == 200
-          if os.environ.get('OAC_DATA_MOUNT'):
-              assert stat.S_ISSOCK(os.stat('/data/domain/api.sock').st_mode)
+      test: [CMD, /usr/local/bin/oac, healthcheck]
       interval: 5s
       timeout: 10s
       retries: 30
@@ -219,7 +205,3 @@ configs:
       		flush_interval -1
       	}
       }
-
-  init-script:
-    content: |
-      __OAC_INIT_PY__

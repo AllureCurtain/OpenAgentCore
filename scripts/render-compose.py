@@ -29,11 +29,6 @@ def render(values):
     if not base.startswith("https://") or not base.endswith("/") or " " in base:
         raise ValueError("RELEASE_BASE must be an https URL ending with /")
     text = TEMPLATE.read_text()
-    script = (ROOT / "deploy/distribution/init.py").read_text().rstrip("\n")
-    indented = "\n".join(("      " + line) if line else "" for line in script.split("\n"))
-    if "      __OAC_INIT_PY__" not in text:
-        raise ValueError("Compose template is missing the init script slot")
-    text = text.replace("      __OAC_INIT_PY__", indented)
     for name in TOKENS:
         token = "__OAC_" + name + "__"
         if token not in text:

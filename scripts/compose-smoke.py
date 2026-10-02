@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Exercise the published Compose installation in an isolated Docker project."""
+"""Exercise the Compose installation in an isolated Docker project.
+
+Core and Web are the pinned published images; the ingress image, which carries
+the oac command, is built from this checkout.
+"""
 
 import hashlib
 import http.cookiejar
@@ -38,6 +42,14 @@ def main():
         'ARCHIVE_CHECKSUM': pins['archive_checksum'],
     }))
     override = directory / 'ports.json'
+    ingress = 'oac-smoke/ingress:' + project.removeprefix('oac-smoke-')
+    context = directory / 'ingress'
+    context.mkdir()
+    (context / 'Dockerfile').write_bytes((ROOT / 'deploy/distribution/Ingress.Dockerfile').read_bytes())
+    subprocess.run(['go', 'build', '-trimpath', '-o', str(context / 'oac'), './services/core/cmd/oac'], cwd=ROOT, check=True,
+                   env={**os.environ, 'CGO_ENABLED': '0', 'GOOS': 'linux', 'GOARCH': 'amd64'})
+    subprocess.run(['docker', 'build', '-q', '--platform', 'linux/amd64', '-t', ingress, str(context)], check=True,
+                   stdout=subprocess.DEVNULL)
 
     def publish(port):
         override.write_text(json.dumps({'services': {'gateway': {'ports': [
@@ -47,7 +59,7 @@ def main():
     publish(0)
     env = {**os.environ, 'COMPOSE_PROGRESS': 'plain', 'OAC_DATA_DIR': str(data),
            'OAC_IMAGE_CORE': pins['core'], 'OAC_IMAGE_WEB': pins['web'],
-           'OAC_IMAGE_INGRESS': pins['ingress']}
+           'OAC_IMAGE_INGRESS': ingress}
     env.pop('OAC_PUBLIC_URL', None)
     command = ['docker', 'compose', '--env-file', os.devnull, '-p', project,
                '-f', str(rendered), '-f', str(override)]
@@ -98,7 +110,7 @@ def main():
 
     signal.signal(signal.SIGTERM, terminate)
     try:
-        print('Starting published images with an unset public URL and an empty data directory', flush=True)
+        print('Starting the images with an unset public URL and an empty data directory', flush=True)
         compose('up', '-d', '--wait', '--wait-timeout', '600', timeout=900)
         address = 'http://' + compose('port', 'gateway', '8080').decode().strip()
         key = compose('run', '--rm', '-T', '--no-deps', 'credentials').decode().strip()
@@ -152,6 +164,7 @@ def main():
         raise
     finally:
         compose('down', '--volumes', '--remove-orphans', timeout=60)
+        subprocess.run(['docker', 'image', 'rm', '-f', ingress], capture_output=True, timeout=60)
 
 
 if __name__ == '__main__':

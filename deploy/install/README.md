@@ -2,7 +2,7 @@
 
 `deploy/install.sh` is the host installer published with each release. It downloads that release's `compose.yaml` and port files, writes `.env`, and starts Compose. The host needs Linux amd64 and Docker Compose 2.26 or newer.
 
-`oac` is a Go command in the Core image and the gateway image. The host copy implements `apply`, `domain`, `core-key`, `rotate-core-key` and `setup-sandbox`. Start, stop, logs and removal are `docker compose`. `apply` runs `oac-core check-config` before recreating services. The gateway image also runs data initialization and, as `oac gateway`, managed domain setup; it is the only image with a Docker client.
+`oac` is a Go command in the Core image and the gateway image. The host copy implements `apply`, `domain`, `core-key`, `rotate-core-key` and `setup-sandbox`. Start, stop, logs and removal are `docker compose`. `apply` runs `oac-core check-config` before recreating services. The gateway image runs data initialization as `oac init`, its health check as `oac healthcheck` and, with managed HTTPS, domain setup as `oac gateway`; it contains no Python and is the only image with a Docker client.
 
 Managed installs add `https.yaml`, which publishes ports 80 and 443 and runs the gateway as `oac gateway`: Caddy as an unprivileged child plus the domain API. The gateway is then the only service with the Docker socket. Web reaches it through `data/domain/api.sock`. External proxies omit it and set `OAC_PUBLIC_URL` in `.env`.
 

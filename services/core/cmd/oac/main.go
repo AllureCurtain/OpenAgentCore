@@ -41,12 +41,18 @@ func main() {
 var buildRevision = "development"
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "oac (%s)\nUsage: oac apply|core-key|rotate-core-key|domain|setup-sandbox|gateway\n", buildRevision)
+	fmt.Fprintf(os.Stderr, "oac (%s)\nUsage: oac apply|core-key|rotate-core-key|domain|setup-sandbox|init|gateway|healthcheck\n", buildRevision)
 }
 
 func run(ctx context.Context, command string, args []string) error {
 	if command == "setup-sandbox" && os.Getenv("OAC_INNER_SETUP") == "1" {
 		return setupSandboxInner(ctx)
+	}
+	switch command {
+	case "init":
+		return initCommand(ctx)
+	case "healthcheck":
+		return healthcheck(ctx)
 	}
 	root, err := installDir()
 	if err != nil {

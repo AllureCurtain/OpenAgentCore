@@ -1,7 +1,7 @@
 ---
 title: "构建并发布 OpenAgentCore"
 source: docs/maintainers.md
-source_hash: 63e0becb4e6342e115161944b63f46fd654bd08688960d133cc5e4c1a830f499
+source_hash: 2aeab5d0f7d6f60c8c734ac99d7b212ae53f63e45ffb8f405e6dfa42c3c49194
 ---
 
 本指南面向负责构建和发布 OpenAgentCore 的维护者。要安装 Core 和 Web，请使用 [安装指南](getting-started/install.md)。安装器代码遵循的规则见 [安装器设计规则](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/install/README.md)；必需检查见 [CONTRIBUTING](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks)。
@@ -179,7 +179,7 @@ gh workflow run core-release --repo MiniMax-AI/OpenAgentCore --ref main \
 
 `.github/actionlint.yaml` 会选择 hygiene 和 lint。已知工作流变更会选择其使用方：CI review 和 actionlint 工作流运行 hygiene 和 lint；原生工作流变更会添加原生检查；API 验收工作流变更会添加启用容器验收的 API 检查；网站工作流变更会添加网站检查。共享 Node 操作会选择使用它的每个作业以及 lint。新工作流或未分类的工作流/操作会选择完整门禁，直至在计划器中声明其使用方。计划器测试和 CI 测量脚本运行 hygiene；更改计划器本身会运行完整门禁。
 
-Compose 模板和 Compose 测试发生变更时，会同时选择 `distribution` 固定数据和 `compose` 冒烟作业。安装 Docker 后，可在本地运行 `python3 scripts/compose-smoke.py` 重复该测试。该脚本使用唯一的项目、自动分配的回环端口，并将在 `~/.oac/tests/` 下生成构件；退出时移除其容器和数据卷。CI 还会在冒烟步骤失败或中断后执行清理。诊断信息会显示容器状态，但不会打印 HTTP 响应正文或登录密钥。该测试检查声明的发布镜像和通用 Compose 行为；它不会运行 Dokploy/Coolify 实例，也不会执行模型。
+Compose 模板和 Compose 测试发生变更时，会同时选择 `distribution` 固定数据和 `compose` 冒烟作业。安装 Docker 后，可在本地运行 `python3 scripts/compose-smoke.py` 重复该测试。该脚本使用唯一的项目、自动分配的回环端口，并将在 `~/.oac/tests/` 下生成构件；退出时移除其容器和数据卷。CI 还会在冒烟步骤失败或中断后执行清理。诊断信息会显示容器状态，但不会打印 HTTP 响应正文或登录密钥。Core 和 Web 使用 `deploy/compose/smoke-pins.json` 中固定的发布镜像；携带 `oac` 的 ingress 镜像从当前检出构建。该测试检查通用 Compose 行为；它不会运行 Dokploy/Coolify 实例，也不会执行模型。
 
 Go 模块和工作区输入会选择后端、API（包括容器）、原生和分发检查。每个 Node 模块都拥有自己的清单和锁文件。网站依赖项会选择网站检查；Web 依赖项会选择 Web 和浏览器检查；示例依赖项会选择示例检查；共享 TypeScript 客户端依赖项会选择 Web、浏览器和示例检查；Claude 适配器依赖项会选择 Harness、原生和分发检查。共享包管理器配置会选择所有 Node 使用方。根 TypeScript 配置会选择 Web 和示例检查；适配器 TypeScript 配置会选择 Harness 和原生检查。每个所选集合都包含 hygiene。混合变更会累加其使用方，并且每个作业都读取同一计划，而不是维护各自的路径列表。例如，仅修改通知的 PR 会跳过数据库、浏览器和原生作业，而同时修改通知和 Core 的 PR 会添加后端和 API 检查。
 

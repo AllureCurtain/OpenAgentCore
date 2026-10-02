@@ -153,7 +153,6 @@ build_image web "$stage/web"
 
 mkdir -p "$stage/ingress"
 cp deploy/distribution/Ingress.Dockerfile "$stage/ingress/Dockerfile"
-cp deploy/distribution/init.py "$stage/ingress/init.py"
 cp "$stage/core/bin/oac" "$stage/ingress/oac"
 build_image ingress "$stage/ingress"
 
