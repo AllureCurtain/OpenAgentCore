@@ -58,7 +58,7 @@ oac /agents
 | [Vaults](#vaults) | `/vaults` | MCP 服务器的只写凭据 |
 | Subagents | `/agents/sessions/{id}/subagents` | 只读的子任务；请参阅 [subagents](../../../contracts/agents-api/zh/subagents.md) |
 
-Core 的路由与固定版本 SDK 中的路由完全一致，完整列表见 [upstream-routes.json](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/contracts/agents-api/upstream-routes.json)。Core 不添加任何路由；其扩展内容位于 [`x_agents_core`](#core-extensions-x_agents_core)。
+Core 的路由与固定版本 SDK 中的路由完全一致，完整列表见 [upstream-routes.json](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/contracts/agents-api/upstream-routes.json)。Core 不添加任何路由；其扩展内容位于 [`x_agents_core`](#core-extensions-x-agents-core)。
 
 ## 常见任务 {#common-tasks}
 

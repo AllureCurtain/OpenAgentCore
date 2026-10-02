@@ -80,7 +80,7 @@ print(session.id)
 
 这会发起真实模型请求，可能产生费用。
 
-- `x_agents_core` 包含 Core 对 OpenAI API 的扩展；参阅 [Core 扩展](../api/public-agent-api.md#core-extensions-x_agents_core)。
+- `x_agents_core` 包含 Core 对 OpenAI API 的扩展；参阅 [Core 扩展](../api/public-agent-api.md#core-extensions-x-agents-core)。
 - 将整个 `agent` 对象放入 `extra_body`。SDK 3.13.0 使用 `extra_body` 中的同名字段替换请求体字段，而非合并。
 
 ## 3. 等待结果 {#_3-wait-for-the-result}

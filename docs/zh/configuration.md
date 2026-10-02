@@ -8,7 +8,7 @@ Core 安装的每项设置都恰好只有一个归属位置。共有两类：
 
 | 类型 | 示例 | 归属位置 | 修改方式 | 生效方式 |
 | --- | --- | --- | --- | --- |
-| [进程设置](#process-settings-configjson) | 公共 URL、端口、日志、Harness、执行并发度、审计保留期、OAuth 来源、数据库连接池、Runtime 历史记录导出 | 安装目录中的 `config.json`（默认 `~/.oac/core`） | 通过 Web 域设置或 `oac domain` 配置托管 HTTPS；否则编辑该文件，然后运行 `oac apply` | `oac apply` 会重启读取了这些已更改设置的服务 |
+| [进程设置](#process-settings-config-json) | 公共 URL、端口、日志、Harness、执行并发度、审计保留期、OAuth 来源、数据库连接池、Runtime 历史记录导出 | 安装目录中的 `config.json`（默认 `~/.oac/core`） | 通过 Web 域设置或 `oac domain` 配置托管 HTTPS；否则编辑该文件，然后运行 `oac apply` | `oac apply` 会重启读取了这些已更改设置的服务 |
 | [运行时设置](#runtime-settings-web) | 沙箱后端和大小、节点、项目和密钥、默认模型、执行器凭据 | Core 的 PostgreSQL 数据库 | 在 Web 中修改，或使用 Core 密钥调用 Core API（`/core/v1`） | 保存时无需重启 Core；节点会异步准备 Runtime 变更 |
 
 Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置，并在 **Startup settings** 下以只读方式显示进程设置、`config.json` 的路径以及 apply 命令。机密信息存放在 [`secrets/`](#installation-directory) 中，每项仅保存一份。`generated/` 中的文件派生自 `config.json`。没有任何配置文件定义项目或 API 密钥。
@@ -153,7 +153,7 @@ Compose 项目名称用于限定卷的作用域。必须将该项目的定义和
 
 | 路径 | 内容 | 修改者 |
 | --- | --- | --- |
-| `config.json` | [进程设置](#process-settings-configjson)。唯一由你编辑的文件 | 你，然后运行 `oac apply`；也可通过托管域设置更改 `public_url` |
+| `config.json` | [进程设置](#process-settings-config-json)。唯一由你编辑的文件 | 你，然后运行 `oac apply`；也可通过托管域设置更改 `public_url` |
 | `oac` | [管理命令](getting-started/operations.md#the-oac-command) | 安装程序 |
 | `state.json` | 安装 ID、Compose 项目名称、镜像 ID、源提交、生成文件的摘要，以及服务是否曾启动过 | 仅工具 |
 | `secrets/core.key` | [Core 密钥](getting-started/operations.md#core-key) | `oac rotate-core-key` |

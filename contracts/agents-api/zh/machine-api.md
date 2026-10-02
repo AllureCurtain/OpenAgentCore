@@ -12,7 +12,7 @@ source_hash: e9a16774d2924db9dde18385be315d3a0317c616b029b419165e442fa34fb08d
 | --- | --- | --- | --- |
 | `GET sandbox-node/configuration` | 节点安装器与节点 | 登记 token，或节点凭据加 `X-OAC-Node-ID` | [读取节点配置](#read-the-node-configuration) |
 | `POST sandbox-node/enroll` | 节点安装器 | 登记 token | [登记节点](#enroll-a-node) |
-| `GET sandbox-node/identity?node_id=` | 节点 | 节点凭据 | [恢复节点身份](#recover-a-nodes-identity) |
+| `GET sandbox-node/identity?node_id=` | 节点 | 节点凭据 | [恢复节点身份](#recover-a-node-s-identity) |
 | WebSocket `GET sandbox-node/connect?node_id=` | 节点 | 节点凭据 | [节点代际协议](node-generation-protocol.md) |
 | `GET agent-daemon/install/{version}/…` | 自托管安装器 | 无 | [安装授权](environment-executor-credentials.md#installation-grant) |
 | `POST agent-daemon/installation`, `POST agent-daemon/installation/claim` | 自托管安装器 | 安装授权 | [安装授权](environment-executor-credentials.md#installation-grant) |

@@ -41,7 +41,7 @@ Core 旨在以下方固定版本为准支持完整的 OpenAI Agents API（[publi
 
 各 Harness 在不同部署位置支持哪些操作，请参阅 [Harness capabilities](harness-capabilities.md)。[Core wire behavior](wire-semantics.md) 包含适用于各项资源的通用规则：请求、错误和列表。
 
-Core 自身字段位于 `x_agents_core` 中（[Core extensions](../../../docs/zh/api/public-agent-api.md#core-extensions-x_agents_core)）。Core 管理 API（`/core/v1`）和机器 API（`/api/v1`）不属于 Agents API。
+Core 自身字段位于 `x_agents_core` 中（[Core extensions](../../../docs/zh/api/public-agent-api.md#core-extensions-x-agents-core)）。Core 管理 API（`/core/v1`）和机器 API（`/api/v1`）不属于 Agents API。
 
 ## 与 OpenAI 的差异 {#differences-from-openai}
 

@@ -248,4 +248,4 @@ Subagent 子 Turn 和待处理的 Environment 文件写入不会阻止删除。�
 
 ### 响应字段 {#response-fields}
 
-Session 的 `agent.tools` 会省略 `tool_search` 声明，因为已锁定的 Session 工具联合类型不包含这些声明；冻结配置仍会保留它们。在 `self_hosted` Session 上，`environment.remote_url` 是 Core 守护进程的 WebSocket URL，即公共 URL 下的 `/api/v1/agent-daemon/ws`，只有 OpenAgentCore 的 Runtime 守护进程会与其通信；请求无法设置此值。其他 Session 字段遵循已锁定的类型；`x_agents_core` 的说明见 [Agents API guide](../../../docs/zh/api/public-agent-api.md#core-extensions-x_agents_core)。
+Session 的 `agent.tools` 会省略 `tool_search` 声明，因为已锁定的 Session 工具联合类型不包含这些声明；冻结配置仍会保留它们。在 `self_hosted` Session 上，`environment.remote_url` 是 Core 守护进程的 WebSocket URL，即公共 URL 下的 `/api/v1/agent-daemon/ws`，只有 OpenAgentCore 的 Runtime 守护进程会与其通信；请求无法设置此值。其他 Session 字段遵循已锁定的类型；`x_agents_core` 的说明见 [Agents API guide](../../../docs/zh/api/public-agent-api.md#core-extensions-x-agents-core)。
