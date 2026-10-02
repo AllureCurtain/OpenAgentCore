@@ -26,6 +26,9 @@ const consoleTab = ref<'overview' | 'metrics'>('overview')
 const archAlt = computed(() => t.value.architecture.tabs.find((tab) => tab.id === archTab.value)!.alt)
 const consoleAlt = computed(() => t.value.observe.tabs.find((tab) => tab.id === consoleTab.value)!.alt)
 
+const localizedDocs = computed(() => docsGroups.map(group => ({ ...group, group: props.lang === 'zh' ? group.zhGroup : group.group, pages: group.pages.map(page => props.lang === 'zh' ? page.zh : page) })))
+function localLink(path: string) { return withBase(props.lang === 'zh' ? `/zh${path}` : path) }
+
 const pageCount = docsGroups.reduce((n, g) => n + g.pages.length, 0)
 
 const copied = ref(false)
@@ -119,8 +122,8 @@ onBeforeUnmount(() => {
           </h1>
           <p class="lede">{{ t.hero.lede }}</p>
           <div class="ctas">
-            <a class="btn primary" :href="withBase('/docs/getting-started/quickstart')">{{ t.hero.primary }} <span aria-hidden="true">→</span></a>
-            <a class="btn ghost" :href="withBase('/docs/getting-started/')">{{ t.hero.secondary }}</a>
+            <a class="btn primary" :href="localLink('/docs/getting-started/quickstart')">{{ t.hero.primary }} <span aria-hidden="true">→</span></a>
+            <a class="btn ghost" :href="localLink('/docs/getting-started/')">{{ t.hero.secondary }}</a>
             <a class="btn ghost icon" :href="repoUrl" target="_blank" rel="noreferrer" aria-label="GitHub">
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 .5a11.5 11.5 0 0 0-3.64 22.41c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.37-3.88-1.37-.53-1.33-1.28-1.69-1.28-1.69-1.05-.71.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.71 1.26 3.37.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.17 1.18a11 11 0 0 1 5.77 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.8 1.19 1.83 1.19 3.08 0 4.41-2.69 5.38-5.25 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 12 .5Z" /></svg>
               GitHub
@@ -177,7 +180,7 @@ onBeforeUnmount(() => {
         <header class="sec-head" data-reveal><span class="idx">// {{ t.compose.index }}</span><span class="kicker">{{ t.compose.kicker }}</span></header>
         <h2 data-reveal>{{ t.compose.title }}</h2>
         <p class="sec-lede" data-reveal>{{ t.compose.lede }}</p>
-        <div data-reveal><ComposeLab :t="t.compose" /></div>
+        <div data-reveal><ComposeLab :t="t.compose" :lang="lang" /></div>
         <ul class="pillars">
           <li v-for="(p, i) in t.pillars" :key="p.tag" data-reveal :style="{ '--i': i }">
             <span class="tag">[{{ p.tag }}]</span>
@@ -212,13 +215,13 @@ onBeforeUnmount(() => {
         </div>
         <div class="boundaries" data-reveal>
           <p class="mono-label">{{ t.architecture.boundariesTitle }}</p>
-          <a v-for="(b, i) in t.architecture.boundaries" :key="b.link" class="boundary" :href="withBase(b.link)" :style="{ '--i': i }">
+          <a v-for="(b, i) in t.architecture.boundaries" :key="b.link" class="boundary" :href="localLink(b.link)" :style="{ '--i': i }">
             <span class="b-from">{{ b.from }}</span>
             <span class="b-wire" aria-hidden="true"><i /></span>
             <span class="b-to">{{ b.to }}</span>
             <span class="b-doc">{{ b.doc }} <span aria-hidden="true">↗</span></span>
           </a>
-          <a class="more" :href="withBase('/docs/architecture')">{{ t.architecture.more }} →</a>
+          <a class="more" :href="localLink('/docs/architecture')">{{ t.architecture.more }} →</a>
         </div>
       </div>
     </section>
@@ -322,8 +325,8 @@ onBeforeUnmount(() => {
               </li>
             </ol>
             <div class="ctas">
-              <a class="btn primary" :href="withBase('/docs/getting-started/install')">{{ t.start.cta }} →</a>
-              <a class="btn ghost" :href="withBase('/docs/getting-started/quickstart')">{{ t.start.trial }}</a>
+              <a class="btn primary" :href="localLink('/docs/getting-started/install')">{{ t.start.cta }} →</a>
+              <a class="btn ghost" :href="localLink('/docs/getting-started/quickstart')">{{ t.start.trial }}</a>
             </div>
           </div>
           <div data-reveal>
@@ -356,7 +359,7 @@ onBeforeUnmount(() => {
         <h2 data-reveal>{{ t.docs.title }}</h2>
         <p class="sec-lede" data-reveal>{{ t.docs.lede(pageCount) }}</p>
         <div class="docs-grid">
-          <section v-for="(group, gi) in docsGroups" :key="group.group" class="docs-group" data-reveal :style="{ '--i': gi }">
+          <section v-for="(group, gi) in localizedDocs" :key="group.group" class="docs-group" data-reveal :style="{ '--i': gi }">
             <h3><span class="dir">{{ String(gi + 1).padStart(2, '0') }}/</span>{{ group.group }}</h3>
             <ul>
               <li v-for="page in group.pages" :key="page.link">
@@ -379,7 +382,7 @@ onBeforeUnmount(() => {
       <div class="wrap outro-copy">
         <p>{{ t.outro.line }}</p>
         <div class="ctas center">
-          <a class="btn primary" :href="withBase('/docs/getting-started/')">{{ t.outro.primary }} →</a>
+          <a class="btn primary" :href="localLink('/docs/getting-started/')">{{ t.outro.primary }} →</a>
           <a class="btn ghost" :href="repoUrl" target="_blank" rel="noreferrer">★ {{ t.outro.secondary }}</a>
         </div>
       </div>
@@ -390,7 +393,7 @@ onBeforeUnmount(() => {
 <style>
 /* ---------- palette ---------- */
 .landing {
-  --l-bg: #f4f6f1;
+  --l-bg: #f3efe3;
   --l-panel: rgba(255, 255, 255, 0.72);
   --l-hover: rgba(21, 128, 61, 0.06);
   --l-text: #0b1510;
@@ -416,6 +419,7 @@ onBeforeUnmount(() => {
   --l-str: #a3e6b8;
   --l-fn: #7dd3fc;
   --l-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --l-display: 'Space Grotesk Variable', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   --l-sans: 'Inter Variable', Inter, system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
 
   position: relative;
@@ -425,7 +429,7 @@ onBeforeUnmount(() => {
   font-family: var(--l-sans);
 }
 .dark .landing {
-  --l-bg: #080b0a;
+  --l-bg: #111712;
   --l-panel: rgba(18, 24, 21, 0.72);
   --l-hover: rgba(74, 222, 128, 0.06);
   --l-text: #e8f1eb;
@@ -462,7 +466,7 @@ onBeforeUnmount(() => {
   inset: 0;
   pointer-events: none;
   background-image: linear-gradient(var(--l-grid) 1px, transparent 1px), linear-gradient(90deg, var(--l-grid) 1px, transparent 1px);
-  background-size: 48px 48px;
+  background-size: 96px 96px;
   mask-image: linear-gradient(to bottom, #000 0, #000 70%, transparent);
 }
 .bg-grid::after {
@@ -510,7 +514,7 @@ onBeforeUnmount(() => {
   gap: 8px;
   height: 42px;
   padding: 0 18px;
-  border-radius: 8px;
+  border-radius: 2px;
   font: 500 14px/1 var(--l-mono);
   border: 1px solid var(--l-line-strong);
   color: var(--l-text);
@@ -572,7 +576,7 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   margin: 0;
-  font: 700 clamp(44px, 6vw, 78px) / 1 var(--l-mono);
+  font: 700 clamp(44px, 6vw, 78px) / 0.98 var(--l-display);
   letter-spacing: -0.045em;
   white-space: nowrap;
 }
@@ -595,7 +599,7 @@ onBeforeUnmount(() => {
   margin-top: 26px;
   padding: 6px 6px 6px 14px;
   border: 1px solid var(--l-line);
-  border-radius: 10px;
+  border-radius: 3px;
   background: var(--l-code-bg);
 }
 .install code {
@@ -776,7 +780,7 @@ h3 {
   padding: 0;
   list-style: none;
   border: 1px solid var(--l-line);
-  border-radius: 12px;
+  border-radius: 3px;
   background: var(--l-panel);
   overflow: hidden;
 }
@@ -828,7 +832,7 @@ h3 {
 .pillars li {
   padding: 20px;
   border: 1px solid var(--l-line);
-  border-radius: 12px;
+  border-radius: 3px;
   background: var(--l-panel);
   transition: border-color 0.2s, transform 0.2s;
 }
@@ -855,7 +859,7 @@ h3 {
 /* 03 */
 .figure {
   border: 1px solid var(--l-line);
-  border-radius: 14px;
+  border-radius: 3px;
   background: var(--l-panel);
   overflow: hidden;
 }
@@ -981,13 +985,13 @@ h3 {
 .rules li {
   padding: 20px;
   border: 1px solid var(--l-line);
-  border-radius: 12px;
+  border-radius: 3px;
   background: var(--l-panel);
 }
 .art {
   margin: 0 0 18px;
   padding: 14px 16px;
-  border-radius: 8px;
+  border-radius: 2px;
   background: var(--l-code-bg);
   color: #4ade80;
   font: 12.5px/1.7 var(--l-mono);
@@ -1010,7 +1014,7 @@ h3 {
 }
 .window {
   border: 1px solid var(--l-line);
-  border-radius: 12px;
+  border-radius: 3px;
   overflow: hidden;
   background: var(--l-panel);
   box-shadow: 0 40px 100px -50px var(--l-glow);
@@ -1048,7 +1052,7 @@ h3 {
   margin-top: 36px;
   overflow-x: auto;
   border: 1px solid var(--l-line);
-  border-radius: 12px;
+  border-radius: 3px;
   background: var(--l-panel);
 }
 .compare {
@@ -1157,7 +1161,7 @@ h3 {
   position: relative;
   padding: 20px;
   border: 1px dashed var(--l-line-strong);
-  border-radius: 12px;
+  border-radius: 3px;
 }
 .layer {
   display: inline-block;
@@ -1179,7 +1183,7 @@ h3 {
 .docs-group {
   padding: 18px;
   border: 1px solid var(--l-line);
-  border-radius: 12px;
+  border-radius: 3px;
   background: var(--l-panel);
 }
 .docs-group h3 {
@@ -1293,9 +1297,29 @@ h3 {
 @media (max-width: 560px) {
   .wrap { padding: 0 18px; }
   .pillars, .roadmap, .docs-grid { grid-template-columns: minmax(0, 1fr); }
-  .eyebrow { flex-wrap: wrap; border-radius: 12px; line-height: 1.5; }
+  .eyebrow { flex-wrap: wrap; border-radius: 3px; line-height: 1.5; }
   .hero-title { font-size: clamp(38px, 12vw, 56px); }
   .lede { font-size: 16px; }
   .compare tbody th { white-space: normal; }
+}
+
+/* Editorial typography and ruled sections retain the terminal demonstrations. */
+.hero-title .accent { font-style: italic; }
+.cursor { font-style: normal; }
+.eyebrow { border-radius: 0; background: transparent; border: 0; border-left: 3px solid var(--l-accent); padding-left: 12px; }
+.sec { border-top: 1px solid var(--l-line-strong); padding-bottom: 80px; }
+.sec-head { align-items: center; }
+.idx { background: var(--l-accent); color: var(--l-bg); padding: 7px 10px; }
+h2, .motto { font-family: var(--l-display); letter-spacing: -0.045em; }
+h3 { font-family: var(--l-display); }
+.hero-art { border: 1px solid var(--l-line-strong); background: var(--l-panel); transform: rotate(1deg); }
+.ticker { background: var(--l-text); color: var(--l-bg); border-top: 3px solid var(--l-accent); }
+.ticker-run span { color: inherit; }
+.btn.primary { box-shadow: 3px 3px 0 var(--l-text); }
+.btn.primary:hover { box-shadow: 5px 5px 0 var(--l-text); }
+.btn:focus-visible, .copy:focus-visible { outline: 2px solid var(--l-accent); outline-offset: 5px; }
+@media (max-width: 640px) {
+  .hero-art { transform: none; }
+  .hero-title { letter-spacing: -0.05em; }
 }
 </style>

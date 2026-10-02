@@ -465,12 +465,17 @@ def plain(text):
 
 
 def heading_anchors(text):
-    """GitHub's heading anchors: lowercase, punctuation dropped, spaces to hyphens, repeats numbered."""
+    """Explicit heading IDs, or GitHub slugs for headings without an explicit ID."""
     found, counts = set(), {}
     for line, code in markdown_lines(text):
         match = None if code else HEADING.match(line)
         if match:
-            base = re.sub(r"[^\w\- ]", "", heading_text(match.group(2) or "").strip().lower()).replace(" ", "-")
+            title = match.group(2) or ""
+            explicit = re.search(r"\s+\{#([^\s{}]+)\}\s*$", title)
+            if explicit:
+                found.add(explicit.group(1))
+                continue
+            base = re.sub(r"[^\w\- ]", "", heading_text(title).strip().lower()).replace(" ", "-")
             count = counts.get(base, 0)
             counts[base] = count + 1
             found.add(base if count == 0 else f"{base}-{count}")

@@ -346,6 +346,14 @@ class BundledDocsTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.bundle_docs()
 
+    def test_explicit_heading_ids_preserve_translated_links(self):
+        (self.source / "docs/install.md").write_text("## 登录 Web {#sign-in-to-web}\n[Here](#sign-in-to-web)\n")
+        self.bundle_docs()
+        self.assertEqual(distribution.heading_anchors("## 登录 Web {#sign-in-to-web}\n"), {"sign-in-to-web"})
+        (self.source / "docs/install.md").write_text("## 登录 Web {#other-id}\n")
+        with self.assertRaises(ValueError):
+            self.bundle_docs()
+
     def test_the_bundle_check_reads_code_span_links(self):
         self.bundle_docs()
         (self.bundle / "README.md").write_text("# Title\n[`schema.json`](contracts/schema.json)\n")
