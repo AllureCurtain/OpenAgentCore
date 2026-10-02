@@ -160,9 +160,9 @@ class ComposeTests(unittest.TestCase):
                 self.assertEqual(volume['type'], 'bind')
         self.assertEqual({v['target'] for v in services['web']['volumes']}, {'/run/oac', '/node-payload', '/domain'})
         self.assertEqual(services['credentials']['logging']['driver'], 'none')
-        self.assertEqual(services['init']['command'], ['python3', '/usr/local/bin/oac-init'])
+        self.assertEqual(services['init']['command'], ['python3', '/init.py'])
+        self.assertIn('def initialize', self.compose['configs']['init-script']['content'])
         self.assertEqual(services['init']['environment']['OAC_REVISION'], 'd' * 40)
-        self.assertNotIn('init-script', self.compose.get('configs', {}))
         self.assertEqual(services['core']['environment']['OAC_HARNESSES'].split(','), ['claude_sdk', 'codex', 'mcode'])
         self.assertEqual(services['core']['environment']['OAC_DEFAULT_HARNESS'], 'codex')
 

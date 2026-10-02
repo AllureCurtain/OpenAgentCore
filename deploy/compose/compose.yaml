@@ -49,7 +49,10 @@ services:
     platform: linux/amd64
     restart: "no"
     security_opt: [no-new-privileges:true]
-    command: [python3, /usr/local/bin/oac-init]
+    command: [python3, /init.py]
+    configs:
+      - source: init-script
+        target: /init.py
     environment:
       OAC_REVISION: __OAC_REVISION__
       OAC_RELEASE_BASE: __OAC_RELEASE_BASE__
@@ -254,3 +257,7 @@ configs:
       		flush_interval -1
       	}
       }
+
+  init-script:
+    content: |
+      __OAC_INIT_PY__

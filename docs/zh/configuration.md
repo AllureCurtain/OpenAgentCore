@@ -8,12 +8,12 @@ Core 安装的每项设置都恰好只有一个归属位置。共有两类：
 
 | 类型 | 示例 | 归属位置 | 修改方式 | 生效方式 |
 | --- | --- | --- | --- | --- |
-| [进程设置](#process-settings-config-json) | 公共 URL、端口、日志、Harness、执行并发度、审计保留期、OAuth 来源、Runtime 历史记录导出 | 安装目录中的 `.env`（默认 `~/.oac/core`） | 通过 Web 域设置或 `oac domain` 配置托管 HTTPS；否则编辑 `.env`，然后运行 `oac apply` | `oac apply` 会重新创建读取了这些已更改设置的服务 |
+| [进程设置](#process-settings-configjson) | 公共 URL、端口、日志、Harness、执行并发度、审计保留期、OAuth 来源、Runtime 历史记录导出 | 安装目录中的 `.env`（默认 `~/.oac/core`） | 通过 Web 域设置或 `oac domain` 配置托管 HTTPS；否则编辑 `.env`，然后运行 `oac apply` | `oac apply` 会重新创建读取了这些已更改设置的服务 |
 | [运行时设置](#runtime-settings-web) | 沙箱后端和大小、节点、项目和密钥、默认模型、执行器凭据 | Core 的 PostgreSQL 数据库 | 在 Web 中修改，或使用 Core 密钥调用 Core API（`/core/v1`） | 保存时无需重启 Core；节点会异步准备 Runtime 变更 |
 
 Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置，并在 **Startup settings** 下以只读方式显示 Core 加载的进程设置。机密信息存放在 [`data/secrets/`](#installation-directory) 中，每项仅保存一份。没有任何配置文件定义项目或 API 密钥。
 
-## 进程设置 {#process-settings-config-json}
+## 进程设置 {#process-settings-configjson}
 
 [安装选项](getting-started/install-options.md)中的安装标志只会一次性写入 `.env`。要更改设置，请编辑 `.env` 并应用：
 
@@ -131,7 +131,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 
 | 路径 | 内容 | 修改者 |
 | --- | --- | --- |
-| `.env` | [进程设置](#process-settings-config-json)。由你编辑的文件 | 你，然后运行 `oac apply`；托管域名设置写入 `OAC_PUBLIC_URL` |
+| `.env` | [进程设置](#process-settings-configjson)。由你编辑的文件 | 你，然后运行 `oac apply`；托管域名设置写入 `OAC_PUBLIC_URL` |
 | `compose.yaml`、`ports.yaml`、`ports-https.yaml` | 发行版的服务定义。不要编辑 | 发行版 |
 | `oac` | [管理命令](getting-started/operations.md#the-oac-command)，从 Core 镜像复制 | 安装程序 |
 | `data/secrets/web/core.key` | [Core 密钥](getting-started/operations.md#core-key) | `oac rotate-core-key` |
