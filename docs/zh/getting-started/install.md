@@ -1,7 +1,7 @@
 ---
 title: "安装 Core 和 Web"
 source: docs/getting-started/install.md
-source_hash: 7b15a2e8fd3365e0d4e246d9d5a288bd3648a3f79b3fa11ccfc6e3e702d4c77d
+source_hash: c016b1b4064555b2b5fc78fdbf2dbdd3c8d23037b78536bd179acaae4c6b3386
 ---
 
 一条命令即可在 Linux 主机上安装 Core、Web 控制台和 PostgreSQL。Web 是管理员控制台：使用 Core 密钥登录，为安装配置域名、设置默认模型并签发 Project API 密钥。应用随后使用这些密钥调用 Core API，Session 在你添加的节点上的沙箱中运行，也可以在 E2B 上运行。
@@ -18,7 +18,7 @@ source_hash: 7b15a2e8fd3365e0d4e246d9d5a288bd3648a3f79b3fa11ccfc6e3e702d4c77d
 
 ## 前置条件 {#prerequisites}
 
-- Linux amd64，Python 3.9 或更高版本，以及 curl。无需 GitHub 账号或 CLI。
+- Linux amd64 和 curl。
 - Docker Engine 和 Docker Compose 2.26.0 或更高版本（`docker compose version`）。
 - 能运行 `docker` 并向自己的主目录写入文件的账号。普通用户和 root 均可；安装程序不会调用 sudo。
 - 初次访问 Web 的端口（8080）和 Core 的端口（8091，仅回环地址）各自空闲，启用 HTTPS 后还需要空闲的 80 和 443 端口；参阅[端口](install-options.md#ports)。Docker 必须能发布这些端口；安装程序不会修改主机策略。

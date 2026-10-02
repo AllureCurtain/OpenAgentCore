@@ -16,7 +16,7 @@ This page follows the default path. Every flag, existing reverse proxies and off
 
 ## Prerequisites
 
-- Linux amd64 with Python 3.9 or newer, and curl. No GitHub account or CLI is needed.
+- Linux amd64 and curl.
 - Docker Engine with Docker Compose 2.26.0 or newer (`docker compose version`).
 - An account that can run `docker` and write to its home directory. Ordinary users and root both work; the installer never calls sudo.
 - A free port each for initial Web access (8080) and Core (8091, on loopback), and free ports 80 and 443 once you turn on HTTPS; see [ports](./install-options.md#ports). Docker must be able to publish them; the installer does not change host policy.

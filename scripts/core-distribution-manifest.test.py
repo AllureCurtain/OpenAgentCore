@@ -277,16 +277,13 @@ class DistributionTests(unittest.TestCase):
         self.assertEqual(json.loads((self.bundle / "manifest.json").read_text())["artifact_base_url"], "")
 
     def test_bootstraps_include_shared_downloader_and_are_reproducible(self):
-        for name in ("node_install.py", "node_generations.py", "install_display.py", "node_output.py", "provider_assets.py", *distribution.OAC_CLI_MODULES):
+        for name in ("node_install.py", "node_generations.py", "install_display.py", "node_output.py", "provider_assets.py", "distribution.py", "node_spec.py"):
             (self.bundle / name).write_text("# " + name + "\n")
         distribution.bootstraps(self.bundle, "1700000000", "a" * 40)
-        first = [(self.bundle / name).read_bytes() for name in ("node-install.pyz", "oac.pyz")]
+        first = (self.bundle / "node-install.pyz").read_bytes()
         distribution.bootstraps(self.bundle, "1700000000", "a" * 40)
-        self.assertEqual(first, [(self.bundle / name).read_bytes() for name in ("node-install.pyz", "oac.pyz")])
-        self.assertTrue(first[1].startswith(b"#!/usr/bin/env python3\n"))
-        with zipfile.ZipFile(self.bundle / "oac.pyz") as contents:
-            self.assertEqual(set(contents.namelist()), {"__main__.py", *distribution.OAC_CLI_MODULES})
-            self.assertIn(("oac_cli.SOURCE_COMMIT = " + repr("a" * 40)).encode(), contents.read("__main__.py"))
+        self.assertEqual(first, (self.bundle / "node-install.pyz").read_bytes())
+        self.assertFalse((self.bundle / "oac.pyz").exists())
         with zipfile.ZipFile(self.bundle / "node-install.pyz") as contents:
             self.assertEqual(set(contents.namelist()), {"__main__.py", "node_spec.py", "distribution.py", "node_generations.py", "install_display.py", "node_output.py", "provider_assets.py"})
             self.assertEqual(contents.read("__main__.py"), (self.bundle / "node_install.py").read_bytes())

@@ -1,0 +1,6 @@
+# Managed installations publish HTTPS. External proxies and hosting platforms omit this file.
+services:
+  gateway:
+    ports:
+      - "${OAC_HOST:-127.0.0.1}:80:80"
+      - "${OAC_HOST:-127.0.0.1}:443:443"

@@ -12,6 +12,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "deploy/compose/compose.yaml"
 PORTS = ROOT / "deploy/compose/ports.yaml"
+HTTPS = ROOT / "deploy/compose/ports-https.yaml"
 TOKENS = ("IMAGE_CORE", "IMAGE_WEB", "IMAGE_INGRESS", "REVISION", "RELEASE_BASE", "ARCHIVE_CHECKSUM")
 IMAGE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
 
@@ -49,13 +50,13 @@ def checksum_line(name, data):
 
 
 def write_assets(directory, values):
-    """Write compose.yaml, ports.yaml and their checksums. Returns the four paths."""
+    """Write compose.yaml, the port files and their checksums."""
     directory = pathlib.Path(directory)
     rendered = render(values)
-    ports = PORTS.read_bytes()
     files = {
         "compose.yaml": rendered.encode(),
-        "ports.yaml": ports,
+        "ports.yaml": PORTS.read_bytes(),
+        "ports-https.yaml": HTTPS.read_bytes(),
     }
     written = []
     for name, data in files.items():

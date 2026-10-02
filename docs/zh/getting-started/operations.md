@@ -1,7 +1,7 @@
 ---
 title: "管理你的安装"
 source: docs/getting-started/operations.md
-source_hash: 83a7f46bfd82d743be230955a7ac2312efaa9ca8d88b243117e66cc19626e2a4
+source_hash: 26b1e98800f8e7abb792905eaba8754dfcfe4cbaf49f478b3f43725841b0e06c
 ---
 
 安装运维人员负责 Core 主机、存储和可用性。节点主机运行各自的服务；参阅[节点](nodes.md)。设置见[配置参考](../configuration.md)。
@@ -16,16 +16,15 @@ source_hash: 83a7f46bfd82d743be230955a7ac2312efaa9ca8d88b243117e66cc19626e2a4
 
 | 命令 | 功能 |
 | --- | --- |
-| `oac status` | 展示各服务及健康状态、Core 与 Web 健康状态、公开 URL、API 基础 URL、控制台地址、源码提交、反向代理所需路由、尚未应用的 `config.json` 变更和手动修改的生成文件。服务不可用时以非零状态退出。不调用模型 |
-| `oac start` | 使用 `apply` 最近写入的文件启动所有服务；提示尚未应用的变更 |
-| `oac stop` | 停止 PostgreSQL、Core 和 Web。保留数据、节点和沙箱，运行中的沙箱工作可能继续 |
-| `oac apply` | 应用 `config.json` 并重启发生变化的服务；参阅 [apply 工作方式](../configuration.md#how-oac-apply-works) |
-| `oac apply --dry-run` | 展示变更的设置、文件与重启计划，不修改任何内容 |
-| `oac apply --discard-edits` | 覆盖手动修改的生成文件，各自保留为 `generated/<file>.edited-<time>` |
-| `oac apply --confirm-public-url-change URL` | 无提示地确认公开 URL 变更；必须与新 URL 相同 |
-| `oac domain HOSTNAME [--confirm-public-url-change URL]` | 托管入口：将公开 URL 设为 `https://HOSTNAME`，对应 Web 的 **Configure domain and HTTPS**；参阅[配置域名和 HTTPS](install.md#configure-the-domain-and-https) |
-| `oac rotate-core-key [--yes]` | 替换 Core 密钥；参阅[轮换 Core 密钥](#rotate-the-core-key) |
-| `oac uninstall [--yes]` | 从主机移除安装及全部数据；参阅[卸载](#uninstall) |
+| `oac status` | 展示 Compose 服务状态、公开 URL 和域名状态 |
+| `oac start` | 启动服务 |
+| `oac stop` | 停止服务。保留数据、节点和沙箱 |
+| `oac apply` | 先运行 `oac-core check-config`，再执行 `docker compose up -d --wait`。校验失败时不改动任何服务 |
+| `oac domain HOSTNAME` | 托管 HTTPS：把公开 URL 设为 `https://HOSTNAME`，对应 Web 的 **Configure domain and HTTPS** |
+| `oac core-key [--show]` | 打印 Core 密钥路径；加上 `--show` 时打印密钥本身 |
+| `oac rotate-core-key` | 替换 Core 密钥并重启 Core 和 Web |
+| `oac backup DEST` | 停止服务，打包安装目录，然后重新启动 |
+| `oac uninstall --yes` | 移除安装、容器和镜像 |
 
 第二个安装使用自己的命令，例如 `~/.oac/second/oac status`。
 

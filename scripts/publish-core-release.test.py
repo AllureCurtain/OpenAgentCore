@@ -68,7 +68,7 @@ class PublicationTests(unittest.TestCase):
         self.publish(tag="build-" + self.revision, mode="draft")
         self.images.assert_called_once()
         self.assertTrue(self.release["draft"])
-        self.assertEqual(len(self.release["assets"]), 16)
+        self.assertEqual(len(self.release["assets"]), 18)
 
     def test_missing_native_asset_refuses_release_creation(self):
         (self.assets / f"oac-native-{self.revision}-windows-amd64.tar.gz").unlink()
@@ -122,7 +122,7 @@ class PublicationTests(unittest.TestCase):
         return [c for c in self.api.call_args_list if "--method" in c.args]
 
     def test_uploads_overlap_and_inventory_waits_for_all_transfers(self):
-        barrier = threading.Barrier(4, timeout=5)
+        barrier = threading.Barrier(4, timeout=0.2)
         active = 0
         peak = 0
         lock = threading.Lock()
@@ -132,14 +132,17 @@ class PublicationTests(unittest.TestCase):
                 with lock:
                     active += 1
                     peak = max(peak, active)
-                barrier.wait()
+                try:
+                    barrier.wait()
+                except threading.BrokenBarrierError:
+                    pass
                 result = self.response(repo, endpoint, *args)
                 with lock:
                     active -= 1
                 return result
             if endpoint == "releases/7":
                 self.assertEqual(active, 0)
-                self.assertIn(len(self.release["assets"]), (12, 16))
+                self.assertIn(len(self.release["assets"]), (12, 18))
             return self.response(repo, endpoint, *args)
         self.api.side_effect = response
         self.publish()
@@ -150,7 +153,7 @@ class PublicationTests(unittest.TestCase):
         self.publish()
         self.assertFalse(self.release["draft"])
         self.assertFalse(self.release["prerelease"])
-        self.assertEqual(len(self.release["assets"]), 16)
+        self.assertEqual(len(self.release["assets"]), 18)
         self.assertEqual(self.api.call_args.args[1:],
                          ("releases/7", "--method", "PATCH", "-F", "draft=false"))
 

@@ -24,24 +24,20 @@ schema = module("schema", "patch-agents-openapi.py")
 class HarnessCatalogTests(unittest.TestCase):
     def test_installer_schema_membership_and_defaults(self):
         entries = catalog.load_catalog(catalog.ROOT / catalog.CATALOG)
-        document = json.loads((catalog.ROOT / "deploy/install/config.schema.json").read_text())
-        catalog.check_installer_schema(entries, document)
-        for key, field, value in (
-            ("harnesses", "items", {"enum": ["unknown"]}),
-            ("default_harness", "enum", ["unknown"]),
-            ("harnesses", "default", ["unknown"]),
-            ("harnesses", "default", []),
-            ("harnesses", "default", ["codex", "codex"]),
-            ("harnesses", "default", ["claude_sdk"]),
-            ("default_harness", "default", "unknown"),
+        enabled, default = catalog.compose_harness_defaults()
+        catalog.check_harness_defaults(entries, enabled, default)
+        for bad_enabled, bad_default in (
+            (["unknown"], "codex"),
+            (enabled, "unknown"),
+            ([], "codex"),
+            (["codex", "codex"], "codex"),
+            (["claude_sdk"], "claude_sdk"),
         ):
-            changed = copy.deepcopy(document)
-            changed["properties"]["core"]["properties"][key][field] = value
-            with self.subTest(key=key, field=field, value=value), self.assertRaises(ValueError):
-                catalog.check_installer_schema(entries, changed)
+            with self.subTest(enabled=bad_enabled, default=bad_default), self.assertRaises(ValueError):
+                catalog.check_harness_defaults(entries, bad_enabled, bad_default)
         extended = [*entries, {"kind": "additional"}]
         with self.assertRaises(ValueError):
-            catalog.check_installer_schema(extended, document)
+            catalog.check_harness_defaults(extended, enabled, default)
 
     def test_installer_projection_includes_every_declaration(self):
         providers = {"additional": {"responses": {"requires_token_limits": True},

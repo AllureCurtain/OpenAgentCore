@@ -132,7 +132,7 @@ jobs:
           for asset in "$HOME/.oac/build/core-distribution/"*; do
             if [[ -f "$asset" ]]; then ln "$asset" "$HOME/.oac/build/release-upload/"; fi
           done
-          cp deploy/install-release.sh "$HOME/.oac/build/release-upload/install.sh"
+          cp deploy/install.sh "$HOME/.oac/build/release-upload/install.sh"
           (cd "$HOME/.oac/build/release-upload" && sha256sum install.sh > install.sh.sha256)
       - uses: actions/upload-artifact@v6
         with:

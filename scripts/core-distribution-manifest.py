@@ -291,11 +291,6 @@ def package_artifacts(bundle, stage, revision):
     return result
 
 
-# The installation's management command; it runs without the bundle directory.
-OAC_CLI_MODULES = ("oac_cli.py", "config_model.py", "config.schema.json", "configuration.py",
-                  "distribution.py", "node_spec.py", "ingress.py", "ingress_config.py")
-
-
 def bootstraps(bundle, epoch, revision):
     if not re.fullmatch(r"[0-9a-f]{40}", revision):
         raise ValueError("Invalid operator source revision")
@@ -308,13 +303,6 @@ def bootstraps(bundle, epoch, revision):
             shutil.copyfile(bundle / original, target)
             os.utime(target, (int(epoch), int(epoch)))
         zipapp.create_archive(directory, bundle / "node-install.pyz", compressed=True)
-    with tempfile.TemporaryDirectory(dir=bundle.parent) as directory:
-        for name in OAC_CLI_MODULES:
-            shutil.copyfile(bundle / name, pathlib.Path(directory) / name)
-        (pathlib.Path(directory) / "__main__.py").write_text(f"import oac_cli\n\noac_cli.SOURCE_COMMIT = {revision!r}\noac_cli.entry()\n")
-        for path in pathlib.Path(directory).iterdir():
-            os.utime(path, (int(epoch), int(epoch)))
-        zipapp.create_archive(directory, bundle / "oac.pyz", interpreter="/usr/bin/env python3", compressed=True)
 
 
 def manifest(bundle, stage, revision, source_tree, artifact_base_url="", offline="0"):

@@ -41,17 +41,20 @@ def go(source):
                           check=True, capture_output=True).stdout
 
 
-def check_installer_schema(entries, schema):
-    """Process defaults remain authored in the schema; membership is catalog-owned."""
+def check_harness_defaults(entries, enabled, default):
+    """Compose publishes the catalog as the default enabled Harnesses."""
     kinds = [entry["kind"] for entry in entries]
-    core = schema["properties"]["core"]["properties"]
-    enabled, default = core["harnesses"], core["default_harness"]
-    if enabled["items"]["enum"] != kinds or default["enum"] != kinds:
-        raise ValueError("Installer Harness enums must match internal/harnessconfig/builtin/catalog.json")
-    if (not enabled["default"] or len(set(enabled["default"])) != len(enabled["default"])
-            or not set(enabled["default"]) <= set(kinds)
-            or default["default"] not in enabled["default"]):
-        raise ValueError("Installer Harness defaults must select registered, enabled Harnesses")
+    if list(enabled) != kinds or default not in enabled:
+        raise ValueError("Compose Harness defaults must match internal/harnessconfig/builtin/catalog.json")
+
+
+def compose_harness_defaults():
+    text = (ROOT / "deploy/compose/compose.yaml").read_text()
+    enabled = re.search(r"OAC_HARNESSES: \$\{OAC_HARNESSES:-([^}]+)\}", text)
+    default = re.search(r"OAC_DEFAULT_HARNESS: \$\{OAC_DEFAULT_HARNESS:-([^}]+)\}", text)
+    if enabled is None or default is None:
+        raise ValueError("Compose template is missing Harness defaults")
+    return enabled.group(1).split(","), default.group(1)
 
 
 def render_installer(providers):
@@ -146,7 +149,8 @@ def main():
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     entries = load_catalog(ROOT / CATALOG)
-    check_installer_schema(entries, json.loads((ROOT / "deploy/install/config.schema.json").read_text()))
+    enabled, default = compose_harness_defaults()
+    check_harness_defaults(entries, enabled, default)
     stale = []
 
     def projection(relative, content):

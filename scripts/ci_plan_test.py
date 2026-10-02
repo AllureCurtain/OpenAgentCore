@@ -20,10 +20,10 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(self.jobs("README.md"), {"hygiene"})
 
     def test_installer_does_not_download_a_browser_or_run_database_tests(self):
-        self.assertEqual(self.jobs("deploy/install/install.py", "scripts/install-release.test.py"), {"hygiene", "distribution"})
+        self.assertEqual(self.jobs("deploy/install.sh", "deploy/install/node_payload.py"), {"hygiene", "distribution"})
 
     def test_compose_inputs_select_live_and_fixture_checks_without_image_builds(self):
-        for path in ("deploy/compose/compose.yaml", "deploy/compose/ports.yaml", "deploy/compose/dokploy.toml",
+        for path in ("deploy/compose/compose.yaml", "deploy/compose/ports.yaml", "deploy/compose/ports-https.yaml", "deploy/compose/dokploy.toml",
                      "scripts/compose-smoke.py", "scripts/render-compose.py", "deploy/install/test_compose.py"):
             self.assertEqual(self.jobs(path), {"hygiene", "distribution", "compose"})
             self.assertFalse(ci.select([path])["image"])
@@ -158,14 +158,14 @@ class SelectionTests(unittest.TestCase):
                 self.assertIn(f"contains(fromJSON(needs.plan.outputs.jobs || '[]'), '{job}')", bodies[job])
 
     def test_mixed_changes_accumulate(self):
-        self.assertEqual(self.jobs("docs/maintainers.md", "deploy/install/install.py", "apps/web/src/app.tsx"),
+        self.assertEqual(self.jobs("docs/maintainers.md", "deploy/install.sh", "apps/web/src/app.tsx"),
                          {"hygiene", "distribution", "web", "web-acceptance", "website"})
 
     def test_installer_pr_300_replay(self):
         self.assertEqual(self.jobs(
-            "deploy/install-release.sh", "deploy/install/README.md", "deploy/install/install.py",
-            "deploy/install/install_display.py", "deploy/install/test_install.py", "deploy/install/test_install_output.py",
-            "docs/getting-started/install.md", "scripts/install-release.test.py"), {"hygiene", "distribution", "website"})
+            "deploy/install.sh", "deploy/install/README.md", "deploy/install/node_install.py",
+            "deploy/install/install_display.py", "deploy/install/node_payload.py",
+            "docs/getting-started/install.md"), {"hygiene", "distribution", "website"})
 
     def test_workflow_graph_cannot_silently_omit_or_add_a_gate_dependency(self):
         workflow = (Path(__file__).resolve().parents[1] / ".github/workflows/check.yml").read_text().split("jobs:\n", 1)[1]

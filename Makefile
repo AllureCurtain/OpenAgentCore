@@ -181,9 +181,7 @@ check-distribution:
 	PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s deploy/install -p 'test_*.py'
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/core-distribution-manifest.test.py
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/publish-core-release.test.py
-	PYTHONDONTWRITEBYTECODE=1 python3 scripts/install-release.test.py
-	PYTHONDONTWRITEBYTECODE=1 python3 scripts/config-reference.py --check
-	bash -n deploy/install/install.sh deploy/install-release.sh scripts/build-web.sh scripts/build-core-distribution.sh scripts/build-core-image-context.sh scripts/prepare-release-runtimes.sh
+	bash -n deploy/install.sh scripts/build-web.sh scripts/build-core-distribution.sh scripts/build-core-image-context.sh scripts/prepare-release-runtimes.sh
 	./scripts/build-web.sh
 
 build-core-distribution:

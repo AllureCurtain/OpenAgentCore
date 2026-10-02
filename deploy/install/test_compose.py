@@ -155,11 +155,10 @@ class ComposeTests(unittest.TestCase):
             for volume in service.get('volumes', []):
                 self.assertNotIn('docker.sock', json.dumps(volume))
                 self.assertEqual(volume['type'], 'bind')
-        self.assertEqual({v['target'] for v in services['web']['volumes']}, {'/run/oac', '/node-payload'})
+        self.assertEqual({v['target'] for v in services['web']['volumes']}, {'/run/oac', '/node-payload', '/domain'})
         self.assertEqual(services['credentials']['logging']['driver'], 'none')
-        schema = json.loads((ROOT / 'deploy/install/config.schema.json').read_text())
-        harnesses = schema['properties']['core']['properties']['harnesses']['default']
-        self.assertEqual(services['core']['environment']['OAC_HARNESSES'].split(','), harnesses)
+        self.assertEqual(services['core']['environment']['OAC_HARNESSES'].split(','), ['claude_sdk', 'codex', 'mcode'])
+        self.assertEqual(services['core']['environment']['OAC_DEFAULT_HARNESS'], 'codex')
 
     def test_public_url_can_be_configured_after_initial_startup(self):
         for value in (None, '', 'https://oac.example.test', 'http://localhost:9080'):

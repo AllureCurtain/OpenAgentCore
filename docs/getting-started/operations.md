@@ -14,16 +14,15 @@ Each installation has its own management command in its directory. It needs neit
 
 | Command | What it does |
 | --- | --- |
-| `oac status` | Shows each service and its health, Core and Web health, the public URL, API base URL, console address and source commit, the routes a reverse proxy needs, `config.json` changes not applied yet and generated files edited by hand. Exits non-zero when a service is unavailable. It never calls a model |
-| `oac start` | Starts every service with the files last written by `apply`; warns about unapplied changes |
-| `oac stop` | Stops PostgreSQL, Core and Web. Data, nodes and sandboxes are kept, and running sandbox work may continue |
-| `oac apply` | Applies `config.json` and restarts what changed; see [how apply works](../configuration.md#how-oac-apply-works) |
-| `oac apply --dry-run` | Shows the changed settings, files and restarts, and changes nothing |
-| `oac apply --discard-edits` | Overwrites generated files edited by hand, keeping each as `generated/<file>.edited-<time>` |
-| `oac apply --confirm-public-url-change URL` | Confirms a public URL change without a prompt; must equal the new URL |
-| `oac domain HOSTNAME [--confirm-public-url-change URL]` | Managed ingress: sets the public URL to `https://HOSTNAME`, as **Configure domain and HTTPS** in Web does; see [Configure the domain and HTTPS](./install.md#configure-the-domain-and-https) |
-| `oac rotate-core-key [--yes]` | Replaces the Core key; see [Rotate the Core key](#rotate-the-core-key) |
-| `oac uninstall [--yes]` | Removes the installation and all its data from this host; see [Uninstall](#uninstall) |
+| `oac status` | Shows Compose service status, the public URL and the domain state |
+| `oac start` | Starts the services |
+| `oac stop` | Stops the services. Data, nodes and sandboxes are kept |
+| `oac apply` | Runs `oac-core check-config`, then `docker compose up -d --wait`. A failed check changes no service |
+| `oac domain HOSTNAME` | Managed HTTPS: sets the public URL to `https://HOSTNAME`, as **Configure domain and HTTPS** in Web does |
+| `oac core-key [--show]` | Prints the Core key path, or the key itself with `--show` |
+| `oac rotate-core-key` | Replaces the Core key and restarts Core and Web |
+| `oac backup DEST` | Stops the services, archives the installation directory, then starts them |
+| `oac uninstall --yes` | Removes the installation, its containers and its images |
 
 For a second installation, use its own command, such as `~/.oac/second/oac status`.
 

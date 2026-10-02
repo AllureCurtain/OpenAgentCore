@@ -99,8 +99,7 @@ if [[ "$(go env GOVERSION)" != "$required_go" ]]; then
   exit 1
 fi
 go run ./services/core/cmd/provider-artifacts
-for file in install.sh install.py install_output.py install_display.py node_output.py configuration.py config_model.py config.schema.json ingress.py ingress_config.py oac_cli.py \
-    native_installers.py node_install.py provider_assets.py node_spec.py node_generations.py sandbox_setup.py distribution.py; do
+for file in install_display.py node_output.py node_install.py provider_assets.py node_spec.py node_generations.py node_payload.py distribution.py; do
   cp "deploy/install/$file" "$bundle/$file"
 done
 # Web owns the Standard sandbox sizes; the installer's first deployment uses this copy.

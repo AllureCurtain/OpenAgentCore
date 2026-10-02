@@ -21,7 +21,15 @@ x-core: &core
     OAC_PROVIDER_ROOT: /opt/oac
     OAC_PROVIDER_STATE_ROOT: /state
     OAC_NATIVE_INSTALLER_DIR: /opt/oac/native-installers
-    OAC_HARNESSES: claude_sdk,codex,mcode
+    OAC_EXECUTION_CONCURRENCY: ${OAC_EXECUTION_CONCURRENCY:-4}
+    OAC_DEFAULT_HARNESS: ${OAC_DEFAULT_HARNESS:-codex}
+    OAC_HARNESSES: ${OAC_HARNESSES:-claude_sdk,codex,mcode}
+    OAC_WRITE_AUDIT_RETENTION: ${OAC_WRITE_AUDIT_RETENTION:-2160h}
+    OAC_OAUTH_TRUSTED_ORIGINS: ${OAC_OAUTH_TRUSTED_ORIGINS:-}
+    OAC_LOG_LEVEL: ${OAC_LOG_LEVEL:-info}
+    OAC_LOG_FORMAT: ${OAC_LOG_FORMAT:-}
+    OAC_LOG_ADD_SOURCE: ${OAC_LOG_ADD_SOURCE:-}
+    OAC_HISTORY_SETTINGS_FILE: ${OAC_HISTORY_SETTINGS_FILE:-}
   volumes:
     - type: bind
       source: ${OAC_DATA_DIR:-./data}/secrets/core
@@ -105,6 +113,11 @@ services:
       OAC_WEB_UPSTREAM: http://core:8091
       OAC_WEB_CORE_KEY_FILE: /run/oac/core.key
       OAC_WEB_NODE_PAYLOAD_DIR: /node-payload
+      OAC_WEB_BOOTSTRAP: ${OAC_WEB_BOOTSTRAP:-0}
+      OAC_WEB_INSTALLATION_SOCKET: ${OAC_WEB_INSTALLATION_SOCKET:-}
+      OAC_LOG_LEVEL: ${OAC_LOG_LEVEL:-info}
+      OAC_LOG_FORMAT: ${OAC_LOG_FORMAT:-}
+      OAC_LOG_ADD_SOURCE: ${OAC_LOG_ADD_SOURCE:-}
     volumes:
       - type: bind
         source: ${OAC_DATA_DIR:-./data}/secrets/web
@@ -113,6 +126,10 @@ services:
       - type: bind
         source: ${OAC_DATA_DIR:-./data}/node-payload
         target: /node-payload
+        read_only: true
+      - type: bind
+        source: ${OAC_DATA_DIR:-./data}/domain
+        target: /domain
         read_only: true
 
   gateway:
@@ -126,11 +143,20 @@ services:
       XDG_DATA_HOME: /tmp/data
       XDG_CONFIG_HOME: /tmp/config
     command: [caddy, run, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
-    depends_on: [core, web]
+    depends_on:
+      core: {condition: service_started}
+      web: {condition: service_started}
+      init: {condition: service_completed_successfully}
     expose: ["8080"]
     configs:
       - source: gateway-config
         target: /etc/caddy/Caddyfile
+      - source: gateway-routes
+        target: /etc/oac/routes.caddy
+    volumes:
+      - type: bind
+        source: ${OAC_DATA_DIR:-./data}/caddy
+        target: /data/caddy
     healthcheck:
       test:
         - CMD
@@ -144,6 +170,48 @@ services:
                   assert response.status == 200
       interval: 5s
       timeout: 10s
+      retries: 30
+
+  # The only service with the Docker socket. It accepts one Core-key request:
+  # set the managed domain. Hosting platforms leave this profile disabled.
+  domain:
+    image: __OAC_IMAGE_CORE__
+    platform: linux/amd64
+    profiles: ["managed"]
+    user: "0:0"
+    restart: unless-stopped
+    read_only: true
+    init: true
+    tmpfs: [/tmp:mode=1777]
+    security_opt: [no-new-privileges:true]
+    working_dir: ${OAC_INSTALL_DIR:-/install}
+    command: [/usr/local/bin/oac, domain-serve]
+    environment:
+      OAC_INSTALL_DIR: ${OAC_INSTALL_DIR:-/install}
+      OAC_DATA_MOUNT: /data
+      DOCKER_HOST: unix:///var/run/docker.sock
+      HOME: /tmp
+      DOCKER_CONFIG: /tmp
+    depends_on:
+      init: {condition: service_completed_successfully}
+      gateway: {condition: service_healthy}
+    configs:
+      - source: gateway-config
+        target: /etc/caddy/Caddyfile
+    volumes:
+      - type: bind
+        source: /var/run/docker.sock
+        target: /var/run/docker.sock
+      - type: bind
+        source: ${OAC_INSTALL_DIR:-/install}
+        target: ${OAC_INSTALL_DIR:-/install}
+      - type: bind
+        source: ${OAC_DATA_DIR:-./data}
+        target: /data
+    healthcheck:
+      test: ["CMD", "/bin/sh", "-c", "test -S /data/domain/api.sock"]
+      interval: 2s
+      timeout: 5s
       retries: 30
 
   # Explicit operator action; the key is printed only to the attached terminal.
@@ -165,22 +233,25 @@ configs:
   gateway-config:
     content: |
       {
-        admin off
-        auto_https off
-        persist_config off
+      	admin unix//data/caddy/admin.sock
       }
       http://:8080 {
-        @core path /v1 /v1/* /api/v1/*
-        handle @core {
-          reverse_proxy core:8091 {
-            flush_interval -1
-          }
-        }
-        handle {
-          reverse_proxy web:8080 {
-            flush_interval -1
-          }
-        }
+      	import /etc/oac/routes.caddy
+      }
+      import /data/caddy/site.caddy
+
+  gateway-routes:
+    content: |
+      @core path /v1 /v1/* /api/v1 /api/v1/*
+      handle @core {
+      	reverse_proxy core:8091 {
+      		flush_interval -1
+      	}
+      }
+      handle {
+      	reverse_proxy web:8080 {
+      		flush_interval -1
+      	}
       }
 
   init-script:
@@ -200,7 +271,7 @@ configs:
       BASE = '__OAC_RELEASE_BASE__'
       ARCHIVE = 'oac-' + REVISION + '-linux-amd64'
       CHECKSUM = '__OAC_ARCHIVE_CHECKSUM__'
-      MEMBERS = ('manifest.json', 'SHA256SUMS', 'node-install.pyz', 'runtime/seccomp.json')
+      MEMBERS = ('manifest.json', 'SHA256SUMS', 'node-install.pyz', 'runtime/seccomp.json', 'standard-sizes.json')
       OWNERS = {'database': 70, 'secrets': 65532, 'state': 65532, 'caddy': 65532, 'domain': 65532, 'node-payload': 65532}
 
       def digest(data):
@@ -241,12 +312,15 @@ configs:
           os.replace(temporary, path)
 
       def initialize(root, fetch=download):
-          root.chmod(0o700)
+          root.chmod(0o755)
           for name, owner in OWNERS.items():
               directory = root / name
               directory.mkdir(exist_ok=True)
-              directory.chmod(0o700)
+              directory.chmod(0o755 if name in ('caddy', 'domain') else 0o700)
               os.chown(directory, owner, owner)
+          site = root / 'caddy' / 'site.caddy'
+          if not site.exists():
+              write(site, b'\n')
           for name in ('core', 'web', 'database'):
               directory = root / 'secrets' / name
               directory.mkdir(exist_ok=True)
