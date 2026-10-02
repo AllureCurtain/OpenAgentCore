@@ -23,9 +23,6 @@ spec.loader.exec_module(render_compose)
 
 def rendered_compose(directory):
     text = render_compose.render({
-        'IMAGE_CORE': 'ghcr.io/example/core@sha256:' + 'a' * 64,
-        'IMAGE_WEB': 'ghcr.io/example/web@sha256:' + 'b' * 64,
-        'IMAGE_INGRESS': 'ghcr.io/example/ingress@sha256:' + 'c' * 64,
         'REVISION': 'd' * 40,
         'RELEASE_BASE': 'https://example.com/releases/v1/',
         'ARCHIVE_CHECKSUM': 'e' * 64,
@@ -40,6 +37,8 @@ class ComposeTests(unittest.TestCase):
     def render(cls, public_url=None):
         env = dict(os.environ)
         env.pop('OAC_PUBLIC_URL', None)
+        for name in ('OAC_IMAGE_CORE', 'OAC_IMAGE_WEB', 'OAC_IMAGE_INGRESS'):
+            env.pop(name, None)
         env['OAC_DATA_DIR'] = '/tmp/oac-compose-fixture'
         if public_url is not None:
             env['OAC_PUBLIC_URL'] = public_url
@@ -154,7 +153,7 @@ class ComposeTests(unittest.TestCase):
         for service in services.values():
             self.assertNotIn('build', service)
             self.assertNotIn('ports', service)
-            self.assertIn('@sha256:', service['image'])
+            self.assertTrue(service['image'].endswith(':latest') or service['image'] == 'postgres:16-alpine')
             for volume in service.get('volumes', []):
                 self.assertNotIn('docker.sock', json.dumps(volume))
                 self.assertEqual(volume['type'], 'bind')

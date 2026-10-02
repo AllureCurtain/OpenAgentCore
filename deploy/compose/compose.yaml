@@ -1,11 +1,12 @@
 # Release template. scripts/render-compose.py fills the __OAC_*__ tokens with this
-# release's image digests, source revision and node-metadata checksum.
-# Do not run this file until it has been rendered.
+# release's source revision and node-metadata checksum. Images default to the
+# floating latest tags; set OAC_IMAGE_CORE, OAC_IMAGE_WEB or OAC_IMAGE_INGRESS
+# to select another reference. Do not run this file until it has been rendered.
 # Data is bind-mounted from ${OAC_DATA_DIR:-./data}. Set OAC_PUBLIC_URL when the
 # platform domain is ready; startup defaults to localhost.
-x-ingress-image: &ingress-image __OAC_IMAGE_INGRESS__
+x-ingress-image: &ingress-image ${OAC_IMAGE_INGRESS:-ghcr.io/minimax-ai/openagentcore/ingress:latest}
 x-core: &core
-  image: __OAC_IMAGE_CORE__
+  image: ${OAC_IMAGE_CORE:-ghcr.io/minimax-ai/openagentcore/core:latest}
   platform: linux/amd64
   user: "65532:65532"
   read_only: true
@@ -63,7 +64,7 @@ services:
         target: /data
 
   database:
-    image: postgres:16-alpine@sha256:1a66d744c1b459e13b05a8fca341da84cb63383e99ce262210efee5a319d4551
+    image: postgres:16-alpine
     platform: linux/amd64
     restart: unless-stopped
     depends_on:
@@ -104,7 +105,7 @@ services:
       migrate: {condition: service_completed_successfully}
 
   web:
-    image: __OAC_IMAGE_WEB__
+    image: ${OAC_IMAGE_WEB:-ghcr.io/minimax-ai/openagentcore/web:latest}
     platform: linux/amd64
     user: "65532:65532"
     restart: unless-stopped

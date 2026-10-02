@@ -34,7 +34,6 @@ def main():
     pins = json.loads((ROOT / 'deploy/compose/smoke-pins.json').read_text())
     rendered = directory / 'compose.yaml'
     rendered.write_text(render_compose.render({
-        'IMAGE_CORE': pins['core'], 'IMAGE_WEB': pins['web'], 'IMAGE_INGRESS': pins['ingress'],
         'REVISION': pins['revision'], 'RELEASE_BASE': pins['release_base'],
         'ARCHIVE_CHECKSUM': pins['archive_checksum'],
     }))
@@ -46,7 +45,9 @@ def main():
         ]}}}))
 
     publish(0)
-    env = {**os.environ, 'COMPOSE_PROGRESS': 'plain', 'OAC_DATA_DIR': str(data)}
+    env = {**os.environ, 'COMPOSE_PROGRESS': 'plain', 'OAC_DATA_DIR': str(data),
+           'OAC_IMAGE_CORE': pins['core'], 'OAC_IMAGE_WEB': pins['web'],
+           'OAC_IMAGE_INGRESS': pins['ingress']}
     env.pop('OAC_PUBLIC_URL', None)
     command = ['docker', 'compose', '--env-file', os.devnull, '-p', project,
                '-f', str(rendered), '-f', str(override)]

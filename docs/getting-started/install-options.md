@@ -14,7 +14,7 @@ With the one-line command, append them after `bash -s --`. `--version TAG` selec
 
 ## Docker Compose and hosting platforms
 
-Use the `compose.yaml` from a release with Docker Compose 2.26 or newer on Linux amd64. The release renders it from the [Compose template](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml), pins that release's image digests, and starts PostgreSQL, Core, Web and an HTTP gateway. Data is bind-mounted from a directory. The one-time initialization service generates random secrets there and prepares the node installer; the migration service initializes the database before Core starts. [Compose configuration](../configuration.md#compose-installations) owns the settings and the data directory.
+Use the `compose.yaml` from a release with Docker Compose 2.26 or newer on Linux amd64. The release renders node metadata into the [Compose template](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml). Core, Web and the gateway use the `latest` images, and PostgreSQL uses `postgres:16-alpine`. It starts PostgreSQL, Core, Web and an HTTP gateway. Data is bind-mounted from a directory. The one-time initialization service generates random secrets there and prepares the node installer; the migration service initializes the database before Core starts. [Compose configuration](../configuration.md#compose-installations) owns the settings and the data directory.
 
 For a local trial, download `compose.yaml` and `ports.yaml` from the same release into one directory, then run:
 

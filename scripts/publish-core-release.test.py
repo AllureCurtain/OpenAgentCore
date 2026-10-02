@@ -378,6 +378,25 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(self.pushes(), [])
         self.assertEqual(result["core"]["digest"], "ghcr.io/minimax-ai/openagentcore/core@" + self.digest)
 
+    def test_stable_release_moves_latest_after_the_version_tags(self):
+        seen = {}
+        def remote(reference):
+            seen[reference] = seen.get(reference, 0) + 1
+            if seen[reference] == 1:
+                return None
+            return {"config": {"digest": self.config}}
+        self.remote.side_effect = remote
+        publisher.publish_images(self.assets, "MiniMax-AI/OpenAgentCore", self.revision, "v1.2.3", floating_latest=True)
+        pushed = [command[-1].rsplit("/", 1)[-1] for command in self.pushes()]
+        self.assertEqual(sorted(name for name in pushed if name.endswith(":v1.2.3")),
+                         sorted(name + ":v1.2.3" for name in publisher.IMAGE_NAMES))
+        self.assertEqual(sorted(name for name in pushed if name.endswith(":latest")),
+                         sorted(name + ":latest" for name in publisher.IMAGE_NAMES))
+
+    def test_matching_latest_tag_is_reused(self):
+        publisher.publish_images(self.assets, "MiniMax-AI/OpenAgentCore", self.revision, "v1.2.3", floating_latest=True)
+        self.assertEqual(self.pushes(), [])
+
     def test_new_images_use_resolved_store_identity_and_version_only(self):
         self.remote.side_effect = [None] * 4 + [{"config": {"digest": self.config}}] * 4
         result = self.publish("v1.2.3-rc.1+build.2")

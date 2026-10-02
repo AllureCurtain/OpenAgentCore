@@ -1,7 +1,7 @@
 ---
 title: "安装选项与高级部署"
 source: docs/getting-started/install-options.md
-source_hash: 1a75154d296f09acd2ea06e357eebbf489c788252e9df247a7e2bf343d8a0616
+source_hash: 14af6dcc5c0709c88d89be2e7ddf879a14d2d9fbbf0ecfc61ad4182cfc7a840a
 ---
 
 [默认安装](install.md)无需任何选项。使用本页可以在现有反向代理后运行，或者在无法访问互联网时进行安装。
@@ -18,7 +18,7 @@ source_hash: 1a75154d296f09acd2ea06e357eebbf489c788252e9df247a7e2bf343d8a0616
 
 ## Docker Compose 与托管平台 {#docker-compose-and-hosting-platforms}
 
-在 Linux amd64 上使用发行版中的 `compose.yaml` 和 Docker Compose 2.26 或更高版本。发行流程会根据 [Compose 模板](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml)渲染该文件，固定该发行版的镜像摘要，并启动 PostgreSQL、Core、Web 和一个 HTTP 网关。数据通过目录 bind mount 挂载。一次性初始化服务会在该目录中生成随机机密信息并准备节点安装程序；迁移服务会在 Core 启动前初始化数据库。[Compose 配置](../configuration.md#compose-installations)负责管理各项设置和数据目录。
+在 Linux amd64 上使用发行版中的 `compose.yaml` 和 Docker Compose 2.26 或更高版本。发行流程会把节点元数据渲染进 [Compose 模板](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml)。Core、Web 和网关使用 `latest` 镜像，PostgreSQL 使用 `postgres:16-alpine`。它会启动 PostgreSQL、Core、Web 和一个 HTTP 网关。数据通过目录 bind mount 挂载。一次性初始化服务会在该目录中生成随机机密信息并准备节点安装程序；迁移服务会在 Core 启动前初始化数据库。[Compose 配置](../configuration.md#compose-installations)负责管理各项设置和数据目录。
 
 进行本地试用时，请将同一发行版的 `compose.yaml` 和 `ports.yaml` 下载到同一个目录，然后运行：
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Fill the Compose template with one release's image digests and node metadata.
+"""Fill the Compose template with one release's node metadata.
 
-The template is deploy/compose/compose.yaml. A release publishes the rendered
-file; this script does not run Docker.
+The template is deploy/compose/compose.yaml. Images stay on their default
+latest tags. A release publishes the rendered file; this script does not run Docker.
 """
 import hashlib
 import pathlib
@@ -13,8 +13,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "deploy/compose/compose.yaml"
 PORTS = ROOT / "deploy/compose/ports.yaml"
 HTTPS = ROOT / "deploy/compose/ports-https.yaml"
-TOKENS = ("IMAGE_CORE", "IMAGE_WEB", "IMAGE_INGRESS", "REVISION", "RELEASE_BASE", "ARCHIVE_CHECKSUM")
-IMAGE = re.compile(r"^.+@sha256:[0-9a-f]{64}$")
+TOKENS = ("REVISION", "RELEASE_BASE", "ARCHIVE_CHECKSUM")
 
 
 def render(values):
@@ -22,9 +21,6 @@ def render(values):
     missing = [name for name in TOKENS if name not in values]
     if missing:
         raise ValueError("Missing Compose values: " + ", ".join(missing))
-    for name in ("IMAGE_CORE", "IMAGE_WEB", "IMAGE_INGRESS"):
-        if not IMAGE.fullmatch(values[name]):
-            raise ValueError(name + " must be a digest-pinned image reference")
     if not re.fullmatch(r"[0-9a-f]{40}", values["REVISION"]):
         raise ValueError("REVISION must be a full source commit SHA")
     if not re.fullmatch(r"[0-9a-f]{64}", values["ARCHIVE_CHECKSUM"]):
