@@ -1,7 +1,7 @@
 ---
 title: "API 命名空间和凭据"
 source: docs/api/index.md
-source_hash: 922ad1d9b3ea7549aa6b845847f8e0278a637a1b986d41b264b9cf892429a8df
+source_hash: 11df05084e85f1bc05650e11c2c744318b92ba7ac90280207956fce712335122
 ---
 
 Core 提供三个命名空间。每个命名空间都有一种调用方及其独立凭据，凭据只能在其所属命名空间中使用。
@@ -14,7 +14,7 @@ Core 提供三个命名空间。每个命名空间都有一种调用方及其独
 
 在其他命名空间中使用凭据会返回 401：在 `/core/v1` 或 `/api/v1` 上使用 Project API key，或者在 `/v1` 或 `/api/v1` 上使用 Core key。有关 Project 和密钥的行为，请参阅 [Project 自有资产](../concepts.md#projects-own-assets)。
 
-**路由。** Web 把 `/v1`、`/api/v1` 和 `/docs` 原样转发到 Core（[控制台服务器](../web/console-server.md)）。已登录的浏览器通过 Web 访问 `/core/v1`，由 Web 附上 Core key。操作员脚本在 `127.0.0.1:8091` 调用 `/core/v1`（[编写 Core API 脚本](../getting-started/operations.md#script-the-core-api)）。
+**路由。** Web 把 `/v1`、`/api/v1` 和 `/docs` 原样转发到 Core（[控制台服务器](../web/console-server.md)）。已登录的浏览器通过 Web 访问 `/core/v1`，由 Web 附上 Core key。操作员脚本在 Core 主机上从 Core 的网络命名空间内调用 `/core/v1`（[编写 Core API 脚本](../getting-started/operations.md#script-the-core-api)）。
 
 **API 参考。** Core 在 `/docs` 提供三个命名空间的只读 Swagger UI，文档位于 `/docs/openapi.yaml`、`/docs/core.openapi.yaml` 和 `/docs/runtime.openapi.yaml`。不需要凭据，页面也不发送 API 请求。在控制台源地址打开，例如 `http://localhost:8080/docs`。浏览器从 `unpkg.com` 加载 Swagger UI。
 

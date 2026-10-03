@@ -1,7 +1,7 @@
 ---
 title: "安装 Core 和 Web"
 source: docs/getting-started/install.md
-source_hash: 3493948d1e7111fb5c26a134c0f8848d8984b68fd135559903e0729c25832643
+source_hash: 63db48e9ac2b0f64b773b7271511c95dc44121ff29f303a738f124ec8c76c8a3
 ---
 
 一条命令即可在 Linux 主机上安装 Core、Web 控制台和 PostgreSQL。用 Core 密钥登录 Web，设置默认模型并签发 Project API 密钥。应用使用这些密钥调用 Core。Session 在你添加的节点上的沙箱中运行，也可以在 E2B 上运行。
@@ -21,7 +21,7 @@ source_hash: 3493948d1e7111fb5c26a134c0f8848d8984b68fd135559903e0729c25832643
 - Linux amd64 和 curl。
 - Docker Engine 和 Docker Compose 2.26.0 或更高版本（`docker compose version`）。
 - 能运行 `docker` 并向自己的主目录写入文件的账号。普通用户和 root 均可；安装程序不会调用 sudo。
-- Web 的 8080 端口空闲。Core 的管理 API 使用 `127.0.0.1:8091`。参阅[端口](install-options.md#ports)。Docker 必须能发布这些端口；安装程序不会修改主机策略。
+- Web 的 8080 端口空闲。参阅[端口](install-options.md#ports)。Docker 必须能发布该端口；安装程序不会修改主机策略。
 - 本机以外的访问要求 `OAC_PUBLIC_URL` 就是浏览器、节点和执行器使用的地址。可以先在本机登录。
 
 Core 主机不需要 KVM；运行 microsandbox 的节点需要。
@@ -42,7 +42,7 @@ curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/
 
 1. 检查 Linux amd64、Docker Compose 2.26 或更高版本，以及将要发布的端口是否空闲；
 2. 创建[安装目录](../configuration.md#installation-directory) `~/.oac/core`，写入 `.env`，并从 Core 镜像复制 `oac` 命令；
-3. 用 Docker Compose 启动服务。Web 在 8080 端口提供控制台，并把 `/v1`、`/api/v1` 和 `/docs` 转发到 Core。Core 的管理 API 留在 `127.0.0.1:8091`。PostgreSQL 不发布端口。
+3. 用 Docker Compose 启动服务。Web 在 8080 端口提供控制台，并把 `/v1`、`/api/v1` 和 `/docs` 转发到 Core。Core 和 PostgreSQL 不发布端口。
 
 安装程序不保存沙箱后端，不添加节点，不创建 Project 或密钥，也不发起模型请求。完成后输出控制台地址，以及如何读取 Core 密钥。
 

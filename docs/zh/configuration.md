@@ -1,7 +1,7 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: 610b3a85b453d00b575f9fb4d42c87ec89dc3803bb238fd4c36ef734aba6c7e2
+source_hash: 62ad7f6c64329e0d3e9bda9b4936f5c13281eb18a1011b057b2f6288ddad35cc
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
@@ -50,7 +50,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 | `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. Managed domain setup writes the HTTPS origin and recreates Core and Web |
 | `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
-| `COMPOSE_FILE` | `compose.yaml:ports.yaml` | The Compose files. `ports.yaml` publishes Web and Core's loopback admin API; hosting platforms omit it |
+| `COMPOSE_FILE` | `compose.yaml:ports.yaml` | Compose 文件。`ports.yaml` 发布 Web；托管平台省略它 |
 | `OAC_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `OAC_LOG_FORMAT` | `auto` | `auto`, `text` or `json` |
 | `OAC_LOG_ADD_SOURCE` | unset | `1` adds source locations |
@@ -139,7 +139,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 | `data/state/` | 私有 Provider 状态，包括 E2B 回执 | Core |
 | `.oac.lock` | 安装锁 | 会修改安装状态的 `oac` 命令 |
 
-Compose 项目名为 `oac-<10 hex digits>`。服务包括 `init`、`database`、`core` 和 `web`。Core 启动时执行数据库迁移。`web` 提供控制台并把 `/v1` 和 `/api/v1` 转发到 Core，是唯一发布 `OAC_WEB_PORT` 的服务。主机安装还把 Core 的管理 API 发布在 `127.0.0.1:8091`。没有服务持有 Docker 套接字。除 Docker 存储外，不会向安装目录之外写入任何内容。
+Compose 项目名为 `oac-<10 hex digits>`。服务包括 `init`、`database`、`core` 和 `web`。Core 启动时执行数据库迁移。`web` 提供控制台并把 `/v1` 和 `/api/v1` 转发到 Core，是唯一发布端口（`OAC_WEB_PORT`）的服务。没有服务持有 Docker 套接字。除 Docker 存储外，不会向安装目录之外写入任何内容。
 
 ## 附录：没有安装程序时的 Core 环境 {#appendix-core-environment-without-the-installer}
 

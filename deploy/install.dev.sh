@@ -103,11 +103,8 @@ pins = json.loads((root / "deploy/compose/smoke-pins.json").read_text())
     "RELEASE_BASE": pins["release_base"],
     "ARCHIVE_CHECKSUM": pins["archive_checksum"],
 }))
-# The release ports.yaml also publishes Core on 127.0.0.1:8091. A local trial
-# reaches Core through Web, so only Web is published.
-(dest / "ports.yaml").write_text(
-    "services:\n  web:\n    ports:\n      - \"${OAC_HOST:-127.0.0.1}:${OAC_WEB_PORT:-8080}:8080\"\n")
 PY
+cp "$repo_root/deploy/compose/ports.yaml" "$install_dir/ports.yaml"
 
 umask 077
 cat >"$install_dir/.env" <<EOF

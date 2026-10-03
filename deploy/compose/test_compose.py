@@ -83,14 +83,14 @@ class ComposeTests(unittest.TestCase):
                     {service: [item.get('target') for item in spec.get('volumes', [])]
                      for service, spec in self.compose['services'].items()})
 
-    def test_host_ports_publish_web_and_loopback_core(self):
+    def test_host_ports_publish_only_web(self):
         env = dict(os.environ, OAC_DATA_DIR='/tmp/oac-compose-fixture', OAC_HOST='0.0.0.0')
         hosted = json.loads(subprocess.check_output(
             ['docker', 'compose', '--env-file', os.devnull, '-f', str(self.compose_file),
              '-f', str(ROOT / 'deploy/compose/ports.yaml'), 'config', '--format', 'json'], env=env))
         published = {name: [(port.get('host_ip'), port['published']) for port in service.get('ports', [])]
                      for name, service in hosted['services'].items() if service.get('ports')}
-        self.assertEqual(published, {'web': [('0.0.0.0', '8080')], 'core': [('127.0.0.1', '8091')]})
+        self.assertEqual(published, {'web': [('0.0.0.0', '8080')]})
 
     def test_platform_network_injection_keeps_the_file_valid(self):
         # Dokploy isolated deployments attach a project network to every service.

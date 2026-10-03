@@ -20,7 +20,7 @@ docker compose -f ~/.oac/core/compose.yaml ps
 | `oac apply` | Runs `oac-core check-config`, then `docker compose up -d --wait`. A failed check changes no service |
 | `oac core-key [--show]` | Prints the Core key path, or the key itself with `--show` |
 | `oac rotate-core-key` | Replaces the Core key and restarts Core and Web |
-| `docker compose down --rmi all` | Removes the containers and images. Delete the installation directory afterwards |
+| `docker compose down` | Removes the containers. Data is kept; to delete it, [uninstall](#uninstall) |
 
 For a second installation, use its directory, such as `~/.oac/second`.
 
@@ -70,14 +70,15 @@ Keep it private. Web reads `data/secrets/web/core.key`. Core reads only its SHA-
 
 ### Script the Core API
 
-Run scripts on the Core host against Core's loopback port. This helper reads the key from its file, keeping it off the command line:
+Core publishes no host port. On the Core host, this helper runs `curl` in Core's network namespace and passes the key on stdin, keeping it off the command line:
 
 ```sh
-core() {  # core METHOD PATH [JSON body]
-  curl -fsS -X "$1" "http://127.0.0.1:8091/core/v1$2" \
-    -H @<(printf 'Authorization: Bearer %s\n' "$(~/.oac/core/oac core-key --show)") \
-    -H 'Content-Type: application/json' ${3:+-d "$3"}
-}
+core() (  # core METHOD PATH [JSON body]
+  cd ~/.oac/core
+  ./oac core-key --show | sed 's/^/Authorization: Bearer /' |
+    docker run -i --rm --network "container:$(docker compose ps -q core)" curlimages/curl \
+      -fsS -X "$1" "http://127.0.0.1:8091/core/v1$2" -H @- -H 'Content-Type: application/json' ${3:+-d "$3"}
+)
 ```
 
 | Task | Command |
@@ -136,11 +137,14 @@ Never prune Docker volumes or delete native harness history to make a retry pass
 ## Uninstall
 
 ```sh
-docker compose -f ~/.oac/core/compose.yaml down --rmi all --remove-orphans
-rm -rf ~/.oac/core
+cd ~/.oac/core
+docker compose down --remove-orphans
+docker compose run --rm --no-deps --entrypoint find init /data -mindepth 1 -delete
+docker compose down --rmi all
+cd && rm -rf ~/.oac/core
 ```
 
-`down` removes the containers and images. `rm` removes the installation directory. Do the first only when you mean to delete the data.
+The containers own `data/`, so the `init` image deletes its contents; then `down --rmi all` removes the images and `rm` removes the installation directory. Run these only when you mean to delete the data.
 
 All data goes with it: Projects and API keys, Session history, stored credentials and the Core key. To keep the data, stop the installation with `docker compose stop` instead, or [back it up](#back-up) first.
 
@@ -183,7 +187,7 @@ Mutating `oac` commands hold `.oac.lock`. If another command holds it, retry aft
 | Listener | Host installation | Behind a reverse proxy |
 | --- | --- | --- |
 | Web and the API | Web publishes `OAC_WEB_PORT` (8080) on `OAC_HOST` | Web publishes `OAC_WEB_PORT` on `OAC_HOST`. Your proxy should use `127.0.0.1` |
-| Core admin API | `127.0.0.1:8091`. Web forwards `/v1`, `/api/v1` and `/docs` | `127.0.0.1:8091`. Web forwards `/v1`, `/api/v1` and `/docs` |
+| Core | No published port. Web forwards `/v1`, `/api/v1` and `/docs` | No published port. Web forwards `/v1`, `/api/v1` and `/docs` |
 | PostgreSQL | No published port | No published port |
 
 Web signs administrators in with the Core key, checks the origin of every request, and forwards signed-in `/core/v1` requests to Core with the Core key, which stays on the server. It forwards `/v1` and `/api/v1` to Core unchanged, with the caller's own credential, serves only the non-secret node payload at `/node-install/`, and has no Docker or KVM access. Machine routes under `/api/v1` use their own enrollment and connection credentials. No service receives a Docker socket.
