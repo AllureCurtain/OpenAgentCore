@@ -132,6 +132,37 @@ func TestAuthenticationAndCrossSiteAdmission(t *testing.T) {
 	}
 }
 
+func TestApplicationAndMachineTrafficPassesThroughUnchanged(t *testing.T) {
+	observed := make(chan *http.Request, 1)
+	server, _ := testConsole(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		observed <- r.Clone(context.Background())
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: ok\n\n")
+	}))
+	for _, path := range []string{"/v1/agents", "/api/v1/agent-daemon"} {
+		t.Run(path, func(t *testing.T) {
+			request := consoleRequest(t, server, "POST", path)
+			request.Header.Del("Cookie")
+			request.Header.Del("Origin")
+			request.Header.Del("Sec-Fetch-Site")
+			request.Host = "node.example"
+			request.Header.Set("Authorization", "Bearer project-key")
+			request.Header.Set("Upgrade", "websocket")
+			response, body := responseBody(t, server, request)
+			if response.StatusCode != 200 || body != "data: ok\n\n" {
+				t.Fatalf("status = %d, body = %s", response.StatusCode, body)
+			}
+			forwarded := <-observed
+			if forwarded.URL.Path != path || forwarded.Header.Get("Authorization") != "Bearer project-key" {
+				t.Fatalf("forwarded request = %s %s", forwarded.URL.Path, forwarded.Header.Get("Authorization"))
+			}
+			if forwarded.Header.Get("X-Core-Console-Actor") != "" || strings.Contains(forwarded.Header.Get("Authorization"), "private-core-key") {
+				t.Fatal("console credential leaked onto application traffic")
+			}
+		})
+	}
+}
+
 func TestProxyUsesOnlyConfiguredCoreCredential(t *testing.T) {
 	observed := make(chan *http.Request, 1)
 	server, _ := testConsole(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -241,8 +272,7 @@ func TestStaticAssetsStayInsideDistAndInternalRoutesStayLocal(t *testing.T) {
 		{"/", 200}, {"/sessions/saved", 200}, {"/assets/main.js", 200},
 		{"/assets/", 404}, {"/missing.js", 404}, {"/leak.key", 404},
 		{"/../caller.key", 400}, {"/%2e%2e/caller.key", 400}, {"/%252e%252e/caller.key", 400},
-		{"/v1/../api/v1/agent-daemon/ws", 404}, {"/v1//agents", 404},
-		{"/api/v1/agent-daemon/ws", 404},
+		{"/v1/../api/v1/agent-daemon/ws", 400}, {"/v1//agents", 400},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			response, body := responseBody(t, server, consoleRequest(t, server, "GET", tc.path))

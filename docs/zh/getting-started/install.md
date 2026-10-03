@@ -1,7 +1,7 @@
 ---
 title: "安装 Core 和 Web"
 source: docs/getting-started/install.md
-source_hash: 939bfeb14ca7dfed7304b4780888d9ddfddf8aaa6f1501fd9b61bf59e963d0e8
+source_hash: c0199f4d27045c6e85afcd9ec6b431833344f3a65b767d0d61e57898b711f269
 ---
 
 一条命令即可在 Linux 主机上安装 Core、Web 控制台和 PostgreSQL。Web 是管理员控制台：使用 Core 密钥登录，为安装配置域名、设置默认模型并签发 Project API 密钥。应用随后使用这些密钥调用 Core API，Session 在你添加的节点上的沙箱中运行，也可以在 E2B 上运行。
@@ -42,8 +42,7 @@ curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/
 
 1. 检查 Linux amd64、Docker Compose 2.26 或更高版本，以及将要发布的端口是否空闲；
 2. 创建[安装目录](../configuration.md#installation-directory) `~/.oac/core`，写入 `.env`，并从 Core 镜像复制 `oac` 命令；
-3. 用 Docker Compose 启动服务。网关在所有 IPv4 接口的 8080 端口提供 Web。Core 的管理 API 留在 `127.0.0.1:8091`。PostgreSQL 不发布端口；
-托管安装传入 `--public-url https://HOSTNAME` 时，服务健康后会运行 `oac domain`。DNS 以及 80 和 443 必须已经能到达这台主机。
+3. 用 Docker Compose 启动服务。Web 在所有 IPv4 接口的 8080 端口提供控制台，并把 `/v1` 和 `/api/v1` 转发到 Core。Core 的管理 API 留在 `127.0.0.1:8091`。PostgreSQL 不发布端口。
 
 安装程序不保存沙箱后端，不添加节点，不创建 Project 或密钥，也不发起模型请求。完成后输出控制台地址，以及如何读取 Core 密钥。
 
@@ -60,22 +59,12 @@ curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/
    ~/.oac/core/oac core-key --show
    ```
 
-## 配置域名和 HTTPS {#configure-the-domain-and-https}
+## 配置公开地址 {#configure-the-domain-and-https}
 
-应用、节点和沙箱通过同一个 HTTPS 地址访问 Core，即公开 URL。8080 端口上的 HTTP 地址继续提供 Web 和 API。
+应用、节点和沙箱通过同一个 HTTPS 地址访问 Core，即公开 URL。
 
-1. 将主机名的 A/AAAA 记录指向这台主机，允许来自互联网的 80 和 443 端口入站流量，并确保其他程序不占用[这些端口](install-options.md#ports)。
-2. 在 Web 中打开 **System**，选择 **Configure domain and HTTPS**，输入主机名，例如 `core.example.com`，然后选择 **Apply**。
-
-安装检查 DNS、申请证书，并在把 Core 和 Web 切换过去之前确认 `https://HOSTNAME` 能访问本安装。随后打开 HTTPS 地址并重新登录。证书自动续期。如果 DNS 或证书处理失败，继续使用原地址：修复报告的问题后，用同一主机名重试。`data/domain/status.json` 会显示失败的尝试，以及下次重试前需要等待多久。
-
-终端中的对应操作：
-
-```sh
-~/.oac/core/oac domain core.example.com
-```
-
-之后修改地址的方法见[修改公开 URL](../configuration.md#changing-the-public-url)。
+1. 把反向代理指向 Web。
+2. 把 `OAC_PUBLIC_URL` 设为反向代理提供的 HTTPS 源地址，然后运行 `oac apply`。见[修改公开 URL](../configuration.md#changing-the-public-url)。
 
 ## 设置默认模型 {#set-a-default-model}
 

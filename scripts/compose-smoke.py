@@ -86,7 +86,7 @@ def main():
     images = build_images(directory, project.removeprefix('oac-smoke-'))
 
     def publish(port):
-        override.write_text(json.dumps({'services': {'gateway': {'ports': [
+        override.write_text(json.dumps({'services': {'web': {'ports': [
             {'target': 8080, 'published': str(port), 'host_ip': '127.0.0.1'},
         ]}}}))
 
@@ -145,7 +145,7 @@ def main():
     try:
         print('Starting the images with an unset public URL and an empty data directory', flush=True)
         compose('up', '-d', '--wait', '--wait-timeout', '600', timeout=900)
-        address = 'http://' + compose('port', 'gateway', '8080').decode().strip()
+        address = 'http://' + compose('port', 'web', '8080').decode().strip()
         key = compose('exec', '-T', 'web', '/usr/local/bin/oac-web', 'core-key').decode().strip()
         assert len(key) == 64, 'Missing generated sign-in key'
         request('/healthz')

@@ -1,7 +1,7 @@
 ---
 title: "安装选项与高级部署"
 source: docs/getting-started/install-options.md
-source_hash: a44fd0ff78db1fcf955bb20002fc19cd7a8de0b2898c11503e0f30aad91a7b68
+source_hash: 2e348b03301947a8ffbf957c729a1aadac05b1f5f3ae88c48b0659932ed4d7c9
 ---
 
 [默认安装](install.md)无需任何选项。使用本页可以在现有反向代理后运行，或者在无法访问互联网时进行安装。
@@ -57,9 +57,6 @@ docker compose -f compose.yaml exec web oac-web core-key
 | `--public-url` | `OAC_PUBLIC_URL` |
 | `--host` | `OAC_HOST` |
 | `--web-port` | `OAC_WEB_PORT` |
-| `--external-proxy` | `COMPOSE_FILE` without `https.yaml` |
-
-`--external-proxy` 不把 `https.yaml` 写入 `COMPOSE_FILE`，因此不发布 80 和 443。默认是托管安装。
 
 ## 安装操作 {#installation-actions}
 
@@ -69,7 +66,7 @@ docker compose -f compose.yaml exec web oac-web core-key
 | --- | --- |
 | `--install-dir DIR` | 绝对安装目录；默认为 `~/.oac/core`。新安装要求目录为空或不存在，或者包含一个[从未启动过的安装](install.md#install) |
 
-只要使用不同的安装目录和端口，多个安装就可以共用一台机器。对于一个 IP 地址，只有使用托管 HTTPS 的一个安装可以占用端口 80 和 443；如果需要更多安装，请使用不同的 IP 地址或外部共享代理。每个安装都有自己的数据库、Core 密钥和节点。
+只要使用不同的安装目录和端口，多个安装就可以共用一台机器。需要更多安装时，请使用不同的 IP 地址或共享反向代理。每个安装都有自己的数据库、Core 密钥和节点。
 
 ## 沙箱后端 {#sandbox-backend}
 
@@ -77,25 +74,22 @@ docker compose -f compose.yaml exec web oac-web core-key
 
 ## 监听器与访问 {#listeners-and-access}
 
-默认安装是托管 HTTPS，并且 `--host 0.0.0.0`。网关在 `--web-port`（8080）和 80、443 上发布 Web。Core 的管理 API 留在 `127.0.0.1:8091`。PostgreSQL 保持私有。`--host` 是不含端口、协议或区域的 IPv4 或 IPv6 地址。请在浏览器中使用服务器的具体 IP，而不是通配地址。
+默认安装在 `--host 0.0.0.0` 的 `--web-port`（8080）上发布 Web。Core 的管理 API 留在 `127.0.0.1:8091`。PostgreSQL 保持私有。`--host` 是不含端口、协议或区域的 IPv4 或 IPv6 地址。请在浏览器中使用服务器的具体 IP，而不是通配地址。
 
-`--external-proxy` 不发布 80 或 443，也不启动域名设置。把反向代理指向网关，在 `.env` 中设置 `OAC_PUBLIC_URL`，然后运行 `oac apply`。Web 的 **Configure domain and HTTPS** 不可用。
-
-`--public-url` 设置 `OAC_PUBLIC_URL`。托管安装会在服务健康后运行 `oac domain`，因此主机名必须已经解析到这台主机。入口模式在一次安装中固定。
+`--public-url` 设置 `OAC_PUBLIC_URL`，即应用、节点和执行器使用的源地址。把它设为反向代理提供的 HTTPS 源地址。
 
 ### 端口 {#ports}
 
-安装程序在下载镜像之前检查将要发布的端口：`--web-port`，以及 80 和 443，除非传入 `--external-proxy`。
+安装程序在下载镜像之前检查 `--web-port`。
 
-- `--host` 是这些端口绑定的地址。`0.0.0.0` 在所有 IPv4 接口发布 Web。`127.0.0.1` 只在本机发布 Web。
+- `--host` 是该端口绑定的地址。`0.0.0.0` 在所有 IPv4 接口发布 Web。`127.0.0.1` 只在本机发布 Web。
 - 端口被占用时安装停止，不会改用其他端口。
-- 托管安装会立即发布 80 和 443。如果其中之一被占用，请释放它，或使用 `--external-proxy` 安装。
 
-`OAC_HOST` 或 `OAC_WEB_PORT` 变化时，`oac apply` 会重新创建网关。`oac domain` 在申请证书之前检查主机名能否解析。
+`OAC_HOST` 或 `OAC_WEB_PORT` 变化时，`oac apply` 会重新创建 Web。
 
 ## HTTPS 与反向代理 {#https-and-the-reverse-proxy}
 
-使用 `--external-proxy` 时，请用 `--host 127.0.0.1` 安装，并把反向代理指向网关，默认是 `127.0.0.1:8080`。网关已经把 `/v1` 和 `/api/v1` 转到 Core，其余转到 Web。
+请用 `--host 127.0.0.1` 安装，并把反向代理指向 Web，默认是 `127.0.0.1:8080`。Web 把 `/v1` 和 `/api/v1` 转到 Core，其余由自己提供。
 
 | 路径 | 目标 | 调用方 |
 | --- | --- | --- |

@@ -114,64 +114,8 @@ services:
         source: ${OAC_DATA_DIR:-./data}/node-payload
         target: /node-payload
         read_only: true
-      - type: bind
-        source: ${OAC_DATA_DIR:-./data}/domain
-        target: /domain
-        read_only: true
-
-  gateway:
-    image: *ingress-image
-    platform: linux/amd64
-    user: "65532:65532"
-    restart: unless-stopped
-    security_opt: [no-new-privileges:true]
-    tmpfs: [/tmp:mode=1777]
-    environment:
-      XDG_DATA_HOME: /tmp/data
-      XDG_CONFIG_HOME: /tmp/config
-    command: [caddy, run, --config, /etc/caddy/Caddyfile, --adapter, caddyfile]
-    depends_on:
-      core: {condition: service_started}
-      web: {condition: service_started}
-      init: {condition: service_completed_successfully}
-    expose: ["8080"]
-    configs:
-      - source: gateway-config
-        target: /etc/caddy/Caddyfile
-      - source: gateway-routes
-        target: /etc/oac/routes.caddy
-    volumes:
-      - type: bind
-        source: ${OAC_DATA_DIR:-./data}/caddy
-        target: /data/caddy
     healthcheck:
-      test: [CMD, /usr/local/bin/oac, healthcheck]
+      test: [CMD, /usr/local/bin/oac-web, healthcheck]
       interval: 5s
       timeout: 10s
       retries: 30
-
-configs:
-  gateway-config:
-    content: |
-      {
-      	admin unix//data/caddy/admin.sock
-      	storage file_system /data/caddy/storage
-      }
-      http://:8080 {
-      	import /etc/oac/routes.caddy
-      }
-      import /data/caddy/site.caddy
-
-  gateway-routes:
-    content: |
-      @core path /v1 /v1/* /api/v1 /api/v1/*
-      handle @core {
-      	reverse_proxy core:8091 {
-      		flush_interval -1
-      	}
-      }
-      handle {
-      	reverse_proxy web:8080 {
-      		flush_interval -1
-      	}
-      }

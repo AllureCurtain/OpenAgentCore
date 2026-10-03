@@ -6,7 +6,7 @@ This guide is for maintainers who build and publish OpenAgentCore. To install Co
 
 ## Build a distribution
 
-A distribution is the matched set of Linux amd64 release assets built from one commit: the control archive (the installer, the `oac` command, and the Core, Web, gateway and PostgreSQL images), the Runtime image and node artifacts as separate files, and the native installers.
+A distribution is the matched set of Linux amd64 release assets built from one commit: the control archive (the installer, the `oac` command, and the Core, Web, ingress and PostgreSQL images), the Runtime image and node artifacts as separate files, and the native installers.
 
 Build on Linux x86_64 with a glibc compatible with Debian 12, Docker, the Go version in `go.mod`, a C compiler (the microsandbox helper is a CGO build), Node, pnpm, Python 3.9 or newer, curl, tar, pigz and sha256sum. The source must be clean and committed. First prepare the pinned Codex package and MiniMax Code companion, then build:
 

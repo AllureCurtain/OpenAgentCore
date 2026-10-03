@@ -52,7 +52,7 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual(services['database']['depends_on']['init']['condition'], 'service_completed_successfully')
         self.assertIn('pg_isready -h 127.0.0.1', services['database']['healthcheck']['test'][1])
         self.assertEqual(services['core']['depends_on']['database']['condition'], 'service_healthy')
-        self.assertEqual(sorted(services), ['core', 'database', 'gateway', 'init', 'web'])
+        self.assertEqual(sorted(services), ['core', 'database', 'init', 'web'])
         for service in services.values():
             self.assertNotIn('build', service)
             self.assertNotIn('ports', service)
@@ -60,11 +60,11 @@ class ComposeTests(unittest.TestCase):
             for volume in service.get('volumes', []):
                 self.assertNotIn('docker.sock', json.dumps(volume))
                 self.assertEqual(volume['type'], 'bind')
-        self.assertEqual({v['target'] for v in services['web']['volumes']}, {'/run/oac', '/node-payload', '/domain'})
+        self.assertEqual({v['target'] for v in services['web']['volumes']}, {'/run/oac', '/node-payload'})
         self.assertIsNone(services['core']['command'])
         self.assertNotIn('OAC_WEB_INSTALLATION_SOCKET', services['web']['environment'])
         self.assertEqual(services['init']['command'], ['/usr/local/bin/oac', 'init'])
-        self.assertEqual(services['gateway']['healthcheck']['test'], ['CMD', '/usr/local/bin/oac', 'healthcheck'])
+        self.assertEqual(services['web']['healthcheck']['test'], ['CMD', '/usr/local/bin/oac-web', 'healthcheck'])
         self.assertNotIn('python3', json.dumps(self.compose))
         self.assertEqual(services['init']['environment']['OAC_REVISION'], 'd' * 40)
         for name in ('OAC_EXECUTION_CONCURRENCY', 'OAC_DEFAULT_HARNESS', 'OAC_HARNESSES', 'OAC_WRITE_AUDIT_RETENTION', 'OAC_LOG_LEVEL'):
@@ -83,28 +83,14 @@ class ComposeTests(unittest.TestCase):
                     {service: [item.get('target') for item in spec.get('volumes', [])]
                      for service, spec in self.compose['services'].items()})
 
-    def test_managed_https_runs_domain_setup_inside_the_gateway(self):
-        env = dict(os.environ, OAC_DATA_DIR='/tmp/oac-compose-fixture', OAC_INSTALL_DIR='/tmp/oac-install-fixture')
-        managed = json.loads(subprocess.check_output(
-            ['docker', 'compose', '--env-file', os.devnull, '-f', str(self.compose_file),
-             '-f', str(ROOT / 'deploy/compose/https.yaml'), 'config', '--format', 'json'], env=env))
-        services = managed['services']
-        self.assertEqual(sorted(services), ['core', 'database', 'gateway', 'init', 'web'])
-        self.assertEqual(services['web']['environment']['OAC_WEB_INSTALLATION_SOCKET'], '/domain/api.sock')
-        self.assertEqual(services['gateway']['command'], ['/usr/local/bin/oac', 'gateway'])
-        self.assertEqual({port['published'] for port in services['gateway']['ports']}, {'80', '443'})
-        for name, service in services.items():
-            sockets = [v for v in service.get('volumes', []) if v.get('source') == '/var/run/docker.sock']
-            self.assertEqual(len(sockets), 1 if name == 'gateway' else 0, name)
-
-    def test_host_ports_publish_the_gateway_and_loopback_core(self):
+    def test_host_ports_publish_web_and_loopback_core(self):
         env = dict(os.environ, OAC_DATA_DIR='/tmp/oac-compose-fixture', OAC_HOST='0.0.0.0')
         hosted = json.loads(subprocess.check_output(
             ['docker', 'compose', '--env-file', os.devnull, '-f', str(self.compose_file),
              '-f', str(ROOT / 'deploy/compose/ports.yaml'), 'config', '--format', 'json'], env=env))
         published = {name: [(port.get('host_ip'), port['published']) for port in service.get('ports', [])]
                      for name, service in hosted['services'].items() if service.get('ports')}
-        self.assertEqual(published, {'gateway': [('0.0.0.0', '8080')], 'core': [('127.0.0.1', '8091')]})
+        self.assertEqual(published, {'web': [('0.0.0.0', '8080')], 'core': [('127.0.0.1', '8091')]})
 
     def test_platform_network_injection_keeps_the_file_valid(self):
         # Dokploy isolated deployments attach a project network to every service.

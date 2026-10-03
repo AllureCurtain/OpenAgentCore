@@ -12,7 +12,6 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "deploy/compose/compose.yaml"
 PORTS = ROOT / "deploy/compose/ports.yaml"
-HTTPS = ROOT / "deploy/compose/https.yaml"
 TOKENS = ("REVISION", "RELEASE_BASE", "ARCHIVE_CHECKSUM")
 
 
@@ -49,7 +48,6 @@ def write_assets(directory, values):
     files = {
         "compose.yaml": render(values).encode(),
         "ports.yaml": PORTS.read_bytes(),
-        "https.yaml": HTTPS.read_bytes(),
     }
     written, lines = [], []
     for name, data in files.items():

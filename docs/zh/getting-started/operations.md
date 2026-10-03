@@ -1,7 +1,7 @@
 ---
 title: "管理你的安装"
 source: docs/getting-started/operations.md
-source_hash: 77864c5e43ca3c567cf157b33cbaef4077730ff8e5821339cc890ec11511e50b
+source_hash: 60e7e0b3d648eeef2b58330b12a8cd05e32defa9850d233510f809a0ac018cd3
 ---
 
 安装运维人员负责 Core 主机、存储和可用性。节点主机运行各自的服务；参阅[节点](nodes.md)。设置见[配置参考](../configuration.md)。
@@ -20,7 +20,6 @@ docker compose -f ~/.oac/core/compose.yaml ps
 | `docker compose start` | 启动服务 |
 | `docker compose stop` | 停止服务。保留数据、节点和沙箱 |
 | `oac apply` | 先运行 `oac-core check-config`，再执行 `docker compose up -d --wait`。校验失败时不改动任何服务 |
-| `oac domain HOSTNAME` | 托管 HTTPS：把公开 URL 设为 `https://HOSTNAME`，对应 Web 的 **Configure domain and HTTPS** |
 | `oac core-key [--show]` | 打印 Core 密钥路径；加上 `--show` 时打印密钥本身 |
 | `oac rotate-core-key` | 替换 Core 密钥并重启 Core 和 Web |
 | `docker compose down --rmi all` | 移除容器和镜像。然后删除安装目录 |
@@ -69,7 +68,7 @@ Web 重启（包括 `oac apply` 引起的重启）会让所有控制台用户退
 - 通过 `Authorization: Bearer <Core key>` 授权 Core API（`/core/v1`）请求；
 - 不授权 Agents API（`/v1`）。应用使用 Project API 密钥，后者也不能调用 `/core/v1`。
 
-请保密。Web 以及托管入口下的 `gateway` 读取 `data/secrets/web/core.key`。Core 只读取 `data/secrets/core/core-key-digests.json` 中的 SHA-256。Core 密钥至少 32 字符且不含空白。Web 限制失败登录。
+请保密。Web 读取 `data/secrets/web/core.key`。Core 只读取 `data/secrets/core/core-key-digests.json` 中的 SHA-256。Core 密钥至少 32 字符且不含空白。Web 限制失败登录。
 
 ### 用脚本调用 Core API {#script-the-core-api}
 
@@ -188,12 +187,12 @@ rm -rf ~/.oac/core
 
 ## 对外暴露与网络策略 {#exposure-and-network-policy}
 
-| 监听器 | 托管入口（默认） | 外部入口 |
+| 监听器 | 主机安装 | 反向代理之后 |
 | --- | --- | --- |
-| Web 和 API | `gateway` 在 `OAC_HOST` 上发布 `OAC_WEB_PORT`（8080），并发布 [80 和 443](install-options.md#ports) | `gateway` 在 `OAC_HOST` 上发布 `OAC_WEB_PORT`。反向代理应使用 `127.0.0.1` |
-| Core 管理 API | `127.0.0.1:8091`。网关路由 `/v1` 和 `/api/v1` | `127.0.0.1:8091`。网关路由 `/v1` 和 `/api/v1` |
+| Web 和 API | Web 在 `OAC_HOST` 上发布 `OAC_WEB_PORT`（8080） | Web 在 `OAC_HOST` 上发布 `OAC_WEB_PORT`。反向代理应使用 `127.0.0.1` |
+| Core 管理 API | `127.0.0.1:8091`。Web 把 `/v1` 和 `/api/v1` 转发到 Core | `127.0.0.1:8091`。Web 把 `/v1` 和 `/api/v1` 转发到 Core |
 | PostgreSQL | 不发布端口 | 不发布端口 |
 
-Web 使用 Core 密钥让管理员登录，检查每个请求来源，并用保留在服务器上的 Core 密钥将已登录的 `/core/v1` 请求转发到 Core。无论请求携带何种凭据，`/v1` 和 `/api/v1` 均返回 404；Web 仅在 `/node-install/` 提供不含密钥的节点文件，没有 Docker 或 KVM 访问权限。`/api/v1` 机器路由使用独立注册和连接凭据。托管入口中，`gateway` 通过 Docker 套接字应用域名变更；Web 仅通过私有 Unix 套接字访问它，每次请求都检查 Core 密钥。
+Web 使用 Core 密钥让管理员登录，检查每个请求来源，并用保留在服务器上的 Core 密钥将已登录的 `/core/v1` 请求转发到 Core。它把 `/v1` 和 `/api/v1` 原样转发给 Core，使用调用方自己的凭据；Web 仅在 `/node-install/` 提供不含密钥的节点文件，没有 Docker 或 KVM 访问权限。`/api/v1` 机器路由使用独立注册和连接凭据。没有服务持有 Docker 套接字。
 
 沙箱是隔离边界（[Runtime 与外层隔离](../concepts.md#runtime-and-outer-isolation)）。Docker 沙箱共享节点内核，Docker 节点在主机上[等同于 root 权限](nodes.md#what-the-installer-sets-up)；microsandbox 为每个沙箱提供具有显式[网络策略](nodes.md#what-the-installer-sets-up)的 microVM。Core 自身无 Docker 套接字或 KVM 访问权限。

@@ -1,14 +1,14 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: bd03d28624b766261eae0add8330e5f636509edc487ecb802f064fd46bc190a9
+source_hash: 217e349627c3696363d2520b70db04774b228e593d3e2a3b78c002edcd2bd283
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
 
 | 类型 | 示例 | 归属位置 | 修改方式 | 生效方式 |
 | --- | --- | --- | --- | --- |
-| [进程设置](#process-settings-configjson) | 公共 URL、端口、日志、Harness、执行并发度、审计保留期、OAuth 来源、Runtime 历史记录导出 | 安装目录中的 `.env`（默认 `~/.oac/core`） | 通过 Web 域设置或 `oac domain` 配置托管 HTTPS；否则编辑 `.env`，然后运行 `oac apply` | `oac apply` 会重新创建读取了这些已更改设置的服务 |
+| [进程设置](#process-settings-configjson) | 公共 URL、端口、日志、Harness、执行并发度、审计保留期、OAuth 来源、Runtime 历史记录导出 | 安装目录中的 `.env`（默认 `~/.oac/core`） | 编辑 `.env`，然后运行 `oac apply` | `oac apply` 会重新创建读取了这些已更改设置的服务 |
 | [运行时设置](#runtime-settings-web) | 沙箱后端和大小、节点、项目和密钥、默认模型、执行器凭据 | Core 的 PostgreSQL 数据库 | 在 Web 中修改，或使用 Core 密钥调用 Core API（`/core/v1`） | 保存时无需重启 Core；节点会异步准备 Runtime 变更 |
 
 Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置，并在 **Startup settings** 下以只读方式显示 Core 加载的进程设置。机密信息存放在 [`data/secrets/`](#installation-directory) 中，每项仅保存一份。没有任何配置文件定义项目或 API 密钥。
@@ -31,14 +31,12 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 
 ### 更改公共 URL {#changing-the-public-url}
 
-`OAC_PUBLIC_URL` 是应用、节点、沙箱和自托管执行器使用的唯一源地址。Core 从中派生守护进程 WebSocket URL、自托管 `remote_url` 和每个沙箱的连接地址。在设置域名之前，托管安装通过 `OAC_WEB_PORT` 以 HTTP 提供 Web。启用 HTTPS 之后，这个 HTTP 地址仍然提供服务。
+`OAC_PUBLIC_URL` 是应用、节点、沙箱和自托管执行器使用的唯一源地址。Core 从中派生守护进程 WebSocket URL、自托管 `remote_url` 和每个沙箱的连接地址。安装通过 `OAC_WEB_PORT` 以 HTTP 提供 Web；反向代理或托管平台终止 HTTPS 并把流量转到该端口。
 
-使用托管入口时，可在 Web 中更改它（**System** → **Configure domain and HTTPS**），也可使用 `oac domain HOSTNAME`。网关检查 DNS，把主机名写入 `data/caddy/site.caddy`，重载网关，并要求 `https://HOSTNAME/_oac/installation/verify` 返回本安装的 ID。然后它写入 `OAC_PUBLIC_URL` 并重新创建 Core 和 Web。使用外部入口时，请先更新反向代理，然后编辑 `OAC_PUBLIC_URL` 并运行 `oac apply`。
-
-如果节点、托管沙箱或自托管执行器绑定到当前地址，请再次运行 `oac domain HOSTNAME --confirm https://HOSTNAME`。之后：
+要更改它，先把反向代理指向新地址，然后编辑 `OAC_PUBLIC_URL` 并运行 `oac apply`。之后：
 
 - 使用旧地址的节点不会再获得新沙箱：请在 Web 中移除这些节点，然后重新添加。
-- 只有在旧地址仍可访问此 Core 时，现有沙箱和执行器才会继续工作。托管域更改会替换先前的域路由。
+- 只有在旧地址仍可访问此 Core 时，现有沙箱和执行器才会继续工作。
 - 自托管执行器必须使用新的 `remote_url` 重启，并且其安装程序会拒绝为旧地址进行的安装：请创建新的自托管 Session，然后重新连接其主机。
 
 ### 设置 {#settings}
@@ -52,7 +50,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 | `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. Managed domain setup writes the HTTPS origin and recreates Core and Web |
 | `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
-| `COMPOSE_FILE` | `compose.yaml:ports.yaml:https.yaml` | The Compose files. `https.yaml` publishes ports 80 and 443 and serves domain setup from the gateway; `--external-proxy` installs omit it and leave TLS to your proxy |
+| `COMPOSE_FILE` | `compose.yaml:ports.yaml` | The Compose files. `ports.yaml` publishes Web and Core's loopback admin API; hosting platforms omit it |
 | `OAC_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `OAC_LOG_FORMAT` | `auto` | `auto`, `text` or `json` |
 | `OAC_LOG_ADD_SOURCE` | unset | `1` adds source locations |
@@ -130,20 +128,18 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 | 路径 | 内容 | 修改者 |
 | --- | --- | --- |
 | `.env` | [进程设置](#process-settings-configjson)。由你编辑的文件 | 你，然后运行 `oac apply`；托管域名设置写入 `OAC_PUBLIC_URL` |
-| `compose.yaml`、`ports.yaml`、`https.yaml` | 发行版的服务定义。不要编辑 | 发行版 |
+| `compose.yaml`、`ports.yaml` | 发行版的服务定义。不要编辑 | 发行版 |
 | `oac` | [管理命令](getting-started/operations.md#the-oac-command)，从 Core 镜像复制 | 安装程序 |
 | `data/secrets/web/core.key` | [Core 密钥](getting-started/operations.md#core-key) | `oac rotate-core-key` |
 | `data/secrets/core/credential.key` | 加密 Core 在数据库中封存内容的密钥 | 无。必须与数据库一同保留 |
 | `data/secrets/core/core-key-digests.json` | Core 密钥的 SHA-256 | `oac rotate-core-key` |
 | `data/secrets/database/password` | PostgreSQL 密码 | 无。PostgreSQL 仅在创建数据库时读取 |
 | `data/database/` | PostgreSQL 数据 | PostgreSQL |
-| `data/caddy/` | 证书和 `site.caddy`，即托管主机名 | `oac domain` 和网关 |
-| `data/domain/` | 域名状态和控制套接字 | `gateway` |
 | `data/node-payload/` | Web 在 `/node-install/` 提供的节点文件 | 初始化 |
 | `data/state/` | 私有 Provider 状态，包括 E2B 回执 | Core |
 | `.oac.lock` | 安装锁 | 会修改安装状态的 `oac` 命令 |
 
-Compose 项目名为 `oac-<10 hex digits>`。服务包括 `init`、`database`、`core`、`web` 和 `gateway`。Core 启动时执行数据库迁移。`gateway` 将流量路由到 Core 和 Web，并发布 `OAC_WEB_PORT`。托管安装还会发布 [80 和 443](getting-started/install-options.md#ports)。主机安装把 Core 的管理 API 发布在 `127.0.0.1:8091`。使用托管入口时，`https.yaml` 让 `gateway` 持有 Docker 套接字以完成域名设置；其他服务都没有。除 Docker 存储外，不会向安装目录之外写入任何内容。
+Compose 项目名为 `oac-<10 hex digits>`。服务包括 `init`、`database`、`core` 和 `web`。Core 启动时执行数据库迁移。`web` 提供控制台并把 `/v1` 和 `/api/v1` 转发到 Core，是唯一发布 `OAC_WEB_PORT` 的服务。主机安装还把 Core 的管理 API 发布在 `127.0.0.1:8091`。没有服务持有 Docker 套接字。除 Docker 存储外，不会向安装目录之外写入任何内容。
 
 ## 附录：没有安装程序时的 Core 环境 {#appendix-core-environment-without-the-installer}
 
@@ -181,6 +177,5 @@ Compose 为 Web 设置这些变量。仅在不使用 Compose 运行控制台时�
 | `OAC_WEB_CORE_KEY_FILE` | `/admin/core.key` | 常规文件的绝对路径，该文件没有组或其他用户权限，并保存 Core 密钥：至少 32 个字符、不含空白字符、最大 4 KiB |
 | `OAC_WEB_DIST` | `/www` | 已构建控制台的绝对目录；必须包含 `index.html` |
 | `OAC_WEB_NODE_PAYLOAD_DIR` | 未设置 | 所匹配发行版的节点载荷（即安装程序的 `node-payload/`）的绝对路径。未设置时，不提供 `/node-install/*`，且 Add node 不可用 |
-| `OAC_WEB_INSTALLATION_SOCKET` | 未设置 | 网关域套接字的绝对路径，由 `https.yaml` 设置。未设置时，域设置会报告不支持。源地址为 `http://` 时，它还让 Web 接受 IP 字面量主机，便于运维人员在配置域名前访问控制台 |
 
 变量不存在时会应用默认值；显式空值会按已提供的值进行验证。无效的 `OAC_WEB_*` 值会阻止控制台启动，并显示一条指明变量名的消息。控制台还会读取 `OAC_LOG_LEVEL`、`OAC_LOG_FORMAT` 和 `OAC_LOG_ADD_SOURCE`（[Core 环境](#appendix-core-environment-without-the-installer)）；未知值会回退到其默认值。对于不在同一台计算机上的任何浏览器，请使用 HTTPS。

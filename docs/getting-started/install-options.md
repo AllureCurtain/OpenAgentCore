@@ -14,7 +14,7 @@ With the one-line command, append them after `bash -s --`. `--version TAG` selec
 
 ## Docker Compose and hosting platforms
 
-Use the `compose.yaml` from a release with Docker Compose 2.26 or newer on Linux amd64. The release renders node metadata into the [Compose template](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml). Core, Web and the gateway use the `latest` images, and PostgreSQL uses `postgres:16-alpine`. It starts PostgreSQL, Core, Web and an HTTP gateway. Data is bind-mounted from a directory. The one-time initialization service generates random secrets there and prepares the node installer; Core applies database migrations when it starts. [Compose configuration](../configuration.md#compose-installations) owns the settings and the data directory.
+Use the `compose.yaml` from a release with Docker Compose 2.26 or newer on Linux amd64. The release renders node metadata into the [Compose template](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml). Core and Web use the `latest` images, and PostgreSQL uses `postgres:16-alpine`. It starts PostgreSQL, Core and Web. Web forwards `/v1` and `/api/v1` to Core. Data is bind-mounted from a directory. The one-time initialization service generates random secrets there and prepares the node installer; Core applies database migrations when it starts. [Compose configuration](../configuration.md#compose-installations) owns the settings and the data directory.
 
 For a local trial, download `compose.yaml` and `ports.yaml` from the same release into one directory, then run:
 
@@ -31,11 +31,11 @@ You can deploy before choosing a domain: leave `OAC_PUBLIC_URL` unset or empty, 
 
 ### Dokploy
 
-Create a Docker Compose application and paste `compose.yaml`. Set `OAC_PUBLIC_URL` to the public HTTPS origin, enable isolated deployment, and add a domain for service `gateway`, port `8080`. Enable **HTTPS** and select a certificate provider such as **Let's Encrypt** for that domain before deploying. Deploy without `ports.yaml`; internal services publish no host ports. The [template metadata](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/dokploy.toml) supplies the generated domain and environment when packaging this Compose file for Dokploy's template catalog; HTTPS and its certificate provider still need to be enabled after import.
+Create a Docker Compose application and paste `compose.yaml`. Set `OAC_PUBLIC_URL` to the public HTTPS origin, enable isolated deployment, and add a domain for service `web`, port `8080`. Enable **HTTPS** and select a certificate provider such as **Let's Encrypt** for that domain before deploying. Deploy without `ports.yaml`; internal services publish no host ports. The [template metadata](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/dokploy.toml) supplies the generated domain and environment when packaging this Compose file for Dokploy's template catalog; HTTPS and its certificate provider still need to be enabled after import.
 
 ### Coolify
 
-Create a **Docker Compose Empty** service and paste `compose.yaml`. Set `OAC_PUBLIC_URL` to the public HTTPS origin and assign that domain to `gateway` on port `8080`. Add Coolify's `exclude_from_hc: true` to the `init` service definition so completed initialization does not affect its overall health. Save and deploy without `ports.yaml`; Coolify supplies HTTPS.
+Create a **Docker Compose Empty** service and paste `compose.yaml`. Set `OAC_PUBLIC_URL` to the public HTTPS origin and assign that domain to `web` on port `8080`. Add Coolify's `exclude_from_hc: true` to the `init` service definition so completed initialization does not affect its overall health. Save and deploy without `ports.yaml`; Coolify supplies HTTPS.
 
 On either platform, open its server terminal and run `docker compose ls` to find the deployed project name and Compose file. Using those exact values and the deployment's `OAC_PUBLIC_URL`, run `docker compose -p <project-name> -f <compose-file> exec web oac-web core-key`, then sign in at the configured origin. The [Dokploy domain guide](https://docs.dokploy.com/docs/core/docker-compose/domains) and [Coolify Compose guide](https://coolify.io/docs/services/configuration/docker-compose) describe their domain and service controls. These are importable deployment files; no hosted marketplace listing is published by this repository.
 
@@ -52,9 +52,8 @@ These flags are written to `.env` once. After installation, edit that file and r
 | `--public-url` | `OAC_PUBLIC_URL` |
 | `--host` | `OAC_HOST` |
 | `--web-port` | `OAC_WEB_PORT` |
-| `--external-proxy` | `COMPOSE_FILE` without `https.yaml` |
+| `--public-url` | `OAC_PUBLIC_URL` |
 
-`--external-proxy` leaves `https.yaml` out of `COMPOSE_FILE`, so ports 80 and 443 are not published. Managed is the default.
 
 ## Installation actions
 
@@ -64,7 +63,7 @@ These flags are written to `.env` once. After installation, edit that file and r
 | --- | --- |
 | `--install-dir DIR` | Absolute installation directory; defaults to `~/.oac/core`. A new installation requires an empty or missing directory, or one holding an [installation that never started](./install.md#install) |
 
-Several installations can share a machine when they use distinct installation directories and ports. Only one installation with managed HTTPS can hold [ports 80 and 443](#ports) on an IP address; use distinct IP addresses or an external shared proxy for more. Each installation has its own database, Core key and nodes.
+Several installations can share a machine when they use distinct installation directories and ports. Use distinct IP addresses or a shared reverse proxy for more. Each installation has its own database, Core key and nodes.
 
 ## Sandbox backend
 
@@ -72,25 +71,22 @@ The installer saves no sandbox backend. After signing in, open **System** → **
 
 ## Listeners and access
 
-The default installation is managed HTTPS and `--host 0.0.0.0`. The gateway publishes Web on `--web-port` (8080) and [ports 80 and 443](#ports). Core's admin API stays on `127.0.0.1:8091`. PostgreSQL stays private. `--host` is an IPv4 or IPv6 address, without a port, scheme or zone. Use a concrete server IP in the browser, not a wildcard.
+The default installation publishes Web on `--web-port` (8080) at `--host 0.0.0.0`. Core's admin API stays on `127.0.0.1:8091`. PostgreSQL stays private. `--host` is an IPv4 or IPv6 address, without a port, scheme or zone. Use a concrete server IP in the browser, not a wildcard.
 
-`--external-proxy` does not publish 80 or 443 and does not start domain setup. Point your proxy at the gateway, set `OAC_PUBLIC_URL` in `.env`, and run `oac apply`. Web's **Configure domain and HTTPS** is unavailable.
-
-`--public-url` sets `OAC_PUBLIC_URL`. On a managed install it also runs `oac domain` after the services are healthy, so the hostname must already resolve to this host. The ingress mode is fixed for an installation.
+`--public-url` sets `OAC_PUBLIC_URL`, the origin applications, nodes and executors use. Set it to the HTTPS origin your reverse proxy serves.
 
 ### Ports
 
-The installer checks the ports it will publish before it downloads images: `--web-port`, and 80 and 443 unless you pass `--external-proxy`.
+The installer checks `--web-port` before it downloads images.
 
-- `--host` is the address those ports bind. `0.0.0.0` publishes Web on every IPv4 interface. `127.0.0.1` keeps Web on this machine.
+- `--host` is the address that port binds. `0.0.0.0` publishes Web on every IPv4 interface. `127.0.0.1` keeps Web on this machine.
 - A busy port stops installation. It does not move to another port.
-- Managed installs publish 80 and 443 immediately. If either is in use, free it or install with `--external-proxy`.
 
-`oac apply` recreates the gateway when `OAC_HOST` or `OAC_WEB_PORT` changes. `oac domain` checks that the hostname resolves before it requests a certificate.
+`oac apply` recreates Web when `OAC_HOST` or `OAC_WEB_PORT` changes.
 
 ## HTTPS and the reverse proxy
 
-With `--external-proxy`, install with `--host 127.0.0.1` and point your reverse proxy at the gateway, `127.0.0.1:8080` by default. The gateway already routes `/v1` and `/api/v1` to Core and everything else to Web.
+Install with `--host 127.0.0.1` and point your reverse proxy at Web, `127.0.0.1:8080` by default. Web routes `/v1` and `/api/v1` to Core and serves everything else itself.
 
 The proxy must:
 

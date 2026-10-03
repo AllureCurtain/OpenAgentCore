@@ -41,10 +41,10 @@ class InstallScriptTests(unittest.TestCase):
                                    env=env, capture_output=True, text=True)
         return completed, log.read_text() if log.exists() else ""
 
-    def test_external_proxy_stops_and_removes_the_directory_when_compose_fails(self):
+    def test_a_failed_first_start_stops_and_removes_the_directory(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            completed, recorded = self.install(root, "--external-proxy", "--host", "127.0.0.1", "--web-port", "59991",
+            completed, recorded = self.install(root, "--host", "127.0.0.1", "--web-port", "59991",
                                                "--public-url", "https://core.example", compose_up=1)
             self.assertNotEqual(completed.returncode, 0, completed.stderr)
             self.assertFalse((root / "oac").exists(), "a failed first start must remove the directory")
@@ -52,19 +52,19 @@ class InstallScriptTests(unittest.TestCase):
             self.assertIn("compose up -d --wait", recorded)
 
     def test_env_holds_only_the_installation_choices(self):
-        for args, compose_file in (([], "compose.yaml:ports.yaml:https.yaml"),
-                                   (["--external-proxy"], "compose.yaml:ports.yaml")):
-            with self.subTest(args=args), tempfile.TemporaryDirectory() as temporary:
-                root = Path(temporary)
-                completed, _ = self.install(root, *args)
-                self.assertEqual(completed.returncode, 0, completed.stderr)
-                env = dict(line.split("=", 1) for line in (root / "oac/.env").read_text().splitlines())
-                self.assertEqual(env["COMPOSE_FILE"], compose_file)
-                self.assertEqual(sorted(env), ["COMPOSE_FILE", "COMPOSE_PROJECT_NAME", "OAC_HOST", "OAC_INSTALL_DIR", "OAC_WEB_PORT"])
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            completed, _ = self.install(root, "--public-url", "https://core.example")
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            env = dict(line.split("=", 1) for line in (root / "oac/.env").read_text().splitlines())
+            self.assertEqual(env["COMPOSE_FILE"], "compose.yaml:ports.yaml")
+            self.assertEqual(env["OAC_PUBLIC_URL"], "https://core.example")
+            self.assertEqual(sorted(env), ["COMPOSE_FILE", "COMPOSE_PROJECT_NAME", "OAC_HOST", "OAC_INSTALL_DIR", "OAC_PUBLIC_URL", "OAC_WEB_PORT"])
 
     def test_help_does_not_need_docker(self):
         help_text = subprocess.run(["bash", str(INSTALL), "--help"], capture_output=True, text=True, check=True)
-        self.assertIn("--external-proxy", help_text.stdout)
+        self.assertIn("--web-port", help_text.stdout)
+        self.assertNotIn("--external-proxy", help_text.stdout)
 
     def write_executable(self, path, text):
         path.write_text(text)

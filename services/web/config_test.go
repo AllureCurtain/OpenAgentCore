@@ -58,19 +58,8 @@ func TestBootstrapFollowsManagedHTTPOrigin(t *testing.T) {
 	}
 	t.Setenv("OAC_WEB_CORE_KEY_FILE", key)
 	t.Setenv("OAC_WEB_DIST", directory)
-	for _, item := range []struct {
-		origin, socket string
-		bootstrap      bool
-	}{
-		{"http://localhost:8080", "/domain/api.sock", true},
-		{"https://core.example", "/domain/api.sock", false},
-		{"http://localhost:8080", "", false},
-	} {
-		t.Setenv("OAC_WEB_ORIGIN", item.origin)
-		t.Setenv("OAC_WEB_INSTALLATION_SOCKET", item.socket)
-		c, err := loadConfig()
-		if err != nil || c.bootstrap != item.bootstrap {
-			t.Fatalf("%+v: bootstrap=%v err=%v", item, c.bootstrap, err)
-		}
+	t.Setenv("OAC_WEB_ORIGIN", "http://localhost:8080")
+	if _, err := loadConfig(); err != nil {
+		t.Fatal(err)
 	}
 }

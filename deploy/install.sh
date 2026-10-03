@@ -8,16 +8,15 @@ install_dir="${OAC_INSTALL_DIR_DEFAULT:-$HOME/.oac/core}"
 public_url=""
 host_address="0.0.0.0"
 web_port="8080"
-ingress="managed"
 kept=0
 
 usage() {
   cat <<'EOF'
 Usage: install.sh [--version TAG] [--install-dir DIR] [--public-url URL]
-                  [--host ADDRESS] [--web-port PORT] [--external-proxy]
+                  [--host ADDRESS] [--web-port PORT]
 
-Installs Core, Web and PostgreSQL. Managed HTTPS is the default and publishes
-ports 80 and 443. --external-proxy leaves TLS to an existing reverse proxy.
+Installs Core, Web and PostgreSQL, and publishes Web on --web-port. HTTPS is
+terminated by your reverse proxy or hosting platform.
 EOF
 }
 
@@ -28,7 +27,6 @@ while [[ $# -gt 0 ]]; do
     --public-url) public_url="${2:?}"; shift 2 ;;
     --host) host_address="${2:?}"; shift 2 ;;
     --web-port) web_port="${2:?}"; shift 2 ;;
-    --external-proxy) ingress="external"; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 1 ;;
   esac
@@ -68,12 +66,6 @@ port_busy() {
   (echo >/dev/tcp/127.0.0.1/"$port") >/dev/null 2>&1
 }
 if port_busy "$web_port"; then echo "Port $web_port is already in use." >&2; exit 1; fi
-if [[ "$ingress" == managed ]]; then
-  for port in 80 443; do
-    if port_busy "$port"; then echo "Port $port is already in use. Free it or rerun with --external-proxy." >&2; exit 1; fi
-  done
-fi
-
 asset_base="https://github.com/${repository}/releases/latest/download"
 if [[ "$version" != latest ]]; then
   asset_base="https://github.com/${repository}/releases/download/${version}"
@@ -90,7 +82,6 @@ trap cleanup EXIT
 mkdir -p "$install_dir"
 chmod 700 "$install_dir"
 files=(compose.yaml ports.yaml)
-if [[ "$ingress" == managed ]]; then files+=(https.yaml); fi
 curl --fail --silent --show-error --location "$asset_base/compose-sha256sums.txt" --output "$install_dir/compose-sha256sums.txt"
 for name in "${files[@]}"; do
   curl --fail --silent --show-error --location "$asset_base/$name" --output "$install_dir/$name"
@@ -118,11 +109,6 @@ umask 077
 )
 kept=1
 trap - EXIT
-if [[ "$ingress" == managed && "$public_url" == https://* ]]; then
-  domain_host="${public_url#https://}"
-  domain_host="${domain_host%%/*}"
-  (cd "$install_dir" && ./oac domain "$domain_host")
-fi
 address="http://${host_address}:$web_port"
 if [[ -n "$public_url" ]]; then address="$public_url"; fi
 if [[ "$host_address" == 0.0.0.0 || "$host_address" == "::" ]]; then address="http://<this-host>:$web_port"; fi
@@ -132,6 +118,3 @@ Console: $address
 Core key: $install_dir/oac core-key --show
 Manage the installation with $install_dir/oac.
 EOF
-if [[ "$ingress" == managed && -z "$public_url" ]]; then
-  echo "Then, in Web, choose Configure domain and HTTPS."
-fi

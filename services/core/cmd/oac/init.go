@@ -29,7 +29,7 @@ var releaseMembers = []string{"manifest.json", "SHA256SUMS", "node-install.pyz",
 var dataOwners = []struct {
 	name string
 	uid  int
-}{{"database", 70}, {"secrets", 65532}, {"state", 65532}, {"caddy", 65532}, {"domain", 65532}, {"node-payload", 65532}}
+}{{"database", 70}, {"secrets", 65532}, {"state", 65532}, {"node-payload", 65532}}
 
 var chown = os.Chown
 
@@ -174,17 +174,7 @@ func initialize(root string, release releaseIdentity, fetch func() (map[string][
 		return err
 	}
 	for _, owner := range dataOwners {
-		mode := os.FileMode(0o700)
-		if owner.name == "caddy" || owner.name == "domain" {
-			mode = 0o755
-		}
-		if err := ownedDir(filepath.Join(root, owner.name), mode, owner.uid); err != nil {
-			return err
-		}
-	}
-	site := filepath.Join(root, "caddy", "site.caddy")
-	if _, err := os.Stat(site); errors.Is(err, fs.ErrNotExist) {
-		if err := writeOwned(site, []byte("\n")); err != nil {
+		if err := ownedDir(filepath.Join(root, owner.name), 0o700, owner.uid); err != nil {
 			return err
 		}
 	}
@@ -313,11 +303,11 @@ func randomBytes(n int) []byte {
 
 func randomHex(n int) string { return hex.EncodeToString(randomBytes(n)) }
 
-// healthcheck reports the gateway healthy once Core, Web and its own listener
-// answer, and, with managed HTTPS, once the domain socket exists.
+// healthcheck reports the installation healthy once Core, Web and Web's own
+// listener answer.
 func healthcheck(ctx context.Context) error {
 	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: nil}}
-	for _, host := range []string{"core:8091", "web:8080", "127.0.0.1:8080"} {
+	for _, host := range []string{"core:8091", "127.0.0.1:8080"} {
 		request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+host+"/healthz", nil)
 		if err != nil {
 			return err
@@ -329,15 +319,6 @@ func healthcheck(ctx context.Context) error {
 		response.Body.Close()
 		if response.StatusCode != http.StatusOK {
 			return fmt.Errorf("%s returned HTTP %d", host, response.StatusCode)
-		}
-	}
-	if data := os.Getenv("OAC_DATA_MOUNT"); data != "" {
-		info, err := os.Stat(filepath.Join(data, "domain", "api.sock"))
-		if err != nil {
-			return err
-		}
-		if info.Mode()&fs.ModeSocket == 0 {
-			return errors.New("the domain socket is missing")
 		}
 	}
 	return nil

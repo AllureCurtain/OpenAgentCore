@@ -97,22 +97,9 @@ Sign-in errors: 400 for a malformed body, 401 `Invalid Core key`, 405 for a meth
 
 With `OAC_WEB_NODE_PAYLOAD_DIR` set, the console serves the matched distribution's node payload at `/node-install/` without sign-in: `node-install.pyz`, `manifest.json`, `SHA256SUMS`, `runtime/seccomp.json`, and the node artifacts the manifest declares under `artifacts/`. An artifact missing locally redirects (307) to its pinned release download. Node install and uninstall commands download from `<public_url>/node-install/`, so the reverse proxy must send that path to the console. Nodes verify every checksum themselves.
 
-## Domain setup
+## Public address
 
-`GET` and `POST /console/installation/domain` let **System → Domain and HTTPS** configure a managed installation's domain. They are console routes, not Core routes. After the same origin and sign-in checks, the console passes the request body (at most 2 KiB) to the installer's Unix socket at `OAC_WEB_INSTALLATION_SOCKET`, authenticated with the Core key, and returns the installer's JSON answer and status. The request times out after 20 seconds.
-
-| Method | Request | Result |
-| --- | --- | --- |
-| `GET` | No body | The domain status |
-| `POST` | `{"hostname":"core.example.com"}`, optionally with `"confirm_public_url_change":"https://core.example.com"` | 202 and the status; the installer checks and applies the domain in the background |
-
-The status has `supported`, `state` (`unconfigured`, `checking`, `applying`, `ready` or `failed`), and nullable `public_url`, `target_url` and `message`. Installer errors use `{"error":{"code":"…","message":"…"}}`. Changing an address that nodes or executors already use returns 409 `public_url_confirmation_required` until the request confirms the new URL. An installation that is not running also returns 409.
-
-Without `OAC_WEB_INSTALLATION_SOCKET` (external reverse proxy installations), `GET` reports `supported: false` and `POST` returns 400 `domain_setup_unavailable`. An unreachable installer or an invalid answer returns 502 `installation_unreachable`.
-
-The System page submits a hostname once, polls the status every 2 seconds while it is `checking` or `applying`, and asks for confirmation when the installer requires it. During setup, network failures and HTTP 502/503/504 responses keep polling active. The page allows 30 seconds without a successful status response before showing the disconnected message, and recovers when a poll succeeds. It never retries a write. Applying the domain restarts the console, which ends every session; the page keeps a sign-in link to the new HTTPS address. Only the `ready` state confirms HTTPS; the browser does not probe the new origin. The installer owns certificates, locking and recovery ([managed HTTPS](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/README.md#managed-https)).
-
-While `OAC_WEB_ORIGIN` is an `http://` origin and `OAC_WEB_INSTALLATION_SOCKET` is set, which is a managed installation before HTTPS is configured, the console also accepts plain HTTP requests addressed to a literal IP address, treating `http://<that address>` as the origin, so an operator can sign in through the server's IP address. Host names still require `OAC_WEB_ORIGIN`, so DNS rebinding cannot reach the console.
+The console does not configure a domain or obtain certificates. The operator's reverse proxy or hosting platform terminates HTTPS and routes to the console, and `OAC_PUBLIC_URL` records the origin that applications, nodes and executors use. The console accepts only the host of `OAC_WEB_ORIGIN`, so DNS rebinding cannot reach it.
 
 ## Verification
 

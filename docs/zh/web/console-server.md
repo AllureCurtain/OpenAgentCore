@@ -1,7 +1,7 @@
 ---
 title: "控制台服务器"
 source: docs/web/console-server.md
-source_hash: 099f8d8a272f815f644fe1657e2eedbef47c5e6a50bab0ba3d967f052610e353
+source_hash: 0835b16b90f81c369765b4324f29de9f1e5f673156c3cd2f18dd0df2c1a83b67
 ---
 
 控制台服务器（`services/web`、`oac-web` 进程）提供构建后的控制台，使用 Core 密钥认证管理员，并将已登录浏览器的 `/core/v1` 请求携带该密钥转发到 Core。浏览器不持有 Core 密钥或任何 API 密钥。应用、节点和自托管执行器直接调用 Core；控制台不转发这些流量。
@@ -99,22 +99,9 @@ flowchart LR
 
 设置 `OAC_WEB_NODE_PAYLOAD_DIR` 后，控制台在 `/node-install/` 无需登录地提供匹配发行版的节点文件：`node-install.pyz`、`manifest.json`、`SHA256SUMS`、`runtime/seccomp.json`，以及清单声明的 `artifacts/` 下节点资产。本地缺失的资产重定向（307）到固定发行下载地址。节点安装和卸载命令从 `<public_url>/node-install/` 下载，因此反向代理必须将该路径发给控制台。节点自行验证每个校验和。
 
-## 域名设置 {#domain-setup}
+## 公开地址 {#domain-setup}
 
-`GET` 和 `POST /console/installation/domain` 使 **System → Domain and HTTPS** 能配置托管安装的域名。这是控制台路由，不是 Core 路由。通过同源与登录检查后，控制台将最多 2 KiB 的请求体传给 `OAC_WEB_INSTALLATION_SOCKET` 的安装程序 Unix 套接字，使用 Core 密钥认证，并返回安装程序 JSON 响应和状态。请求在 20 秒后超时。
-
-| 方法 | 请求 | 结果 |
-| --- | --- | --- |
-| `GET` | 无请求体 | 域名状态 |
-| `POST` | `{"hostname":"core.example.com"}`，可附加 `"confirm_public_url_change":"https://core.example.com"` | 202 和状态；安装程序在后台检查并应用域名 |
-
-状态包含 `supported`、`state`（`unconfigured`、`checking`、`applying`、`ready` 或 `failed`），以及可为 null 的 `public_url`、`target_url` 和 `message`。安装程序错误使用 `{"error":{"code":"…","message":"…"}}`。修改节点或执行器已使用的地址时，在请求确认新 URL 前返回 409 `public_url_confirmation_required`。安装未运行时也返回 409。
-
-未设置 `OAC_WEB_INSTALLATION_SOCKET` 时（外部反向代理安装），`GET` 报告 `supported: false`，`POST` 返回 400 `domain_setup_unavailable`。安装程序不可达或响应无效时返回 502 `installation_unreachable`。
-
-System 页面仅提交一次主机名，在状态为 `checking` 或 `applying` 时每 2 秒轮询；安装程序要求时请求确认。设置期间，网络失败和 HTTP 502/503/504 响应不会停止轮询。30 秒内没有成功状态响应后，页面展示断连消息；下一次轮询成功即恢复。不重试写入。应用域名会重启控制台并结束全部会话；页面保留到新 HTTPS 地址的登录链接。只有 `ready` 状态确认 HTTPS；浏览器不探测新来源。安装程序负责证书、锁定与恢复（[托管 HTTPS](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/README.md#managed-https)）。
-
-当 `OAC_WEB_ORIGIN` 是 `http://` 源地址且设置了 `OAC_WEB_INSTALLATION_SOCKET` 时（即托管安装尚未配置 HTTPS），控制台也接受以字面 IP 地址访问的明文 HTTP 请求，并将 `http://<that address>` 视为来源，使运维人员能通过服务器 IP 登录。主机名仍必须符合 `OAC_WEB_ORIGIN`，因此 DNS 重绑定不能访问控制台。
+控制台不配置域名，也不申请证书。运维人员的反向代理或托管平台终止 HTTPS 并把流量转到控制台，`OAC_PUBLIC_URL` 记录应用、节点和执行器使用的源地址。控制台只接受 `OAC_WEB_ORIGIN` 的主机，因此 DNS 重绑定不能访问它。
 
 ## 验证 {#verification}
 

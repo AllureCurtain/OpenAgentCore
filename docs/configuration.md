@@ -6,7 +6,7 @@ Every setting of a Core installation has exactly one home. There are two kinds:
 
 | Kind | Examples | Home | Change it with | Takes effect |
 | --- | --- | --- | --- | --- |
-| [Process settings](#process-settings-configjson) | Public URL, ports, logging, harnesses, execution concurrency, audit retention, OAuth origins, Runtime history export | `.env` in the installation directory (default `~/.oac/core`) | Web domain setup or `oac domain` for managed HTTPS; otherwise edit `.env`, then run `oac apply` | `oac apply` recreates the services that read the changed settings |
+| [Process settings](#process-settings-configjson) | Public URL, ports, logging, harnesses, execution concurrency, audit retention, OAuth origins, Runtime history export | `.env` in the installation directory (default `~/.oac/core`) | Edit `.env`, then run `oac apply` | `oac apply` recreates the services that read the changed settings |
 | [Runtime settings](#runtime-settings-web) | Sandbox backend and size, nodes, Projects and keys, default models, executor credentials | Core's PostgreSQL database | Web, or the Core API (`/core/v1`) with the Core key | Saved without a Core restart; nodes prepare Runtime changes asynchronously |
 
 Web's **System** page shows the installation's addresses, the default models, the sandbox configuration and, under **Startup settings**, the process settings Core loaded. Secrets live in [`data/secrets/`](#installation-directory), one copy each. No configuration file defines Projects or API keys.
@@ -29,14 +29,12 @@ Installer flags in [installation options](./getting-started/install-options.md) 
 
 ### Changing the public URL {#changing-the-public-url}
 
-`OAC_PUBLIC_URL` is the one origin that applications, nodes, sandboxes and self-hosted executors use. Core derives the daemon WebSocket URL, the self-hosted `remote_url` and each sandbox's connection address from it. Until a domain is set, a managed installation serves Web over HTTP on `OAC_WEB_PORT`. That HTTP address keeps serving after HTTPS is on.
+`OAC_PUBLIC_URL` is the one origin that applications, nodes, sandboxes and self-hosted executors use. Core derives the daemon WebSocket URL, the self-hosted `remote_url` and each sandbox's connection address from it. The installation serves Web over HTTP on `OAC_WEB_PORT`; your reverse proxy or hosting platform terminates HTTPS and routes to that port.
 
-With managed ingress, change it in Web (**System** → **Configure domain and HTTPS**) or with `oac domain HOSTNAME`. The gateway checks DNS, writes the hostname into `data/caddy/site.caddy`, reloads the gateway, and requires `https://HOSTNAME/_oac/installation/verify` to return this installation's ID. It then writes `OAC_PUBLIC_URL` and recreates Core and Web. With external ingress, update your reverse proxy first, then edit `OAC_PUBLIC_URL` and run `oac apply`.
-
-When nodes, hosted sandboxes or self-hosted executors are bound to the current address, repeat the command as `oac domain HOSTNAME --confirm https://HOSTNAME`. Afterwards:
+To change it, point the reverse proxy at the new address first, then edit `OAC_PUBLIC_URL` and run `oac apply`. Afterwards:
 
 - Nodes on the old address get no new sandboxes: remove them in Web and add them again.
-- Existing sandboxes and executors keep working only while the old address still reaches this Core. A managed domain change replaces the previous domain route.
+- Existing sandboxes and executors keep working only while the old address still reaches this Core.
 - Self-hosted executors must restart with the new `remote_url`, and their installer refuses an installation made for the old address: create new self-hosted Sessions and connect their hosts again.
 
 ### Settings
@@ -48,7 +46,7 @@ When nodes, hosted sandboxes or self-hosted executors are bound to the current a
 | `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. Managed domain setup writes the HTTPS origin and recreates Core and Web |
 | `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
-| `COMPOSE_FILE` | `compose.yaml:ports.yaml:https.yaml` | The Compose files. `https.yaml` publishes ports 80 and 443 and serves domain setup from the gateway; `--external-proxy` installs omit it and leave TLS to your proxy |
+| `COMPOSE_FILE` | `compose.yaml:ports.yaml` | The Compose files. `ports.yaml` publishes Web and Core's loopback admin API; hosting platforms omit it |
 | `OAC_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `OAC_LOG_FORMAT` | `auto` | `auto`, `text` or `json` |
 | `OAC_LOG_ADD_SOURCE` | unset | `1` adds source locations |
@@ -125,21 +123,19 @@ The installer creates the installation directory, `~/.oac/core` by default, with
 
 | Path | Content | Changed by |
 | --- | --- | --- |
-| `.env` | [Process settings](#process-settings-configjson). The file you edit | You, then `oac apply`; managed domain setup writes `OAC_PUBLIC_URL` |
-| `compose.yaml`, `ports.yaml`, `https.yaml` | The release's service definition. Do not edit them | The release |
+| `.env` | [Process settings](#process-settings-configjson). The file you edit | You, then `oac apply` |
+| `compose.yaml`, `ports.yaml` | The release's service definition. Do not edit them | The release |
 | `oac` | The [management command](./getting-started/operations.md#the-oac-command), copied from the Core image | The installer |
 | `data/secrets/web/core.key` | The [Core key](./getting-started/operations.md#core-key) | `oac rotate-core-key` |
 | `data/secrets/core/credential.key` | Encryption key for what Core stores sealed in the database | Nothing. Keep it with the database |
 | `data/secrets/core/core-key-digests.json` | SHA-256 of the Core key | `oac rotate-core-key` |
 | `data/secrets/database/password` | PostgreSQL password | Nothing. PostgreSQL reads it only when the database is created |
 | `data/database/` | PostgreSQL data | PostgreSQL |
-| `data/caddy/` | Certificates and `site.caddy`, the managed hostname | `oac domain` and the gateway |
-| `data/domain/` | Domain status and the control socket | `gateway` |
 | `data/node-payload/` | Node files Web serves at `/node-install/` | Initialization |
 | `data/state/` | Private Provider state, including E2B receipts | Core |
 | `.oac.lock` | The installation lock | Mutating `oac` commands |
 
-The Compose project is named `oac-<10 hex digits>`. Its services are `init`, `database`, `core`, `web` and `gateway`. Core applies database migrations when it starts. `gateway` routes to Core and Web and publishes `OAC_WEB_PORT`. Managed installs also publish [80 and 443](./getting-started/install-options.md#ports). Host installs publish Core's admin API on `127.0.0.1:8091`. With managed ingress, `https.yaml` gives `gateway` the Docker socket for domain setup; no other service has it. Apart from Docker's storage, nothing is written outside the installation directory.
+The Compose project is named `oac-<10 hex digits>`. Its services are `init`, `database`, `core` and `web`. Core applies database migrations when it starts. `web` serves the console and forwards `/v1` and `/api/v1` to Core, and it is the only service that publishes `OAC_WEB_PORT`. Host installs also publish Core's admin API on `127.0.0.1:8091`. No service receives a Docker socket. Apart from Docker's storage, nothing is written outside the installation directory.
 
 ## Appendix: Core environment without the installer
 
@@ -177,6 +173,5 @@ Compose sets these for Web. Set them yourself only when you run the console with
 | `OAC_WEB_CORE_KEY_FILE` | `/admin/core.key` | Absolute path of a regular file with no group or other permissions, holding the Core key: at least 32 characters, no whitespace, at most 4 KiB |
 | `OAC_WEB_DIST` | `/www` | Absolute directory of the built console; must contain `index.html` |
 | `OAC_WEB_NODE_PAYLOAD_DIR` | unset | Absolute path of the matched distribution's node payload (the installer's `node-payload/`). Unset, `/node-install/*` is not served and Add node is unavailable |
-| `OAC_WEB_INSTALLATION_SOCKET` | unset | Absolute path of the gateway's domain socket; `https.yaml` sets it. Unset, domain setup reports unsupported. With an `http://` origin, it also lets Web accept literal-IP hosts so the operator can reach the console before a domain is configured |
 
 Defaults apply when a variable is absent; an explicitly empty value is validated as supplied. An invalid `OAC_WEB_*` value stops the console at startup with a message naming the variable. The console also reads `OAC_LOG_LEVEL`, `OAC_LOG_FORMAT` and `OAC_LOG_ADD_SOURCE` ([Core environment](#appendix-core-environment-without-the-installer)); unknown values fall back to their defaults. Use HTTPS for any browser that is not on the same machine.

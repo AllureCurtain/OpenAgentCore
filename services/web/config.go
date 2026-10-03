@@ -15,8 +15,6 @@ type config struct {
 	addr, origin, dist      string
 	coreKey, nodePayloadDir string
 	upstream                *url.URL
-	installationSocket      string
-	bootstrap               bool
 }
 
 func loadConfig() (config, error) {
@@ -47,13 +45,6 @@ func loadConfig() (config, error) {
 	if c.nodePayloadDir != "" && !filepath.IsAbs(c.nodePayloadDir) {
 		return config{}, errors.New("OAC_WEB_NODE_PAYLOAD_DIR must be absolute")
 	}
-	c.installationSocket = os.Getenv("OAC_WEB_INSTALLATION_SOCKET")
-	if c.installationSocket != "" && !filepath.IsAbs(c.installationSocket) {
-		return config{}, errors.New("OAC_WEB_INSTALLATION_SOCKET must be absolute")
-	}
-	// A managed installation without HTTPS yet accepts literal IP hosts so the
-	// operator can reach the console to configure its domain.
-	c.bootstrap = c.installationSocket != "" && origin.Scheme == "http"
 	return c, nil
 }
 

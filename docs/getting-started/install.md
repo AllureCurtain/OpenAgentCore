@@ -19,7 +19,7 @@ This page follows the default path. Every flag, existing reverse proxies and off
 - Linux amd64 and curl.
 - Docker Engine with Docker Compose 2.26.0 or newer (`docker compose version`).
 - An account that can run `docker` and write to its home directory. Ordinary users and root both work; the installer never calls sudo.
-- Free port 8080 for Web, and free ports 80 and 443 for managed HTTPS. Core's admin API uses `127.0.0.1:8091`. See [ports](./install-options.md#ports). Docker must be able to publish them; the installer does not change host policy.
+- Free port 8080 for Web. Core's admin API uses `127.0.0.1:8091`. See [ports](./install-options.md#ports). Docker must be able to publish them; the installer does not change host policy.
 - A DNS hostname that points to this host, before you connect applications, nodes, E2B or self-hosted machines. You can install and sign in first.
 
 The Core host needs no KVM; nodes that run microsandbox do.
@@ -30,7 +30,7 @@ The Core host needs no KVM; nodes that run microsandbox do.
 curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/install.sh | bash
 ```
 
-If DNS already points to this host, pass the address to set up HTTPS during installation instead of in step 4:
+If a reverse proxy already serves this host, pass its HTTPS address:
 
 ```sh
 curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/install.sh | bash -s -- --public-url https://core.example
@@ -40,8 +40,7 @@ The script downloads that release's Compose files, checks their SHA-256, and:
 
 1. checks Linux amd64, Docker Compose 2.26 or newer, and that the ports it will publish are free;
 2. creates the [installation directory](../configuration.md#installation-directory), `~/.oac/core`, writes `.env`, and copies the `oac` command out of the Core image;
-3. starts the services with Docker Compose. The gateway serves Web on all IPv4 interfaces at port 8080. Core's admin API stays on `127.0.0.1:8091`. PostgreSQL is not published;
-With `--public-url https://HOSTNAME` on a managed install, it then runs `oac domain`. DNS and ports 80 and 443 must already reach this host.
+3. starts the services with Docker Compose. Web serves the console on all IPv4 interfaces at port 8080 and forwards `/v1` and `/api/v1` to Core. Core's admin API stays on `127.0.0.1:8091`. PostgreSQL is not published.
 
 It saves no sandbox backend, adds no node, creates no Project or key and makes no model request. It ends by printing the console address and how to read the Core key.
 
@@ -63,17 +62,7 @@ For insufficient space or quota, free space on the filesystem named by the error
 Applications, nodes and sandboxes reach Core at one HTTPS address, the public URL. The HTTP address on port 8080 keeps serving Web and the API.
 
 1. Point the hostname's A/AAAA records to this host, allow inbound ports 80 and 443 from the internet, and keep other programs off [those ports](./install-options.md#ports).
-2. In Web, open **System**, choose **Configure domain and HTTPS**, enter the hostname, such as `core.example.com`, and choose **Apply**.
-
-The installation checks DNS, requests a certificate, and checks that `https://HOSTNAME` reaches this installation before switching Core and Web to it. Then open the HTTPS address and sign in again. Certificates renew automatically. If DNS or the certificate fails, the previous address stays in use: correct the reported problem and retry the same hostname. `data/domain/status.json` shows a failed attempt and how long to wait before the next one.
-
-The same operation from a terminal:
-
-```sh
-~/.oac/core/oac domain core.example.com
-```
-
-To change the address later, see [changing the public URL](../configuration.md#changing-the-public-url).
+2. Point your reverse proxy at Web and set `OAC_PUBLIC_URL` to the HTTPS origin it serves, then run `oac apply`. See [changing the public URL](../configuration.md#changing-the-public-url).
 
 ## Set a default model
 
