@@ -254,7 +254,13 @@ func initialize(root string, release releaseIdentity, fetch func() (map[string][
 		name     string
 		generate func() string
 	}{
-		{"secrets/web/core.key", func() string { return randomHex(32) }},
+		{"secrets/web/core.key", func() string {
+			key, err := generateCoreKey()
+			if err != nil {
+				panic(err)
+			}
+			return key
+		}},
 		{"secrets/database/password", func() string { return randomHex(32) }},
 		{"secrets/core/credential.key", func() string { return base64.StdEncoding.EncodeToString(randomBytes(32)) }},
 		{"secrets/core/installation.id", func() string { return uuid.NewString() }},

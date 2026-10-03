@@ -67,9 +67,7 @@ func TestInitializeKeepsIdentityAndKeysAcrossRestarts(t *testing.T) {
 	}
 	saved := snapshot(t, root)
 	key := strings.TrimSpace(saved["secrets/web/core.key"])
-	if len(key) != 64 {
-		t.Fatalf("core key has %d characters", len(key))
-	}
+	assertCoreKeyFormat(t, key)
 	var digests []string
 	if err := json.Unmarshal([]byte(saved["secrets/core/core-key-digests.json"]), &digests); err != nil || len(digests) != 1 || digests[0] != keyDigest(key) {
 		t.Fatalf("digests = %v, %v", digests, err)

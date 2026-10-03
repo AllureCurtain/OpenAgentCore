@@ -1,7 +1,7 @@
 ---
 title: "管理你的安装"
 source: docs/getting-started/operations.md
-source_hash: e87c7a1e577b8732929bb1c1fead1d54abfe6b607d8c4aed43faf38dca405ed5
+source_hash: e60a6e96cd61692b6adc7664874ba0ed2ce489982e7da2fe2347631ee2a94c0a
 ---
 
 安装运维人员负责 Core 主机、存储和可用性。节点主机运行各自的服务；参阅[节点](nodes.md)。设置见[配置参考](../configuration.md)。
@@ -62,7 +62,7 @@ Web 重启（包括 `oac apply` 引起的重启）会让所有控制台用户退
 
 ## Core 密钥 {#core-key}
 
-每个安装有一个管理员凭据，即 Core 密钥。安装程序在 `data/secrets/web/core.key` 生成 64 字符随机密钥。用 `oac core-key --show` 读取；该文件属于容器用户。Core 密钥：
+每个安装有一个管理员凭据，即 Core 密钥。安装程序在 `data/secrets/web/core.key` 生成以 `oac_admin_` 为前缀、后接 64 个随机小写十六进制字符的密钥。用 `oac core-key --show` 读取；该文件属于容器用户。Core 密钥：
 
 - 用于登录 Web。浏览器获得 HttpOnly 会话 cookie，不持有密钥；
 - 通过 `Authorization: Bearer <Core key>` 授权 Core API（`/core/v1`）请求；
