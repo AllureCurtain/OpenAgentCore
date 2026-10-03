@@ -8,7 +8,7 @@ This page lists the Core routes each console page reads and writes, and how the 
 
 | Interface | Paths | Authentication | Console use |
 | --- | --- | --- | --- |
-| Console server | `/console/auth`, `/console/auth/{login,logout}`, `/console/config`, `/console/installation/domain`, `/node-install/manifest.json` | The Core key at sign-in, then the console session cookie; `/node-install/manifest.json` needs no sign-in | Sign-in and sign-out; the node installer and node artifacts for Add node; domain setup on **System → Domain and HTTPS**; the distribution's Runtime release for Docker and microsandbox setup. See [console server](./console-server.md) |
+| Console server | `/console/auth`, `/console/auth/{login,logout}`, `/console/config`, `/node-install/manifest.json` | The Core key at sign-in, then the console session cookie; `/node-install/manifest.json` needs no sign-in | Sign-in and sign-out; the node installer and node artifacts for Add node; the distribution's Runtime release for Docker and microsandbox setup. See [console server](./console-server.md) |
 | Administrator API | `/core/v1/**` outside `/core/v1/sandbox` | The Core key, added by the console server | Projects, keys, resource reads and deletion, diagnostics, executor credentials and installation commands, provenance, summaries, Core metrics, the installation, default models |
 | Sandbox administration | `/core/v1/sandbox/**` | The Core key, added by the console server | Sandbox configuration, Nodes, fleet and capacity figures on Overview and Sandbox metrics, Runtime observations of every project |
 | Agents API | `/v1/**` | Project API key | Not used. The console shows developers how to call it (see [Provenance and monitoring](#provenance-and-monitoring)) |

@@ -166,7 +166,6 @@ Mutating `oac` commands hold `.oac.lock`. If another command holds it, retry aft
 | `Installation failed: inspect prerequisites and private deployment files` | A prerequisite failed without its own message, most often Docker: check that `docker info` and `docker compose version` work for this user |
 | `Docker Compose 2.26.0 or newer is required …` | Update the Docker Compose plugin |
 | `Port N is already in use.` | Another program holds that port. Stop it, or choose another `--web-port`. The installer does not move to a different port |
-| `Port 80 is already in use. Free it or rerun with --external-proxy.` | Managed HTTPS needs 80 and 443. Free them, or install with `--external-proxy` |
 | `Installation directory is not empty` | Use an empty `--install-dir`, or [uninstall](#uninstall) the existing installation first |
 | `configuration check failed; no service was changed` | `.env` has a value Core rejects. The message names the variable and not the value. Fix `.env` and run `oac apply` again |
 | `Docker Compose 2.26 or newer is required` | Update the Docker Compose plugin |

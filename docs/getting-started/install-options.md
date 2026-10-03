@@ -52,7 +52,6 @@ These flags are written to `.env` once. After installation, edit that file and r
 | `--public-url` | `OAC_PUBLIC_URL` |
 | `--host` | `OAC_HOST` |
 | `--web-port` | `OAC_WEB_PORT` |
-| `--public-url` | `OAC_PUBLIC_URL` |
 
 
 ## Installation actions

@@ -7,7 +7,7 @@ One command installs Core, the Web console and PostgreSQL on a Linux host. Web i
 1. [Check the prerequisites](#prerequisites).
 2. [Run the installer](#install).
 3. [Sign in to Web](#sign-in-to-web).
-4. [Configure the domain and HTTPS](#configure-the-domain-and-https).
+4. [Configure the public address](#configure-the-domain-and-https).
 5. [Set a default model](#set-a-default-model).
 6. [Issue a Project API key](#issue-a-project-api-key).
 7. [Add sandbox capacity](#add-sandbox-capacity).
@@ -57,12 +57,12 @@ For insufficient space or quota, free space on the filesystem named by the error
    ~/.oac/core/oac core-key --show
    ```
 
-## Configure the domain and HTTPS
+## Configure the public address {#configure-the-domain-and-https}
 
-Applications, nodes and sandboxes reach Core at one HTTPS address, the public URL. The HTTP address on port 8080 keeps serving Web and the API.
+Applications, nodes and sandboxes reach Core at one HTTPS address, the public URL.
 
-1. Point the hostname's A/AAAA records to this host, allow inbound ports 80 and 443 from the internet, and keep other programs off [those ports](./install-options.md#ports).
-2. Point your reverse proxy at Web and set `OAC_PUBLIC_URL` to the HTTPS origin it serves, then run `oac apply`. See [changing the public URL](../configuration.md#changing-the-public-url).
+1. Point your reverse proxy at Web.
+2. Set `OAC_PUBLIC_URL` to the HTTPS origin it serves, then run `oac apply`. See [changing the public URL](../configuration.md#changing-the-public-url).
 
 ## Set a default model
 

@@ -1,7 +1,7 @@
 ---
 title: "安装 Core 和 Web"
 source: docs/getting-started/install.md
-source_hash: c0199f4d27045c6e85afcd9ec6b431833344f3a65b767d0d61e57898b711f269
+source_hash: d6207979c3fa7db377679b00ef1bdcd922c9f9e9a6dbf3f24ab5a9b13282411b
 ---
 
 一条命令即可在 Linux 主机上安装 Core、Web 控制台和 PostgreSQL。Web 是管理员控制台：使用 Core 密钥登录，为安装配置域名、设置默认模型并签发 Project API 密钥。应用随后使用这些密钥调用 Core API，Session 在你添加的节点上的沙箱中运行，也可以在 E2B 上运行。
@@ -9,7 +9,7 @@ source_hash: c0199f4d27045c6e85afcd9ec6b431833344f3a65b767d0d61e57898b711f269
 1. [检查前置条件](#prerequisites)。
 2. [运行安装程序](#install)。
 3. [登录 Web](#sign-in-to-web)。
-4. [配置域名和 HTTPS](#configure-the-domain-and-https)。
+4. [配置公开地址](#configure-the-domain-and-https)。
 5. [设置默认模型](#set-a-default-model)。
 6. [签发 Project API 密钥](#issue-a-project-api-key)。
 7. [添加沙箱容量](#add-sandbox-capacity)。

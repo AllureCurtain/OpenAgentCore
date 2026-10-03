@@ -1,7 +1,7 @@
 ---
 title: "管理你的安装"
 source: docs/getting-started/operations.md
-source_hash: 60e7e0b3d648eeef2b58330b12a8cd05e32defa9850d233510f809a0ac018cd3
+source_hash: cc7771ad37c3b8cd4b1b33f9549efcabd5a499b4c79d0cbaf5d14aed779cf107
 ---
 
 安装运维人员负责 Core 主机、存储和可用性。节点主机运行各自的服务；参阅[节点](nodes.md)。设置见[配置参考](../configuration.md)。
@@ -169,7 +169,6 @@ rm -rf ~/.oac/core
 | `Installation failed: inspect prerequisites and private deployment files` | 前置条件失败但未单独报告，通常是 Docker：检查此用户能运行 `docker info` 和 `docker compose version` |
 | `Docker Compose 2.26.0 or newer is required …` | 更新 Docker Compose 插件 |
 | `Port N is already in use.` | 其他程序占用该端口。停止它，或另选 `--web-port`。安装程序不会改用其他端口 |
-| `Port 80 is already in use. Free it or rerun with --external-proxy.` | 托管 HTTPS 需要 80 和 443。释放它们，或使用 `--external-proxy` 安装 |
 | `Installation directory is not empty` | 使用空的 `--install-dir`，或先[卸载](#uninstall)现有安装 |
 | `configuration check failed; no service was changed` | `.env` 中有 Core 拒绝的值。消息只包含变量名。修正 `.env` 后再次运行 `oac apply` |
 | `Docker Compose 2.26 or newer is required` | 更新 Docker Compose 插件 |

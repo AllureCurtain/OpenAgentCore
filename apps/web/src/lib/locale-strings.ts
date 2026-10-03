@@ -163,7 +163,7 @@ export const chinese = {
   "Reaches {{core}}, as do its sandboxes": "能访问 {{core}}，它的沙箱也要能访问",
   "The command creates the oac-node service user and a system service. It installs no software; if something is missing it stops and says what to install.": "命令会创建 oac-node 服务用户和一个系统服务。它不安装任何软件；缺少什么时会停下并说明要装什么。",
   "oac-node joins the docker group, which is equivalent to root on this host.": "oac-node 会加入 docker 组，这在这台主机上等同于 root 权限。",
-  "Configure a domain and HTTPS in System before adding nodes.": "添加节点前，请先在系统中配置域名与 HTTPS。",
+  "Set a public HTTPS address before adding nodes.": "添加节点前，请先设置一个公网 HTTPS 地址。",
   "Clean up the host": "清理主机",
   "{{name}} is removed from Core. To remove its service and files from the host, run:": "{{name}} 已从 Core 移除。要删除它在主机上的服务和文件，请运行：",
   "{{name}} is removed from Core, but its service and files stay on the host.": "{{name}} 已从 Core 移除，但它的服务和文件仍留在主机上。",

@@ -1,7 +1,7 @@
 ---
 title: "添加和管理节点"
 source: docs/getting-started/nodes.md
-source_hash: 16909046c0b7b542d8c8e77671ea1b9fac47c3bedc332b48f3f3cdc3ffeceab2
+source_hash: f7bfd1ac05cbed8a1f31badee219164c5e1a16aa897e89551abeb8b8d0010215
 ---
 
 节点是一台 Linux 主机，在沙箱后端为 Docker 或 microsandbox 时，为 Core 托管 Session 运行沙箱。Core 将新 Session 分配给有空余容量的节点；节点创建沙箱，沙箱回连 Core。E2B 不需要节点。应用为自己的 Session 连接的机器是[自托管执行器](self-hosted.md)，而不是节点。
@@ -10,7 +10,7 @@ source_hash: 16909046c0b7b542d8c8e77671ea1b9fac47c3bedc332b48f3f3cdc3ffeceab2
 
 ## 添加节点前 {#before-you-add-a-node}
 
-- **Core 已有主机及沙箱可访问的 HTTPS 公开 URL。** 节点从 Core 控制台下载文件，并通过 `public_url` 连接 Core。设置前，Add node 显示 *Configure a domain and HTTPS in System before adding nodes*；参阅[配置域名和 HTTPS](install.md#configure-the-domain-and-https)，使用外部入口时则参阅[修改公开 URL](../configuration.md#changing-the-public-url)。
+- **Core 已有主机及沙箱可访问的 HTTPS 公开 URL。** 节点从 Core 控制台下载文件，并通过 `public_url` 连接 Core。设置前，Add node 显示 *Set a public HTTPS address before adding nodes*；参阅[配置公开地址](install.md#configure-the-domain-and-https)。
 - **沙箱配置已保存。** 打开 **System** → **Manage sandbox configuration**，选择 **Own machines**、后端和沙箱规格，最后选择 **Save configuration**。要更改已保存的配置，先选择 **Reset deployment**。同一安装的所有节点使用同一后端。
 - **控制台能提供节点文件。** 节点从控制台下载 Runtime 和提供商文件；控制台缺少文件时重定向到发行下载地址。节点依据发行清单检查各文件的大小和 SHA-256。因此节点主机需要能访问发行下载地址。缺少文件时，Add node 显示 *This console has no node files for …*。
 

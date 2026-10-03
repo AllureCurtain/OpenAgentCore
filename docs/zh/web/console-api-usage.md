@@ -1,7 +1,7 @@
 ---
 title: "控制台 API 使用"
 source: docs/web/console-api-usage.md
-source_hash: cec8854add87634295c12aa6ba239940ecffb1ee9bab5427a9ab443498ad22a8
+source_hash: 4e3bfbad317f6ab1467de7716a9463c088f12a2f88f84f36b08d37be64dc3db6
 ---
 
 本页列出各控制台页面读取和写入的 Core 路由，以及控制台如何限定读取范围。[administrator API contract](../../../contracts/agents-api/zh/admin-api.md) 定义了路由、响应结构、分页和审计记录；[API namespaces and credentials](../api/index.md) 定义了本文使用的术语。
@@ -10,7 +10,7 @@ source_hash: cec8854add87634295c12aa6ba239940ecffb1ee9bab5427a9ab443498ad22a8
 
 | 接口 | 路径 | 身份验证 | 控制台用途 |
 | --- | --- | --- | --- |
-| Console server | `/console/auth`、`/console/auth/{login,logout}`、`/console/config`、`/console/installation/domain`、`/node-install/manifest.json` | 登录时使用 Core 密钥，随后使用控制台会话 Cookie；`/node-install/manifest.json` 无需登录 | 登录和退出；Add node 所用的节点安装程序和节点构件；**System → Domain and HTTPS** 上的域设置；用于 Docker 和 microsandbox 设置的发行版 Runtime release。参见 [console server](console-server.md) |
+| Console server | `/console/auth`、`/console/auth/{login,logout}`、`/console/config`、`/node-install/manifest.json` | 登录时使用 Core 密钥，随后使用控制台会话 Cookie；`/node-install/manifest.json` 无需登录 | 登录和退出；Add node 所用的节点安装程序和节点构件；用于 Docker 和 microsandbox 设置的发行版 Runtime release。参见 [console server](console-server.md) |
 | Administrator API | `/core/v1/**`，不包括 `/core/v1/sandbox` | Core 密钥，由控制台服务器添加 | 项目、密钥、资源读取和删除、诊断、执行器凭据和安装命令、来源信息、汇总、Core 指标、安装信息、默认模型 |
 | Sandbox administration | `/core/v1/sandbox/**` | Core 密钥，由控制台服务器添加 | Sandbox 配置；Overview 和 Sandbox metrics 中的 Nodes、机群与容量数据；每个项目的 Runtime observations |
 | Agents API | `/v1/**` | 项目 API 密钥 | 不使用。控制台会向开发者说明如何调用它（参见 [Provenance and monitoring](#provenance-and-monitoring)） |
