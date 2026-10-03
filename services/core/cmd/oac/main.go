@@ -115,12 +115,19 @@ func coreKeyCommand(ctx context.Context, in installation, runner Runner, args []
 	return errors.New("Usage: oac core-key [--show]")
 }
 
-func rotateCoreKey(ctx context.Context, in installation, runner Runner) error {
+func generateCoreKey() (string, error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
+		return "", err
+	}
+	return "oac_admin_" + hex.EncodeToString(buf), nil
+}
+
+func rotateCoreKey(ctx context.Context, in installation, runner Runner) error {
+	key, err := generateCoreKey()
+	if err != nil {
 		return err
 	}
-	key := hex.EncodeToString(buf)
 	keyPath := filepath.Join(in.data, "secrets", "web", "core.key")
 	digestPath := filepath.Join(in.data, "secrets", "core", "core-key-digests.json")
 	if err := writeSecret(keyPath, key+"\n"); err != nil {

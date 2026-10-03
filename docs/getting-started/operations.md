@@ -60,7 +60,7 @@ A Web restart, including one caused by `oac apply`, signs everyone out of the co
 
 ## Core key
 
-Each installation has one administrator credential, the Core key. The installer generates a 64-character random key in `data/secrets/web/core.key`. Read it with `oac core-key --show`; the file is owned by the container user. The Core key:
+Each installation has one administrator credential, the Core key. The installer generates a key with the `oac_admin_` prefix followed by 64 random lowercase hexadecimal characters in `data/secrets/web/core.key`. Read it with `oac core-key --show`; the file is owned by the container user. The Core key:
 
 - signs in to Web. The browser gets an HttpOnly session cookie, never the key;
 - authorizes Core API (`/core/v1`) requests sent as `Authorization: Bearer <Core key>`;

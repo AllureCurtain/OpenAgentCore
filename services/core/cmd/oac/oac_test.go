@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -53,6 +54,7 @@ func TestRotateCoreKeyDigestDoesNotEchoTheKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	key := strings.TrimSpace(string(raw))
+	assertCoreKeyFormat(t, key)
 	digest, err := os.ReadFile(filepath.Join(in.data, "secrets", "core", "core-key-digests.json"))
 	if err != nil || !strings.Contains(string(digest), keyDigest(key)) || strings.Contains(string(digest), key) {
 		t.Fatalf("digest %s key leaked %v", digest, err)
@@ -69,4 +71,11 @@ type scriptedRunner struct {
 func (s scriptedRunner) Run(_ context.Context, args ...string) error { return s.run(args...) }
 func (s scriptedRunner) Output(context.Context, ...string) ([]byte, error) {
 	return nil, nil
+}
+
+func assertCoreKeyFormat(t *testing.T, key string) {
+	t.Helper()
+	if !regexp.MustCompile(`^oac_admin_[0-9a-f]{64}$`).MatchString(key) {
+		t.Fatal("core key must have the oac_admin_ prefix and 64 lowercase hexadecimal characters")
+	}
 }
