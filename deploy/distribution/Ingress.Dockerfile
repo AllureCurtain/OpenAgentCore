@@ -1,10 +1,12 @@
 # Gateway and one-time data initialization. With managed HTTPS the gateway also
-# serves domain setup; this is the only image with a Docker client. Core and Web
-# never receive Docker access.
+# serves domain setup. oac talks to Docker through its client library, so this
+# image carries no Docker CLI; Core and Web never receive Docker access.
+# Caddy and oac are static binaries. oac init and oac gateway run as root so
+# they can chown data directories and start Caddy as an unprivileged child.
 # scripts/build-core-distribution.sh builds this from a context that also contains
 # the oac binary.
-FROM caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d AS caddy
-FROM docker:29.0.4-cli@sha256:858bb1e05af16840f5a55143c3e5e14073891fbc92f2c1f6f38dd9c5f2cca03c
-COPY --from=caddy /usr/bin/caddy /usr/local/bin/caddy
+FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
+RUN apk add --no-cache ca-certificates
+COPY --from=caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d /usr/bin/caddy /usr/local/bin/caddy
 COPY --chmod=0555 oac /usr/local/bin/oac
 ENTRYPOINT []
