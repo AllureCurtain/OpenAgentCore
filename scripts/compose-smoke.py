@@ -147,7 +147,7 @@ def main():
         compose('up', '-d', '--wait', '--wait-timeout', '600', timeout=900)
         address = 'http://' + compose('port', 'web', '8080').decode().strip()
         key = compose('exec', '-T', 'web', '/usr/local/bin/oac-web', 'core-key').decode().strip()
-        assert len(key) == 64, 'Missing generated sign-in key'
+        assert re.fullmatch(r'oac_admin_[0-9a-f]{64}', key), 'Missing generated sign-in key'
         request('/healthz')
         assert b'<html' in request('/'), 'Console HTML is unavailable'
         request('/', headers={'Host': 'unconfigured.example.invalid'}, status=403)
