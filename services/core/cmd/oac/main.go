@@ -32,15 +32,13 @@ func main() {
 var buildRevision = "development"
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "oac (%s)\nUsage: oac apply|core-key|rotate-core-key|init|healthcheck\n", buildRevision)
+	fmt.Fprintf(os.Stderr, "oac (%s)\nUsage: oac apply|core-key|rotate-core-key|init\n", buildRevision)
 }
 
 func run(ctx context.Context, command string, args []string) error {
 	switch command {
 	case "init":
 		return initCommand(ctx)
-	case "healthcheck":
-		return healthcheck(ctx)
 	}
 	root, err := installDir()
 	if err != nil {

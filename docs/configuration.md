@@ -46,7 +46,7 @@ To change it, point the reverse proxy at the new address first, then edit `OAC_P
 | `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. Managed domain setup writes the HTTPS origin and recreates Core and Web |
 | `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
-| `COMPOSE_FILE` | `compose.yaml:ports.yaml` | The Compose files. `ports.yaml` publishes Web and Core's loopback admin API; hosting platforms omit it |
+| `COMPOSE_FILE` | `compose.yaml:ports.yaml` | The Compose files. `ports.yaml` publishes Web; hosting platforms omit it |
 | `OAC_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `OAC_LOG_FORMAT` | `auto` | `auto`, `text` or `json` |
 | `OAC_LOG_ADD_SOURCE` | unset | `1` adds source locations |
@@ -135,7 +135,7 @@ The installer creates the installation directory, `~/.oac/core` by default, with
 | `data/state/` | Private Provider state, including E2B receipts | Core |
 | `.oac.lock` | The installation lock | Mutating `oac` commands |
 
-The Compose project is named `oac-<10 hex digits>`. Its services are `init`, `database`, `core` and `web`. Core applies database migrations when it starts. `web` serves the console and forwards `/v1` and `/api/v1` to Core, and it is the only service that publishes `OAC_WEB_PORT`. Host installs also publish Core's admin API on `127.0.0.1:8091`. No service receives a Docker socket. Apart from Docker's storage, nothing is written outside the installation directory.
+The Compose project is named `oac-<10 hex digits>`. Its services are `init`, `database`, `core` and `web`. Core applies database migrations when it starts. `web` serves the console and forwards `/v1` and `/api/v1` to Core, and it is the only service with a published port, `OAC_WEB_PORT`. No service receives a Docker socket. Apart from Docker's storage, nothing is written outside the installation directory.
 
 ## Appendix: Core environment without the installer
 

@@ -1,7 +1,7 @@
 ---
 title: "安装选项与高级部署"
 source: docs/getting-started/install-options.md
-source_hash: f9a5aae96ce8789030eda5cb399eac7c2e6bc6bd4d9bcce18138373c97cb0e96
+source_hash: be5e1a127f654e75611c7b670fba9fc10cb3b78165590a7f6616eb1b79dd2f14
 ---
 
 [默认安装](install.md)无需任何选项。使用本页可以在现有反向代理后运行，或者在无法访问互联网时进行安装。
@@ -74,7 +74,7 @@ docker compose -f compose.yaml exec web oac-web core-key
 
 ## 监听器与访问 {#listeners-and-access}
 
-默认安装在 `--host 0.0.0.0` 的 `--web-port`（8080）上发布 Web。Core 的管理 API 留在 `127.0.0.1:8091`。PostgreSQL 保持私有。`--host` 是不含端口、协议或区域的 IPv4 或 IPv6 地址。请在浏览器中使用服务器的具体 IP，而不是通配地址。
+默认安装在 `--host 0.0.0.0` 的 `--web-port`（8080）上发布 Web。Core 和 PostgreSQL 保持私有。`--host` 是不含端口、协议或区域的 IPv4 或 IPv6 地址。请在浏览器中使用服务器的具体 IP，而不是通配地址。
 
 `--public-url` 设置 `OAC_PUBLIC_URL`，即应用、节点和执行器使用的源地址。把它设为反向代理提供的 HTTPS 源地址。
 
@@ -90,12 +90,6 @@ docker compose -f compose.yaml exec web oac-web core-key
 ## HTTPS 与反向代理 {#https-and-the-reverse-proxy}
 
 请用 `--host 127.0.0.1` 安装，并把反向代理指向 Web，默认是 `127.0.0.1:8080`。Web 把 `/v1`、`/api/v1` 和 `/docs` 转到 Core，其余由自己提供。
-
-| 路径 | 目标 | 调用方 |
-| --- | --- | --- |
-| `/v1`、`/v1/*` | Core，默认为 `127.0.0.1:8091` | 应用程序，使用 Project API 密钥 |
-| `/api/v1/*` | Core，`127.0.0.1:8091` | 节点、沙箱和自托管机器。使用 WebSockets |
-| 其他所有路径 | Web，默认为 `127.0.0.1:8080` | 浏览器，以及通过 `/node-install/*` 访问的节点安装程序 |
 
 反向代理必须：
 

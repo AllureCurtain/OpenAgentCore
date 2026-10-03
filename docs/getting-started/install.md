@@ -19,7 +19,7 @@ This page follows the default path. Every flag, existing reverse proxies and off
 - Linux amd64 and curl.
 - Docker Engine with Docker Compose 2.26.0 or newer (`docker compose version`).
 - An account that can run `docker` and write to its home directory. Ordinary users and root both work; the installer never calls sudo.
-- Free port 8080 for Web. Core's admin API uses `127.0.0.1:8091`. See [ports](./install-options.md#ports). Docker must be able to publish them; the installer does not change host policy.
+- Free port 8080 for Web. See [ports](./install-options.md#ports). Docker must be able to publish it; the installer does not change host policy.
 - For anything off this machine, the origin in `OAC_PUBLIC_URL` must be the address browsers, nodes and executors use. You can sign in on this machine first.
 
 The Core host needs no KVM; nodes that run microsandbox do.
@@ -40,7 +40,7 @@ The script downloads that release's Compose files, checks their SHA-256, and:
 
 1. checks Linux amd64, Docker Compose 2.26 or newer, and that the ports it will publish are free;
 2. creates the [installation directory](../configuration.md#installation-directory), `~/.oac/core`, writes `.env`, and copies the `oac` command out of the Core image;
-3. starts the services with Docker Compose. Web serves the console on port 8080 and forwards `/v1`, `/api/v1` and `/docs` to Core. Core's admin API stays on `127.0.0.1:8091`. PostgreSQL is not published.
+3. starts the services with Docker Compose. Web serves the console on port 8080 and forwards `/v1`, `/api/v1` and `/docs` to Core. Core and PostgreSQL are not published.
 
 It saves no sandbox backend, adds no node, creates no Project or key and makes no model request. It ends by printing the console address and how to read the Core key.
 

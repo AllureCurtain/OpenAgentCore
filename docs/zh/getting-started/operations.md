@@ -1,7 +1,7 @@
 ---
 title: "管理你的安装"
 source: docs/getting-started/operations.md
-source_hash: 83db2aebab621e41ab45ad92fc74ec562c54bf0f6a5a4cd845b5ffe8da50cf89
+source_hash: 8ccae3f5cad0d66eaf1fc25558694b5035c023c7ceed064dd7d2a2ee460c1d47
 ---
 
 安装运维人员负责 Core 主机、存储和可用性。节点主机运行各自的服务；参阅[节点](nodes.md)。设置见[配置参考](../configuration.md)。
@@ -72,14 +72,15 @@ Web 重启（包括 `oac apply` 引起的重启）会让所有控制台用户退
 
 ### 用脚本调用 Core API {#script-the-core-api}
 
-在 Core 主机上运行脚本，访问 Core 回环端口。此辅助函数从文件读取密钥，使其不进入命令行：
+Core 不发布主机端口。在 Core 主机上，此辅助函数在 Core 的网络命名空间中运行 `curl`，并通过 stdin 传入密钥，使其不进入命令行：
 
 ```sh
-core() {  # core METHOD PATH [JSON body]
-  curl -fsS -X "$1" "http://127.0.0.1:8091/core/v1$2" \
-    -H @<(printf 'Authorization: Bearer %s\n' "$(~/.oac/core/oac core-key --show)") \
-    -H 'Content-Type: application/json' ${3:+-d "$3"}
-}
+core() (  # core METHOD PATH [JSON body]
+  cd ~/.oac/core
+  ./oac core-key --show | sed 's/^/Authorization: Bearer /' |
+    docker run -i --rm --network "container:$(docker compose ps -q core)" curlimages/curl \
+      -fsS -X "$1" "http://127.0.0.1:8091/core/v1$2" -H @- -H 'Content-Type: application/json' ${3:+-d "$3"}
+)
 ```
 
 | 任务 | 命令 |
@@ -186,7 +187,7 @@ rm -rf ~/.oac/core
 | 监听器 | 主机安装 | 反向代理之后 |
 | --- | --- | --- |
 | Web 和 API | Web 在 `OAC_HOST` 上发布 `OAC_WEB_PORT`（8080） | Web 在 `OAC_HOST` 上发布 `OAC_WEB_PORT`。反向代理应使用 `127.0.0.1` |
-| Core 管理 API | `127.0.0.1:8091`。Web 转发 `/v1`、`/api/v1` 和 `/docs` | `127.0.0.1:8091`。Web 转发 `/v1`、`/api/v1` 和 `/docs` |
+| Core | 不发布端口。Web 转发 `/v1`、`/api/v1` 和 `/docs` | 不发布端口。Web 转发 `/v1`、`/api/v1` 和 `/docs` |
 | PostgreSQL | 不发布端口 | 不发布端口 |
 
 Web 使用 Core 密钥让管理员登录，检查每个请求来源，并用保留在服务器上的 Core 密钥将已登录的 `/core/v1` 请求转发到 Core。它把 `/v1` 和 `/api/v1` 原样转发给 Core，使用调用方自己的凭据；Web 仅在 `/node-install/` 提供不含密钥的节点文件，没有 Docker 或 KVM 访问权限。`/api/v1` 机器路由使用独立注册和连接凭据。没有服务持有 Docker 套接字。

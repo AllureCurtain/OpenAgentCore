@@ -1,9 +1,6 @@
-# Host installation publishes Web and Core's loopback admin API for scripts on
-# the host. Hosting platforms omit this file and route to web:8080 themselves.
+# Host installation publishes Web. Hosting platforms omit this file and route
+# to web:8080 themselves.
 services:
   web:
     ports:
       - "${OAC_HOST:-127.0.0.1}:${OAC_WEB_PORT:-8080}:8080"
-  core:
-    ports:
-      - "127.0.0.1:8091:8091"

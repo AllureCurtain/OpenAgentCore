@@ -70,7 +70,7 @@ The installer saves no sandbox backend. After signing in, open **System** → **
 
 ## Listeners and access
 
-The default installation publishes Web on `--web-port` (8080) at `--host 0.0.0.0`. Core's admin API stays on `127.0.0.1:8091`. PostgreSQL stays private. `--host` is an IPv4 or IPv6 address, without a port, scheme or zone. Use a concrete server IP in the browser, not a wildcard.
+The default installation publishes Web on `--web-port` (8080) at `--host 0.0.0.0`. Core and PostgreSQL stay private. `--host` is an IPv4 or IPv6 address, without a port, scheme or zone. Use a concrete server IP in the browser, not a wildcard.
 
 `--public-url` sets `OAC_PUBLIC_URL`, the origin applications, nodes and executors use. Set it to the HTTPS origin your reverse proxy serves.
 

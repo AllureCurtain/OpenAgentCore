@@ -8,6 +8,8 @@ OpenAgentCore is protocol-first and modular. Core orchestrates operations that p
 
 OpenAgentCore is infrastructure. Change a boundary only when the existing protocol cannot express the behavior, and make that the smallest change that leaves the design intact. Hold the code to the standard of a careful, widely used open-source service.
 
+Keep it concise. Write elegant code that reuses existing code and standard SDKs as far as possible, and avoid redundant code. Expose nothing that does not need to be exposed: no port, route, command or setting without a caller.
+
 ### Protocols at every boundary
 
 - Each boundary between components has exactly one protocol: one code file (interface, wire types and validators) and one document. A protocol change edits both and every implementation in one change, reviewed on its own.

@@ -302,24 +302,3 @@ func randomBytes(n int) []byte {
 }
 
 func randomHex(n int) string { return hex.EncodeToString(randomBytes(n)) }
-
-// healthcheck reports the installation healthy once Core, Web and Web's own
-// listener answer.
-func healthcheck(ctx context.Context) error {
-	client := &http.Client{Timeout: 3 * time.Second, Transport: &http.Transport{Proxy: nil}}
-	for _, host := range []string{"core:8091", "127.0.0.1:8080"} {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+host+"/healthz", nil)
-		if err != nil {
-			return err
-		}
-		response, err := client.Do(request)
-		if err != nil {
-			return err
-		}
-		response.Body.Close()
-		if response.StatusCode != http.StatusOK {
-			return fmt.Errorf("%s returned HTTP %d", host, response.StatusCode)
-		}
-	}
-	return nil
-}
