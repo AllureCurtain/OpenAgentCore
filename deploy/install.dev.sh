@@ -15,7 +15,7 @@ fi
 
 usage() {
   cat <<'EOF'
-Usage: install.local.sh [--install-dir DIR] [--host ADDRESS] [--web-port PORT]
+Usage: install.dev.sh [--install-dir DIR] [--host ADDRESS] [--web-port PORT]
 
 Builds Core, Web and the init image from this checkout and starts them.
 Open http://localhost:<port> and sign in with the printed Core key.
