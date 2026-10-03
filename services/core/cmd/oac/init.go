@@ -1,9 +1,6 @@
 package main
 
 import (
-	"archive/tar"
-	"compress/gzip"
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -11,19 +8,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/fs"
-	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
-	"time"
 
 	"github.com/google/uuid"
 )
 
-// releaseMembers are the archive files a Compose installation keeps for Web's
-// node payload; the rest of the release archive is only checksummed.
+// releaseMembers are the only files copied from the initialization image.
 var releaseMembers = []string{"manifest.json", "SHA256SUMS", "node-install.pyz", "runtime/seccomp.json"}
 
 var dataOwners = []struct {
@@ -34,86 +28,56 @@ var dataOwners = []struct {
 var chown = os.Chown
 
 type releaseIdentity struct {
-	revision, base, checksum string
+	revision string
 }
 
-func releaseFromEnv() (releaseIdentity, error) {
-	identity := releaseIdentity{os.Getenv("OAC_REVISION"), os.Getenv("OAC_RELEASE_BASE"), os.Getenv("OAC_ARCHIVE_CHECKSUM")}
-	for name, value := range map[string]string{"OAC_REVISION": identity.revision, "OAC_RELEASE_BASE": identity.base, "OAC_ARCHIVE_CHECKSUM": identity.checksum} {
-		if value == "" {
-			return identity, errors.New(name + " is required")
-		}
+func initCommand() error {
+	revision := os.Getenv("OAC_REVISION")
+	if revision == "" {
+		return errors.New("OAC_REVISION is required")
 	}
-	return identity, nil
-}
-
-func initCommand(ctx context.Context) error {
-	release, err := releaseFromEnv()
-	if err != nil {
-		return err
+	if revision != buildRevision {
+		return errors.New("initialization image does not match the Compose release")
 	}
 	syscall.Umask(0o077)
-	return initialize("/data", release, func() (map[string][]byte, error) { return downloadRelease(ctx, release) })
+	release := releaseIdentity{revision}
+	return initialize("/data", release, func() (map[string][]byte, error) {
+		return readRelease("/opt/oac/node-payload", release)
+	})
 }
 
-func downloadRelease(ctx context.Context, release releaseIdentity) (map[string][]byte, error) {
-	fmt.Println("Downloading and verifying the matched node installation metadata")
-	archive := "oac-" + release.revision + "-linux-amd64"
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
-	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, release.base+archive+".tar.gz", nil)
-	if err != nil {
-		return nil, err
-	}
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return nil, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("release metadata download returned HTTP %d", response.StatusCode)
-	}
-	return readRelease(response.Body, release)
-}
-
-func readRelease(body io.Reader, release releaseIdentity) (map[string][]byte, error) {
-	archive := "oac-" + release.revision + "-linux-amd64/"
-	hash := sha256.New()
-	stream := io.TeeReader(body, hash)
-	compressed, err := gzip.NewReader(stream)
-	if err != nil {
-		return nil, err
-	}
+func readRelease(root string, release releaseIdentity) (map[string][]byte, error) {
 	files := map[string][]byte{}
-	wanted := map[string]bool{}
 	for _, name := range releaseMembers {
-		wanted[archive+name] = true
-	}
-	entries := tar.NewReader(compressed)
-	for {
-		header, err := entries.Next()
-		if errors.Is(err, io.EOF) {
-			break
-		}
+		path := filepath.Join(root, name)
+		info, err := os.Lstat(path)
 		if err != nil {
 			return nil, err
 		}
-		if !wanted[header.Name] {
-			continue
-		}
-		name := header.Name[len(archive):]
-		if _, seen := files[name]; seen || header.Typeflag != tar.TypeReg || header.Size > 1<<20 {
+		if !info.Mode().IsRegular() || info.Size() > 1<<20 {
 			return nil, errors.New("invalid release metadata member")
 		}
-		if files[name], err = io.ReadAll(entries); err != nil {
+		files[name], err = os.ReadFile(path)
+		if err != nil {
 			return nil, err
 		}
 	}
-	if _, err := io.Copy(io.Discard, stream); err != nil {
-		return nil, err
+	sums := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSpace(string(files["SHA256SUMS"])), "\n") {
+		checksum, name, ok := strings.Cut(line, "  ")
+		if !ok || sums[name] != "" {
+			return nil, errors.New("invalid release metadata checksums")
+		}
+		sums[name] = checksum
 	}
-	if hex.EncodeToString(hash.Sum(nil)) != release.checksum || len(files) != len(releaseMembers) {
-		return nil, errors.New("release metadata checksum mismatch")
+	for name, data := range files {
+		if name == "SHA256SUMS" {
+			continue
+		}
+		sum := sha256.Sum256(data)
+		if hex.EncodeToString(sum[:]) != sums[name] {
+			return nil, errors.New("release metadata checksum mismatch")
+		}
 	}
 	var manifest struct {
 		SourceCommit string `json:"source_commit"`
@@ -125,6 +89,7 @@ func readRelease(body io.Reader, release releaseIdentity) (map[string][]byte, er
 	if manifest.SourceCommit != release.revision || manifest.Platform != "linux/amd64" {
 		return nil, errors.New("release identity mismatch")
 	}
+	fmt.Println("Bundled node installation metadata verified")
 	return files, nil
 }
 

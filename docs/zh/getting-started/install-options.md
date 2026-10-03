@@ -1,7 +1,7 @@
 ---
 title: "安装选项与高级部署"
 source: docs/getting-started/install-options.md
-source_hash: 4b847976f3b3bc4fe4afe7b7946c5815df9fecf75dc39648621814e793288f9e
+source_hash: 93e842b2818adb1ca56bdca911fd0c828868ce39c70378e4430b296865cd962b
 ---
 
 [默认安装](install.md)无需任何选项。使用本页可以在现有反向代理后运行，或者在无法访问互联网时进行安装。
@@ -18,7 +18,7 @@ source_hash: 4b847976f3b3bc4fe4afe7b7946c5815df9fecf75dc39648621814e793288f9e
 
 ## Docker Compose 与托管平台 {#docker-compose-and-hosting-platforms}
 
-在 Linux amd64 上使用发行版中的 `compose.yaml` 和 Docker Compose 2.26 或更高版本。发行流程会把节点元数据渲染进 [Compose 模板](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml)。Core 和 Web 使用 `latest` 镜像，PostgreSQL 使用 `postgres:16-alpine`。它会启动 PostgreSQL、Core 和 Web。Web 把 `/v1` 和 `/api/v1` 转发到 Core。数据通过目录 bind mount 挂载。一次性初始化服务会在该目录中生成随机机密信息并准备节点安装程序；Core 启动时执行数据库迁移。[Compose 配置](../configuration.md#compose-installations)负责管理各项设置和数据目录。
+在 Linux amd64 上使用发行版中的 `compose.yaml` 和 Docker Compose 2.26 或更高版本。发行流程会在 [Compose 模板](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml)中固定初始化镜像及源码版本。Core 和 Web 使用 `latest` 镜像，PostgreSQL 使用 `postgres:16-alpine`。它会启动 PostgreSQL、Core 和 Web。Web 把 `/v1` 和 `/api/v1` 转发到 Core。数据通过目录 bind mount 挂载。一次性初始化服务会在该目录中生成随机机密信息并准备节点安装程序；Core 启动时执行数据库迁移。[Compose 配置](../configuration.md#compose-installations)负责管理各项设置和数据目录。
 
 进行本地试用时，请将同一发行版的 `compose.yaml` 和 `ports.yaml` 下载到同一个目录，然后运行：
 
@@ -29,7 +29,7 @@ docker compose -f compose.yaml exec web oac-web core-key
 
 `oac-web core-key` 会将生成的 Core 密钥打印到终端，而不会将其写入容器日志。打开 `http://localhost:8080` 并使用该密钥登录。所有安装机密信息都会自动生成；重启时请保留同一个 Compose 项目及其数据目录。
 
-首次初始化会下载并验证该发布版本中约 385 MB 的控制归档文件，仅保留较小的节点安装元数据。后续启动会验证已保存的文件，而不会再次下载。镜像需要额外下载。首次初始化中断后可以重新运行；如果现有数据库缺少安装机密信息，初始化会被拒绝。
+初始化镜像除初始化命令外，仅包含较小的节点安装元数据。首次启动会验证并复制这些元数据，无需下载控制归档或访问 GitHub Releases。后续启动会验证已保存的文件。容器镜像仍需拉取。首次初始化中断后可以重新运行；如果现有数据库缺少安装机密信息，初始化会被拒绝。
 
 你可以在选择域名前进行部署：将 `OAC_PUBLIC_URL` 保持未设置或留空，然后在平台的域名准备好后，按照 [Compose 配置](../configuration.md#compose-installations)进行设置并重新部署。初始的 localhost 源地址允许服务启动；Web 仅接受已配置的主机，因此重新部署后即可通过平台域名访问。
 

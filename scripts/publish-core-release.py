@@ -274,8 +274,7 @@ def publish(assets, repository, revision, tag, mode):
     images = publish_images(assets, repository, revision, tag, floating_latest=mode == "publish" and stable)
     compose_files = render_compose.write_assets(assets, {
         "REVISION": revision,
-        "RELEASE_BASE": "https://github.com/" + repository + "/releases/download/" + tag + "/",
-        "ARCHIVE_CHECKSUM": distribution.sha256(assets / (stem + ".tar.gz")),
+        "INIT_IMAGE": images["ingress"]["digest"],
     })
     expected.update({path.name: path.stat().st_size for path in compose_files})
     parallel_each(upload, compose_files)

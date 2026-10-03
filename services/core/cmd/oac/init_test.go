@@ -1,9 +1,7 @@
 package main
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -23,7 +21,7 @@ func initFixture(t *testing.T) (string, releaseIdentity, map[string][]byte) {
 	previous := chown
 	chown = func(string, int, int) error { return nil }
 	t.Cleanup(func() { chown = previous })
-	release := releaseIdentity{strings.Repeat("d", 40), "https://example.com/releases/v1/", strings.Repeat("e", 64)}
+	release := releaseIdentity{strings.Repeat("d", 40)}
 	files := map[string][]byte{}
 	for _, name := range releaseMembers {
 		files[name] = []byte("fixture")
@@ -145,49 +143,62 @@ func TestInterruptedInitializationKeepsGeneratedKeys(t *testing.T) {
 	}
 }
 
-func releaseArchive(t *testing.T, release releaseIdentity, files map[string][]byte) []byte {
+func metadataDirectory(t *testing.T, files map[string][]byte) string {
 	t.Helper()
-	var output bytes.Buffer
-	compressed := gzip.NewWriter(&output)
-	archive := tar.NewWriter(compressed)
-	add := func(name string, data []byte) {
-		if err := archive.WriteHeader(&tar.Header{Name: "oac-" + release.revision + "-linux-amd64/" + name, Mode: 0o644, Size: int64(len(data)), Typeflag: tar.TypeReg}); err != nil {
-			t.Fatal(err)
+	root := t.TempDir()
+	sums := ""
+	for _, name := range releaseMembers {
+		if name == "SHA256SUMS" {
+			continue
 		}
-		_, _ = archive.Write(data)
+		sum := sha256.Sum256(files[name])
+		sums += hex.EncodeToString(sum[:]) + "  " + name + "\n"
 	}
 	for name, data := range files {
-		add(name, data)
-	}
-	add("images/core.tar", bytes.Repeat([]byte("ignored image data"), 1000))
-	_ = archive.Close()
-	_ = compressed.Close()
-	return output.Bytes()
-}
-
-func TestReadReleaseVerifiesTheWholeStreamAndKeepsOnlyMetadata(t *testing.T) {
-	_, release, files := initFixture(t)
-	data := releaseArchive(t, release, files)
-	sum := sha256.Sum256(data)
-	release.checksum = hex.EncodeToString(sum[:])
-	got, err := readRelease(bytes.NewReader(data), release)
-	if err != nil || len(got) != len(files) {
-		t.Fatalf("got %d files, %v", len(got), err)
-	}
-	for name, want := range files {
-		if !bytes.Equal(got[name], want) {
-			t.Fatalf("%s differs", name)
+		if name == "SHA256SUMS" {
+			data = []byte(sums)
+		}
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
 		}
 	}
-	release.checksum = strings.Repeat("0", 64)
-	if _, err := readRelease(bytes.NewReader(data), release); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
-		t.Fatalf("bad checksum: %v", err)
+	return root
+}
+
+func TestReadBundledReleaseRejectsCorruptMissingAndForeignMetadata(t *testing.T) {
+	_, release, files := initFixture(t)
+	root := metadataDirectory(t, files)
+	got, err := readRelease(root, release)
+	if err != nil || len(got) != len(releaseMembers) {
+		t.Fatalf("files = %v, err = %v", got, err)
 	}
-	delete(files, "node-install.pyz")
-	data = releaseArchive(t, release, files)
-	sum = sha256.Sum256(data)
-	release.checksum = hex.EncodeToString(sum[:])
-	if _, err := readRelease(bytes.NewReader(data), release); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
-		t.Fatalf("missing member: %v", err)
+	path := filepath.Join(root, "node-install.pyz")
+	if err := os.WriteFile(path, []byte("corrupt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readRelease(root, release); err == nil || !strings.Contains(err.Error(), "checksum mismatch") {
+		t.Fatalf("corrupt: %v", err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readRelease(root, release); !os.IsNotExist(err) {
+		t.Fatalf("missing: %v", err)
+	}
+	root = metadataDirectory(t, files)
+	release.revision = strings.Repeat("f", 40)
+	if _, err := readRelease(root, release); err == nil || !strings.Contains(err.Error(), "identity mismatch") {
+		t.Fatalf("foreign: %v", err)
+	}
+}
+
+func TestInitRejectsMismatchedImageBeforeTouchingData(t *testing.T) {
+	t.Setenv("OAC_REVISION", strings.Repeat("f", 40))
+	if err := initCommand(); err == nil || !strings.Contains(err.Error(), "image does not match") {
+		t.Fatalf("err = %v", err)
 	}
 }
