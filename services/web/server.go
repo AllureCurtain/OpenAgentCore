@@ -57,6 +57,9 @@ func newConsole(c config) (*console, error) {
 	h.transport = http.DefaultTransport.(*http.Transport).Clone()
 	// Credentials go only to the configured Core, never an ambient HTTP proxy.
 	h.transport.Proxy = nil
+	// The default pool keeps two idle connections per host. Core is the only
+	// upstream, and sessions return here between messages.
+	h.transport.MaxIdleConnsPerHost = 64
 	// Application and machine traffic passes through unchanged. Core
 	// authenticates it; the console adds no credential of its own.
 	h.direct = &httputil.ReverseProxy{

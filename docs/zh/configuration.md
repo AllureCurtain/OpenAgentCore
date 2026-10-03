@@ -1,7 +1,7 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: 217e349627c3696363d2520b70db04774b228e593d3e2a3b78c002edcd2bd283
+source_hash: 610b3a85b453d00b575f9fb4d42c87ec89dc3803bb238fd4c36ef734aba6c7e2
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
@@ -90,7 +90,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 
 ## Compose 安装 {#compose-installations}
 
-发行版中的[独立 Compose 文件](getting-started/install-options.md#docker-compose-and-hosting-platforms)使用其 Compose 定义和平台环境作为进程设置的来源。`OAC_PUBLIC_URL` 未设置或为空时，会选用 `http://localhost:8080`，从而允许在配置公共域名前启动。Core 和 Web 会收到同一个值。要允许公共访问，请将 `OAC_PUBLIC_URL` 设置为不带尾部斜杠的准确公共 HTTPS 源地址，并使用相同的项目和数据目录重新部署 Core 和 Web；更改环境变量需要重新创建容器，而不只是重启。请在添加节点或执行器之前配置公共源地址。平台负责 TLS，并将流量路由到 `gateway:8080`；Web 由安装程序管理的域设置不可用。
+发行版中的[独立 Compose 文件](getting-started/install-options.md#docker-compose-and-hosting-platforms)从平台环境读取进程设置。`OAC_PUBLIC_URL` 为空时选用 `http://localhost:8080`。把它设成准确的公共源地址，不要带尾部斜杠，并在添加节点或执行器之前重新创建 Core 和 Web。平台终止 TLS，并把流量转到 `web:8080`。
 
 初始化服务首次生成机密信息和安装 ID，随后在后续部署中验证它们。每项机密信息都只有一个持久来源；Core 的密钥摘要派生自 Web 的登录密钥。对于现有安装，初始化绝不会替换缺失或已更改的机密信息。Core 从 `.env` 读取进程环境。
 

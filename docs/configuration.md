@@ -86,7 +86,7 @@ Set a default in **System** → **Default model configuration**, or use `PUT /co
 
 ## Compose installations
 
-The [standalone Compose file](./getting-started/install-options.md#docker-compose-and-hosting-platforms) from a release uses its Compose definition and the platform's environment as the source of process settings. An unset or empty `OAC_PUBLIC_URL` selects `http://localhost:8080`, allowing startup before a public domain is configured. Core and Web receive that same value. For public access, set `OAC_PUBLIC_URL` to the exact public HTTPS origin without a trailing slash and redeploy Core and Web with the same project and data directory; changing an environment variable requires container recreation, not just a restart. Configure the public origin before adding nodes or executors. The platform owns TLS and routes to `gateway:8080`; Web's installer-managed domain setup is unavailable.
+The [standalone Compose file](./getting-started/install-options.md#docker-compose-and-hosting-platforms) takes process settings from the platform's environment. An empty `OAC_PUBLIC_URL` selects `http://localhost:8080`. Set it to the exact public origin, without a trailing slash, and recreate Core and Web before adding nodes or executors. The platform terminates TLS and routes to `web:8080`.
 
 The initialization service generates secrets and the installation ID once, then verifies them on subsequent deployments. Each secret has one persistent source; Core's key digest is derived from Web's sign-in key. Initialization never replaces missing or changed secrets on an existing installation. Core reads the process environment from `.env`.
 

@@ -2,7 +2,7 @@
 title: "Install Core and Web"
 ---
 
-One command installs Core, the Web console and PostgreSQL on a Linux host. Web is the administrator console: you sign in with the Core key, give the installation a domain, set a default model and issue Project API keys. Applications then call Core's API with those keys, and their Sessions run in sandboxes on nodes you add, or on E2B.
+One command installs Core, the Web console and PostgreSQL on a Linux host. Sign in to Web with the Core key, set a default model and issue Project API keys. Applications call Core with those keys. Sessions run in sandboxes on nodes you add, or on E2B.
 
 1. [Check the prerequisites](#prerequisites).
 2. [Run the installer](#install).
@@ -20,7 +20,7 @@ This page follows the default path. Every flag, existing reverse proxies and off
 - Docker Engine with Docker Compose 2.26.0 or newer (`docker compose version`).
 - An account that can run `docker` and write to its home directory. Ordinary users and root both work; the installer never calls sudo.
 - Free port 8080 for Web. Core's admin API uses `127.0.0.1:8091`. See [ports](./install-options.md#ports). Docker must be able to publish them; the installer does not change host policy.
-- A DNS hostname that points to this host, before you connect applications, nodes, E2B or self-hosted machines. You can install and sign in first.
+- For anything off this machine, the origin in `OAC_PUBLIC_URL` must be the address browsers, nodes and executors use. You can sign in on this machine first.
 
 The Core host needs no KVM; nodes that run microsandbox do.
 
@@ -40,7 +40,7 @@ The script downloads that release's Compose files, checks their SHA-256, and:
 
 1. checks Linux amd64, Docker Compose 2.26 or newer, and that the ports it will publish are free;
 2. creates the [installation directory](../configuration.md#installation-directory), `~/.oac/core`, writes `.env`, and copies the `oac` command out of the Core image;
-3. starts the services with Docker Compose. Web serves the console on all IPv4 interfaces at port 8080 and forwards `/v1` and `/api/v1` to Core. Core's admin API stays on `127.0.0.1:8091`. PostgreSQL is not published.
+3. starts the services with Docker Compose. Web serves the console on port 8080 and forwards `/v1`, `/api/v1` and `/docs` to Core. Core's admin API stays on `127.0.0.1:8091`. PostgreSQL is not published.
 
 It saves no sandbox backend, adds no node, creates no Project or key and makes no model request. It ends by printing the console address and how to read the Core key.
 
@@ -50,7 +50,7 @@ For insufficient space or quota, free space on the filesystem named by the error
 
 ## Sign in to Web
 
-1. Open the console address the installer printed, such as `http://SERVER_IP:8080`, or your public URL if you passed one. Behind NAT, use the IP address your browser reaches. Until a domain is set, Web accepts IP addresses only, not host names.
+1. On this machine, open `http://localhost:8080`, or the origin you passed with `--public-url`. Web accepts only that host.
 2. Sign in with the [Core key](./operations.md#core-key), the installation's administrator credential. Web has no user accounts.
 
    ```sh
@@ -79,6 +79,6 @@ Web's **Overview** tracks these steps in a **Getting started** checklist.
 
 Sessions need somewhere to run:
 
-- **Nodes** run the microsandbox backend the installer selected: [add a node](./nodes.md) from Web's **Nodes** page. Docker and E2B are chosen later with [Reset deployment](./nodes.md#change-the-sandbox-configuration).
+- Choose the backend in **System** → **Manage sandbox configuration**, then [add a node](./nodes.md) from **Nodes**. The installer selects none.
 
 Day-to-day operation, backups and upgrades are in [Operations](./operations.md).

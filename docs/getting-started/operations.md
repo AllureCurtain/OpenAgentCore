@@ -172,10 +172,7 @@ Mutating `oac` commands hold `.oac.lock`. If another command holds it, retry aft
 | `The services did not start: …` | A new installation's first start failed, and the installer [removed what it created](./install.md#install). Compose's or Core's error is printed above it; fix the cause and run the same command again |
 | `Removal did not finish. Left: …` | A failed first start could not remove everything. Run the printed commands to remove what is left, or fix the cause and run the same command again |
 | `This installation did not finish installing …` | The installer stopped before reporting that the services were running. Rerun the installer command, which [removes what is left](./install.md#install) and installs again, or [uninstall](#uninstall) it |
-| `… already in use on this server. Automatic HTTPS cannot run beside another program …` during domain setup | Another program holds port 80 or 443. Stop it, using the printed `ss` command to find it, and retry; automatic HTTPS cannot share [these ports](./install-options.md#ports) |
-| `HTTPS verification failed …` during domain setup | DNS points elsewhere, a firewall or NAT blocks inbound ports 80 and 443, or the certificate request failed; see [Configure the domain and HTTPS](./install.md#configure-the-domain-and-https) |
-| Web answers 403 `Forbidden` | Open the host and port in `.env`; a reverse proxy must pass the original Host |
-| `/v1` or `/api/v1` answers 404 | Those paths reach Web; route them to Core ([reverse proxy](./install-options.md#https-and-the-reverse-proxy)) |
+| Web answers 403 `Forbidden` | The browser host is not `OAC_PUBLIC_URL`. Open that origin; a reverse proxy must pass the original Host |
 | Web shows that Core is unavailable (502) | Core is stopped or failing: `docker compose ps`, then Core's log |
 | Session creation returns 400 `model_provider_required` | No model provider: set a [default model](../configuration.md#default-models) for the harness, or pass one; self-hosted Sessions always pass their own |
 | Add node shows no command | See [Before you add a node](./nodes.md#before-you-add-a-node) |
@@ -186,7 +183,7 @@ Mutating `oac` commands hold `.oac.lock`. If another command holds it, retry aft
 | Listener | Host installation | Behind a reverse proxy |
 | --- | --- | --- |
 | Web and the API | Web publishes `OAC_WEB_PORT` (8080) on `OAC_HOST` | Web publishes `OAC_WEB_PORT` on `OAC_HOST`. Your proxy should use `127.0.0.1` |
-| Core admin API | `127.0.0.1:8091`. Web forwards `/v1` and `/api/v1` to Core | `127.0.0.1:8091`. Web forwards `/v1` and `/api/v1` to Core |
+| Core admin API | `127.0.0.1:8091`. Web forwards `/v1`, `/api/v1` and `/docs` | `127.0.0.1:8091`. Web forwards `/v1`, `/api/v1` and `/docs` |
 | PostgreSQL | No published port | No published port |
 
 Web signs administrators in with the Core key, checks the origin of every request, and forwards signed-in `/core/v1` requests to Core with the Core key, which stays on the server. It forwards `/v1` and `/api/v1` to Core unchanged, with the caller's own credential, serves only the non-secret node payload at `/node-install/`, and has no Docker or KVM access. Machine routes under `/api/v1` use their own enrollment and connection credentials. No service receives a Docker socket.

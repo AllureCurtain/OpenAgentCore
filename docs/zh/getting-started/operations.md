@@ -1,7 +1,7 @@
 ---
 title: "管理你的安装"
 source: docs/getting-started/operations.md
-source_hash: cc7771ad37c3b8cd4b1b33f9549efcabd5a499b4c79d0cbaf5d14aed779cf107
+source_hash: 83db2aebab621e41ab45ad92fc74ec562c54bf0f6a5a4cd845b5ffe8da50cf89
 ---
 
 安装运维人员负责 Core 主机、存储和可用性。节点主机运行各自的服务；参阅[节点](nodes.md)。设置见[配置参考](../configuration.md)。
@@ -175,10 +175,7 @@ rm -rf ~/.oac/core
 | `The services did not start: …` | 新安装首次启动失败，安装程序[删除了所创建内容](install.md#install)。上方输出 Compose 或 Core 错误；修复后执行同一命令 |
 | `Removal did not finish. Left: …` | 首次启动失败后没能删干净。执行输出的命令移除残留，或修复原因后重新执行原命令 |
 | `This installation did not finish installing …` | 安装程序在报告服务运行前停止。重新执行安装命令，[清理残留](install.md#install)后重新安装，或[卸载](#uninstall) |
-| 域名配置时 `… already in use on this server. Automatic HTTPS cannot run beside another program …` | 其他程序占用 80 或 443。用输出的 `ss` 定位、停止并重试；自动 HTTPS 无法共享[这些端口](install-options.md#ports) |
-| 域名配置时 `HTTPS verification failed …` | DNS 指向其他位置、防火墙或 NAT 阻止 80/443 入站，或证书申请失败；参阅[配置域名和 HTTPS](install.md#configure-the-domain-and-https) |
-| Web 返回 403 `Forbidden` | 打开 `.env` 里的主机和端口；反向代理必须传递原始 Host |
-| `/v1` 或 `/api/v1` 返回 404 | 路径被发送到 Web；将其路由到 Core（[反向代理](install-options.md#https-and-the-reverse-proxy)） |
+| Web 返回 403 `Forbidden` | 浏览器主机名不是 `OAC_PUBLIC_URL`。打开该源地址；反向代理必须传递原始 Host |
 | Web 显示 Core 不可用（502） | Core 停止或失败：先 `docker compose ps`，再查看 Core 日志 |
 | 创建 Session 返回 400 `model_provider_required` | 缺少模型提供商：为 Harness 设置[默认模型](../configuration.md#default-models)，或显式提供；自托管 Session 始终自带提供商 |
 | Add node 不展示命令 | 参阅[添加节点前](nodes.md#before-you-add-a-node) |
@@ -189,7 +186,7 @@ rm -rf ~/.oac/core
 | 监听器 | 主机安装 | 反向代理之后 |
 | --- | --- | --- |
 | Web 和 API | Web 在 `OAC_HOST` 上发布 `OAC_WEB_PORT`（8080） | Web 在 `OAC_HOST` 上发布 `OAC_WEB_PORT`。反向代理应使用 `127.0.0.1` |
-| Core 管理 API | `127.0.0.1:8091`。Web 把 `/v1` 和 `/api/v1` 转发到 Core | `127.0.0.1:8091`。Web 把 `/v1` 和 `/api/v1` 转发到 Core |
+| Core 管理 API | `127.0.0.1:8091`。Web 转发 `/v1`、`/api/v1` 和 `/docs` | `127.0.0.1:8091`。Web 转发 `/v1`、`/api/v1` 和 `/docs` |
 | PostgreSQL | 不发布端口 | 不发布端口 |
 
 Web 使用 Core 密钥让管理员登录，检查每个请求来源，并用保留在服务器上的 Core 密钥将已登录的 `/core/v1` 请求转发到 Core。它把 `/v1` 和 `/api/v1` 原样转发给 Core，使用调用方自己的凭据；Web 仅在 `/node-install/` 提供不含密钥的节点文件，没有 Docker 或 KVM 访问权限。`/api/v1` 机器路由使用独立注册和连接凭据。没有服务持有 Docker 套接字。

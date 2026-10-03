@@ -1,10 +1,10 @@
 ---
 title: "控制台服务器"
 source: docs/web/console-server.md
-source_hash: 48556fa663fa7fc451dd3f568c8671eee284e926c1d66a18250966d565f9bed3
+source_hash: b0302f0cf27ccd116c4bbb9477d5853f4ae1bf6cea34c9a4e21af72d25656557
 ---
 
-控制台服务器（`services/web`、`oac-web` 进程）提供构建后的控制台，使用 Core 密钥认证管理员，并将已登录浏览器的 `/core/v1` 请求携带该密钥转发到 Core。浏览器不持有 Core 密钥或任何 API 密钥。应用、节点和自托管执行器经控制台到达 Core，控制台原样转发 `/v1` 和 `/api/v1`。
+控制台服务器（`services/web`、`oac-web` 进程）提供构建后的控制台，使用 Core 密钥认证管理员，并将已登录浏览器的 `/core/v1` 请求携带该密钥转发到 Core。浏览器不持有 Core 密钥或任何 API 密钥。应用、节点和自托管执行器经控制台到达 Core，控制台原样转发 `/v1`、`/api/v1` 和 `/docs`。
 
 [配置](../configuration.md#appendix-web-environment-without-the-installer)定义其进程设置和默认值。
 
@@ -23,16 +23,17 @@ flowchart LR
   console -->|"/core/v1/* with the Core key"| core
   application -->|"/v1 with a Project API key"| console
   machine -->|"/api/v1 with machine credentials"| console
-  console -->|"/v1 and /api/v1 unchanged"| core
+  console -->|"/v1, /api/v1 and /docs unchanged"| core
   core <--> database
 ```
 
-部署的反向代理把所有路径发给控制台。控制台把 `/v1` 和 `/api/v1` 转发到 Core，其余由自己提供；[安装选项](../getting-started/install-options.md#https-and-the-reverse-proxy)列出对反向代理的要求。控制台按如下方式处理路径：
+部署的反向代理把所有路径发给控制台。控制台把 `/v1`、`/api/v1` 和 `/docs` 转发到 Core，其余由自己提供；[安装选项](../getting-started/install-options.md#https-and-the-reverse-proxy)列出对反向代理的要求。控制台按如下方式处理路径：
 
 | 路径 | 需要登录 | 处理方式 |
 | --- | --- | --- |
 | `/healthz` | 否 | `GET` 或 `HEAD` 返回 `200 ok` |
 | `/v1`、`/api/v1` 及其下级路径 | — | 原样转发到 Core，保留调用方凭据、流式响应和 WebSocket 升级 |
+| `/docs`、`/docs/*` | 否 | API 参考及其 OpenAPI 文档，原样转发到 Core |
 | `/node-install/*` | 否 | 节点安装文件（参阅[节点安装文件](#node-installation-payload)） |
 | `/console/auth`、`/console/auth/login`、`/console/auth/logout` | 否 | [登录](#sign-in) |
 | `/`、`/index.html`、`/favicon.svg`、`/oac-mark.svg`、`/assets/*` | 否 | 控制台静态资源 |
@@ -41,10 +42,10 @@ flowchart LR
 | `/core` 及 `/core/` 下其他路径 | 是 | 404 |
 | 其他路径 | 是 | 静态资源；无扩展名的路径回退到 `index.html` |
 
-除 `/healthz`、`/v1` 和 `/api/v1` 外，每个请求首先必须通过这些检查：
+除 `/healthz`、`/v1`、`/api/v1` 和 `/docs` 外，每个请求首先必须通过这些检查：
 
 1. **Host 与来源。** `Host` 请求头必须等于 `OAC_WEB_ORIGIN` 的主机。存在 `Origin` 时必须等于该来源，`Sec-Fetch-Site` 必须为 `same-origin` 或 `none`。写请求既无 `Origin` 又无 `Sec-Fetch-Site: same-origin` 时，需要同源 `Referer`。否则控制台返回 403。`/node-install/*` 仅检查主机和路径。
-2. **安全请求。** 路径必须以 `/` 开头，不含 `%`、反斜杠、NUL、点路径段或空路径段。绝对形式请求目标、`CONNECT` 和 `TRACE` 返回 400。`Upgrade` 头返回 400，但 `/v1` 和 `/api/v1` 在这些检查之前就被转发。因此 `/core/v1` 请求无法离开该前缀。
+2. **安全请求。** 路径必须以 `/` 开头，不含 `%`、反斜杠、NUL、点路径段或空路径段。绝对形式请求目标、`CONNECT` 和 `TRACE` 返回 400。`Upgrade` 头返回 400，但 `/v1`、`/api/v1` 和 `/docs` 在这些检查之前就被转发。因此 `/core/v1` 请求无法离开该前缀。
 3. **登录。** 需要登录的路径在无有效会话 cookie 时返回 401。
 
 `/core` 下，这些失败使用 Core 错误封装和[控制台生成的失败](../../../contracts/agents-api/zh/core-errors.md#console-generated-failures)中的代码；其他位置返回 `{"error": "…"}`，不安全请求则返回纯文本。每个响应包含 `Cache-Control: no-store`、`X-Content-Type-Options: nosniff`、`Referrer-Policy: no-referrer` 和 `Content-Security-Policy: frame-ancestors 'none'`。

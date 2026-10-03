@@ -1,7 +1,7 @@
 ---
 title: "安装选项与高级部署"
 source: docs/getting-started/install-options.md
-source_hash: 0624fcb0c39633f1d2f497d7cc41470a75e6681fc6f7941d9a40f0bfa0c40467
+source_hash: f9a5aae96ce8789030eda5cb399eac7c2e6bc6bd4d9bcce18138373c97cb0e96
 ---
 
 [默认安装](install.md)无需任何选项。使用本页可以在现有反向代理后运行，或者在无法访问互联网时进行安装。
@@ -89,7 +89,7 @@ docker compose -f compose.yaml exec web oac-web core-key
 
 ## HTTPS 与反向代理 {#https-and-the-reverse-proxy}
 
-请用 `--host 127.0.0.1` 安装，并把反向代理指向 Web，默认是 `127.0.0.1:8080`。Web 把 `/v1` 和 `/api/v1` 转到 Core，其余由自己提供。
+请用 `--host 127.0.0.1` 安装，并把反向代理指向 Web，默认是 `127.0.0.1:8080`。Web 把 `/v1`、`/api/v1` 和 `/docs` 转到 Core，其余由自己提供。
 
 | 路径 | 目标 | 调用方 |
 | --- | --- | --- |

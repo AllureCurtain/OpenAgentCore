@@ -2,7 +2,7 @@
 title: "Console server"
 ---
 
-The console server (`services/web`, the `oac-web` process) serves the built console, signs the administrator in with the Core key and forwards the signed-in browser's `/core/v1` requests to Core with that key. The browser never holds the Core key or any API key. Applications, nodes and self-hosted executors reach Core through the console, which forwards `/v1` and `/api/v1` unchanged.
+The console server (`services/web`, the `oac-web` process) serves the built console, signs the administrator in with the Core key and forwards the signed-in browser's `/core/v1` requests to Core with that key. The browser never holds the Core key or any API key. Applications, nodes and self-hosted executors reach Core through the console, which forwards `/v1`, `/api/v1` and `/docs` unchanged.
 
 [Configuration](../configuration.md#appendix-web-environment-without-the-installer) owns its process settings and defaults.
 
@@ -21,16 +21,17 @@ flowchart LR
   console -->|"/core/v1/* with the Core key"| core
   application -->|"/v1 with a Project API key"| console
   machine -->|"/api/v1 with machine credentials"| console
-  console -->|"/v1 and /api/v1 unchanged"| core
+  console -->|"/v1, /api/v1 and /docs unchanged"| core
   core <--> database
 ```
 
-The deployment's reverse proxy sends every path to the console. The console forwards `/v1` and `/api/v1` to Core and serves everything else itself; the [installation options](../getting-started/install-options.md#https-and-the-reverse-proxy) gives the proxy requirements. The console handles each path as follows:
+The deployment's reverse proxy sends every path to the console. The console forwards `/v1`, `/api/v1` and `/docs` to Core and serves everything else itself; the [installation options](../getting-started/install-options.md#https-and-the-reverse-proxy) gives the proxy requirements. The console handles each path as follows:
 
 | Path | Sign-in | Handling |
 | --- | --- | --- |
 | `/healthz` | No | `GET` or `HEAD` answers `200 ok` |
 | `/v1`, `/api/v1` and below | — | Forwarded to Core unchanged, with the caller's credential, streaming and WebSocket upgrades |
+| `/docs`, `/docs/*` | No | The API reference and its OpenAPI documents, forwarded to Core unchanged |
 | `/node-install/*` | No | The node installation payload (see [Node installation payload](#node-installation-payload)) |
 | `/console/auth`, `/console/auth/login`, `/console/auth/logout` | No | [Sign-in](#sign-in) |
 | `/`, `/index.html`, `/favicon.svg`, `/oac-mark.svg`, `/assets/*` | No | Static console assets |
@@ -39,10 +40,10 @@ The deployment's reverse proxy sends every path to the console. The console forw
 | `/core` and other paths under `/core/` | Yes | 404 |
 | Any other path | Yes | Static assets; a path without a file extension falls back to `index.html` |
 
-Every request except `/healthz`, `/v1` and `/api/v1` must pass these checks first:
+Every request except `/healthz`, `/v1`, `/api/v1` and `/docs` must pass these checks first:
 
 1. **Host and origin.** The `Host` header must equal the host of `OAC_WEB_ORIGIN`. An `Origin` header, when present, must equal that origin, and `Sec-Fetch-Site` must be `same-origin` or `none`. A write that carries neither `Origin` nor `Sec-Fetch-Site: same-origin` needs a same-origin `Referer`. Otherwise the console answers 403. `/node-install/*` checks only the host and the path.
-2. **Safe request.** The path must start with `/` and contain no `%`, backslash, NUL, dot segment or empty segment. Absolute-form request targets, `CONNECT` and `TRACE` get 400. An `Upgrade` header gets 400 except on `/v1` and `/api/v1`, which are forwarded before these checks. A `/core/v1` request can therefore never leave that prefix.
+2. **Safe request.** The path must start with `/` and contain no `%`, backslash, NUL, dot segment or empty segment. Absolute-form request targets, `CONNECT` and `TRACE` get 400. An `Upgrade` header gets 400 except on `/v1`, `/api/v1` and `/docs`, which are forwarded before these checks. A `/core/v1` request can therefore never leave that prefix.
 3. **Sign-in.** Paths that need sign-in answer 401 without a valid session cookie.
 
 Under `/core`, these failures use the Core error envelope with the codes in [console-generated failures](../../contracts/agents-api/core-errors.md#console-generated-failures); elsewhere they return `{"error": "…"}`, or plain text for an unsafe request. Every response carries `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and `Content-Security-Policy: frame-ancestors 'none'`.

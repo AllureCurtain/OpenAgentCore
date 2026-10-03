@@ -85,7 +85,7 @@ The installer checks `--web-port` before it downloads images.
 
 ## HTTPS and the reverse proxy
 
-Install with `--host 127.0.0.1` and point your reverse proxy at Web, `127.0.0.1:8080` by default. Web routes `/v1` and `/api/v1` to Core and serves everything else itself.
+Install with `--host 127.0.0.1` and point your reverse proxy at Web, `127.0.0.1:8080` by default. Web routes `/v1`, `/api/v1` and `/docs` to Core and serves everything else itself.
 
 The proxy must:
 
