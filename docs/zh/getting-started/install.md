@@ -1,7 +1,7 @@
 ---
 title: "安装 Core 和 Web"
 source: docs/getting-started/install.md
-source_hash: bcb0539c717a1365e52d6dff700a5db471b141f6fb00f44a6146e5a25d7cac65
+source_hash: 939bfeb14ca7dfed7304b4780888d9ddfddf8aaa6f1501fd9b61bf59e963d0e8
 ---
 
 一条命令即可在 Linux 主机上安装 Core、Web 控制台和 PostgreSQL。Web 是管理员控制台：使用 Core 密钥登录，为安装配置域名、设置默认模型并签发 Project API 密钥。应用随后使用这些密钥调用 Core API，Session 在你添加的节点上的沙箱中运行，也可以在 E2B 上运行。
@@ -43,11 +43,9 @@ curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/
 1. 检查 Linux amd64、Docker Compose 2.26 或更高版本，以及将要发布的端口是否空闲；
 2. 创建[安装目录](../configuration.md#installation-directory) `~/.oac/core`，写入 `.env`，并从 Core 镜像复制 `oac` 命令；
 3. 用 Docker Compose 启动服务。网关在所有 IPv4 接口的 8080 端口提供 Web。Core 的管理 API 留在 `127.0.0.1:8091`。PostgreSQL 不发布端口；
-4. 选择 Standard 规格的 microsandbox 沙箱后端，不添加节点。
-
 托管安装传入 `--public-url https://HOSTNAME` 时，服务健康后会运行 `oac domain`。DNS 以及 80 和 443 必须已经能到达这台主机。
 
-安装程序不创建 Project 或密钥，也不发起模型请求。完成后输出控制台地址，以及如何读取 Core 密钥。
+安装程序不保存沙箱后端，不添加节点，不创建 Project 或密钥，也不发起模型请求。完成后输出控制台地址，以及如何读取 Core 密钥。
 
 如果服务进入健康状态之前安装失败，安装程序会删除它创建的目录。修复报告的问题后，重新运行同一命令。服务已经启动之后，后续失败会保留安装和数据。新发布版使用新目录；见[版本策略](operations.md#installation-version-policy)。
 

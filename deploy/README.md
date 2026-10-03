@@ -9,9 +9,9 @@
 
 ## Installation
 
-`install.sh` downloads its release's `compose.yaml` and port files, writes `.env`, and starts Compose. The host needs Linux amd64 and Docker Compose 2.26 or newer. [Configuration](../docs/configuration.md) owns the installation layout and settings.
+`install.sh` downloads its release's `compose.yaml` and port files, checks them against `compose-sha256sums.txt`, writes `.env`, and starts Compose. Core applies database migrations when it starts. The host needs Linux amd64 and Docker Compose 2.26 or newer. [Configuration](../docs/configuration.md) owns the installation layout and settings.
 
-`oac` is a Go command (`services/core/cmd/oac`) in the Core image and the gateway image. The host copy implements `apply`, `domain`, `core-key`, `rotate-core-key` and `setup-sandbox`. Start, stop, logs and removal are `docker compose`. `apply` runs `oac-core check-config` before recreating services. The gateway image runs data initialization as `oac init`, its health check as `oac healthcheck` and, with managed HTTPS, domain setup as `oac gateway`; it contains no Python and is the only image with a Docker client.
+`oac` is a Go command (`services/core/cmd/oac`) in the Core image and the gateway image. The host copy implements `apply`, `domain`, `core-key` and `rotate-core-key`; `core-key --show` runs `oac-web core-key` in the Web container. Start, stop, logs and removal are `docker compose`. `apply` runs `oac-core check-config` before recreating services. The gateway image runs data initialization as `oac init`, its health check as `oac healthcheck` and, with managed HTTPS, domain setup as `oac gateway`; it contains no Python and is the only image with a Docker client.
 
 ## Managed HTTPS
 

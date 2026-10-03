@@ -14,16 +14,16 @@ With the one-line command, append them after `bash -s --`. `--version TAG` selec
 
 ## Docker Compose and hosting platforms
 
-Use the `compose.yaml` from a release with Docker Compose 2.26 or newer on Linux amd64. The release renders node metadata into the [Compose template](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml). Core, Web and the gateway use the `latest` images, and PostgreSQL uses `postgres:16-alpine`. It starts PostgreSQL, Core, Web and an HTTP gateway. Data is bind-mounted from a directory. The one-time initialization service generates random secrets there and prepares the node installer; the migration service initializes the database before Core starts. [Compose configuration](../configuration.md#compose-installations) owns the settings and the data directory.
+Use the `compose.yaml` from a release with Docker Compose 2.26 or newer on Linux amd64. The release renders node metadata into the [Compose template](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml). Core, Web and the gateway use the `latest` images, and PostgreSQL uses `postgres:16-alpine`. It starts PostgreSQL, Core, Web and an HTTP gateway. Data is bind-mounted from a directory. The one-time initialization service generates random secrets there and prepares the node installer; Core applies database migrations when it starts. [Compose configuration](../configuration.md#compose-installations) owns the settings and the data directory.
 
 For a local trial, download `compose.yaml` and `ports.yaml` from the same release into one directory, then run:
 
 ```sh
 docker compose -f compose.yaml -f ports.yaml up -d --wait --wait-timeout 900
-docker compose -f compose.yaml run --rm credentials
+docker compose -f compose.yaml exec web oac-web core-key
 ```
 
-The `credentials` command prints the generated Core key to your terminal without storing it in container logs. Open `http://localhost:8080` and use that key to sign in. All installation secrets are generated automatically; keep the same Compose project and its data directory when restarting.
+`oac-web core-key` prints the generated Core key to your terminal without writing it to container logs. Open `http://localhost:8080` and use that key to sign in. All installation secrets are generated automatically; keep the same Compose project and its data directory when restarting.
 
 The first initialization downloads and verifies the release's approximately 385 MB control archive, retaining only the small node installation metadata. Later starts verify the saved files without downloading again. Image downloads are additional. An interrupted first initialization can be rerun; an existing database with missing installation secrets is refused.
 
@@ -35,9 +35,9 @@ Create a Docker Compose application and paste `compose.yaml`. Set `OAC_PUBLIC_UR
 
 ### Coolify
 
-Create a **Docker Compose Empty** service and paste `compose.yaml`. Set `OAC_PUBLIC_URL` to the public HTTPS origin and assign that domain to `gateway` on port `8080`. Add Coolify's `exclude_from_hc: true` to the `init`, `migrate` and `credentials` service definitions so completed initialization and optional tooling do not affect its overall health. Save and deploy without `ports.yaml`; Coolify supplies HTTPS.
+Create a **Docker Compose Empty** service and paste `compose.yaml`. Set `OAC_PUBLIC_URL` to the public HTTPS origin and assign that domain to `gateway` on port `8080`. Add Coolify's `exclude_from_hc: true` to the `init` service definition so completed initialization does not affect its overall health. Save and deploy without `ports.yaml`; Coolify supplies HTTPS.
 
-On either platform, open its server terminal and run `docker compose ls` to find the deployed project name and Compose file. Using those exact values and the deployment's `OAC_PUBLIC_URL`, run `docker compose -p <project-name> -f <compose-file> run --rm credentials`, then sign in at the configured origin. The [Dokploy domain guide](https://docs.dokploy.com/docs/core/docker-compose/domains) and [Coolify Compose guide](https://coolify.io/docs/services/configuration/docker-compose) describe their domain and service controls. These are importable deployment files; no hosted marketplace listing is published by this repository.
+On either platform, open its server terminal and run `docker compose ls` to find the deployed project name and Compose file. Using those exact values and the deployment's `OAC_PUBLIC_URL`, run `docker compose -p <project-name> -f <compose-file> exec web oac-web core-key`, then sign in at the configured origin. The [Dokploy domain guide](https://docs.dokploy.com/docs/core/docker-compose/domains) and [Coolify Compose guide](https://coolify.io/docs/services/configuration/docker-compose) describe their domain and service controls. These are importable deployment files; no hosted marketplace listing is published by this repository.
 
 After signing in, choose the sandbox backend and add nodes using [Nodes](./nodes.md). The Compose stack deploys the control plane; execution machines remain separate.
 
@@ -47,16 +47,14 @@ Stop with `docker compose stop` using the same files and environment. Back up th
 
 These flags are written to `.env` once. After installation, edit that file and run `oac apply`. Rerunning the installer does not change an installation that has already started.
 
-[//]: # (BEGIN install-flags)
 | Flag | `.env` variable |
 | --- | --- |
 | `--public-url` | `OAC_PUBLIC_URL` |
 | `--host` | `OAC_HOST` |
 | `--web-port` | `OAC_WEB_PORT` |
-| `--external-proxy` | `OAC_INGRESS` |
-[//]: # (END install-flags)
+| `--external-proxy` | `COMPOSE_FILE` without `https.yaml` |
 
-`--external-proxy` sets `OAC_INGRESS` to `external` and does not publish ports 80 and 443. Managed is the default.
+`--external-proxy` leaves `https.yaml` out of `COMPOSE_FILE`, so ports 80 and 443 are not published. Managed is the default.
 
 ## Installation actions
 
@@ -70,9 +68,7 @@ Several installations can share a machine when they use distinct installation di
 
 ## Sandbox backend
 
-After the services are healthy, the installer saves microsandbox at the Standard size in Web's [`standard-sizes.json`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/apps/web/src/features/sandbox/standard-sizes.json). The choice is stored in Core's database. If Core refuses the choice, the installer prints Core's message and exits; the services keep running and you choose the backend in Web.
-
-To use Docker or E2B, or another size, open **System** → **Manage sandbox configuration** and [reset the deployment](./nodes.md#change-the-sandbox-configuration). Docker shares each node's kernel with its sandboxes, and its node service account is [root-equivalent](./nodes.md#what-the-installer-sets-up). E2B needs a public HTTPS URL that is not loopback, because E2B's sandboxes call Core from E2B's cloud. Prepare an E2B template with the [E2B guide](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/services/core/deploy/e2b/README.md).
+The installer saves no sandbox backend. After signing in, open **System** → **Manage sandbox configuration** and choose Docker, microsandbox or E2B; Web proposes the Standard size in [`standard-sizes.json`](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/apps/web/src/features/sandbox/standard-sizes.json). The choice is stored in Core's database. To change it later, [reset the deployment](./nodes.md#change-the-sandbox-configuration). Docker shares each node's kernel with its sandboxes, and its node service account is [root-equivalent](./nodes.md#what-the-installer-sets-up). E2B needs a public HTTPS URL that is not loopback, because E2B's sandboxes call Core from E2B's cloud. Prepare an E2B template with the [E2B guide](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/services/core/deploy/e2b/README.md).
 
 ## Listeners and access
 

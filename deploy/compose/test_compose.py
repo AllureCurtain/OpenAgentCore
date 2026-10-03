@@ -38,7 +38,7 @@ class ComposeTests(unittest.TestCase):
             env['OAC_PUBLIC_URL'] = public_url
         return json.loads(subprocess.check_output(
             ['docker', 'compose', '--env-file', os.devnull, '-f', str(cls.compose_file),
-             '--profile', 'tools', 'config', '--format', 'json'], env=env))
+             'config', '--format', 'json'], env=env))
 
     @classmethod
     def setUpClass(cls):
@@ -50,9 +50,9 @@ class ComposeTests(unittest.TestCase):
     def test_compose_uses_private_services_and_ordered_initialization(self):
         services = self.compose['services']
         self.assertEqual(services['database']['depends_on']['init']['condition'], 'service_completed_successfully')
-        self.assertEqual(services['migrate']['depends_on']['database']['condition'], 'service_healthy')
         self.assertIn('pg_isready -h 127.0.0.1', services['database']['healthcheck']['test'][1])
-        self.assertEqual(services['core']['depends_on']['migrate']['condition'], 'service_completed_successfully')
+        self.assertEqual(services['core']['depends_on']['database']['condition'], 'service_healthy')
+        self.assertEqual(sorted(services), ['core', 'database', 'gateway', 'init', 'web'])
         for service in services.values():
             self.assertNotIn('build', service)
             self.assertNotIn('ports', service)
@@ -61,21 +61,21 @@ class ComposeTests(unittest.TestCase):
                 self.assertNotIn('docker.sock', json.dumps(volume))
                 self.assertEqual(volume['type'], 'bind')
         self.assertEqual({v['target'] for v in services['web']['volumes']}, {'/run/oac', '/node-payload', '/domain'})
-        self.assertEqual(services['credentials']['logging']['driver'], 'none')
+        self.assertIsNone(services['core']['command'])
+        self.assertNotIn('OAC_WEB_INSTALLATION_SOCKET', services['web']['environment'])
         self.assertEqual(services['init']['command'], ['/usr/local/bin/oac', 'init'])
         self.assertEqual(services['gateway']['healthcheck']['test'], ['CMD', '/usr/local/bin/oac', 'healthcheck'])
         self.assertNotIn('python3', json.dumps(self.compose))
         self.assertEqual(services['init']['environment']['OAC_REVISION'], 'd' * 40)
-        self.assertEqual(services['core']['environment']['OAC_HARNESSES'].split(','), ['claude_sdk', 'codex', 'mcode'])
-        self.assertEqual(services['core']['environment']['OAC_DEFAULT_HARNESS'], 'codex')
+        for name in ('OAC_EXECUTION_CONCURRENCY', 'OAC_DEFAULT_HARNESS', 'OAC_HARNESSES', 'OAC_WRITE_AUDIT_RETENTION', 'OAC_LOG_LEVEL'):
+            self.assertEqual(services['core']['environment'][name], '', name)
 
     def test_public_url_can_be_configured_after_initial_startup(self):
         for value in (None, '', 'https://oac.example.test', 'http://localhost:9080'):
             with self.subTest(public_url=value):
                 configured = self.render(value)
                 expected = value or 'http://localhost:8080'
-                for name, setting in (('core', 'OAC_PUBLIC_URL'), ('migrate', 'OAC_PUBLIC_URL'),
-                                      ('web', 'OAC_WEB_ORIGIN')):
+                for name, setting in (('core', 'OAC_PUBLIC_URL'), ('web', 'OAC_WEB_ORIGIN')):
                     self.assertEqual(configured['services'][name]['environment'][setting], expected)
                 self.assertEqual(
                     {service: [item.get('target') for item in spec.get('volumes', [])]
@@ -89,21 +89,31 @@ class ComposeTests(unittest.TestCase):
             ['docker', 'compose', '--env-file', os.devnull, '-f', str(self.compose_file),
              '-f', str(ROOT / 'deploy/compose/https.yaml'), 'config', '--format', 'json'], env=env))
         services = managed['services']
-        self.assertEqual(sorted(services), ['core', 'database', 'gateway', 'init', 'migrate', 'web'])
+        self.assertEqual(sorted(services), ['core', 'database', 'gateway', 'init', 'web'])
+        self.assertEqual(services['web']['environment']['OAC_WEB_INSTALLATION_SOCKET'], '/domain/api.sock')
         self.assertEqual(services['gateway']['command'], ['/usr/local/bin/oac', 'gateway'])
         self.assertEqual({port['published'] for port in services['gateway']['ports']}, {'80', '443'})
         for name, service in services.items():
             sockets = [v for v in service.get('volumes', []) if v.get('source') == '/var/run/docker.sock']
             self.assertEqual(len(sockets), 1 if name == 'gateway' else 0, name)
 
-    def test_platform_network_injection_keeps_the_credentials_profile_valid(self):
+    def test_host_ports_publish_the_gateway_and_loopback_core(self):
+        env = dict(os.environ, OAC_DATA_DIR='/tmp/oac-compose-fixture', OAC_HOST='0.0.0.0')
+        hosted = json.loads(subprocess.check_output(
+            ['docker', 'compose', '--env-file', os.devnull, '-f', str(self.compose_file),
+             '-f', str(ROOT / 'deploy/compose/ports.yaml'), 'config', '--format', 'json'], env=env))
+        published = {name: [(port.get('host_ip'), port['published']) for port in service.get('ports', [])]
+                     for name, service in hosted['services'].items() if service.get('ports')}
+        self.assertEqual(published, {'gateway': [('0.0.0.0', '8080')], 'core': [('127.0.0.1', '8091')]})
+
+    def test_platform_network_injection_keeps_the_file_valid(self):
         # Dokploy isolated deployments attach a project network to every service.
         transformed = copy.deepcopy(self.compose)
         transformed['networks']['platform'] = {}
         for service in transformed['services'].values():
             service.setdefault('networks', {})['platform'] = None
         subprocess.run(
-            ['docker', 'compose', '-f', '-', '--profile', 'tools', 'config', '--quiet'],
+            ['docker', 'compose', '-f', '-', 'config', '--quiet'],
             input=json.dumps(transformed), text=True, check=True)
 
 

@@ -9,7 +9,7 @@ import subprocess
 
 JOBS = ("hygiene", "distribution", "compose", "backend", "harness", "example", "web", "web-acceptance", "website", "api", "native", "lint")
 NODE_JOBS = ("harness", "example", "web", "web-acceptance", "website", "native")
-GO_JOBS = ("distribution", "backend", "api", "native")
+GO_JOBS = ("distribution", "compose", "backend", "api", "native")
 # Exact file matches keep new workflows/actions conservative until classified.
 CI_INPUTS = {
     ".github/workflows/check.yml": JOBS,
@@ -50,15 +50,15 @@ CORE = (*GO, ".sql", ".py", ".json", ".yaml", ".yml", ".sh", ".ps1", ".txt", ".i
 SCRIPTS = (".py", ".sh", ".mjs", ".go", ".json")
 RULES = (
     (("apps/web/",), WEB, ("web", "web-acceptance")),
-    (("services/web/",), (*GO, "Dockerfile"), ("distribution", "web", "web-acceptance")),
+    (("services/web/",), (*GO, "Dockerfile"), ("distribution", "compose", "web", "web-acceptance")),
     (("example/",), WEB, ("example",)),
     (("docs/", "contracts/"), ("",), ("website",)),
     (("website/",), (*WEB, ".vue", ".md"), ("website",)),
-    (("services/core/",), CORE, ("backend", "api")),
+    (("services/core/",), CORE, ("backend", "api", "compose")),
     (("services/core/internal/nativeinstaller/",), GO, ("native", "distribution")),
     (("services/core/deploy/", "services/core/tools/"), CORE, ("distribution",)),
     (("apps/daemon/",), GO, ("backend", "native")),
-    (("internal/",), (*GO, ".json"), ("backend", "api", "native", "distribution")),
+    (("internal/",), (*GO, ".json"), ("backend", "api", "native", "distribution", "compose")),
     (("internal/harnessconfig/",), (*GO, ".json"), ("web", "web-acceptance", "example", "harness")),
     (("contracts/",), (*GO, ".json", ".yaml", ".yml"), ("backend", "api", "native", "web", "web-acceptance", "example", "distribution")),
     (("packages/agents-client/",), (*GO, *WEB), ("backend", "api", "web", "web-acceptance", "example")),
@@ -67,13 +67,12 @@ RULES = (
     (("deploy/node/", "scripts/acceptance/"), (".py", ".json", ".sh"), ("distribution",)),
     (("deploy/compose/",), (".yaml", ".toml", ".json"), ("distribution", "compose")),
     (("scripts/compose-smoke.py", "scripts/render-compose.py", "deploy/compose/test_compose.py"), (".py",), ("distribution", "compose")),
-    (("services/core/cmd/oac/", "deploy/distribution/Ingress.Dockerfile"), (*GO, "Dockerfile"), ("compose",)),
     (("deploy/install.sh", "deploy/test_install.py", "scripts/publish-core-release.",
       "scripts/core-distribution-manifest.", "scripts/build-core-distribution.sh",
       "scripts/build-web.sh"), SCRIPTS, ("distribution",)),
     (("scripts/build-native-", "scripts/native-"), SCRIPTS, ("native", "backend", "distribution")),
     (("scripts/build-core.sh", "scripts/build-core-image-context.sh"), (".sh",), ("backend", "api", "distribution", "native")),
-    (("deploy/distribution/",), ("Dockerfile",), ("backend", "api", "distribution", "native")),
+    (("deploy/distribution/",), ("Dockerfile",), ("backend", "api", "distribution", "native", "compose")),
     (("scripts/build-e2b-provider.sh",), (".sh",), ("backend", "api", "distribution")),
     (("scripts/build-claude", "scripts/check-claude", "scripts/build-mcode", "scripts/prepare-release-runtimes.sh"),
      SCRIPTS, ("harness", "native", "backend", "distribution")),
@@ -105,8 +104,7 @@ IMAGE_INPUTS = ("scripts/build-core", "scripts/build-e2b-provider", "deploy/dist
                 "services/core/deploy/e2b/")
 # Generated outputs retain freshness checks even when the file is documentation.
 GENERATED_OUTPUTS = {"contracts/agents-api/harness-catalog.md", "contracts/agents-api/zh/harness-catalog.md", "packages/agents-client/src/harness-catalog.ts",
-                     "services/core/internal/engine/catalog_generated.go", "docs/configuration.md",
-                     "docs/getting-started/install-options.md"}
+                     "services/core/internal/engine/catalog_generated.go"}
 
 
 def full(reason):

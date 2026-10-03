@@ -3,47 +3,9 @@
 # floating latest tags; set OAC_IMAGE_CORE, OAC_IMAGE_WEB or OAC_IMAGE_INGRESS
 # to select another reference. Do not run this file until it has been rendered.
 # Data is bind-mounted from ${OAC_DATA_DIR:-./data}. Set OAC_PUBLIC_URL when the
-# platform domain is ready; startup defaults to localhost.
+# platform domain is ready; startup defaults to localhost. Other process
+# settings pass through unchanged; Core owns their defaults.
 x-ingress-image: &ingress-image ${OAC_IMAGE_INGRESS:-ghcr.io/minimax-ai/openagentcore/ingress:latest}
-x-core: &core
-  image: ${OAC_IMAGE_CORE:-ghcr.io/minimax-ai/openagentcore/core:latest}
-  platform: linux/amd64
-  user: "65532:65532"
-  read_only: true
-  init: true
-  tmpfs: [/tmp:mode=1777]
-  security_opt: [no-new-privileges:true]
-  environment:
-    OAC_PUBLIC_URL: &public-url ${OAC_PUBLIC_URL:-http://localhost:8080}
-    OAC_DATABASE_URL: postgres://agents_api@database:5432/agents_api?sslmode=disable
-    OAC_DATABASE_PASSWORD_FILE: /run/database/password
-    OAC_CREDENTIAL_KEY_FILE: /run/oac/credential.key
-    OAC_CORE_KEY_DIGESTS_FILE: /run/oac/core-key-digests.json
-    OAC_PROVIDER_ROOT: /opt/oac
-    OAC_PROVIDER_STATE_ROOT: /state
-    OAC_NATIVE_INSTALLER_DIR: /opt/oac/native-installers
-    OAC_EXECUTION_CONCURRENCY: ${OAC_EXECUTION_CONCURRENCY:-4}
-    OAC_DEFAULT_HARNESS: ${OAC_DEFAULT_HARNESS:-codex}
-    OAC_HARNESSES: ${OAC_HARNESSES:-claude_sdk,codex,mcode}
-    OAC_WRITE_AUDIT_RETENTION: ${OAC_WRITE_AUDIT_RETENTION:-2160h}
-    OAC_OAUTH_TRUSTED_ORIGINS: ${OAC_OAUTH_TRUSTED_ORIGINS:-}
-    OAC_LOG_LEVEL: ${OAC_LOG_LEVEL:-info}
-    OAC_LOG_FORMAT: ${OAC_LOG_FORMAT:-}
-    OAC_LOG_ADD_SOURCE: ${OAC_LOG_ADD_SOURCE:-}
-    OAC_HISTORY_SETTINGS_FILE: ${OAC_HISTORY_SETTINGS_FILE:-}
-  volumes:
-    - type: bind
-      source: ${OAC_DATA_DIR:-./data}/secrets/core
-      target: /run/oac
-      read_only: true
-    - type: bind
-      source: ${OAC_DATA_DIR:-./data}/secrets/database
-      target: /run/database
-      read_only: true
-    - type: bind
-      source: ${OAC_DATA_DIR:-./data}/state
-      target: /state
-
 services:
   init:
     image: *ingress-image
@@ -84,22 +46,46 @@ services:
       timeout: 5s
       retries: 30
 
-  migrate:
-    <<: *core
-    restart: "no"
-    command: [/usr/local/bin/oac-core-migrate]
+  core:
+    image: ${OAC_IMAGE_CORE:-ghcr.io/minimax-ai/openagentcore/core:latest}
+    platform: linux/amd64
+    user: "65532:65532"
+    restart: unless-stopped
+    read_only: true
+    init: true
+    tmpfs: [/tmp:mode=1777]
+    security_opt: [no-new-privileges:true]
     depends_on:
       database: {condition: service_healthy}
-
-  core:
-    <<: *core
-    restart: unless-stopped
-    command:
-      - /bin/sh
-      - -ec
-      - export OAC_INSTALLATION_ID="$$(cat /run/oac/installation.id)"; exec /usr/local/bin/oac-core
-    depends_on:
-      migrate: {condition: service_completed_successfully}
+    environment:
+      OAC_PUBLIC_URL: &public-url ${OAC_PUBLIC_URL:-http://localhost:8080}
+      OAC_INSTALLATION_ID_FILE: /run/oac/installation.id
+      OAC_DATABASE_URL: postgres://agents_api@database:5432/agents_api?sslmode=disable
+      OAC_DATABASE_PASSWORD_FILE: /run/database/password
+      OAC_CREDENTIAL_KEY_FILE: /run/oac/credential.key
+      OAC_CORE_KEY_DIGESTS_FILE: /run/oac/core-key-digests.json
+      OAC_PROVIDER_STATE_ROOT: /state
+      OAC_EXECUTION_CONCURRENCY: ${OAC_EXECUTION_CONCURRENCY:-}
+      OAC_DEFAULT_HARNESS: ${OAC_DEFAULT_HARNESS:-}
+      OAC_HARNESSES: ${OAC_HARNESSES:-}
+      OAC_WRITE_AUDIT_RETENTION: ${OAC_WRITE_AUDIT_RETENTION:-}
+      OAC_OAUTH_TRUSTED_ORIGINS: ${OAC_OAUTH_TRUSTED_ORIGINS:-}
+      OAC_LOG_LEVEL: ${OAC_LOG_LEVEL:-}
+      OAC_LOG_FORMAT: ${OAC_LOG_FORMAT:-}
+      OAC_LOG_ADD_SOURCE: ${OAC_LOG_ADD_SOURCE:-}
+      OAC_HISTORY_SETTINGS_FILE: ${OAC_HISTORY_SETTINGS_FILE:-}
+    volumes:
+      - type: bind
+        source: ${OAC_DATA_DIR:-./data}/secrets/core
+        target: /run/oac
+        read_only: true
+      - type: bind
+        source: ${OAC_DATA_DIR:-./data}/secrets/database
+        target: /run/database
+        read_only: true
+      - type: bind
+        source: ${OAC_DATA_DIR:-./data}/state
+        target: /state
 
   web:
     image: ${OAC_IMAGE_WEB:-ghcr.io/minimax-ai/openagentcore/web:latest}
@@ -115,9 +101,7 @@ services:
       OAC_WEB_UPSTREAM: http://core:8091
       OAC_WEB_CORE_KEY_FILE: /run/oac/core.key
       OAC_WEB_NODE_PAYLOAD_DIR: /node-payload
-      OAC_WEB_BOOTSTRAP: ${OAC_WEB_BOOTSTRAP:-0}
-      OAC_WEB_INSTALLATION_SOCKET: ${OAC_WEB_INSTALLATION_SOCKET:-}
-      OAC_LOG_LEVEL: ${OAC_LOG_LEVEL:-info}
+      OAC_LOG_LEVEL: ${OAC_LOG_LEVEL:-}
       OAC_LOG_FORMAT: ${OAC_LOG_FORMAT:-}
       OAC_LOG_ADD_SOURCE: ${OAC_LOG_ADD_SOURCE:-}
     volumes:
@@ -164,21 +148,6 @@ services:
       interval: 5s
       timeout: 10s
       retries: 30
-
-  # Explicit operator action; the key is printed only to the attached terminal.
-  credentials:
-    image: *ingress-image
-    platform: linux/amd64
-    user: "65532:65532"
-    profiles: [tools]
-    read_only: true
-    logging: {driver: none}
-    command: [cat, /run/oac/core.key]
-    volumes:
-      - type: bind
-        source: ${OAC_DATA_DIR:-./data}/secrets/web
-        target: /run/oac
-        read_only: true
 
 configs:
   gateway-config:

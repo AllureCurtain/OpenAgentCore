@@ -29,7 +29,6 @@ while [[ $# -gt 0 ]]; do
     --host) host_address="${2:?}"; shift 2 ;;
     --web-port) web_port="${2:?}"; shift 2 ;;
     --external-proxy) ingress="external"; shift ;;
-    --offline) echo "Offline installation is not available from this installer." >&2; exit 1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; usage >&2; exit 1 ;;
   esac
@@ -68,9 +67,7 @@ port_busy() {
   fi
   (echo >/dev/tcp/127.0.0.1/"$port") >/dev/null 2>&1
 }
-for port in "$web_port"; do
-  if port_busy "$port"; then echo "Port $port is already in use." >&2; exit 1; fi
-done
+if port_busy "$web_port"; then echo "Port $web_port is already in use." >&2; exit 1; fi
 if [[ "$ingress" == managed ]]; then
   for port in 80 443; do
     if port_busy "$port"; then echo "Port $port is already in use. Free it or rerun with --external-proxy." >&2; exit 1; fi
@@ -94,33 +91,20 @@ mkdir -p "$install_dir"
 chmod 700 "$install_dir"
 files=(compose.yaml ports.yaml)
 if [[ "$ingress" == managed ]]; then files+=(https.yaml); fi
+curl --fail --silent --show-error --location "$asset_base/compose-sha256sums.txt" --output "$install_dir/compose-sha256sums.txt"
 for name in "${files[@]}"; do
   curl --fail --silent --show-error --location "$asset_base/$name" --output "$install_dir/$name"
-  curl --fail --silent --show-error --location "$asset_base/$name.sha256" --output "$install_dir/$name.sha256"
-  (cd "$install_dir" && sha256sum --check "$name.sha256")
 done
+(cd "$install_dir" && sha256sum --check --ignore-missing --quiet compose-sha256sums.txt)
 
-project="oac-$(od -An -N5 -tx1 /dev/urandom | tr -d ' \n')"
-compose_file="compose.yaml:ports.yaml"
-socket=""
-bootstrap=0
-if [[ "$ingress" == managed ]]; then
-  compose_file="compose.yaml:ports.yaml:https.yaml"
-  socket="/domain/api.sock"
-  bootstrap=1
-fi
-if [[ -n "$public_url" ]]; then bootstrap=0; fi
+compose_file="$(IFS=:; echo "${files[*]}")"
 umask 077
 {
-  echo "COMPOSE_PROJECT_NAME=$project"
+  echo "COMPOSE_PROJECT_NAME=oac-$(od -An -N5 -tx1 /dev/urandom | tr -d ' \n')"
   echo "COMPOSE_FILE=$compose_file"
   echo "OAC_INSTALL_DIR=$install_dir"
-  echo "OAC_DATA_DIR=$install_dir/data"
   echo "OAC_HOST=$host_address"
   echo "OAC_WEB_PORT=$web_port"
-  echo "OAC_INGRESS=$ingress"
-  echo "OAC_WEB_BOOTSTRAP=$bootstrap"
-  if [[ -n "$socket" ]]; then echo "OAC_WEB_INSTALLATION_SOCKET=$socket"; fi
   if [[ -n "$public_url" ]]; then echo "OAC_PUBLIC_URL=$public_url"; fi
 } >"$install_dir/.env"
 
@@ -134,7 +118,6 @@ umask 077
 )
 kept=1
 trap - EXIT
-(cd "$install_dir" && ./oac setup-sandbox)
 if [[ "$ingress" == managed && "$public_url" == https://* ]]; then
   domain_host="${public_url#https://}"
   domain_host="${domain_host%%/*}"

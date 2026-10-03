@@ -41,11 +41,9 @@ The script downloads that release's Compose files, checks their SHA-256, and:
 1. checks Linux amd64, Docker Compose 2.26 or newer, and that the ports it will publish are free;
 2. creates the [installation directory](../configuration.md#installation-directory), `~/.oac/core`, writes `.env`, and copies the `oac` command out of the Core image;
 3. starts the services with Docker Compose. The gateway serves Web on all IPv4 interfaces at port 8080. Core's admin API stays on `127.0.0.1:8091`. PostgreSQL is not published;
-4. selects the microsandbox sandbox backend at the Standard size. It adds no node.
-
 With `--public-url https://HOSTNAME` on a managed install, it then runs `oac domain`. DNS and ports 80 and 443 must already reach this host.
 
-It creates no Project or key and makes no model request. It ends by printing the console address and how to read the Core key.
+It saves no sandbox backend, adds no node, creates no Project or key and makes no model request. It ends by printing the console address and how to read the Core key.
 
 If installation fails before the services become healthy, the installer removes the directory it created. Fix the reported cause and rerun the same command. Once the services have started, a later failure keeps the installation and its data. A new release is a new directory; see [version policy](./operations.md#installation-version-policy).
 

@@ -195,7 +195,7 @@ jobs:
           go-version-file: go.mod
       - name: Allocate an isolated Compose project
         run: python3 -c 'import uuid; print("COMPOSE_SMOKE_PROJECT=oac-smoke-" + uuid.uuid4().hex)' >> "$GITHUB_ENV"
-      - name: Build the ingress image, start the installation and verify it
+      - name: Build the images, start the installation and verify it
         timeout-minutes: 17
         run: python3 scripts/compose-smoke.py
       - name: Remove test containers and volumes

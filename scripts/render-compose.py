@@ -40,25 +40,23 @@ def render(values):
     return text
 
 
-def checksum_line(name, data):
-    body = data.encode() if isinstance(data, str) else data
-    return hashlib.sha256(body).hexdigest() + "  " + name + "\n"
+CHECKSUMS = "compose-sha256sums.txt"
 
 
 def write_assets(directory, values):
-    """Write compose.yaml, the port files and their checksums."""
+    """Write compose.yaml, the port files and one checksum list for them."""
     directory = pathlib.Path(directory)
-    rendered = render(values)
     files = {
-        "compose.yaml": rendered.encode(),
+        "compose.yaml": render(values).encode(),
         "ports.yaml": PORTS.read_bytes(),
         "https.yaml": HTTPS.read_bytes(),
     }
-    written = []
+    written, lines = [], []
     for name, data in files.items():
         path = directory / name
         path.write_bytes(data)
-        checksum = path.with_name(name + ".sha256")
-        checksum.write_text(checksum_line(name, data))
-        written.extend((path, checksum))
-    return written
+        written.append(path)
+        lines.append(hashlib.sha256(data).hexdigest() + "  " + name + "\n")
+    checksums = directory / CHECKSUMS
+    checksums.write_text("".join(lines))
+    return [*written, checksums]

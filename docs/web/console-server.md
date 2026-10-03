@@ -112,7 +112,7 @@ Without `OAC_WEB_INSTALLATION_SOCKET` (external reverse proxy installations), `G
 
 The System page submits a hostname once, polls the status every 2 seconds while it is `checking` or `applying`, and asks for confirmation when the installer requires it. During setup, network failures and HTTP 502/503/504 responses keep polling active. The page allows 30 seconds without a successful status response before showing the disconnected message, and recovers when a poll succeeds. It never retries a write. Applying the domain restarts the console, which ends every session; the page keeps a sign-in link to the new HTTPS address. Only the `ready` state confirms HTTPS; the browser does not probe the new origin. The installer owns certificates, locking and recovery ([managed HTTPS](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/README.md#managed-https)).
 
-`OAC_WEB_BOOTSTRAP=1`, which the installer sets while no public URL is configured, lets the console also accept plain HTTP requests addressed to a literal IP address, treating `http://<that address>` as the origin, so an operator can sign in through the server's IP address. Host names still require `OAC_WEB_ORIGIN`, so DNS rebinding cannot reach the console.
+While `OAC_WEB_ORIGIN` is an `http://` origin and `OAC_WEB_INSTALLATION_SOCKET` is set, which is a managed installation before HTTPS is configured, the console also accepts plain HTTP requests addressed to a literal IP address, treating `http://<that address>` as the origin, so an operator can sign in through the server's IP address. Host names still require `OAC_WEB_ORIGIN`, so DNS rebinding cannot reach the console.
 
 ## Verification
 

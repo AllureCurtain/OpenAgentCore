@@ -1,5 +1,5 @@
-# Host installation publishes the gateway, and Core's admin API on loopback.
-# Hosting platforms omit this file. The gateway routes /v1 and /api/v1.
+# Host installation publishes the gateway and Core's loopback admin API for
+# scripts on the host. Hosting platforms omit this file.
 services:
   gateway:
     ports:

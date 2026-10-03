@@ -1,7 +1,7 @@
 ---
 title: "构建并发布 OpenAgentCore"
 source: docs/maintainers.md
-source_hash: cbd724d269e81084c57f5a26a585e31e0e524153cf079daea845c93f8391f378
+source_hash: 3f6d24ee5a93024da7fc700958a1ba01d65c8e6c359fa17d6125efcb2bc95247
 ---
 
 本指南面向负责构建和发布 OpenAgentCore 的维护者。要安装 Core 和 Web，请使用 [安装指南](getting-started/install.md)。安装器代码遵循的规则见 [部署](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/README.md) 和 [节点安装器](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/node/README.md)；必需检查见 [CONTRIBUTING](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks)。
@@ -111,7 +111,7 @@ make check-microsandbox-provider
 
 ### 独立 Core 构建 {#standalone-core-builds}
 
-`make build-core` 会将 `oac-core`、`oac-core-migrate`、`oac-core-device`、`oac-core-environment-key` 和 `oac-node` 构建到 `${OAC_DEV_HOME:-$HOME/.oac}/build/oac-core`（`OAC_DEV_CORE_BUILD_DIR` 可选择其他绝对目录）。构建过程仅将 `scripts/build-core.sh` 中列出的源文件集（Core 服务、其契约、所需的共享软件包以及根 Go 模块文件）复制到临时上下文，并使用禁用 CGO、只读模块和裁剪路径的方式构建。它不需要 Node、Docker 或其他应用程序。Core 新增共享依赖时，请将该软件包加入列表；绝不能复制整个仓库来使其完成编译。
+`make build-core` 会将 `oac-core`、`oac-core-device`、`oac-core-environment-key` 和 `oac-node` 构建到 `${OAC_DEV_HOME:-$HOME/.oac}/build/oac-core`（`OAC_DEV_CORE_BUILD_DIR` 可选择其他绝对目录）。构建过程仅将 `scripts/build-core.sh` 中列出的源文件集（Core 服务、其契约、所需的共享软件包以及根 Go 模块文件）复制到临时上下文，并使用禁用 CGO、只读模块和裁剪路径的方式构建。它不需要 Node、Docker 或其他应用程序。Core 新增共享依赖时，请将该软件包加入列表；绝不能复制整个仓库来使其完成编译。
 
 `make docker-build-core` 会根据这五个命令和 E2B 辅助程序构建 `oac-core:dev` 镜像（`OAC_DEV_CORE_IMAGE` 可选择其他名称）。基础镜像是通过摘要固定的 `debian:bookworm-slim`，包含 CA 证书以及辅助程序所需的 glibc 运行时；默认用户的 UID/GID 为 65532，Core 监听 `:8091`。该镜像仅支持 Linux amd64，并且不会推送到注册表。对镜像或其构建进行更改时，除了相关的源代码检查外，还必须运行 `make check-core-container`：它会在只读根文件系统上针对该镜像运行官方客户端测试套件，并且需要 Linux Docker、非 root 用户，以及服务检查中的[测试数据库和固定版本 SDK](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/services/core/README.md#official-client-verification)（`OAC_TEST_DATABASE_URL` 指向一个已应用迁移的 `oac_*_tests` 数据库，并设置 `OAC_TEST_OFFICIAL_SDK_PYTHON`）。
 
@@ -166,7 +166,7 @@ gh workflow run core-release --repo MiniMax-AI/OpenAgentCore --ref main \
 | --- | --- |
 | `hygiene` | 名称、仓库链接、随包文档完整性以及 CI 计划器/门禁测试；每次变更都会运行 |
 | `distribution` | Harness 目录和安装器模式、安装/应用/恢复/清理测试、Compose 解析和初始化固定数据、发布/下载和捆绑包契约、Go 控制台测试与构建；模板解析需要 Docker Compose，不需要 pnpm install 或浏览器 |
-| `compose` | 使用模板声明的发布镜像从空数据卷实际启动、登录和 API 访问、上传文件和下载节点安装器，然后在保留凭据和数据的同时重新配置 URL 并重新创建容器；需要 Docker 和网络访问，不需要构建镜像或模型凭据 |
+| `compose` | 使用从当前检出构建的镜像从空数据卷实际启动、登录和 API 访问、上传文件和下载节点安装器，然后在保留凭据和数据的同时重新配置 URL 并重新创建容器；需要 Docker、Go 和网络访问，不需要模型凭据 |
 | `backend` | 并行部分，每部分都有专用 PostgreSQL 保护检查：`runtime`（sqlc 新鲜度、Runtime/共享 Go 测试、Linux microsandbox 辅助程序、守护进程构建）、`core`（独立 Core 构建、Core 服务和客户端测试），以及串行 Core 持久化集成包的三个 `store` 分片 |
 | `harness` | Claude SDK 测试和打包、MiniMax 配套脚本 |
 | `example` | 可选的应用程序类型检查、测试、构建和隔离的浏览器验收 |
@@ -179,7 +179,7 @@ gh workflow run core-release --repo MiniMax-AI/OpenAgentCore --ref main \
 
 `.github/actionlint.yaml` 会选择 hygiene 和 lint。已知工作流变更会选择其使用方：CI review 和 actionlint 工作流运行 hygiene 和 lint；原生工作流变更会添加原生检查；API 验收工作流变更会添加启用容器验收的 API 检查；网站工作流变更会添加网站检查。共享 Node 操作会选择使用它的每个作业以及 lint。新工作流或未分类的工作流/操作会选择完整门禁，直至在计划器中声明其使用方。计划器测试和 CI 测量脚本运行 hygiene；更改计划器本身会运行完整门禁。
 
-Compose 模板和 Compose 测试发生变更时，会同时选择 `distribution` 固定数据和 `compose` 冒烟作业。安装 Docker 后，可在本地运行 `python3 scripts/compose-smoke.py` 重复该测试。该脚本使用唯一的项目、自动分配的回环端口，并将在 `~/.oac/tests/` 下生成构件；退出时移除其容器和数据卷。CI 还会在冒烟步骤失败或中断后执行清理。诊断信息会显示容器状态，但不会打印 HTTP 响应正文或登录密钥。Core 和 Web 使用 `deploy/compose/smoke-pins.json` 中固定的发布镜像；携带 `oac` 的 ingress 镜像从当前检出构建。该测试检查通用 Compose 行为；它不会运行 Dokploy/Coolify 实例，也不会执行模型。
+Compose 模板和 Compose 测试发生变更时，会同时选择 `distribution` 固定数据和 `compose` 冒烟作业；Core、Web、共享 Go 软件包和镜像 Dockerfile 的变更也会选择冒烟作业。安装 Docker 后，可在本地运行 `python3 scripts/compose-smoke.py` 重复该测试。该脚本使用唯一的项目、自动分配的回环端口，并将在 `~/.oac/tests/` 下生成构件；退出时移除其容器和数据卷。CI 还会在冒烟步骤失败或中断后执行清理。诊断信息会显示容器状态，但不会打印 HTTP 响应正文或登录密钥。Core、Web 和 ingress 镜像都从当前检出构建；Web 提供占位页面而不是控制台构建。节点元数据来自 `deploy/compose/smoke-pins.json` 固定的发布版本。该测试检查通用 Compose 行为；它不会运行 Dokploy/Coolify 实例，也不会执行模型。
 
 Go 模块和工作区输入会选择后端、API（包括容器）、原生和分发检查。每个 Node 模块都拥有自己的清单和锁文件。网站依赖项会选择网站检查；Web 依赖项会选择 Web 和浏览器检查；示例依赖项会选择示例检查；共享 TypeScript 客户端依赖项会选择 Web、浏览器和示例检查；Claude 适配器依赖项会选择 Harness、原生和分发检查。共享包管理器配置会选择所有 Node 使用方。根 TypeScript 配置会选择 Web 和示例检查；适配器 TypeScript 配置会选择 Harness 和原生检查。每个所选集合都包含 hygiene。混合变更会累加其使用方，并且每个作业都读取同一计划，而不是维护各自的路径列表。例如，仅修改通知的 PR 会跳过数据库、浏览器和原生作业，而同时修改通知和 Core 的 PR 会添加后端和 API 检查。
 

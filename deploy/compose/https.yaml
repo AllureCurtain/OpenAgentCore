@@ -2,6 +2,9 @@
 # setup, so it is the only service with the Docker socket. Caddy itself still
 # runs as 65532. External proxies and hosting platforms omit this file.
 services:
+  web:
+    environment:
+      OAC_WEB_INSTALLATION_SOCKET: /domain/api.sock
   gateway:
     user: "0:0"
     command: [/usr/local/bin/oac, gateway]

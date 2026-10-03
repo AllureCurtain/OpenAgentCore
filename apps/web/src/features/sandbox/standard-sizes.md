@@ -20,10 +20,4 @@ The values must stay within the bounds that Core and `validSandboxResources` acc
 
 ## Readers
 
-- The Web setup wizard, through `defaultSandboxResources` in `deployment-specification.ts`.
-- The release bundle: `scripts/build-core-distribution.sh` copies this file to `<bundle>/standard-sizes.json`.
-- The Core installer reads the bundled `standard-sizes.json` when `oac setup-sandbox` saves the initial microsandbox deployment at the Standard size.
-
-## Contract
-
-The keys and structure are a contract with `oac setup-sandbox`. Changing a value is fine. Renaming, removing or adding keys, or restructuring the file, needs a matching change to that command, which rejects a bundled copy whose fields differ. `deployment-specification.test.ts` pins the structure so that an accidental change fails.
+The Web setup wizard is the only reader, through `defaultSandboxResources` in `deployment-specification.ts`. `deployment-specification.test.ts` pins the structure so that an accidental change fails.
