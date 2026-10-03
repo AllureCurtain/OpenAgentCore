@@ -65,6 +65,7 @@ OpenAgentCore is pre-release. Replace superseded interfaces, execution paths and
 ## Working in this repository
 
 - For each new task, create a new Git worktree. Name its directory after that change's commit subject, in kebab-case, beside the checkout. Run `git pull --ff-only` on the base branch, and create the feature branch in that worktree before development.
+- After every push to a pull request, wait 60 seconds, then run `gh pr checks` and confirm CI passes. Fix any failure before reporting the work as done.
 - [CONTRIBUTING.md](CONTRIBUTING.md): documentation ownership, repository boundary, workflow, independent review, required checks and naming.
 - [Develop OpenAgentCore](docs/development.md): setup, the repository map, focused checks and [each extension boundary](docs/development.md#choose-an-extension-boundary).
 - [API index](docs/api/index.md): each route's caller and credential.
