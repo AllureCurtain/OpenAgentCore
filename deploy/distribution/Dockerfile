@@ -11,7 +11,7 @@ COPY e2b/ /opt/oac/e2b/
 # Only the small version/checksum catalog, never native execution archives.
 COPY native-installers/ /opt/oac/native-installers/
 
-ENV OAC_ADDR=:8091 OAC_PROVIDER_ROOT=/opt/oac OAC_NATIVE_INSTALLER_DIR=/opt/oac/native-installers
+ENV OAC_ADDR=:8091 OAC_PROVIDER_ROOT=/opt/oac
 EXPOSE 8091
 USER 65532:65532
 CMD ["/usr/local/bin/oac-core"]

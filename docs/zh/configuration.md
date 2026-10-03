@@ -1,7 +1,7 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: 137792380a649ca7bebbe877c20917bf9ce982ff62a71b561e1fe396257ffdc6
+source_hash: bd03d28624b766261eae0add8330e5f636509edc487ecb802f064fd46bc190a9
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
@@ -163,7 +163,7 @@ Core 只读取其环境。Compose 把 `.env` 插值进服务环境。Compose 必
 | `OAC_LOG_LEVEL`、`OAC_LOG_FORMAT`、`OAC_LOG_ADD_SOURCE` | `log.*`；Web 也读取这三个设置 |
 | `OAC_PROVIDER_ROOT` | 适配器构件的绝对根目录。Core 镜像设置为 `/opt/oac`。每个适配器都拥有此根目录下的辅助路径 |
 | `OAC_PROVIDER_STATE_ROOT` | 绝对私有状态根目录：Core 镜像中为 `/state`。每个适配器都拥有自己的子目录；E2B 使用 `e2b/`，该目录归 Core 的用户所有，不允许组或其他用户访问。将其与数据库和 `credential.key` 一起备份；不要将其挂载到 Web 或 Runtime 中 |
-| `OAC_NATIVE_INSTALLER_DIR` | 自托管守护进程安装程序。Core 镜像设置为 `/opt/oac/native-installers`；未设置时 Core 不提供安装程序。提供目录清单前，Core 会将其与自身发行版进行核对 |
+| `OAC_NATIVE_INSTALLER_DIR` | 自托管守护进程安装程序：Compose 文件中为 `/opt/oac/native-installers`。未设置时 Core 不提供安装程序。提供目录清单前，Core 会将其与自身发行版进行核对 |
 
 Core 会记录所加载文件的路径，但绝不记录环境变量的值或文件内容。
 

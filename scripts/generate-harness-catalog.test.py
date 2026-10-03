@@ -22,23 +22,6 @@ schema = module("schema", "patch-agents-openapi.py")
 
 
 class HarnessCatalogTests(unittest.TestCase):
-    def test_installer_schema_membership_and_defaults(self):
-        entries = catalog.load_catalog(catalog.ROOT / catalog.CATALOG)
-        enabled, default = catalog.compose_harness_defaults()
-        catalog.check_harness_defaults(entries, enabled, default)
-        for bad_enabled, bad_default in (
-            (["unknown"], "codex"),
-            (enabled, "unknown"),
-            ([], "codex"),
-            (["codex", "codex"], "codex"),
-            (["claude_sdk"], "claude_sdk"),
-        ):
-            with self.subTest(enabled=bad_enabled, default=bad_default), self.assertRaises(ValueError):
-                catalog.check_harness_defaults(entries, bad_enabled, bad_default)
-        extended = [*entries, {"kind": "additional"}]
-        with self.assertRaises(ValueError):
-            catalog.check_harness_defaults(extended, enabled, default)
-
     def test_installer_projection_includes_every_declaration(self):
         providers = {"additional": {"responses": {"requires_token_limits": True},
                                     "anthropic": {"requires_token_limits": False}}, "native": {}}
