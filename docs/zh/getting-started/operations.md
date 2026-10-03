@@ -1,7 +1,7 @@
 ---
 title: "管理你的安装"
 source: docs/getting-started/operations.md
-source_hash: 8ccae3f5cad0d66eaf1fc25558694b5035c023c7ceed064dd7d2a2ee460c1d47
+source_hash: e87c7a1e577b8732929bb1c1fead1d54abfe6b607d8c4aed43faf38dca405ed5
 ---
 
 安装运维人员负责 Core 主机、存储和可用性。节点主机运行各自的服务；参阅[节点](nodes.md)。设置见[配置参考](../configuration.md)。
@@ -22,7 +22,7 @@ docker compose -f ~/.oac/core/compose.yaml ps
 | `oac apply` | 先运行 `oac-core check-config`，再执行 `docker compose up -d --wait`。校验失败时不改动任何服务 |
 | `oac core-key [--show]` | 打印 Core 密钥路径；加上 `--show` 时打印密钥本身 |
 | `oac rotate-core-key` | 替换 Core 密钥并重启 Core 和 Web |
-| `docker compose down --rmi all` | 移除容器和镜像。然后删除安装目录 |
+| `docker compose down` | 移除容器。数据保留；要删除数据，请[卸载](#uninstall) |
 
 第二个安装使用自己的目录，例如 `~/.oac/second`。
 
@@ -140,11 +140,14 @@ Core 记录每次公开资源写入所使用的密钥；历史保留策略为 [`
 ## 卸载 {#uninstall}
 
 ```sh
-docker compose -f ~/.oac/core/compose.yaml down --rmi all --remove-orphans
-rm -rf ~/.oac/core
+cd ~/.oac/core
+docker compose down --remove-orphans
+docker compose run --rm --no-deps --entrypoint find init /data -mindepth 1 -delete
+docker compose down --rmi all
+cd && rm -rf ~/.oac/core
 ```
 
-`down` 移除容器和镜像。`rm` 删除安装目录。只有确定要删数据时才执行第一条。
+`data/` 归容器所有，因此由 `init` 镜像删除其内容；随后 `down --rmi all` 移除镜像，`rm` 删除安装目录。只有确定要删数据时才执行这些命令。
 
 全部数据随之删除：Project 和 API 密钥、Session 历史、存储的凭据和 Core 密钥。要保留数据，请用 `docker compose stop` 停止安装，或先[备份](#back-up)。
 

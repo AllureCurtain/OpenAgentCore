@@ -20,7 +20,7 @@ docker compose -f ~/.oac/core/compose.yaml ps
 | `oac apply` | Runs `oac-core check-config`, then `docker compose up -d --wait`. A failed check changes no service |
 | `oac core-key [--show]` | Prints the Core key path, or the key itself with `--show` |
 | `oac rotate-core-key` | Replaces the Core key and restarts Core and Web |
-| `docker compose down --rmi all` | Removes the containers and images. Delete the installation directory afterwards |
+| `docker compose down` | Removes the containers. Data is kept; to delete it, [uninstall](#uninstall) |
 
 For a second installation, use its directory, such as `~/.oac/second`.
 
@@ -137,11 +137,14 @@ Never prune Docker volumes or delete native harness history to make a retry pass
 ## Uninstall
 
 ```sh
-docker compose -f ~/.oac/core/compose.yaml down --rmi all --remove-orphans
-rm -rf ~/.oac/core
+cd ~/.oac/core
+docker compose down --remove-orphans
+docker compose run --rm --no-deps --entrypoint find init /data -mindepth 1 -delete
+docker compose down --rmi all
+cd && rm -rf ~/.oac/core
 ```
 
-`down` removes the containers and images. `rm` removes the installation directory. Do the first only when you mean to delete the data.
+The containers own `data/`, so the `init` image deletes its contents; then `down --rmi all` removes the images and `rm` removes the installation directory. Run these only when you mean to delete the data.
 
 All data goes with it: Projects and API keys, Session history, stored credentials and the Core key. To keep the data, stop the installation with `docker compose stop` instead, or [back it up](#back-up) first.
 

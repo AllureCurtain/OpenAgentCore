@@ -73,7 +73,12 @@ fi
 
 cleanup() {
   if [[ "$kept" != 1 && -d "$install_dir" ]]; then
-    (cd "$install_dir" && docker compose down --remove-orphans) >/dev/null 2>&1 || true
+    (
+      cd "$install_dir"
+      docker compose down --remove-orphans
+      # Containers own data/; remove it from a container as well.
+      if [[ -d data ]]; then docker compose run --rm --no-deps --entrypoint find init /data -mindepth 1 -delete; fi
+    ) >/dev/null 2>&1 || true
     rm -rf "$install_dir"
   fi
 }
@@ -104,7 +109,6 @@ umask 077
   docker compose pull
   docker compose create core
   docker compose cp core:/usr/local/bin/oac ./oac
-  chmod 755 ./oac
   docker compose up -d --wait
 )
 kept=1
