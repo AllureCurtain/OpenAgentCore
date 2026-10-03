@@ -10,7 +10,6 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "deploy/compose/compose.yaml"
-PORTS = ROOT / "deploy/compose/ports.yaml"
 TOKENS = ("REVISION", "INIT_IMAGE")
 
 
@@ -39,11 +38,10 @@ CHECKSUMS = "compose-sha256sums.txt"
 
 
 def write_assets(directory, values):
-    """Write compose.yaml, the port files and one checksum list for them."""
+    """Write compose.yaml and its checksum list."""
     directory = pathlib.Path(directory)
     files = {
         "compose.yaml": render(values).encode(),
-        "ports.yaml": PORTS.read_bytes(),
     }
     written, lines = [], []
     for name, data in files.items():

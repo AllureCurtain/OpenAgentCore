@@ -111,12 +111,10 @@ pins = json.loads((root / "deploy/compose/smoke-pins.json").read_text())
     "INIT_IMAGE": "ghcr.io/minimax-ai/openagentcore/ingress@sha256:" + "0" * 64,
 }))
 PY
-cp "$repo_root/deploy/compose/ports.yaml" "$install_dir/ports.yaml"
 
 umask 077
 cat >"$install_dir/.env" <<EOF
 COMPOSE_PROJECT_NAME=oac-local
-COMPOSE_FILE=compose.yaml:ports.yaml
 OAC_DATA_DIR=$install_dir/data
 OAC_HOST=$host_address
 OAC_WEB_PORT=$web_port

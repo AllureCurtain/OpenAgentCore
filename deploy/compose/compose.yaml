@@ -83,6 +83,8 @@ services:
         target: /state
 
   web:
+    ports:
+      - "${OAC_HOST:-127.0.0.1}:${OAC_WEB_PORT:-8080}:8080"
     image: ${OAC_IMAGE_WEB:-ghcr.io/minimax-ai/openagentcore/web:latest}
     platform: linux/amd64
     user: "65532:65532"

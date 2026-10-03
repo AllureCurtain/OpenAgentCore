@@ -1,7 +1,7 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: 89ce54ec713de69bbc2d8aaa89ddb577744d0ca694c3fdbca8bf2a452200ad46
+source_hash: e697e320a2df0c130cb004f5e8bbda50deff6515ef7727bea066fc0d4f688b7d
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
@@ -48,9 +48,8 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `OAC_PUBLIC_URL` | `http://localhost:8080` | 应用、节点、沙箱和自托管执行器使用的源地址。参阅[修改公开 URL](#changing-the-public-url) |
-| `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
+| `OAC_HOST` | `127.0.0.1` | `compose.yaml` 发布的 Web 绑定地址。`install.sh` 设置为 `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
-| `COMPOSE_FILE` | `compose.yaml:ports.yaml` | Compose 文件。`ports.yaml` 发布 Web；托管平台省略它 |
 | `OAC_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `OAC_LOG_FORMAT` | `auto` | `auto`, `text` or `json` |
 | `OAC_LOG_ADD_SOURCE` | unset | `1` adds source locations |
@@ -128,7 +127,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 | 路径 | 内容 | 修改者 |
 | --- | --- | --- |
 | `.env` | [进程设置](#process-settings-configjson)。由你编辑的文件 | 你，然后运行 `oac apply`；托管域名设置写入 `OAC_PUBLIC_URL` |
-| `compose.yaml`、`ports.yaml` | 发行版的服务定义。不要编辑 | 发行版 |
+| `compose.yaml` | 发行版的服务定义。不要编辑 | 发行版 |
 | `oac` | [管理命令](getting-started/operations.md#the-oac-command)，从 Core 镜像复制 | 安装程序 |
 | `data/secrets/web/core.key` | [Core 密钥](getting-started/operations.md#core-key) | `oac rotate-core-key` |
 | `data/secrets/core/credential.key` | 加密 Core 在数据库中封存内容的密钥 | 无。必须与数据库一同保留 |

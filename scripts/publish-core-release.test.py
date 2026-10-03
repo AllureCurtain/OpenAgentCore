@@ -68,7 +68,7 @@ class PublicationTests(unittest.TestCase):
         self.publish(tag="build-" + self.revision, mode="draft")
         self.images.assert_called_once()
         self.assertTrue(self.release["draft"])
-        self.assertEqual(len(self.release["assets"]), 15)
+        self.assertEqual(len(self.release["assets"]), 14)
 
     def test_missing_native_asset_refuses_release_creation(self):
         (self.assets / f"oac-native-{self.revision}-windows-amd64.tar.gz").unlink()
@@ -142,7 +142,7 @@ class PublicationTests(unittest.TestCase):
                 return result
             if endpoint == "releases/7":
                 self.assertEqual(active, 0)
-                self.assertIn(len(self.release["assets"]), (12, 15))
+                self.assertIn(len(self.release["assets"]), (12, 14))
             return self.response(repo, endpoint, *args)
         self.api.side_effect = response
         self.publish()
@@ -153,7 +153,8 @@ class PublicationTests(unittest.TestCase):
         self.publish()
         self.assertFalse(self.release["draft"])
         self.assertFalse(self.release["prerelease"])
-        self.assertEqual(len(self.release["assets"]), 15)
+        self.assertEqual(len(self.release["assets"]), 14)
+        self.assertEqual({a["name"] for a in self.release["assets"] if a["name"].endswith(".yaml")}, {"compose.yaml"})
         self.assertEqual(self.api.call_args.args[1:],
                          ("releases/7", "--method", "PATCH", "-F", "draft=false"))
 

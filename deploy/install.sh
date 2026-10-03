@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install Core and Web from one release's Compose files. The host needs Docker.
+# Install Core and Web from one release's Compose file. The host needs Docker.
 set -euo pipefail
 
 repository="${OAC_REPOSITORY:-MiniMax-AI/OpenAgentCore}"
@@ -81,7 +81,7 @@ cleanup() {
       docker compose logs --no-color --tail 50 >&2 || true
       docker compose down --remove-orphans
       # Containers own data/; remove it from a container as well.
-      if [[ -d data ]]; then docker compose run --rm --no-deps --entrypoint find init /data -mindepth 1 -delete; fi
+      if [[ -d data ]]; then docker compose run --rm --no-deps --volume "$install_dir/data:/data" --entrypoint find database /data -mindepth 1 -delete; fi
     ) >/dev/null 2>&1 || true
     rm -rf "$install_dir"
   fi
@@ -110,18 +110,13 @@ if [[ -z "$public_url" ]]; then public_url="http://localhost:$web_port"; local_o
 
 mkdir -p "$install_dir"
 chmod 700 "$install_dir"
-files=(compose.yaml ports.yaml)
 curl --fail --silent --show-error --location "$asset_base/compose-sha256sums.txt" --output "$install_dir/compose-sha256sums.txt"
-for name in "${files[@]}"; do
-  curl --fail --silent --show-error --location "$asset_base/$name" --output "$install_dir/$name"
-done
-(cd "$install_dir" && sha256sum --check --ignore-missing --quiet compose-sha256sums.txt)
+curl --fail --silent --show-error --location "$asset_base/compose.yaml" --output "$install_dir/compose.yaml"
+(cd "$install_dir" && sha256sum --check --quiet compose-sha256sums.txt)
 
-compose_file="$(IFS=:; echo "${files[*]}")"
 umask 077
 {
   echo "COMPOSE_PROJECT_NAME=oac-$(od -An -N5 -tx1 /dev/urandom | tr -d ' \n')"
-  echo "COMPOSE_FILE=$compose_file"
   echo "OAC_INSTALL_DIR=$install_dir"
   echo "OAC_HOST=$host_address"
   echo "OAC_WEB_PORT=$web_port"

@@ -16,11 +16,11 @@ With the one-line command, append them after `bash -s --`. `--version TAG` selec
 
 Use the `compose.yaml` from a release with Docker Compose 2.26 or newer on Linux amd64. The release pins its initialization image and source revision in the [Compose template](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml). Core and Web use the `latest` images, and PostgreSQL uses `postgres:16-alpine`. It starts PostgreSQL, Core and Web. Web forwards `/v1` and `/api/v1` to Core. Data is bind-mounted from a directory. The one-time initialization service generates random secrets there and prepares the node installer; Core applies database migrations when it starts. [Compose configuration](../configuration.md#compose-installations) owns the settings and the data directory.
 
-For a local trial, download `compose.yaml` and `ports.yaml` from the same release into one directory, then run:
+For a local trial, download `compose.yaml` from a release into an empty directory, then run:
 
 ```sh
-docker compose -f compose.yaml -f ports.yaml up -d --wait --wait-timeout 900
-docker compose -f compose.yaml exec web oac-web core-key
+docker compose up -d --wait --wait-timeout 900
+docker compose exec web oac-web core-key
 ```
 
 `oac-web core-key` prints the generated Core key to your terminal without writing it to container logs. Open `http://localhost:8080` and use that key to sign in. All installation secrets are generated automatically; keep the same Compose project and its data directory when restarting.
@@ -31,11 +31,11 @@ You can deploy before choosing a domain: leave `OAC_PUBLIC_URL` unset or empty, 
 
 ### Dokploy
 
-Create a Docker Compose application and paste `compose.yaml`. Set `OAC_PUBLIC_URL` to the public HTTPS origin, enable isolated deployment, and add a domain for service `web`, port `8080`. Enable **HTTPS** and select a certificate provider such as **Let's Encrypt** for that domain before deploying. Deploy without `ports.yaml`; internal services publish no host ports. The [template metadata](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/dokploy.toml) supplies the generated domain and environment when packaging this Compose file for Dokploy's template catalog; HTTPS and its certificate provider still need to be enabled after import.
+Create a Docker Compose application and paste `compose.yaml`. Set `OAC_PUBLIC_URL` to the public HTTPS origin, enable isolated deployment, and add a domain for service `web`, port `8080`. Enable **HTTPS** and select a certificate provider such as **Let's Encrypt** for that domain before deploying. Remove the `ports` block from service `web` before deploying so Dokploy routes to its container port without publishing a host port. The [template metadata](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/dokploy.toml) supplies the generated domain and environment when packaging this Compose file for Dokploy's template catalog; HTTPS and its certificate provider still need to be enabled after import.
 
 ### Coolify
 
-Create a **Docker Compose Empty** service and paste `compose.yaml`. Set `OAC_PUBLIC_URL` to the public HTTPS origin and assign that domain to `web` on port `8080`. Add Coolify's `exclude_from_hc: true` to the `init` service definition so completed initialization does not affect its overall health. Save and deploy without `ports.yaml`; Coolify supplies HTTPS.
+Create a **Docker Compose Empty** service and paste `compose.yaml`. Set `OAC_PUBLIC_URL` to the public HTTPS origin and assign that domain to `web` on port `8080`. Add Coolify's `exclude_from_hc: true` to the `init` service definition so completed initialization does not affect its overall health. Remove the `ports` block from service `web`, then save and deploy; Coolify routes to its container port and supplies HTTPS.
 
 On either platform, open its server terminal and run `docker compose ls` to find the deployed project name and Compose file. Using those exact values and the deployment's `OAC_PUBLIC_URL`, run `docker compose -p <project-name> -f <compose-file> exec web oac-web core-key`, then sign in at the configured origin. The [Dokploy domain guide](https://docs.dokploy.com/docs/core/docker-compose/domains) and [Coolify Compose guide](https://coolify.io/docs/services/configuration/docker-compose) describe their domain and service controls. These are importable deployment files; no hosted marketplace listing is published by this repository.
 

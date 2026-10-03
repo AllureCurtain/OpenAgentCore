@@ -109,16 +109,12 @@ def main():
         'REVISION': pins['revision'],
         'INIT_IMAGE': 'ghcr.io/minimax-ai/openagentcore/ingress@sha256:' + '0' * 64,
     }))
-    override = directory / 'ports.json'
+    override = directory / 'offline-init.json'
     images = build_images(directory, project.removeprefix('oac-smoke-'))
 
-    def publish(port):
-        override.write_text(json.dumps({'services': {'init': {'network_mode': 'none'}, 'web': {'ports': [
-            {'target': 8080, 'published': str(port), 'host_ip': '127.0.0.1'},
-        ]}}}))
-
-    publish(0)
+    override.write_text(json.dumps({'services': {'init': {'network_mode': 'none'}}}))
     env = {**os.environ, 'COMPOSE_PROGRESS': 'plain', 'OAC_DATA_DIR': str(data),
+           'OAC_HOST': '127.0.0.1', 'OAC_WEB_PORT': '0',
            **{'OAC_IMAGE_' + name.upper(): image for name, image in images.items()}}
     env.pop('OAC_PUBLIC_URL', None)
     command = ['docker', 'compose', '--env-file', os.devnull, '-p', project,
@@ -201,7 +197,7 @@ def main():
 
         print('Configuring a reachable URL and recreating containers with the same data directory', flush=True)
         # Retain the assigned port across recreation, without claiming a fixed host port.
-        publish(address.rsplit(':', 1)[1])
+        env['OAC_WEB_PORT'] = address.rsplit(':', 1)[1]
         env['OAC_PUBLIC_URL'] = address
         compose('down')
         compose('up', '-d', '--wait', '--wait-timeout', '120', timeout=180)
@@ -224,6 +220,9 @@ def main():
         raise
     finally:
         compose('down', '--volumes', '--remove-orphans', timeout=60)
+        # Match the host installer's cleanup without requiring tools in scratch init.
+        compose('run', '--rm', '--no-deps', '--volume', str(data) + ':/data',
+                '--entrypoint', 'find', 'database', '/data', '-mindepth', '1', '-delete')
         subprocess.run(['docker', 'image', 'rm', '-f', *images.values()], capture_output=True, timeout=60)
 
 
