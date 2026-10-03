@@ -1,7 +1,7 @@
 ---
 title: "安装选项与高级部署"
 source: docs/getting-started/install-options.md
-source_hash: 4b847976f3b3bc4fe4afe7b7946c5815df9fecf75dc39648621814e793288f9e
+source_hash: e063d7dcd615ef5d6ba8b43f1cbe5a11c75325925605f376161f50b9383297c0
 ---
 
 [默认安装](install.md)无需任何选项。使用本页可以在现有反向代理后运行，或者在无法访问互联网时进行安装。
@@ -18,28 +18,28 @@ source_hash: 4b847976f3b3bc4fe4afe7b7946c5815df9fecf75dc39648621814e793288f9e
 
 ## Docker Compose 与托管平台 {#docker-compose-and-hosting-platforms}
 
-在 Linux amd64 上使用发行版中的 `compose.yaml` 和 Docker Compose 2.26 或更高版本。发行流程会把节点元数据渲染进 [Compose 模板](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml)。Core 和 Web 使用 `latest` 镜像，PostgreSQL 使用 `postgres:16-alpine`。它会启动 PostgreSQL、Core 和 Web。Web 把 `/v1` 和 `/api/v1` 转发到 Core。数据通过目录 bind mount 挂载。一次性初始化服务会在该目录中生成随机机密信息并准备节点安装程序；Core 启动时执行数据库迁移。[Compose 配置](../configuration.md#compose-installations)负责管理各项设置和数据目录。
+在 Linux amd64 上使用发行版中的 `compose.yaml` 和 Docker Compose 2.26 或更高版本。发行流程会在 [Compose 模板](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/compose.yaml)中固定初始化镜像及源码版本。Core 和 Web 使用 `latest` 镜像，PostgreSQL 使用 `postgres:16-alpine`。它会启动 PostgreSQL、Core 和 Web。Web 把 `/v1` 和 `/api/v1` 转发到 Core。数据通过目录 bind mount 挂载。一次性初始化服务会在该目录中生成随机机密信息并准备节点安装程序；Core 启动时执行数据库迁移。[Compose 配置](../configuration.md#compose-installations)负责管理各项设置和数据目录。
 
-进行本地试用时，请将同一发行版的 `compose.yaml` 和 `ports.yaml` 下载到同一个目录，然后运行：
+进行本地试用时，请将发行版的 `compose.yaml` 下载到一个空目录，然后运行：
 
 ```sh
-docker compose -f compose.yaml -f ports.yaml up -d --wait --wait-timeout 900
-docker compose -f compose.yaml exec web oac-web core-key
+docker compose up -d --wait --wait-timeout 900
+docker compose exec web oac-web core-key
 ```
 
 `oac-web core-key` 会将生成的 Core 密钥打印到终端，而不会将其写入容器日志。打开 `http://localhost:8080` 并使用该密钥登录。所有安装机密信息都会自动生成；重启时请保留同一个 Compose 项目及其数据目录。
 
-首次初始化会下载并验证该发布版本中约 385 MB 的控制归档文件，仅保留较小的节点安装元数据。后续启动会验证已保存的文件，而不会再次下载。镜像需要额外下载。首次初始化中断后可以重新运行；如果现有数据库缺少安装机密信息，初始化会被拒绝。
+初始化镜像除初始化命令外，仅包含较小的节点安装元数据。首次启动会验证并复制这些元数据，无需下载控制归档或访问 GitHub Releases。后续启动会验证已保存的文件。容器镜像仍需拉取。首次初始化中断后可以重新运行；如果现有数据库缺少安装机密信息，初始化会被拒绝。
 
 你可以在选择域名前进行部署：将 `OAC_PUBLIC_URL` 保持未设置或留空，然后在平台的域名准备好后，按照 [Compose 配置](../configuration.md#compose-installations)进行设置并重新部署。初始的 localhost 源地址允许服务启动；Web 仅接受已配置的主机，因此重新部署后即可通过平台域名访问。
 
 ### Dokploy {#dokploy}
 
-创建一个 Docker Compose 应用并粘贴 `compose.yaml`。将 `OAC_PUBLIC_URL` 设置为公共 HTTPS 源地址，启用隔离部署，并为 `web` 服务添加域名和端口 `8080`。部署前，为此域名启用 **HTTPS**，并选择 **Let's Encrypt** 等证书提供程序。部署时不要使用 `ports.yaml`；内部服务不会发布主机端口。将此 Compose 文件打包到 Dokploy 模板目录时，[模板元数据](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/dokploy.toml)会提供生成的域名和环境；导入后仍需启用 HTTPS 及其证书提供程序。
+创建一个 Docker Compose 应用并粘贴 `compose.yaml`。将 `OAC_PUBLIC_URL` 设置为公共 HTTPS 源地址，启用隔离部署，并为 `web` 服务添加域名和端口 `8080`。部署前，为此域名启用 **HTTPS**，并选择 **Let's Encrypt** 等证书提供程序。部署前移除 `web` 服务的 `ports` 块，让 Dokploy 路由到容器端口，而不发布宿主机端口。将此 Compose 文件打包到 Dokploy 模板目录时，[模板元数据](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/compose/dokploy.toml)会提供生成的域名和环境；导入后仍需启用 HTTPS 及其证书提供程序。
 
 ### Coolify {#coolify}
 
-创建一个 **Docker Compose Empty** 服务并粘贴 `compose.yaml`。将 `OAC_PUBLIC_URL` 设置为公共 HTTPS 源地址，并将该域名分配给 `web` 服务的端口 `8080`。将 Coolify 的 `exclude_from_hc: true` 添加到 `init` 的服务定义中，使已完成的初始化不会影响其总体健康状态。保存并在不包含 `ports.yaml` 的情况下部署；HTTPS 由 Coolify 提供。
+创建一个 **Docker Compose Empty** 服务并粘贴 `compose.yaml`。将 `OAC_PUBLIC_URL` 设置为公共 HTTPS 源地址，并将该域名分配给 `web` 服务的端口 `8080`。将 Coolify 的 `exclude_from_hc: true` 添加到 `init` 的服务定义中，使已完成的初始化不会影响其总体健康状态。移除 `web` 服务的 `ports` 块，再保存并部署；Coolify 路由到容器端口并提供 HTTPS。
 
 在这两个平台上，打开服务器终端并运行 `docker compose ls`，查找已部署的项目名称和 Compose 文件。使用这些完全一致的值以及该部署的 `OAC_PUBLIC_URL`，运行 `docker compose -p <project-name> -f <compose-file> exec web oac-web core-key`，然后在已配置的源地址登录。[Dokploy 域名指南](https://docs.dokploy.com/docs/core/docker-compose/domains)和[Coolify Compose 指南](https://coolify.io/docs/services/configuration/docker-compose)介绍了各自的域和服务控制项。这些都是可导入的部署文件；本仓库不发布托管市场条目。
 

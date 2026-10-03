@@ -1,11 +1,7 @@
-# Release template. scripts/render-compose.py fills the __OAC_*__ tokens with this
-# release's source revision and node-metadata checksum. Images default to the
-# floating latest tags; set OAC_IMAGE_CORE, OAC_IMAGE_WEB or OAC_IMAGE_INGRESS
-# to select another reference. Do not run this file until it has been rendered.
-# Data is bind-mounted from ${OAC_DATA_DIR:-./data}. Set OAC_PUBLIC_URL when the
-# platform domain is ready; startup defaults to localhost. Other process
-# settings pass through unchanged; Core owns their defaults.
-x-ingress-image: &ingress-image ${OAC_IMAGE_INGRESS:-ghcr.io/minimax-ai/openagentcore/ingress:latest}
+# Release template. The publisher pins the initialization image to this release.
+# Core and Web default to latest; OAC_IMAGE_* selects another reference.
+# Data is bind-mounted from ${OAC_DATA_DIR:-./data}.
+x-ingress-image: &ingress-image ${OAC_IMAGE_INGRESS:-__OAC_INIT_IMAGE__}
 services:
   init:
     image: *ingress-image
@@ -15,8 +11,6 @@ services:
     command: [/usr/local/bin/oac, init]
     environment:
       OAC_REVISION: __OAC_REVISION__
-      OAC_RELEASE_BASE: __OAC_RELEASE_BASE__
-      OAC_ARCHIVE_CHECKSUM: __OAC_ARCHIVE_CHECKSUM__
     volumes:
       - type: bind
         source: ${OAC_DATA_DIR:-./data}
@@ -89,6 +83,8 @@ services:
         target: /state
 
   web:
+    ports:
+      - "${OAC_HOST:-127.0.0.1}:${OAC_WEB_PORT:-8080}:8080"
     image: ${OAC_IMAGE_WEB:-ghcr.io/minimax-ai/openagentcore/web:latest}
     platform: linux/amd64
     user: "65532:65532"

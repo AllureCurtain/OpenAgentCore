@@ -44,9 +44,8 @@ To change it, point the reverse proxy at the new address first, then edit `OAC_P
 | Variable | Default | Meaning |
 | --- | --- | --- |
 | `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. See [changing the public URL](#changing-the-public-url) |
-| `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
+| `OAC_HOST` | `127.0.0.1` | Web bind address published by `compose.yaml`. `install.sh` sets `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
-| `COMPOSE_FILE` | `compose.yaml:ports.yaml` | The Compose files. `ports.yaml` publishes Web; hosting platforms omit it |
 | `OAC_LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 | `OAC_LOG_FORMAT` | `auto` | `auto`, `text` or `json` |
 | `OAC_LOG_ADD_SOURCE` | unset | `1` adds source locations |
@@ -124,7 +123,7 @@ The installer creates the installation directory, `~/.oac/core` by default, with
 | Path | Content | Changed by |
 | --- | --- | --- |
 | `.env` | [Process settings](#process-settings-configjson). The file you edit | You, then `oac apply` |
-| `compose.yaml`, `ports.yaml` | The release's service definition. Do not edit them | The release |
+| `compose.yaml` | The release's service definition. Do not edit them | The release |
 | `oac` | The [management command](./getting-started/operations.md#the-oac-command), copied from the Core image | The installer |
 | `data/secrets/web/core.key` | The [Core key](./getting-started/operations.md#core-key) | `oac rotate-core-key` |
 | `data/secrets/core/credential.key` | Encryption key for what Core stores sealed in the database | Nothing. Keep it with the database |

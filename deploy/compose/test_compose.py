@@ -18,8 +18,7 @@ spec.loader.exec_module(render_compose)
 def rendered_compose(directory):
     text = render_compose.render({
         'REVISION': 'd' * 40,
-        'RELEASE_BASE': 'https://example.com/releases/v1/',
-        'ARCHIVE_CHECKSUM': 'e' * 64,
+        'INIT_IMAGE': 'ghcr.io/minimax-ai/openagentcore/ingress@sha256:' + 'e' * 64,
     })
     path = Path(directory) / 'compose.yaml'
     path.write_text(text)
@@ -31,6 +30,8 @@ class ComposeTests(unittest.TestCase):
     def render(cls, public_url=None):
         env = dict(os.environ)
         env.pop('OAC_PUBLIC_URL', None)
+        env.pop('OAC_HOST', None)
+        env.pop('OAC_WEB_PORT', None)
         for name in ('OAC_IMAGE_CORE', 'OAC_IMAGE_WEB', 'OAC_IMAGE_INGRESS'):
             env.pop(name, None)
         env['OAC_DATA_DIR'] = '/tmp/oac-compose-fixture'
@@ -55,8 +56,9 @@ class ComposeTests(unittest.TestCase):
         self.assertEqual(sorted(services), ['core', 'database', 'init', 'web'])
         for service in services.values():
             self.assertNotIn('build', service)
-            self.assertNotIn('ports', service)
-            self.assertTrue(service['image'].endswith(':latest') or service['image'] == 'postgres:16-alpine')
+            if service is not services['web']:
+                self.assertNotIn('ports', service)
+            self.assertTrue(service['image'].endswith(':latest') or service['image'] == 'postgres:16-alpine' or service['image'].endswith('@sha256:' + 'e' * 64))
             for volume in service.get('volumes', []):
                 self.assertNotIn('docker.sock', json.dumps(volume))
                 self.assertEqual(volume['type'], 'bind')
@@ -84,13 +86,15 @@ class ComposeTests(unittest.TestCase):
                      for service, spec in self.compose['services'].items()})
 
     def test_host_ports_publish_only_web(self):
-        env = dict(os.environ, OAC_DATA_DIR='/tmp/oac-compose-fixture', OAC_HOST='0.0.0.0')
-        hosted = json.loads(subprocess.check_output(
+        def ports(config):
+            return {name: [(port.get('host_ip'), port['published']) for port in service.get('ports', [])]
+                    for name, service in config['services'].items() if service.get('ports')}
+        self.assertEqual(ports(self.compose), {'web': [('127.0.0.1', '8080')]})
+        env = dict(os.environ, OAC_DATA_DIR='/tmp/oac-compose-fixture', OAC_HOST='0.0.0.0', OAC_WEB_PORT='9080')
+        configured = json.loads(subprocess.check_output(
             ['docker', 'compose', '--env-file', os.devnull, '-f', str(self.compose_file),
-             '-f', str(ROOT / 'deploy/compose/ports.yaml'), 'config', '--format', 'json'], env=env))
-        published = {name: [(port.get('host_ip'), port['published']) for port in service.get('ports', [])]
-                     for name, service in hosted['services'].items() if service.get('ports')}
-        self.assertEqual(published, {'web': [('0.0.0.0', '8080')]})
+             'config', '--format', 'json'], env=env))
+        self.assertEqual(ports(configured), {'web': [('0.0.0.0', '9080')]})
 
     def test_platform_network_injection_keeps_the_file_valid(self):
         # Dokploy isolated deployments attach a project network to every service.

@@ -69,7 +69,15 @@ go_build() {
   go_build services/core/cmd/environment-key "$build/core/bin/oac-core-environment-key"
   go_build services/core/cmd/oac "$build/core/bin/oac"
   go_build services/web "$build/web/oac-web"
-  go_build services/core/cmd/oac "$build/ingress/oac"
+  payload_revision="$(python3 - "$build/ingress/node-payload" <<'PYCODE'
+import importlib.util, pathlib, sys
+spec = importlib.util.spec_from_file_location("smoke", "scripts/compose-smoke.py")
+smoke = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(smoke)
+print(smoke.prepare_pinned_payload(pathlib.Path(sys.argv[1])))
+PYCODE
+)"
+  go build -trimpath -ldflags "-X main.buildRevision=$payload_revision" -o "$build/ingress/oac" ./services/core/cmd/oac
 )
 mkdir -p "$build/core/e2b" "$build/core/native-installers"
 python3 - "$build/core/native-installers/catalog.json" "$revision" "$protocol" <<'PY'
@@ -100,16 +108,13 @@ spec.loader.exec_module(render)
 pins = json.loads((root / "deploy/compose/smoke-pins.json").read_text())
 (dest / "compose.yaml").write_text(render.render({
     "REVISION": pins["revision"],
-    "RELEASE_BASE": pins["release_base"],
-    "ARCHIVE_CHECKSUM": pins["archive_checksum"],
+    "INIT_IMAGE": "ghcr.io/minimax-ai/openagentcore/ingress@sha256:" + "0" * 64,
 }))
 PY
-cp "$repo_root/deploy/compose/ports.yaml" "$install_dir/ports.yaml"
 
 umask 077
 cat >"$install_dir/.env" <<EOF
 COMPOSE_PROJECT_NAME=oac-local
-COMPOSE_FILE=compose.yaml:ports.yaml
 OAC_DATA_DIR=$install_dir/data
 OAC_HOST=$host_address
 OAC_WEB_PORT=$web_port

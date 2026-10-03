@@ -305,7 +305,7 @@ def bootstraps(bundle, epoch, revision):
         zipapp.create_archive(directory, bundle / "node-install.pyz", compressed=True)
 
 
-def manifest(bundle, stage, revision, source_tree, artifact_base_url="", offline="0"):
+def node_payload(bundle, stage, revision, source_tree, artifact_base_url="", offline="0"):
     bundle, stage = pathlib.Path(bundle), pathlib.Path(stage)
     artifact_base_url = release_base(artifact_base_url)
     if not artifact_base_url and offline != "1":
@@ -320,7 +320,7 @@ def manifest(bundle, stage, revision, source_tree, artifact_base_url="", offline
         raise ValueError("msb imported an unexpected Runtime platform")
     identities = {name: image_identities(bundle / "images" / (name + ".tar"),
                                         (stage / (name + ".id")).read_text().strip())
-                  for name in ("core", "web", "runtime", "database", "ingress")}
+                  for name in ("runtime",)}
     metadata = {
         "source_commit": revision,
         "source_tree": source_tree,
@@ -336,6 +336,24 @@ def manifest(bundle, stage, revision, source_tree, artifact_base_url="", offline
             "firmware_sha256": sha256(stage / "core/microsandbox/libkrunfw.so.5.6.1"),
         },
     }
+    payload = stage / "ingress/node-payload"
+    payload.mkdir(parents=True)
+    (payload / "manifest.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
+    for name in ("node-install.pyz", "runtime/seccomp.json"):
+        target = payload / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(bundle / name, target)
+    checksums(payload)
+
+
+def manifest(bundle, stage):
+    bundle, stage = pathlib.Path(bundle), pathlib.Path(stage)
+    metadata = json.loads((stage / "ingress/node-payload/manifest.json").read_text())
+    for name in ("core", "web", "database", "ingress"):
+        config, digest = image_identities(bundle / "images" / (name + ".tar"),
+                                         (stage / (name + ".id")).read_text().strip())
+        metadata["images"][name] = config
+        metadata["image_manifest_digests"][name] = digest
     (bundle / "manifest.json").write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
     checksums(bundle)
 
@@ -566,7 +584,7 @@ def check_docs(bundle, names=BUNDLED_DOCS, files=BUNDLED_FILES):
 
 if __name__ == "__main__":
     commands = {"extract-runtime": extract_runtime, "verify-runtime": verify_runtime, "verify-image": verify_image,
-                "built-image": built_image, "manifest": manifest, "archive": archive, "bootstraps": bootstraps,
+                "built-image": built_image, "node-payload": node_payload, "manifest": manifest, "archive": archive, "bootstraps": bootstraps,
                 "release-base": release_base, "docs": docs, "native-catalog": native_catalog, "native-offline": native_offline}
     try:
         commands[sys.argv[1]](*sys.argv[2:])

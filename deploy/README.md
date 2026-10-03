@@ -3,15 +3,15 @@
 | Path | Contents |
 | --- | --- |
 | `install.sh` | Host installer published with each release |
-| `compose/` | Compose template, port overlays and their tests |
+| `compose/` | Compose template and its tests |
 | `distribution/` | Image Dockerfiles |
 | `node/` | [Node installer](node/README.md), packaged as `node-install.pyz` |
 
 ## Installation
 
-`install.sh` downloads its release's `compose.yaml` and port files, checks them against `compose-sha256sums.txt`, writes `.env`, and starts Compose. Core applies database migrations when it starts. The host needs Linux amd64 and Docker Compose 2.26 or newer. [Configuration](../docs/configuration.md) owns the installation layout and settings.
+`install.sh` downloads its release's `compose.yaml`, checks it against `compose-sha256sums.txt`, writes `.env`, and starts Compose. Core applies database migrations when it starts. The host needs Linux amd64 and Docker Compose 2.26 or newer. [Configuration](../docs/configuration.md) owns the installation layout and settings.
 
-`oac` is a Go command (`services/core/cmd/oac`) in the Core image and the ingress image. The host copy implements `apply`, `core-key` and `rotate-core-key`; `core-key --show` runs `oac-web core-key` in the Web container. Start, stop, logs and removal are `docker compose`. `apply` runs `oac-core check-config` before recreating services. The ingress image runs data initialization as `oac init` and contains no Python. No service receives a Docker socket.
+`oac` is a Go command (`services/core/cmd/oac`) in the Core image and the ingress image. The host copy implements `apply`, `core-key` and `rotate-core-key`; `core-key --show` runs `oac-web core-key` in the Web container. Start, stop, logs and removal are `docker compose`. `apply` runs `oac-core check-config` before recreating services. The ingress image runs data initialization as `oac init`, verifies and copies its bundled node metadata without network access, and contains no Python. No service receives a Docker socket.
 
 Web serves the console and forwards `/v1` and `/api/v1` to Core, so it is the only published service. HTTPS is terminated by the operator's reverse proxy or hosting platform, which routes to `web:8080`; `OAC_PUBLIC_URL` records that origin.
 

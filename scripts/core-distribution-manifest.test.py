@@ -108,13 +108,29 @@ class DistributionTests(unittest.TestCase):
         for name in ("core", "web", "runtime", "database", "ingress"):
             self.identities[name] = image_archive(self.bundle / "images" / (name + ".tar"), name)
             (self.stage / (name + ".id")).write_text(self.identities[name][0] + "\n")
+        (self.bundle / "node-install.pyz").write_bytes(b"node installer")
         self.runtime_bytes = (self.bundle / "images/runtime.tar").read_bytes()
 
     def manifest(self, base=RELEASE_BASE, offline="0"):
-        distribution.manifest(self.bundle, self.stage, REVISION, TREE, base, offline)
+        distribution.node_payload(self.bundle, self.stage, REVISION, TREE, base, offline)
+        distribution.manifest(self.bundle, self.stage)
 
     def write_inspection(self):
         (self.stage / "runtime-inspect.json").write_text(json.dumps(self.inspection))
+
+    def test_init_payload_contains_only_verified_node_metadata(self):
+        self.manifest()
+        payload = self.stage / "ingress/node-payload"
+        files = sorted(p.relative_to(payload).as_posix() for p in payload.rglob("*") if p.is_file())
+        self.assertEqual(files, ["SHA256SUMS", "manifest.json", "node-install.pyz", "runtime/seccomp.json"])
+        sums = dict(line.split("  ", 1)[::-1] for line in (payload / "SHA256SUMS").read_text().splitlines())
+        for name, checksum in sums.items():
+            self.assertEqual(distribution.sha256(payload / name), checksum)
+        bundled = json.loads((payload / "manifest.json").read_text())
+        full = json.loads((self.bundle / "manifest.json").read_text())
+        for name in ("source_commit", "platform", "artifacts", "runtime_ref", "microsandbox"):
+            self.assertEqual(bundled[name], full[name])
+        self.assertEqual(list(bundled["images"]), ["runtime"])
 
     def test_oci_manifest_identity_is_distinct_from_docker_config_identity(self):
         self.manifest()

@@ -149,11 +149,6 @@ cp -R apps/web/dist "$stage/web/dist"
 cp services/web/Dockerfile "$stage/web/Dockerfile"
 build_image web "$stage/web"
 
-mkdir -p "$stage/ingress"
-cp deploy/distribution/Ingress.Dockerfile "$stage/ingress/Dockerfile"
-cp "$stage/core/bin/oac" "$stage/ingress/oac"
-build_image ingress "$stage/ingress"
-
 CGO_ENABLED=0 go build -mod=readonly -trimpath -o "$stage/oac-daemon" ./apps/daemon/cmd/oac-daemon
 cp "$stage/oac-daemon" "$bundle/native/bin/oac-daemon"
 codex_image="${CORE_DISTRIBUTION_CODEX_IMAGE:-}"
@@ -205,7 +200,7 @@ fi
 docker image inspect --format '{{.Id}}' "$database_image" > "$stage/database.id"
 docker run --rm --network none --entrypoint postgres "$(cat "$stage/database.id")" --version \
   | python3 -c 'import sys; value=sys.stdin.read(); assert value.startswith("postgres (PostgreSQL) 16."), "Distribution requires PostgreSQL 16"'
-for name in core web runtime database ingress; do
+for name in core web runtime database; do
   image="$(cat "$stage/$name.id")"
   python3 scripts/core-distribution-manifest.py verify-image "$image"
   docker image save --output "$bundle/images/$name.tar" "$image"
@@ -223,7 +218,17 @@ msb=(docker run --rm --network none --user "$(id -u):$(id -g)" \
   --entrypoint /opt/microsandbox/msb "$core_image")
 "${msb[@]}" image load --input /runtime.tar --tag oac-runtime:distribution --quiet
 "${msb[@]}" image inspect oac-runtime:distribution --format json > "$stage/runtime-inspect.json"
-python3 scripts/core-distribution-manifest.py manifest "$bundle" "$stage" "$revision" "$source_tree" "$release_base_url" "$offline"
+python3 scripts/core-distribution-manifest.py node-payload "$bundle" "$stage" "$revision" "$source_tree" "$release_base_url" "$offline"
+mkdir -p "$stage/ingress"
+cp deploy/distribution/Ingress.Dockerfile "$stage/ingress/Dockerfile"
+cp "$stage/core/bin/oac" "$stage/ingress/oac"
+build_image ingress "$stage/ingress"
+
+docker run --rm --network none --entrypoint /usr/local/bin/oac \
+  --env "OAC_REVISION=$revision" --tmpfs /data "$(cat "$stage/ingress.id")" init
+python3 scripts/core-distribution-manifest.py verify-image "$(cat "$stage/ingress.id")"
+docker image save --output "$bundle/images/ingress.tar" "$(cat "$stage/ingress.id")"
+python3 scripts/core-distribution-manifest.py manifest "$bundle" "$stage"
 require_clean_source
 if [[ "$(git -C "$repo_root" rev-parse HEAD)" != "$revision" ]]; then
   printf 'Source changed during distribution build\n' >&2

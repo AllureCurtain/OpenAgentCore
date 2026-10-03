@@ -79,9 +79,8 @@ class InstallScriptTests(unittest.TestCase):
             completed, _ = self.install(root, "--public-url", "https://core.example")
             self.assertEqual(completed.returncode, 0, completed.stderr)
             env = dict(line.split("=", 1) for line in (root / "oac/.env").read_text().splitlines())
-            self.assertEqual(env["COMPOSE_FILE"], "compose.yaml:ports.yaml")
             self.assertEqual(env["OAC_PUBLIC_URL"], "https://core.example")
-            self.assertEqual(sorted(env), ["COMPOSE_FILE", "COMPOSE_PROJECT_NAME", "OAC_HOST", "OAC_INSTALL_DIR", "OAC_PUBLIC_URL", "OAC_WEB_PORT"])
+            self.assertEqual(sorted(env), ["COMPOSE_PROJECT_NAME", "OAC_HOST", "OAC_INSTALL_DIR", "OAC_PUBLIC_URL", "OAC_WEB_PORT"])
 
     def test_help_does_not_need_docker(self):
         help_text = subprocess.run(["bash", str(INSTALL), "--help"], capture_output=True, text=True, check=True)

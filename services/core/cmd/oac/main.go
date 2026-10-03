@@ -38,7 +38,7 @@ func usage() {
 func run(ctx context.Context, command string, args []string) error {
 	switch command {
 	case "init":
-		return initCommand(ctx)
+		return initCommand()
 	}
 	root, err := installDir()
 	if err != nil {
