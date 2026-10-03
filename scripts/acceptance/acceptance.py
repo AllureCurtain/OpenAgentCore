@@ -11,7 +11,7 @@ Private model configuration shape (all three harnesses are required):
  "mcode": {"model": "...", "model_provider": {"protocol": "anthropic", ...}}}
 See contracts/agents-api/model-execution.md for provider fields and limits.
 
-Example: python3 deploy/install/acceptance.py run --base-url http://127.0.0.1:8091
+Example: python3 scripts/acceptance/acceptance.py run --base-url http://127.0.0.1:8091
   --caller-key-file /private/caller.key --model-config-file /private/models.json
   --report-dir /private/release-acceptance
 

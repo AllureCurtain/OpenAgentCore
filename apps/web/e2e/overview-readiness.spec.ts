@@ -77,10 +77,10 @@ test("successful empty reads preserve true zero counts and empty states", async 
   await expect(failed(page)).toHaveCount(0);
 });
 
-test("local-only address has a domain setup link on all three pages and blocks Add node", async ({ page, request }) => {
+test("local-only address links to System on other pages and blocks Add node", async ({ page, request }) => {
   await openConsole(page, request, "overview", { installation: "local" });
   const notice = page.getByRole("status", { name: "Public address needs attention" });
-  await expect(notice.getByRole("button", { name: "Configure domain and HTTPS" })).toBeVisible();
+  await expect(notice.getByRole("button", { name: "Review the public address" })).toBeVisible();
   await expect(page.locator(".getting-started-step").first()).toContainText("To do");
   await expect(page.locator(".getting-started-step").first()).toContainText("Configure HTTPS");
   await page.getByRole("button", { name: "Nodes", exact: true }).click();
@@ -89,7 +89,7 @@ test("local-only address has a domain setup link on all three pages and blocks A
   await expect(page.getByText("Add node is unavailable while the public address is local only.")).toBeVisible();
   await page.getByRole("button", { name: "System", exact: true }).click();
   await expect(notice).toBeVisible();
-  await expect(page.getByRole("button", { name: "Configure domain and HTTPS" })).toHaveCount(1);
+  await expect(notice.getByRole("button", { name: "Review the public address" })).toHaveCount(0);
   expect(await writes(request)).toEqual([]);
 });
 
@@ -102,7 +102,7 @@ for (const language of ["en", "zh-CN"] as const) {
       await page.getByRole("menuitemradio", { name: "简体中文" }).click();
     }
     await expect(page.locator(".overview-activity .error-state")).toContainText(language === "en" ? "Could not read the data" : "无法读取数据");
-    await expect(page.locator(".installation-notice")).toContainText(language === "en" ? "Configure HTTPS before connecting" : "连接外部应用和节点前");
+    await expect(page.locator(".installation-notice")).toContainText(language === "en" ? "Set a public HTTPS address before connecting" : "连接外部应用和节点前");
     if (language === "zh-CN") await expect(page.locator("body")).not.toContainText("Core request failed");
     await expect(page.getByRole("article").first()).toContainText(language === "en" ? "Down" : "不可用");
     for (const width of [1280, 1440]) {

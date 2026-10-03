@@ -386,7 +386,7 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
           <div className="wizard-rejection" role="alert">
             <p>{rejection}</p>
             {resetRequired ? <p>{t("Cancel editing to use Reset deployment. This change requires an explicit reset; the saved configuration is unchanged.")}</p> : null}
-            {addressRejected ? <button className="text-action" type="button" onClick={() => navigate("system", { id: "domain" })}>{t("Managed in System")}</button> : null}
+            {addressRejected ? <button className="text-action" type="button" onClick={() => navigate("system")}>{t("Managed in System")}</button> : null}
           </div>
         ) : null}
         {/* Initial setup needs the cleared key re-entered; updates may keep the saved key. */}

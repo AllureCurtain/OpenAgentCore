@@ -13,8 +13,6 @@ import (
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/sandbox"
 )
 
-// deploy/install/test_install.py checks valid_core_origin against the same
-// cases.
 func TestValidateCoreURL(t *testing.T) {
 	for _, value := range []string{"https://core.example", "https://core.example:8443", "http://localhost:8091", "http://127.0.0.2:8091", "http://[::1]:8091", "https://[2001:db8::1]"} {
 		if err := ValidateCoreURL(value); err != nil {

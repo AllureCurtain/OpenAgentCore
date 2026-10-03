@@ -132,7 +132,7 @@ jobs:
           for asset in "$HOME/.oac/build/core-distribution/"*; do
             if [[ -f "$asset" ]]; then ln "$asset" "$HOME/.oac/build/release-upload/"; fi
           done
-          cp deploy/install-release.sh "$HOME/.oac/build/release-upload/install.sh"
+          cp deploy/install.sh "$HOME/.oac/build/release-upload/install.sh"
           (cd "$HOME/.oac/build/release-upload" && sha256sum install.sh > install.sh.sha256)
       - uses: actions/upload-artifact@v6
         with:
@@ -141,8 +141,8 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
-      - name: Sign in to GHCR for version releases
-        if: github.event_name == 'push'
+      - name: Sign in to GHCR
+        if: github.event_name == 'push' || inputs.draft_release
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -159,5 +159,5 @@ jobs:
           RELEASE_MODE: ${{ github.event_name == 'push' && 'publish' || 'draft' }}
         run: python3 scripts/publish-core-release.py --assets "$HOME/.oac/build/release-upload"
       - name: Remove registry credentials
-        if: always() && github.event_name == 'push'
+        if: always() && (github.event_name == 'push' || inputs.draft_release)
         run: rm -f "$RUNNER_TEMP/oac-release-docker/config.json"
