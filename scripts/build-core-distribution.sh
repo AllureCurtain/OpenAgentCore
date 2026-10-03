@@ -109,7 +109,7 @@ mkdir -p "$bundle/runtime"
 cp services/core/deploy/codex/seccomp.json "$bundle/runtime/"
 cp LICENSE "$bundle/"
 
-OAC_DEV_BUILD_REVISION="$revision" E2B_SOURCE_REVISION="$revision" scripts/build-core-image-context.sh "$stage/core"
+OAC_DEV_BUILD_REVISION="$revision" scripts/build-core-image-context.sh "$stage/core"
 (
   cd services/core/tools/microsandbox-provider
   GOWORK=off CGO_ENABLED=1 go build -mod=readonly -trimpath \

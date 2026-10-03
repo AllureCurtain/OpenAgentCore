@@ -88,11 +88,18 @@ class SelectionTests(unittest.TestCase):
             "website": {"hygiene", "website", "lint"},
             "native": {"hygiene", "native", "lint"},
             "api-acceptance": {"hygiene", "api", "lint"},
+            "cache-warm": {"hygiene", "lint"},
         }.items():
             with self.subTest(workflow=workflow):
                 plan = ci.select([f".github/workflows/{workflow}.yml"])
                 self.assertEqual(set(plan["jobs"]), selected)
                 self.assertEqual(plan["image"], workflow == "api-acceptance")
+
+    def test_cache_actions_select_their_consumers(self):
+        self.assertEqual(self.jobs(".github/actions/mcode-companion/action.yml"), {"hygiene", "native", "lint"})
+        plan = ci.select([".github/actions/e2b-provider/action.yml"])
+        self.assertEqual(set(plan["jobs"]), {"hygiene", "api", "lint"})
+        self.assertTrue(plan["image"])
 
     def test_node_action_selects_all_direct_consumers_and_lint(self):
         root = Path(__file__).resolve().parents[1]

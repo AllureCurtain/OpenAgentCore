@@ -1,7 +1,7 @@
 ---
 title: "构建并发布 OpenAgentCore"
 source: docs/maintainers.md
-source_hash: 461f757bab0a3b39cd51f41f64880015822e42ba156d6c3596bb30b87524baef
+source_hash: ed4a16eca4710a2bc8be67b07d465e599d77638cb53ef34059fe4635671f18a0
 ---
 
 本指南面向负责构建和发布 OpenAgentCore 的维护者。要安装 Core 和 Web，请使用 [安装指南](getting-started/install.md)。安装器代码遵循的规则见 [部署](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/README.md) 和 [节点安装器](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/node/README.md)；必需检查见 [CONTRIBUTING](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks)。
@@ -96,7 +96,7 @@ docker build --platform linux/amd64 -t oac-runtime:mcode "${OAC_DEV_HOME:-$HOME/
 make build-e2b-provider
 ```
 
-Docker 使用固定版本的 CPython 和 Debian 12 镜像构建 Linux amd64 辅助程序。Python 依赖闭包（including PyInstaller）在 `services/core/tools/e2b-provider/requirements.lock` 中按哈希锁定；不需要 E2B 账户密钥。要使用其他输出目录，请设置 `E2B_PROVIDER_BUILD_DIR`；从导出的源代码树构建时，请设置 `E2B_SOURCE_REVISION`。输出为 `oac-e2b-provider-linux-amd64.tar.gz` 及其 `.sha256`；解压后会得到 `oac-e2b-provider/`，其中包含可执行文件、`_internal/`、`licenses/`、`requirements.lock` 和 `manifest.json`。Core 镜像使用该目录树；主机需要兼容的 glibc 和 CA 证书，而不需要 Python。
+Docker 使用固定版本的 CPython 和 Debian 12 镜像构建 Linux amd64 辅助程序。Python 依赖闭包（including PyInstaller）在 `services/core/tools/e2b-provider/requirements.lock` 中按哈希锁定；不需要 E2B 账户密钥。要使用其他输出目录，请设置 `E2B_PROVIDER_BUILD_DIR`。构建结果完全由辅助程序源代码、`LICENSE` 和构建脚本决定，因此会按它们的哈希缓存在 `~/.oac/cache/e2b-provider/` 下，仅在它们变化时重新构建。输出为 `oac-e2b-provider-linux-amd64.tar.gz` 及其 `.sha256`；解压后会得到 `oac-e2b-provider/`，其中包含可执行文件、`_internal/`、`licenses/`、`requirements.lock` 和 `manifest.json`。Core 镜像使用该目录树；主机需要兼容的 glibc 和 CA 证书，而不需要 Python。
 
 **microsandbox 辅助程序。** 仅支持 Linux，并且需要 C 编译器：
 
@@ -158,7 +158,7 @@ gh workflow run core-release --repo MiniMax-AI/OpenAgentCore --ref main \
 
 ## 持续集成 {#continuous-integration}
 
-每个 PR 都会运行 `core-check` 并报告必需状态 `check`。main 使用 GitHub 分支保护，合并前必须通过此检查且分支必须为最新状态，因此合并不会启动另一份测试套件。所有更改都必须通过经过检查的 PR 提交；管理员绕过检查并不代表 CI 成功。推送到 main 时，如果输入发生变化，就会发布网站。版本标签和手动发布构建会在其确切源代码提交上运行完整的发布门禁。`scripts/ci_plan.py` 管理唯一的输入到检查映射。组件规则要求同时匹配目录或脚本前缀以及文件后缀；确切的依赖项、工作流和共享构建输入都有明确规则。规则会在共享使用方和混合变更之间累加。没有匹配构建/测试规则的路径仅运行 hygiene。引入新组件、语言、构建输入或资源位置时，请添加相应规则。
+每个 PR 都会运行 `core-check` 并报告必需状态 `check`。main 使用 GitHub 分支保护，合并前必须通过此检查且分支必须为最新状态，因此合并不会启动另一份测试套件。所有更改都必须通过经过检查的 PR 提交；管理员绕过检查并不代表 CI 成功。推送到 main 时，如果输入发生变化，就会发布网站，并运行 `cache-warm`：它构建 MiniMax companion、E2B 辅助程序和 pnpm 存储，不运行测试，因为只有 main 上保存的缓存能被每个 PR 和发布标签恢复。版本标签和手动发布构建会在其确切源代码提交上运行完整的发布门禁。`scripts/ci_plan.py` 管理唯一的输入到检查映射。组件规则要求同时匹配目录或脚本前缀以及文件后缀；确切的依赖项、工作流和共享构建输入都有明确规则。规则会在共享使用方和混合变更之间累加。没有匹配构建/测试规则的路径仅运行 hygiene。引入新组件、语言、构建输入或资源位置时，请添加相应规则。
 
 计划器会将 PR 事件所测试的合并提交与其已验证的第一个父提交进行比较。NUL 分隔的 Git 输出和禁用重命名检测会同时保留旧路径和新路径。计划及原因会显示在运行摘要中。历史记录缺失或不一致、检出不匹配、路径无效、计划器/编排发生变更以及共享构建输入发生变化时，都会选择完整门禁。经过验证的空差异仅选择 hygiene。发布、手动和显式 ref 调用始终选择所有组。
 
