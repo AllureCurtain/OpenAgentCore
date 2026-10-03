@@ -11,7 +11,6 @@ import grp
 import hashlib
 import http.client
 import io
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -77,15 +76,10 @@ def origin(value):
         parsed.port
     except ValueError:
         raise argparse.ArgumentTypeError("Invalid Core origin") from None
-    try:
-        local = parsed.hostname == "localhost" or ipaddress.ip_address(parsed.hostname).is_loopback
-    except (ValueError, TypeError):
-        local = parsed.hostname == "localhost"
     if (parsed.scheme not in ("http", "https") or not parsed.hostname or parsed.username is not None
             or parsed.password is not None or parsed.path not in ("", "/")
-            or any(c.isspace() for c in value) or any(c in value for c in "?#\\")
-            or (parsed.scheme == "http" and not local)):
-        raise argparse.ArgumentTypeError("Use an HTTPS origin, or loopback HTTP for a local node")
+            or any(c.isspace() for c in value) or any(c in value for c in "?#\\")):
+        raise argparse.ArgumentTypeError("Use an http or https origin")
     return value.rstrip("/")
 
 

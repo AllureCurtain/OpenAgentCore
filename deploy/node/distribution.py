@@ -2,7 +2,6 @@
 import gzip
 import hashlib
 import http.client
-import ipaddress
 import json
 import os
 from pathlib import Path
@@ -100,18 +99,12 @@ def safe_url(value):
     try:
         parsed = urlsplit(value)
         parsed.port
-        loopback = parsed.hostname == 'localhost'
-        if parsed.hostname and not loopback:
-            try:
-                loopback = ipaddress.ip_address(parsed.hostname).is_loopback
-            except ValueError:
-                pass
         if (not parsed.hostname or parsed.username is not None or parsed.password is not None
                 or parsed.fragment or any(c.isspace() for c in value)
-                or '\\' in value or parsed.scheme != 'https' and not (parsed.scheme == 'http' and loopback)):
+                or '\\' in value or parsed.scheme not in ('http', 'https')):
             raise ValueError()
     except ValueError:
-        raise ArtifactError('Artifact downloads require HTTPS; loopback HTTP is only for local testing') from None
+        raise ArtifactError('Artifact downloads need an http or https URL without credentials') from None
     return value
 
 

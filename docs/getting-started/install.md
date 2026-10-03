@@ -30,7 +30,7 @@ The Core host needs no KVM; nodes that run microsandbox do.
 curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/install.sh | bash
 ```
 
-If a reverse proxy already serves this host, pass its HTTPS address:
+On a host whose default route has a private-network address, the installer sets the public URL to `http://<that address>:8080`, so machines on the same network can open Web and add nodes; otherwise only this machine can. If a reverse proxy already serves this host, pass its HTTPS address:
 
 ```sh
 curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/install.sh | bash -s -- --public-url https://core.example
@@ -42,7 +42,7 @@ The script downloads that release's Compose files, checks their SHA-256, and:
 2. creates the [installation directory](../configuration.md#installation-directory), `~/.oac/core`, writes `.env`, and copies the `oac` command out of the Core image;
 3. starts the services with Docker Compose. Web serves the console on port 8080 and forwards `/v1`, `/api/v1` and `/docs` to Core. Core and PostgreSQL are not published.
 
-It saves no sandbox backend, adds no node, creates no Project or key and makes no model request. It ends by printing the console address and how to read the Core key.
+It saves no sandbox backend, adds no node, creates no Project or key and makes no model request. It ends by printing the console address and the Core key.
 
 If installation fails before the services become healthy, the installer removes the directory it created. Fix the reported cause and rerun the same command. Once the services have started, a later failure keeps the installation and its data. A new release is a new directory; see [version policy](./operations.md#installation-version-policy).
 
@@ -50,7 +50,7 @@ For insufficient space or quota, free space on the filesystem named by the error
 
 ## Sign in to Web
 
-1. On this machine, open `http://localhost:8080`, or the origin you passed with `--public-url`. Web accepts only that host.
+1. Open the console address the installer printed, the public URL. Web accepts only that host.
 2. Sign in with the [Core key](./operations.md#core-key), the installation's administrator credential. Web has no user accounts.
 
    ```sh
@@ -59,7 +59,7 @@ For insufficient space or quota, free space on the filesystem named by the error
 
 ## Configure the public address {#configure-the-domain-and-https}
 
-Applications, nodes and sandboxes reach Core at one HTTPS address, the public URL.
+Applications, nodes and sandboxes reach Core at one address, the public URL. HTTP is enough on the local network. When you expose Core beyond it, put a reverse proxy in front and set the public URL to the HTTPS origin it serves. E2B guests reach Core from the internet, so they need a public URL that is not loopback.
 
 1. Point your reverse proxy at Web.
 2. Set `OAC_PUBLIC_URL` to the HTTPS origin it serves, then run `oac apply`. See [changing the public URL](../configuration.md#changing-the-public-url).

@@ -72,7 +72,7 @@ The installer saves no sandbox backend. After signing in, open **System** → **
 
 The default installation publishes Web on `--web-port` (8080) at `--host 0.0.0.0`. Core and PostgreSQL stay private. `--host` is an IPv4 or IPv6 address, without a port, scheme or zone. Use a concrete server IP in the browser, not a wildcard.
 
-`--public-url` sets `OAC_PUBLIC_URL`, the origin applications, nodes and executors use. Set it to the HTTPS origin your reverse proxy serves.
+`--public-url` sets `OAC_PUBLIC_URL`, the origin applications, nodes and executors use. Behind a reverse proxy, set it to the HTTPS origin the proxy serves. Without it, the installer uses `http://<address>:<web port>` when `--host` is `0.0.0.0` and the host's default route has a private-network address, and `http://localhost:<web port>` otherwise. [Changing the public URL](../configuration.md#changing-the-public-url) lists the accepted origins.
 
 ### Ports
 

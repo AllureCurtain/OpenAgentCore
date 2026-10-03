@@ -149,7 +149,8 @@ class ArtifactTests(unittest.TestCase):
             distribution.runtime_archive(self.manifest, self.root / 'cache')
 
     def test_url_and_path_boundaries(self):
-        for value in ('http://example.com/a', 'https://user:secret@example.com/a', 'file:///tmp/a'):
+        self.assertEqual(distribution.safe_url('http://core.example:8080/a'), 'http://core.example:8080/a')
+        for value in ('ftp://example.com/a', 'https://user:secret@example.com/a', 'file:///tmp/a'):
             with self.assertRaises(distribution.DistributionError):
                 distribution.safe_url(value)
         self.manifest['artifacts']['native/bin/node']['filename'] = '../escape'

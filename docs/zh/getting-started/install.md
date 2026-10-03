@@ -1,7 +1,7 @@
 ---
 title: "安装 Core 和 Web"
 source: docs/getting-started/install.md
-source_hash: 63db48e9ac2b0f64b773b7271511c95dc44121ff29f303a738f124ec8c76c8a3
+source_hash: b588dc9d68ba909fe9fadc440ee3f6fda9b79ebe0f14f6011d8bab603e17c710
 ---
 
 一条命令即可在 Linux 主机上安装 Core、Web 控制台和 PostgreSQL。用 Core 密钥登录 Web，设置默认模型并签发 Project API 密钥。应用使用这些密钥调用 Core。Session 在你添加的节点上的沙箱中运行，也可以在 E2B 上运行。
@@ -32,7 +32,7 @@ Core 主机不需要 KVM；运行 microsandbox 的节点需要。
 curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/install.sh | bash
 ```
 
-反向代理已经提供这台主机时，传入它的 HTTPS 地址：
+如果主机默认路由的源地址是私有网络地址，安装程序把公开 URL 设为 `http://<that address>:8080`，同一网络的机器即可打开 Web 并添加节点；否则只有本机可以访问。反向代理已经提供这台主机时，传入它的 HTTPS 地址：
 
 ```sh
 curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/install.sh | bash -s -- --public-url https://core.example
@@ -44,7 +44,7 @@ curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/
 2. 创建[安装目录](../configuration.md#installation-directory) `~/.oac/core`，写入 `.env`，并从 Core 镜像复制 `oac` 命令；
 3. 用 Docker Compose 启动服务。Web 在 8080 端口提供控制台，并把 `/v1`、`/api/v1` 和 `/docs` 转发到 Core。Core 和 PostgreSQL 不发布端口。
 
-安装程序不保存沙箱后端，不添加节点，不创建 Project 或密钥，也不发起模型请求。完成后输出控制台地址，以及如何读取 Core 密钥。
+安装程序不保存沙箱后端，不添加节点，不创建 Project 或密钥，也不发起模型请求。完成后输出控制台地址和 Core 密钥。
 
 如果服务进入健康状态之前安装失败，安装程序会删除它创建的目录。修复报告的问题后，重新运行同一命令。服务已经启动之后，后续失败会保留安装和数据。新发布版使用新目录；见[版本策略](operations.md#installation-version-policy)。
 
@@ -52,7 +52,7 @@ curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/
 
 ## 登录 Web {#sign-in-to-web}
 
-1. 在本机打开 `http://localhost:8080`，或打开 `--public-url` 传入的源地址。Web 只接受这个主机名。
+1. 打开安装程序输出的控制台地址，即公开 URL。Web 只接受这个主机名。
 2. 使用 [Core 密钥](operations.md#core-key)登录，这是安装的管理员凭据。Web 没有用户账号。
 
    ```sh
@@ -61,7 +61,7 @@ curl -fsSL https://github.com/MiniMax-AI/OpenAgentCore/releases/latest/download/
 
 ## 配置公开地址 {#configure-the-domain-and-https}
 
-应用、节点和沙箱通过同一个 HTTPS 地址访问 Core，即公开 URL。
+应用、节点和沙箱通过同一个地址访问 Core，即公开 URL。局域网上用 HTTP 即可。对外暴露时，在前面放反向代理，并把公开 URL 设为它提供的 HTTPS 源地址。E2B 客户机从互联网访问 Core，因此需要非回环的公开 URL。
 
 1. 把反向代理指向 Web。
 2. 把 `OAC_PUBLIC_URL` 设为反向代理提供的 HTTPS 源地址，然后运行 `oac apply`。见[修改公开 URL](../configuration.md#changing-the-public-url)。

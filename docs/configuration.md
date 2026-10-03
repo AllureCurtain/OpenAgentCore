@@ -29,7 +29,7 @@ Installer flags in [installation options](./getting-started/install-options.md) 
 
 ### Changing the public URL {#changing-the-public-url}
 
-`OAC_PUBLIC_URL` is the one origin that applications, nodes, sandboxes and self-hosted executors use. Core derives the daemon WebSocket URL, the self-hosted `remote_url` and each sandbox's connection address from it. The installation serves Web over HTTP on `OAC_WEB_PORT`; your reverse proxy or hosting platform terminates HTTPS and routes to that port.
+`OAC_PUBLIC_URL` is the one origin that applications, nodes, sandboxes and self-hosted executors use. Core derives the daemon WebSocket URL, the self-hosted `remote_url` and each sandbox's connection address from it. It is an http or https origin: the address browsers and nodes use. The installation serves Web over HTTP on `OAC_WEB_PORT`; a reverse proxy or hosting platform terminates HTTPS when you put one in front.
 
 To change it, point the reverse proxy at the new address first, then edit `OAC_PUBLIC_URL` and run `oac apply`. Afterwards:
 
@@ -43,7 +43,7 @@ To change it, point the reverse proxy at the new address first, then edit `OAC_P
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. Managed domain setup writes the HTTPS origin and recreates Core and Web |
+| `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. See [changing the public URL](#changing-the-public-url) |
 | `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
 | `COMPOSE_FILE` | `compose.yaml:ports.yaml` | The Compose files. `ports.yaml` publishes Web; hosting platforms omit it |

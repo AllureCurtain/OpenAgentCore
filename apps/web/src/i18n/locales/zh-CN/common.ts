@@ -10,7 +10,7 @@ export const common = {
   },
   installationNotice: {
     title: "公开地址需要处理",
-    body: "连接外部应用和节点前，请先设置一个公网 HTTPS 地址。",
+    body: "连接外部应用和节点前，请先设置一个其他机器能访问的公开地址。",
     configure: "查看公开地址",
     addBlocked: "公开地址仅限本机访问，暂时无法添加节点。",
   },

@@ -107,7 +107,7 @@ func PublicURL() (string, error) {
 		return "", nil
 	}
 	if deployment.ValidateCoreURL(value) != nil {
-		return "", configErr("OAC_PUBLIC_URL must be a canonical HTTPS origin without path, credentials, query or fragment, such as https://core.example; plain HTTP is accepted only for a loopback host")
+		return "", configErr("OAC_PUBLIC_URL must be a canonical http or https origin without path, credentials, query or fragment, such as https://core.example")
 	}
 	return value, nil
 }
