@@ -19,7 +19,7 @@ import (
 // environment and build; configuration is the process settings it loaded.
 type Installation struct {
 	Object string `json:"object" enums:"core.installation"`
-	// OAC_INSTALLATION_ID; null when Core runs without the sandbox manager.
+	// The ID in OAC_INSTALLATION_ID_FILE; null when Core runs without the sandbox manager.
 	InstallationID *string `json:"installation_id" extensions:"x-nullable"`
 	// OAC_PUBLIC_URL: the origin applications, nodes, sandboxes and self-hosted executors use. Null when unset.
 	PublicURL *string `json:"public_url" extensions:"x-nullable"`

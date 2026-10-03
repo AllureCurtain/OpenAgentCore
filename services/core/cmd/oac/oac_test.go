@@ -12,7 +12,7 @@ import (
 func TestConfigureRejectsBadHostnamesAndRequiresConfirmation(t *testing.T) {
 	root := t.TempDir()
 	in := installation{root: root, data: filepath.Join(root, "data")}
-	writeInstall(t, in, "managed", "")
+	writeInstall(t, in, "")
 	effects := Effects{Resolve: func(string) bool { return true }, Bindings: func(context.Context) (int, error) { return 2, nil }}
 	if _, err := configure(context.Background(), in, effects, "not a host", ""); err == nil {
 		t.Fatal("accepted an invalid hostname")
@@ -33,7 +33,7 @@ func TestConfigureRejectsBadHostnamesAndRequiresConfirmation(t *testing.T) {
 func TestConfigureFailureRestoresThePreviousSiteAndSetsCooldown(t *testing.T) {
 	root := t.TempDir()
 	in := installation{root: root, data: filepath.Join(root, "data")}
-	writeInstall(t, in, "managed", "")
+	writeInstall(t, in, "")
 	previous := []byte("\n")
 	if err := os.MkdirAll(filepath.Dir(in.sitePath()), 0o755); err != nil {
 		t.Fatal(err)
@@ -62,7 +62,7 @@ func TestConfigureFailureRestoresThePreviousSiteAndSetsCooldown(t *testing.T) {
 func TestConfigureSuccessWritesThePublicURL(t *testing.T) {
 	root := t.TempDir()
 	in := installation{root: root, data: filepath.Join(root, "data")}
-	writeInstall(t, in, "managed", "http://localhost:8080")
+	writeInstall(t, in, "http://localhost:8080")
 	effects := Effects{Resolve: func(string) bool { return true }, Reload: func(context.Context) error { return nil }, Verify: func(context.Context, string, string) error { return nil }, Recreate: func(context.Context) error { return nil }}
 	status, err := configure(context.Background(), in, effects, "core.example", "")
 	if err != nil {
@@ -72,9 +72,6 @@ func TestConfigureSuccessWritesThePublicURL(t *testing.T) {
 		t.Fatal(status)
 	}
 	if got, _ := envValue(in.envPath(), "OAC_PUBLIC_URL"); got != "https://core.example" {
-		t.Fatal(got)
-	}
-	if got, _ := envValue(in.envPath(), "OAC_WEB_BOOTSTRAP"); got != "0" {
 		t.Fatal(got)
 	}
 	site, err := os.ReadFile(in.sitePath())
@@ -211,7 +208,7 @@ func (s scriptedRunner) Output(context.Context, ...string) ([]byte, error) {
 	return nil, nil
 }
 
-func writeInstall(t *testing.T, in installation, ingress, public string) {
+func writeInstall(t *testing.T, in installation, public string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(in.data, "secrets", "core"), 0o755); err != nil {
 		t.Fatal(err)
@@ -219,7 +216,7 @@ func writeInstall(t *testing.T, in installation, ingress, public string) {
 	if err := os.WriteFile(filepath.Join(in.data, "secrets", "core", "installation.id"), []byte("11111111-1111-4111-8111-111111111111\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	env := "OAC_INGRESS=" + ingress + "\nCOMPOSE_PROJECT_NAME=oac-test\n"
+	env := "COMPOSE_PROJECT_NAME=oac-test\n"
 	if public != "" {
 		env += "OAC_PUBLIC_URL=" + public + "\n"
 	}

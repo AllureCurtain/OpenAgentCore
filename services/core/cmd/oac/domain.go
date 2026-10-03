@@ -169,10 +169,6 @@ func acceptDomain(ctx context.Context, in installation, effects Effects, hostnam
 	if confirmation != "" && confirmation != target {
 		return domainJob{}, domainErr(400, "invalid_confirmation", "The confirmation must equal the new HTTPS URL")
 	}
-	ingress, _ := envValue(in.envPath(), "OAC_INGRESS")
-	if ingress != "managed" {
-		return domainJob{}, domainErr(400, "domain_setup_unavailable", "This installation uses an external reverse proxy. Configure HTTPS there, then set OAC_PUBLIC_URL and run oac apply.")
-	}
 	current, _ := envValue(in.envPath(), "OAC_PUBLIC_URL")
 	status := in.readStatus()
 	if status.State == "failed" && status.TargetURL != nil && *status.TargetURL == target && status.Message != nil {
@@ -188,7 +184,7 @@ func acceptDomain(ctx context.Context, in installation, effects Effects, hostnam
 	if effects.Bindings != nil {
 		bound, err = effects.Bindings(ctx)
 		if err != nil {
-			return domainJob{}, domainErr(409, "installation_not_running", "Start the installation with oac start before configuring its domain")
+			return domainJob{}, domainErr(409, "installation_not_running", "Core is not running; start it with docker compose up -d before configuring its domain")
 		}
 	}
 	if bound > 0 && confirmation != target {
@@ -249,12 +245,12 @@ func finishDomain(ctx context.Context, in installation, effects Effects, job dom
 	if err := in.writeStatus(applying); err != nil {
 		return restore(err)
 	}
-	if err := updateEnv(in.envPath(), map[string]string{"OAC_PUBLIC_URL": target, "OAC_WEB_BOOTSTRAP": "0"}); err != nil {
+	if err := updateEnv(in.envPath(), map[string]string{"OAC_PUBLIC_URL": target}); err != nil {
 		return restore(err)
 	}
 	if effects.Recreate != nil {
 		if err := effects.Recreate(ctx); err != nil {
-			_ = updateEnv(in.envPath(), map[string]string{"OAC_PUBLIC_URL": current, "OAC_WEB_BOOTSTRAP": bootstrapFor(current)})
+			_ = updateEnv(in.envPath(), map[string]string{"OAC_PUBLIC_URL": current})
 			return restore(domainErr(502, "domain_setup_failed", "Core and Web did not restart with the new address"))
 		}
 	}
@@ -281,13 +277,6 @@ func httpsOrNil(origin string) *string {
 	}
 	value := origin
 	return &value
-}
-
-func bootstrapFor(origin string) string {
-	if strings.HasPrefix(origin, "https://") {
-		return "0"
-	}
-	return "1"
 }
 
 func installationIdentity(data string) (string, error) {

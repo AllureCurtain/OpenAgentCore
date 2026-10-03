@@ -440,7 +440,7 @@ definitions:
         description: The process settings Core loaded. path and apply_command are empty, and applied_at is null, because Core reports its environment rather than an installer file.
         x-nullable: true
       installation_id:
-        description: OAC_INSTALLATION_ID; null when Core runs without the sandbox manager.
+        description: The ID in OAC_INSTALLATION_ID_FILE; null when Core runs without the sandbox manager.
         type: string
         x-nullable: true
       local_only:

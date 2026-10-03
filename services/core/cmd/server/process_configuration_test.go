@@ -16,13 +16,17 @@ func TestExecutionConcurrencyConfiguration(t *testing.T) {
 	if got, err := processconfig.ExecutionConcurrency(); err != nil || got != 4 {
 		t.Fatal(got, err)
 	}
+	t.Setenv("OAC_EXECUTION_CONCURRENCY", "")
+	if got, err := processconfig.ExecutionConcurrency(); err != nil || got != 4 {
+		t.Fatal("empty concurrency did not keep the default", got, err)
+	}
 	for _, value := range []string{"1", "7", "1024"} {
 		t.Setenv("OAC_EXECUTION_CONCURRENCY", value)
 		if got, err := processconfig.ExecutionConcurrency(); err != nil || got < 1 {
 			t.Fatal(value, got, err)
 		}
 	}
-	for _, value := range []string{"", "0", "-1", "1025", "1.5", "secret-value"} {
+	for _, value := range []string{"0", "-1", "1025", "1.5", "secret-value"} {
 		t.Setenv("OAC_EXECUTION_CONCURRENCY", value)
 		if _, err := processconfig.ExecutionConcurrency(); err == nil || strings.Contains(err.Error(), "secret-value") {
 			t.Fatal("invalid concurrency accepted or echoed", err)

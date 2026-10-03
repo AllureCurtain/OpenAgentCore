@@ -51,14 +51,9 @@ func loadConfig() (config, error) {
 	if c.installationSocket != "" && !filepath.IsAbs(c.installationSocket) {
 		return config{}, errors.New("OAC_WEB_INSTALLATION_SOCKET must be absolute")
 	}
-	bootstrap := envDefault("OAC_WEB_BOOTSTRAP", "0")
-	if bootstrap != "0" && bootstrap != "1" {
-		return config{}, errors.New("OAC_WEB_BOOTSTRAP must be 0 or 1")
-	}
-	c.bootstrap = bootstrap == "1"
-	if c.bootstrap && (origin.Scheme != "http" || c.installationSocket == "") {
-		return config{}, errors.New("HTTP bootstrap requires installation management and an HTTP origin")
-	}
+	// A managed installation without HTTPS yet accepts literal IP hosts so the
+	// operator can reach the console to configure its domain.
+	c.bootstrap = c.installationSocket != "" && origin.Scheme == "http"
 	return c, nil
 }
 

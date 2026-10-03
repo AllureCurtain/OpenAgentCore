@@ -46,3 +46,24 @@ func TestSettingsReportEffectiveValuesAndHideHistory(t *testing.T) {
 		t.Fatal(found)
 	}
 }
+
+func TestHarnessesDefaultToEveryQualifiedHarness(t *testing.T) {
+	t.Setenv("OAC_DEFAULT_HARNESS", "")
+	t.Setenv("OAC_HARNESSES", "")
+	engineName, err := DefaultHarness()
+	if err != nil || engineName != "codex" {
+		t.Fatal(engineName, err)
+	}
+	kinds, err := Harnesses(engineName)
+	if err != nil || strings.Join(kinds, ",") != "claude_sdk,codex,mcode" {
+		t.Fatal(kinds, err)
+	}
+	t.Setenv("OAC_HARNESSES", "mcode")
+	if kinds, err = Harnesses("codex"); err != nil || strings.Join(kinds, ",") != "codex,mcode" {
+		t.Fatal(kinds, err)
+	}
+	t.Setenv("OAC_HARNESSES", "unqualified")
+	if _, err = Harnesses("codex"); err == nil {
+		t.Fatal("unqualified harness enabled")
+	}
+}

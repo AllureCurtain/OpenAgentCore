@@ -41,13 +41,10 @@ func main() {
 var buildRevision = "development"
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "oac (%s)\nUsage: oac apply|core-key|rotate-core-key|domain|setup-sandbox|init|gateway|healthcheck\n", buildRevision)
+	fmt.Fprintf(os.Stderr, "oac (%s)\nUsage: oac apply|core-key|rotate-core-key|domain|init|gateway|healthcheck\n", buildRevision)
 }
 
 func run(ctx context.Context, command string, args []string) error {
-	if command == "setup-sandbox" && os.Getenv("OAC_INNER_SETUP") == "1" {
-		return setupSandboxInner(ctx)
-	}
 	switch command {
 	case "init":
 		return initCommand(ctx)
@@ -71,8 +68,6 @@ func run(ctx context.Context, command string, args []string) error {
 		return domainCommand(in, args)
 	case "gateway":
 		return serveGateway(ctx, in, liveEffects(in.data, runner))
-	case "setup-sandbox":
-		return setupSandbox(ctx, root, runner)
 	default:
 		usage()
 		return errors.New("unknown command")
@@ -128,7 +123,7 @@ func coreKeyCommand(ctx context.Context, in installation, runner Runner, args []
 		return nil
 	}
 	if len(args) == 1 && args[0] == "--show" {
-		return runner.Run(ctx, "--profile", "tools", "run", "--rm", "--no-deps", "credentials")
+		return runner.Run(ctx, "exec", "-T", "web", "/usr/local/bin/oac-web", "core-key")
 	}
 	return errors.New("Usage: oac core-key [--show]")
 }

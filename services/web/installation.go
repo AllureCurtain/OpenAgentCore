@@ -26,7 +26,7 @@ func (h *console) serveInstallationDomain(w http.ResponseWriter, r *http.Request
 			return
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"supported": false, "state": "unconfigured", "public_url": nil, "target_url": nil,
-			"message": "This installation uses an external reverse proxy. Configure HTTPS there, then set public_url and run oac apply."})
+			"message": "This installation uses an external reverse proxy. Configure HTTPS there, then set OAC_PUBLIC_URL in .env and run oac apply."})
 		return
 	}
 	body := http.MaxBytesReader(w, r.Body, 2048)
@@ -50,13 +50,13 @@ func (h *console) serveInstallationDomain(w http.ResponseWriter, r *http.Request
 	defer transport.CloseIdleConnections()
 	response, err := transport.RoundTrip(req)
 	if err != nil {
-		consoleCoreError(w, http.StatusBadGateway, "installation_unreachable", "Installation management is unavailable; run oac status on the server")
+		consoleCoreError(w, http.StatusBadGateway, "installation_unreachable", "Installation management is unavailable; run docker compose ps on the server and check the gateway")
 		return
 	}
 	defer response.Body.Close()
 	payload, err := io.ReadAll(io.LimitReader(response.Body, 16385))
 	if err != nil || len(payload) > 16384 || !json.Valid(payload) || response.StatusCode < 200 || response.StatusCode >= 500 {
-		consoleCoreError(w, http.StatusBadGateway, "installation_unreachable", "Installation management is unavailable; run oac status on the server")
+		consoleCoreError(w, http.StatusBadGateway, "installation_unreachable", "Installation management is unavailable; run docker compose ps on the server and check the gateway")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

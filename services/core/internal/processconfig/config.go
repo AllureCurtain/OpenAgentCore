@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/api"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/deployment"
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/engine"
@@ -18,8 +20,8 @@ import (
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/oauthrefresh"
 )
 
-// Check validates every process setting Core loads. An unset variable keeps
-// its default.
+// Check validates every process setting Core loads. An unset or empty
+// variable keeps its default, so Compose can pass every setting through.
 func Check() error {
 	if _, err := PublicURL(); err != nil {
 		return err
@@ -27,11 +29,14 @@ func Check() error {
 	if _, err := ExecutionConcurrency(); err != nil {
 		return err
 	}
-	engineName, err := defaultHarness()
+	if _, err := InstallationID(); err != nil {
+		return err
+	}
+	engineName, err := DefaultHarness()
 	if err != nil {
 		return err
 	}
-	if _, err := harnesses(engineName); err != nil {
+	if _, err := Harnesses(engineName); err != nil {
 		return err
 	}
 	if _, err := writeAuditRetention(); err != nil {
@@ -51,8 +56,8 @@ func Settings() ([]api.InstallationSetting, error) {
 	}
 	public, _ := PublicURL()
 	concurrency, _ := ExecutionConcurrency()
-	engineName, _ := defaultHarness()
-	enabled, _ := harnesses(engineName)
+	engineName, _ := DefaultHarness()
+	enabled, _ := Harnesses(engineName)
 	retention := "2160h"
 	if value := os.Getenv("OAC_WRITE_AUDIT_RETENTION"); value != "" {
 		retention = value
@@ -77,7 +82,7 @@ func Settings() ([]api.InstallationSetting, error) {
 		setting("log.format", format, "auto", true, []string{"core", "web"}),
 		setting("log.add_source", addSource, false, true, []string{"core", "web"}),
 		setting("core.execution_concurrency", concurrency, execution.DefaultExecutionConcurrency, true, []string{"core"}),
-		setting("core.harnesses", enabled, []string{"codex"}, true, []string{"core"}),
+		setting("core.harnesses", enabled, (engine.Catalog{}).Kinds(), true, []string{"core"}),
 		setting("core.default_harness", engineName, "codex", true, []string{"core"}),
 		setting("core.write_audit_retention", retention, "2160h", true, []string{"core"}),
 		setting("core.oauth_trusted_origins", origins, []string{}, true, []string{"core"}),
@@ -107,10 +112,29 @@ func PublicURL() (string, error) {
 	return value, nil
 }
 
-// ExecutionConcurrency reads OAC_EXECUTION_CONCURRENCY. Unset keeps the default.
+// InstallationID reads the file named by OAC_INSTALLATION_ID_FILE. The ID
+// enables the sandbox deployment and node routes; unset leaves them off.
+func InstallationID() (string, error) {
+	path := os.Getenv("OAC_INSTALLATION_ID_FILE")
+	if path == "" {
+		return "", nil
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return "", configErr("OAC_INSTALLATION_ID_FILE must name a readable file")
+	}
+	value := strings.TrimSpace(string(raw))
+	if id, err := uuid.Parse(value); err != nil || id == uuid.Nil || id.String() != value {
+		return "", configErr("OAC_INSTALLATION_ID_FILE must contain a canonical UUID")
+	}
+	return value, nil
+}
+
+// ExecutionConcurrency reads OAC_EXECUTION_CONCURRENCY. Unset or empty keeps
+// the default.
 func ExecutionConcurrency() (int, error) {
-	value, explicit := os.LookupEnv("OAC_EXECUTION_CONCURRENCY")
-	if !explicit {
+	value := os.Getenv("OAC_EXECUTION_CONCURRENCY")
+	if value == "" {
 		return execution.DefaultExecutionConcurrency, nil
 	}
 	limit, err := strconv.Atoi(value)
@@ -120,7 +144,9 @@ func ExecutionConcurrency() (int, error) {
 	return limit, nil
 }
 
-func defaultHarness() (string, error) {
+// DefaultHarness reads OAC_DEFAULT_HARNESS, the Harness used when a request
+// names none.
+func DefaultHarness() (string, error) {
 	value := os.Getenv("OAC_DEFAULT_HARNESS")
 	if value == "" {
 		return "codex", nil
@@ -131,10 +157,14 @@ func defaultHarness() (string, error) {
 	return value, nil
 }
 
-func harnesses(defaultEngine string) ([]string, error) {
+// Harnesses reads OAC_HARNESSES. Unset enables every Harness this build
+// supports; a list supplements the default Harness.
+func Harnesses(defaultEngine string) ([]string, error) {
 	kinds := []string{defaultEngine}
 	if value := os.Getenv("OAC_HARNESSES"); value != "" {
 		kinds = append(kinds, strings.Split(value, ",")...)
+	} else {
+		kinds = append(kinds, (engine.Catalog{}).Kinds()...)
 	}
 	for i, kind := range kinds {
 		kind = strings.TrimSpace(kind)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"regexp"
 
 	"github.com/MiniMax-AI/OpenAgentCore/services/core/internal/api"
@@ -15,7 +14,11 @@ var sourceCommit = regexp.MustCompile(`^[0-9a-f]{40}$`)
 // environment and build, plus the process settings it loaded.
 func installationFacts(publicURL string) (api.Installation, error) {
 	var facts api.Installation
-	if id := os.Getenv("OAC_INSTALLATION_ID"); id != "" {
+	id, err := processconfig.InstallationID()
+	if err != nil {
+		return facts, err
+	}
+	if id != "" {
 		facts.InstallationID = &id
 	}
 	if publicURL != "" {

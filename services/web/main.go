@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -14,10 +15,28 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "core-key" {
+		if err := printCoreKey(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		log.Bg().Error("Core console stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+// printCoreKey writes the sign-in key for `docker compose exec web oac-web
+// core-key`. Exec output never enters the container log.
+func printCoreKey() error {
+	key, err := readSecret(envDefault("OAC_WEB_CORE_KEY_FILE", "/admin/core.key"))
+	if err != nil {
+		return errors.New("cannot read the Core key from OAC_WEB_CORE_KEY_FILE")
+	}
+	fmt.Println(key)
+	return nil
 }
 
 func run() error {

@@ -24,7 +24,7 @@ import (
 
 // releaseMembers are the archive files a Compose installation keeps for Web's
 // node payload; the rest of the release archive is only checksummed.
-var releaseMembers = []string{"manifest.json", "SHA256SUMS", "node-install.pyz", "runtime/seccomp.json", "standard-sizes.json"}
+var releaseMembers = []string{"manifest.json", "SHA256SUMS", "node-install.pyz", "runtime/seccomp.json"}
 
 var dataOwners = []struct {
 	name string
@@ -299,7 +299,7 @@ func initialize(root string, release releaseIdentity, fetch func() (map[string][
 	if err := writeOwned(marker, raw); err != nil {
 		return err
 	}
-	fmt.Println("Installation initialized; use the credentials service to retrieve the sign-in key")
+	fmt.Println("Installation initialized; print the sign-in key with: docker compose exec web oac-web core-key")
 	return nil
 }
 
