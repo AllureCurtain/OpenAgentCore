@@ -1,7 +1,7 @@
 ---
 title: "安装选项与高级部署"
 source: docs/getting-started/install-options.md
-source_hash: be5e1a127f654e75611c7b670fba9fc10cb3b78165590a7f6616eb1b79dd2f14
+source_hash: 4b847976f3b3bc4fe4afe7b7946c5815df9fecf75dc39648621814e793288f9e
 ---
 
 [默认安装](install.md)无需任何选项。使用本页可以在现有反向代理后运行，或者在无法访问互联网时进行安装。
@@ -76,7 +76,7 @@ docker compose -f compose.yaml exec web oac-web core-key
 
 默认安装在 `--host 0.0.0.0` 的 `--web-port`（8080）上发布 Web。Core 和 PostgreSQL 保持私有。`--host` 是不含端口、协议或区域的 IPv4 或 IPv6 地址。请在浏览器中使用服务器的具体 IP，而不是通配地址。
 
-`--public-url` 设置 `OAC_PUBLIC_URL`，即应用、节点和执行器使用的源地址。把它设为反向代理提供的 HTTPS 源地址。
+`--public-url` 设置 `OAC_PUBLIC_URL`，即应用、节点和执行器使用的源地址。使用反向代理时，把它设为代理提供的 HTTPS 源地址。未传入时，如果 `--host` 为 `0.0.0.0` 且主机默认路由的源地址是私有网络地址，安装程序使用 `http://<address>:<web port>`，否则使用 `http://localhost:<web port>`。可接受的源地址见[修改公开 URL](../configuration.md#changing-the-public-url)。
 
 ### 端口 {#ports}
 

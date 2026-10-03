@@ -1,7 +1,7 @@
 ---
 title: "配置参考"
 source: docs/configuration.md
-source_hash: 62ad7f6c64329e0d3e9bda9b4936f5c13281eb18a1011b057b2f6288ddad35cc
+source_hash: 89ce54ec713de69bbc2d8aaa89ddb577744d0ca694c3fdbca8bf2a452200ad46
 ---
 
 Core 安装的每项设置都恰好只有一个归属位置。共有两类：
@@ -31,7 +31,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 
 ### 更改公共 URL {#changing-the-public-url}
 
-`OAC_PUBLIC_URL` 是应用、节点、沙箱和自托管执行器使用的唯一源地址。Core 从中派生守护进程 WebSocket URL、自托管 `remote_url` 和每个沙箱的连接地址。安装通过 `OAC_WEB_PORT` 以 HTTP 提供 Web；反向代理或托管平台终止 HTTPS 并把流量转到该端口。
+`OAC_PUBLIC_URL` 是应用、节点、沙箱和自托管执行器使用的唯一源地址。Core 从中派生守护进程 WebSocket URL、自托管 `remote_url` 和每个沙箱的连接地址。它是 http 或 https 源地址，也就是浏览器和节点使用的地址。安装通过 `OAC_WEB_PORT` 以 HTTP 提供 Web；前面有反向代理或托管平台时，由它们终止 HTTPS。
 
 要更改它，先把反向代理指向新地址，然后编辑 `OAC_PUBLIC_URL` 并运行 `oac apply`。之后：
 
@@ -47,7 +47,7 @@ Web 的 **System** 页面显示该安装的地址、默认模型和沙箱配置�
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `OAC_PUBLIC_URL` | `http://localhost:8080` | Origin applications, nodes, sandboxes and self-hosted executors use. Managed domain setup writes the HTTPS origin and recreates Core and Web |
+| `OAC_PUBLIC_URL` | `http://localhost:8080` | 应用、节点、沙箱和自托管执行器使用的源地址。参阅[修改公开 URL](#changing-the-public-url) |
 | `OAC_HOST` | `127.0.0.1` | Address published by `ports.yaml`. `install.sh` sets `0.0.0.0` |
 | `OAC_WEB_PORT` | `8080` | Host port of Web |
 | `COMPOSE_FILE` | `compose.yaml:ports.yaml` | Compose 文件。`ports.yaml` 发布 Web；托管平台省略它 |

@@ -13,7 +13,7 @@ INSTALL = ROOT / "deploy/install.sh"
 
 
 class InstallScriptTests(unittest.TestCase):
-    def install(self, root, *args, compose_up=0):
+    def install(self, root, *args, compose_up=0, route="1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.5 uid 0"):
         bin_dir = root / "bin"
         bin_dir.mkdir(exist_ok=True)
         log = root / "docker.log"
@@ -21,7 +21,7 @@ class InstallScriptTests(unittest.TestCase):
             #!/bin/sh
             printf '%s\\n' "$*" >> {log}
             if [ "$1" = compose ] && [ "$2" = version ]; then printf 'v2.29.1\\n'; exit 0; fi
-            if [ "$1" = compose ] && [ "$2" = cp ]; then printf '#!/bin/sh\\n' > ./oac; exit 0; fi
+            if [ "$1" = compose ] && [ "$2" = cp ]; then printf '#!/bin/sh\\necho oac_core_fixture\\n' > ./oac; chmod +x ./oac; exit 0; fi
             if [ "$1" = compose ] && [ "$2" = up ]; then exit {compose_up}; fi
             exit 0
             """))
@@ -36,6 +36,7 @@ class InstallScriptTests(unittest.TestCase):
             """))
         self.write_executable(bin_dir / "sha256sum", "#!/bin/sh\nexit 0\n")
         self.write_executable(bin_dir / "ss", "#!/bin/sh\nexit 0\n")
+        self.write_executable(bin_dir / "ip", f"#!/bin/sh\nprintf '%s\\n' '{route}'\n")
         env = dict(os.environ, PATH=str(bin_dir) + os.pathsep + os.environ["PATH"], HOME=str(root))
         completed = subprocess.run(["bash", str(INSTALL), "--install-dir", str(root / "oac"), *args],
                                    env=env, capture_output=True, text=True)
@@ -50,6 +51,27 @@ class InstallScriptTests(unittest.TestCase):
             self.assertFalse((root / "oac").exists(), "a failed first start must remove the directory")
             self.assertIn("compose pull", recorded)
             self.assertIn("compose up -d --wait", recorded)
+            self.assertIn("compose logs", recorded, "a failed start must show the services' logs")
+
+    def test_the_private_address_is_the_default_public_url(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            completed, _ = self.install(root)
+            self.assertEqual(completed.returncode, 0, completed.stderr)
+            self.assertIn("OAC_PUBLIC_URL=http://10.0.0.5:8080\n", (root / "oac/.env").read_text())
+            self.assertIn("Console   http://10.0.0.5:8080", completed.stdout)
+            self.assertIn("Core key  oac_core_fixture", completed.stdout)
+            self.assertNotIn("Only this host", completed.stdout)
+
+    def test_without_a_private_address_only_this_host_reaches_web(self):
+        for args, route in ((["--web-port", "59992"], "1.1.1.1 dev eth0 src 203.0.113.5 uid 0"),
+                            (["--host", "127.0.0.1", "--web-port", "59992"], "1.1.1.1 dev eth0 src 10.0.0.5 uid 0")):
+            with self.subTest(args=args), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                completed, _ = self.install(root, *args, route=route)
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertIn("OAC_PUBLIC_URL=http://localhost:59992\n", (root / "oac/.env").read_text())
+                self.assertIn("Only this host can open the console", completed.stdout)
 
     def test_env_holds_only_the_installation_choices(self):
         with tempfile.TemporaryDirectory() as temporary:

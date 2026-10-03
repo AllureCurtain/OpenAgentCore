@@ -35,13 +35,13 @@ func TestExecutionConcurrencyConfiguration(t *testing.T) {
 }
 
 func TestPublicURLMustBeACanonicalOrigin(t *testing.T) {
-	for _, value := range []string{"https://core.example", "https://core.example:8443", "http://127.0.0.1:8091"} {
+	for _, value := range []string{"https://core.example", "https://core.example:8443", "http://127.0.0.1:8091", "http://core.example"} {
 		t.Setenv("OAC_PUBLIC_URL", value)
 		if got, err := processconfig.PublicURL(); err != nil || got != value {
 			t.Fatal(value, got, err)
 		}
 	}
-	for _, value := range []string{"https://core.example/", "https://Core.example", "http://core.example", "wss://core.example", "https://core.example/v1"} {
+	for _, value := range []string{"https://core.example/", "https://Core.example", "wss://core.example", "https://core.example/v1"} {
 		t.Setenv("OAC_PUBLIC_URL", value)
 		if _, err := processconfig.PublicURL(); err == nil {
 			t.Fatal("accepted", value)

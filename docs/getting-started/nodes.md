@@ -8,7 +8,7 @@ You add a node by generating a command in Web and running it on the host. The [s
 
 ## Before you add a node
 
-- **Core has an HTTPS public URL** that the host and its sandboxes can reach. Nodes download from Core's console and connect to Core at `public_url`. Until it is set, Add node says *Set a public HTTPS address before adding nodes*; see [Configure the public address](./install.md#configure-the-domain-and-https).
+- **Core has a public URL** that the host and its sandboxes can reach. Nodes download from Core's console and connect to Core at `public_url`. Until it is set, Add node says *Set a public address other machines can reach before adding nodes*; see [Configure the public address](./install.md#configure-the-domain-and-https).
 - **The sandbox configuration is saved.** Open **System** → **Manage sandbox configuration**, choose **Own machines**, the backend and a sandbox size, and **Save configuration**. To change a saved configuration, choose **Reset deployment** first. Every node of an installation uses that backend.
 - **The console can serve the node files.** Nodes download their Runtime and provider files from the console, which redirects to the release for files it does not hold, and check each file's size and SHA-256 against the release manifest. Node hosts therefore need access to the release. Without the files, Add node says *This console has no node files for …*.
 
@@ -51,7 +51,7 @@ The installer shows each phase as it runs and, once Core confirms the node, a su
 - Docker: rootful Docker Engine running, its socket `/var/run/docker.sock` owned by the `docker` group with mode `0660`, enforcing CPU and memory limits (cgroup v2).
 - microsandbox: `/dev/kvm` in the `kvm` group (hardware or nested virtualization), and the libraries microsandbox links (glibc).
 - CPUs and memory for at least one sandbox of the installation's size, and about 2 GB of disk for the Runtime image.
-- HTTPS access to the console and Core at the public URL; sandboxes reach Core too.
+- Access to the console and Core at the public URL; sandboxes reach Core too.
 
 ### Download through a proxy
 

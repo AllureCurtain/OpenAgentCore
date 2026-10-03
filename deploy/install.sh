@@ -15,8 +15,10 @@ usage() {
 Usage: install.sh [--version TAG] [--install-dir DIR] [--public-url URL]
                   [--host ADDRESS] [--web-port PORT]
 
-Installs Core, Web and PostgreSQL, and publishes Web on --web-port. HTTPS is
-terminated by your reverse proxy or hosting platform.
+Installs Core, Web and PostgreSQL, and publishes Web on --web-port. Without
+--public-url, a host published on all addresses with a private-network address
+is reached at http://<that address>:<web port>; otherwise only from this host.
+HTTPS is terminated by your reverse proxy or hosting platform.
 EOF
 }
 
@@ -71,18 +73,40 @@ if [[ "$version" != latest ]]; then
   asset_base="https://github.com/${repository}/releases/download/${version}"
 fi
 
+log="$(mktemp)"
 cleanup() {
   if [[ "$kept" != 1 && -d "$install_dir" ]]; then
     (
       cd "$install_dir"
+      docker compose logs --no-color --tail 50 >&2 || true
       docker compose down --remove-orphans
       # Containers own data/; remove it from a container as well.
       if [[ -d data ]]; then docker compose run --rm --no-deps --entrypoint find init /data -mindepth 1 -delete; fi
     ) >/dev/null 2>&1 || true
     rm -rf "$install_dir"
   fi
+  rm -f "$log"
 }
 trap cleanup EXIT
+
+# step DESCRIPTION COMMAND... prints the command's output only when it fails.
+step() {
+  printf '%s... ' "$1"
+  shift
+  if "$@" >"$log" 2>&1; then echo done; else echo failed; cat "$log" >&2; return 1; fi
+}
+
+# The source address of this host's default route, when it is a private one.
+private_address() {
+  ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p' |
+    grep -E '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)' || true
+}
+local_only=0
+if [[ -z "$public_url" && "$host_address" == 0.0.0.0 ]]; then
+  address="$(private_address)"
+  if [[ -n "$address" ]]; then public_url="http://$address:$web_port"; fi
+fi
+if [[ -z "$public_url" ]]; then public_url="http://localhost:$web_port"; local_only=1; fi
 
 mkdir -p "$install_dir"
 chmod 700 "$install_dir"
@@ -101,24 +125,39 @@ umask 077
   echo "OAC_INSTALL_DIR=$install_dir"
   echo "OAC_HOST=$host_address"
   echo "OAC_WEB_PORT=$web_port"
-  if [[ -n "$public_url" ]]; then echo "OAC_PUBLIC_URL=$public_url"; fi
+  echo "OAC_PUBLIC_URL=$public_url"
 } >"$install_dir/.env"
 
-(
-  cd "$install_dir"
-  docker compose pull
-  docker compose create core
-  docker compose cp core:/usr/local/bin/oac ./oac
-  docker compose up -d --wait
-)
+cd "$install_dir"
+copy_cli() { docker compose create core && docker compose cp core:/usr/local/bin/oac ./oac; }
+step "Pulling images" docker compose pull
+step "Installing the oac command" copy_cli
+step "Starting services" docker compose up -d --wait
+key="$(./oac core-key --show)"
 kept=1
 trap - EXIT
-address="http://${host_address}:$web_port"
-if [[ -n "$public_url" ]]; then address="$public_url"; fi
-if [[ "$host_address" == 0.0.0.0 || "$host_address" == "::" ]]; then address="http://<this-host>:$web_port"; fi
+rm -f "$log"
+
+sudo=""
+if [[ "$EUID" == 0 && -n "${SUDO_USER:-}" ]]; then sudo="sudo "; fi
 cat <<EOF
+
 OpenAgentCore is running.
-Console: $address
-Core key: $install_dir/oac core-key --show
-Manage the installation with $install_dir/oac.
+
+  Console   $public_url
+  Core key  $key
+
+Sign in to the console with the Core key, the administrator credential.
+${sudo}$install_dir/oac core-key --show prints it again.
+EOF
+if [[ "$local_only" == 1 ]]; then
+  cat <<EOF
+Only this host can open the console. To serve other machines, set
+OAC_PUBLIC_URL in $install_dir/.env, then run ${sudo}$install_dir/oac apply.
+EOF
+fi
+cat <<EOF
+
+Next, on System, set a default model and choose a sandbox backend, then add a
+node on Nodes.
 EOF

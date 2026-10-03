@@ -378,7 +378,7 @@ export function SandboxSetupWizard({ coreUrl, expectedGeneration, current, disab
             <dd>
               {address ? <code>{address}</code> : "—"}
               <span className="wizard-review-sub">{t("Managed in System")}</span>
-              {installation.data?.local_only ? <span className="wizard-review-caution">{t("Configure HTTPS in System before connecting remote nodes or E2B sandboxes.")}</span> : null}
+              {installation.data?.local_only ? <span className="wizard-review-caution">{t("Set a public address before connecting remote nodes; E2B sandboxes need an HTTPS one.")}</span> : null}
             </dd>
           </div>
         </dl>

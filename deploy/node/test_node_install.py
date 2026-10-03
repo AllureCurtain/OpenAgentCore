@@ -1018,11 +1018,12 @@ class NodeInstallTests(unittest.TestCase):
         self.assertEqual(target.read_bytes(), before)
         self.assertFalse(any("register" in call or "enable" in call for call, _ in self.calls))
 
-    def test_origin_rejects_remote_http_credentials_paths_and_redirects(self):
-        for value in ("http://private.example", "https://user@core.example", "https://@core.example", "https://core.example/v1", "https://core.example?", "https://core.example#", "https://core.example\\path", "https://core.example:bad", ""):
+    def test_origin_rejects_other_schemes_credentials_paths_and_redirects(self):
+        for value in ("ftp://core.example", "https://user@core.example", "https://@core.example", "https://core.example/v1", "https://core.example?", "https://core.example#", "https://core.example\\path", "https://core.example:bad", ""):
             with self.subTest(value=value), self.assertRaises(argparse.ArgumentTypeError):
                 installer.origin(value)
         self.assertEqual(installer.origin("http://[::1]:8091/"), "http://[::1]:8091")
+        self.assertEqual(installer.origin("http://core.example:8080"), "http://core.example:8080")
         with self.assertRaisesRegex(installer.InstallError, "redirects"):
             installer.NoRedirect().redirect_request(None, None, 302, "", {}, "https://other.example")
 

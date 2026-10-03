@@ -1,7 +1,7 @@
 ---
 title: "控制台 API 使用"
 source: docs/web/console-api-usage.md
-source_hash: 4e3bfbad317f6ab1467de7716a9463c088f12a2f88f84f36b08d37be64dc3db6
+source_hash: 2a4be7b081286e5a95c14380acc517d2d4b4ba955c0bd61338b0977d84c9df16
 ---
 
 本页列出各控制台页面读取和写入的 Core 路由，以及控制台如何限定读取范围。[administrator API contract](../../../contracts/agents-api/zh/admin-api.md) 定义了路由、响应结构、分页和审计记录；[API namespaces and credentials](../api/index.md) 定义了本文使用的术语。
@@ -77,7 +77,7 @@ source_hash: 4e3bfbad317f6ab1467de7716a9463c088f12a2f88f84f36b08d37be64dc3db6
 | 安装 | `GET /core/v1/installation` | System 的 Installation 信息（`public_url`、`api_base_url`、`installation_id`、`source_commit`）和只读 Startup 设置（`path` 下的 `configuration.settings`，以及 `apply_command` 和 `applied_at`；敏感设置仅显示其是否为 `configured`）；调用示例中的 `api_base_url`；作为下载来源以及节点安装和卸载命令中 `--source-url` 的 `public_url`（还包括安装命令中的 `--core-url`）；Core 拒绝的 Sandbox 配置旁的 `path` 和 `apply_command`。如果敏感设置包含值，或存在未知成员，读取会失败；`configuration: null` 会显示一条说明 |
 | Core 指标 | `GET /core/v1/metrics?range=` | Core 指标页面；Overview 上的 Core 弹出内容。不存在该路由的 Core（404）会显示为未报告数据，此时弹出内容仅显示 Core 状态。[Core metrics contract](../../../contracts/agents-api/zh/core-metrics.md) 定义了每项度量 |
 
-如果为 `local_only`，或者 `public_url` 不是 HTTPS 来源，Add node 将无法签发命令，Clean up the host 也无法提供命令。随后 Overview、Nodes 和 System 会显示醒目警告，其中 Core 的配置路径和 apply command 为可复制值；当 `configuration` 为 null 时，它们会说明路径和命令不可用。Nodes 会禁用 Add node 并显示明确原因，Getting started 则将 sandbox 步骤保留为待办项。
+如果为 `local_only`，或者没有 `public_url`，Add node 将无法签发命令，Clean up the host 也无法提供命令。随后 Overview、Nodes 和 System 会显示醒目警告，其中 Core 的配置路径和 apply command 为可复制值；当 `configuration` 为 null 时，它们会说明路径和命令不可用。Nodes 会禁用 Add node 并显示明确原因，Getting started 则将 sandbox 步骤保留为待办项。
 
 无论是在显示新密钥时，还是在活动项目页面没有显示任何密钥时，控制台都会提供 `OPENAI_BASE_URL`（安装的 `api_base_url`）和 `OPENAI_API_KEY`（新密钥，或项目密钥的占位符）的 shell 导出变量，以及针对 `GET /v1/agents` 和 `POST /v1/agents/sessions` 的 `curl` 和 Python 示例，但不会发送其中任何调用。当安装为 `local_only` 时，控制台会说明 API 只能在 Core 所在计算机上访问；当缺少 `api_base_url` 时，则会提示设置 `public_url`。
 
