@@ -44,15 +44,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/node
         with:
-          lockfiles: |
-            pnpm-lock.yaml
-            apps/web/pnpm-lock.yaml
-            packages/agents-client/pnpm-lock.yaml
-            packages/claude-sdk-adapter/pnpm-lock.yaml
-            website/pnpm-lock.yaml
-            example/parsar/pnpm-lock.yaml
+          lockfiles: '**/pnpm-lock.yaml'
       - name: Fetch every pnpm lockfile into the store
-        run: for dir in . apps/web packages/agents-client packages/claude-sdk-adapter website example/parsar; do pnpm --dir "$dir" fetch; done
+        run: git ls-files '*pnpm-lock.yaml' | while read -r lockfile; do pnpm --dir "$(dirname "$lockfile")" fetch; done
       - uses: ./.github/actions/e2b-provider
       - name: Build the E2B helper
         run: E2B_PROVIDER_BUILD_DIR="$RUNNER_TEMP/e2b-provider" bash scripts/build-e2b-provider.sh
