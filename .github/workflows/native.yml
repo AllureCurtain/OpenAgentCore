@@ -108,8 +108,15 @@ jobs:
           rm -rf "$RUNNER_TEMP/claude-runtime/node_modules"
           pnpm --dir "$RUNNER_TEMP/claude-runtime" install --prod --frozen-lockfile --config.node-linker=hoisted --ignore-scripts
           npm install --prefix "$RUNNER_TEMP/native-tools" --no-save @openai/codex@0.153.4
-      - name: Build the pinned MiniMax companion on Unix
+      - name: Restore the pinned MiniMax companion
+        id: mcode-cache
         if: runner.os != 'Windows'
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/minimax-runtime
+          key: mcode-harness-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/mcode-harness/**', 'scripts/build-mcode-harness.sh') }}
+      - name: Build the pinned MiniMax companion on Unix
+        if: runner.os != 'Windows' && steps.mcode-cache.outputs.cache-hit != 'true'
         run: |
           source_repository="$(node -p 'require("./packages/mcode-harness/source.json").repository')"
           source_revision="$(node -p 'require("./packages/mcode-harness/source.json").revision')"
