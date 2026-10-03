@@ -1,7 +1,7 @@
 ---
 title: "构建并发布 OpenAgentCore"
 source: docs/maintainers.md
-source_hash: ac744d8df2682f0c19eb6b05c1ef50a9e7c7a9d214316317458669f4cb00f477
+source_hash: ed4a16eca4710a2bc8be67b07d465e599d77638cb53ef34059fe4635671f18a0
 ---
 
 本指南面向负责构建和发布 OpenAgentCore 的维护者。要安装 Core 和 Web，请使用 [安装指南](getting-started/install.md)。安装器代码遵循的规则见 [部署](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/README.md) 和 [节点安装器](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/deploy/node/README.md)；必需检查见 [CONTRIBUTING](https://github.com/MiniMax-AI/OpenAgentCore/blob/main/CONTRIBUTING.md#required-checks)。
@@ -96,7 +96,7 @@ docker build --platform linux/amd64 -t oac-runtime:mcode "${OAC_DEV_HOME:-$HOME/
 make build-e2b-provider
 ```
 
-Docker 使用固定版本的 CPython 和 Debian 12 镜像构建 Linux amd64 辅助程序。Python 依赖闭包（including PyInstaller）在 `services/core/tools/e2b-provider/requirements.lock` 中按哈希锁定；不需要 E2B 账户密钥。要使用其他输出目录，请设置 `E2B_PROVIDER_BUILD_DIR`；从导出的源代码树构建时，请设置 `E2B_SOURCE_REVISION`。输出为 `oac-e2b-provider-linux-amd64.tar.gz` 及其 `.sha256`；解压后会得到 `oac-e2b-provider/`，其中包含可执行文件、`_internal/`、`licenses/`、`requirements.lock` 和 `manifest.json`。Core 镜像使用该目录树；主机需要兼容的 glibc 和 CA 证书，而不需要 Python。
+Docker 使用固定版本的 CPython 和 Debian 12 镜像构建 Linux amd64 辅助程序。Python 依赖闭包（including PyInstaller）在 `services/core/tools/e2b-provider/requirements.lock` 中按哈希锁定；不需要 E2B 账户密钥。要使用其他输出目录，请设置 `E2B_PROVIDER_BUILD_DIR`。构建结果完全由辅助程序源代码、`LICENSE` 和构建脚本决定，因此会按它们的哈希缓存在 `~/.oac/cache/e2b-provider/` 下，仅在它们变化时重新构建。输出为 `oac-e2b-provider-linux-amd64.tar.gz` 及其 `.sha256`；解压后会得到 `oac-e2b-provider/`，其中包含可执行文件、`_internal/`、`licenses/`、`requirements.lock` 和 `manifest.json`。Core 镜像使用该目录树；主机需要兼容的 glibc 和 CA 证书，而不需要 Python。
 
 **microsandbox 辅助程序。** 仅支持 Linux，并且需要 C 编译器：
 
@@ -126,7 +126,7 @@ git push origin v1.2.3
 
 标签使用 `vMAJOR.MINOR.PATCH` 格式，可选用 `-rc.1` 等预发布后缀以及 `+build.1` 等构建元数据。预发布后缀会创建 GitHub 预发布版。推送标签即表示发布决定。自动检查用于确定构建和测试结果，而不是真实模型资格：推送标签前应评估实际执行证据。模型凭据和私有证书颁发机构绝不能进入 CI 或发布输入，包含它们的验收镜像也不例外。
 
-工作流会在带标签的提交上运行 `check`，包括完整的本地门禁、官方客户端和镜像验收，以及启用打包构件的原生平台矩阵。检查成功后，GitHub 托管的 `ubuntu-22.04` 上的一个 `build` 作业会准备固定的 Runtime 输入、复用原生安装器、构建分发包，并直接从本地文件发布。此合并作业具有 `contents: write` 和 `packages: write` 权限；检出过程不会保留凭据。发布前会保留一份未压缩的 Actions 构建产物以供恢复使用，正常发布期间不会再次下载该构建产物。
+工作流会在带标签的提交上运行 `check`，包括完整的本地门禁、官方客户端和镜像验收，以及启用打包构件的原生平台矩阵。检查成功后，`blacksmith-4vcpu-ubuntu-2204` 上的一个 `build` 作业会准备固定的 Runtime 输入、复用原生安装器、构建分发包，并直接从本地文件发布。此合并作业具有 `contents: write` 和 `packages: write` 权限；检出过程不会保留凭据。只有发布失败或手动构建不发布时，才会把这些文件保留为未压缩的 Actions 构建产物，供恢复使用。
 
 分发归档和 Runtime 归档使用 `pigz` 级别 6，最多使用四个压缩工作线程，并且 gzip 头部中不包含文件名或时间戳。发布器会验证归档和原生安装器校验和、解析仓库身份、拒绝使用该标签已有的 Release 或草稿，并创建一个具有固定 ID 的草稿。最多四个资源可并发上传，按从大到小的顺序进行，且不会重试。确认完整的远程资源清单后，发布器会验证所有镜像归档和现有注册表标签，再并发推送最多四个镜像。每个镜像配置和注册表清单都会接受验证；任何错误都会使 Release 保持未发布状态。失败操作返回前，正在进行的传输会完成。发布器会按 ID 发布草稿，并在发布前重新检查版本标签。
 
@@ -158,7 +158,7 @@ gh workflow run core-release --repo MiniMax-AI/OpenAgentCore --ref main \
 
 ## 持续集成 {#continuous-integration}
 
-每个 PR 都会运行 `core-check` 并报告必需状态 `check`。main 使用 GitHub 分支保护，合并前必须通过此检查且分支必须为最新状态，因此合并不会启动另一份测试套件。所有更改都必须通过经过检查的 PR 提交；管理员绕过检查并不代表 CI 成功。推送到 main 时，如果输入发生变化，就会发布网站。版本标签和手动发布构建会在其确切源代码提交上运行完整的发布门禁。`scripts/ci_plan.py` 管理唯一的输入到检查映射。组件规则要求同时匹配目录或脚本前缀以及文件后缀；确切的依赖项、工作流和共享构建输入都有明确规则。规则会在共享使用方和混合变更之间累加。没有匹配构建/测试规则的路径仅运行 hygiene。引入新组件、语言、构建输入或资源位置时，请添加相应规则。
+每个 PR 都会运行 `core-check` 并报告必需状态 `check`。main 使用 GitHub 分支保护，合并前必须通过此检查且分支必须为最新状态，因此合并不会启动另一份测试套件。所有更改都必须通过经过检查的 PR 提交；管理员绕过检查并不代表 CI 成功。推送到 main 时，如果输入发生变化，就会发布网站，并运行 `cache-warm`：它构建 MiniMax companion、E2B 辅助程序和 pnpm 存储，不运行测试，因为只有 main 上保存的缓存能被每个 PR 和发布标签恢复。版本标签和手动发布构建会在其确切源代码提交上运行完整的发布门禁。`scripts/ci_plan.py` 管理唯一的输入到检查映射。组件规则要求同时匹配目录或脚本前缀以及文件后缀；确切的依赖项、工作流和共享构建输入都有明确规则。规则会在共享使用方和混合变更之间累加。没有匹配构建/测试规则的路径仅运行 hygiene。引入新组件、语言、构建输入或资源位置时，请添加相应规则。
 
 计划器会将 PR 事件所测试的合并提交与其已验证的第一个父提交进行比较。NUL 分隔的 Git 输出和禁用重命名检测会同时保留旧路径和新路径。计划及原因会显示在运行摘要中。历史记录缺失或不一致、检出不匹配、路径无效、计划器/编排发生变更以及共享构建输入发生变化时，都会选择完整门禁。经过验证的空差异仅选择 hygiene。发布、手动和显式 ref 调用始终选择所有组。
 

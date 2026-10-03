@@ -21,6 +21,9 @@ CI_INPUTS = {
     ".github/workflows/ci-review.yml": ("lint",),
     ".github/workflows/website.yml": ("website", "lint"),
     ".github/actions/node/action.yml": (*NODE_JOBS, "lint"),
+    ".github/actions/mcode-companion/action.yml": ("native", "lint"),
+    ".github/actions/e2b-provider/action.yml": ("api", "lint"),
+    ".github/workflows/cache-warm.yml": ("lint",),
     "scripts/ci_plan.py": JOBS,
     "scripts/ci_plan_test.py": ("hygiene",),
     "scripts/ci_metrics.py": ("hygiene",),
@@ -99,7 +102,7 @@ EXACT_INPUTS = {
     "services/core/internal/sandbox/e2b/testdata/configuration-selectors.json": ("distribution",),
 }
 FULL_INPUTS = {"Makefile", ".gitignore", ".gitattributes", ".dockerignore"}
-IMAGE_FILES = {"go.mod", "go.sum", "go.work", "go.work.sum", ".github/workflows/api-acceptance.yml"}
+IMAGE_FILES = {"go.mod", "go.sum", "go.work", "go.work.sum", ".github/workflows/api-acceptance.yml", ".github/actions/e2b-provider/action.yml"}
 IMAGE_INPUTS = ("scripts/build-core", "scripts/build-e2b-provider", "deploy/distribution/", "services/core/tools/e2b-provider/",
                 "services/core/deploy/e2b/")
 # Generated outputs retain freshness checks even when the file is documentation.
